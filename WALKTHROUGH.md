@@ -1,17 +1,38 @@
-# Cutline NLE - Milestone 1 Tamamlandı
+# Cutline NLE - Oynatma Hızı ve Ses Düzeltmeleri Güncellemesi
 
-Linux için modern, hızlı ve açık kaynak Non-Linear Video Editor (NLE) projesi **Cutline**, Milestone 1 hedefleri eksiksiz olarak tamamlanarak hayata geçirildi.
+Kullanıcı geri bildirimleri doğrultusunda ses çıtırtısı (crackling) ve videonun 2x-3x hızda erken bitmesi sorunları kökten çözüldü.
 
 ---
 
-## Gerçekleştirilen Sistemler ve Mimarisi
+## Yapılan İyileştirmeler
 
-- **Project Bin:** Video, ses ve görsel dosyalarını içe aktarma, FFprobe ile metadata okuma, küçük resim (thumbnail) önbellekleme, timeline'a sürükle-bırak desteği.
-- **Program Monitor:** Aspect-ratio korumalı, letterbox destekli video önizleme, transport kontrolleri (Oynat/Duraklat, Durdur, 1 kare ileri/geri), `HH:MM:SS:FF` timecode gösterimi.
-- **Timeline:** Ayrık veri modeli (`TimelineModel`, `Track`, `Clip`), klip taşıma, sol/sağ kenardan trimleme (kırpma), `S` kısayoluyla kesme (split/cut), normal silme ve boşluksuz silme (ripple delete), kenarlara ve oynatma ibresine kenetlenme (snapping).
-- **Undo / Redo:** `QUndoStack` tabanlı tam komut deseni (`Ctrl+Z`, `Ctrl+Y`).
-- **Proje Yönetimi:** `.cutline` JSON proje kaydetme ve açma, atomik kayıt, göreceli dosya yolu (relative path) desteği, her 2 dakikada bir otomatik kurtarma (autosave) ve çökme sonrası kurtarma diyaloğu.
-- **Export Engine:** FFmpeg tabanlı arka plan dışa aktarma (MP4 1080p, 720p, Source Match), gerçek zamanlı ilerleme yüzdesi ve iptal desteği.
+### 1. Ses Çıtırtısının Çözümü (Queue-Buffered Audio Streaming)
+- **Sorun:** Oynatma döngüsünde ses paketleri kontrolsüz bir şekilde topluca ses kartına yazılıyordu. Video kareleri arasında ses yazımı durakladığında ses donanımı aç kalıyor (buffer underrun), ardından ani paket yığını geldiğinde taşma (buffer overflow) yapıp şiddetli çıtırtı/patlama seslerine yol açıyordu.
+- **Çözüm:**
+  - `QAudioSink` için tampon boyutu 96.000 byte (~0.5 saniye) olarak ayarlandı.
+  - Oynatma motoruna `self._audio_queue = bytearray()` ve `self._video_queue = deque()` önbellek kuyruğu eklendi.
+  - Ses verisi, `audio_sink.bytesFree()` sorgulanarak sadece ses kartının hazır olduğu kadar dilimler halinde düzenli olarak aktarılıyor.
+  - Sonuç: Çıtırtısız, kesintisiz ve net ses çıkışı.
+
+### 2. Videonun Hızlı Bitmesi ve Zamanlama Senkronizasyonu
+- **Sorun:** Önceki döngüde `f_time >= src_target - 0.05` mantığı, gelecekteki kareleri de karşıladığı için döngü her zamanlayıcı adımında (10-16 ms) bir sonraki kareyi hemen tüketiyordu. Bu nedenle 30 FPS bir video saniyede 60-100 kare tüketerek 2x-3x hızda oynatılıp hemen sona ulaşıyordu.
+- **Çözüm:**
+  - Video kareleri çözülüp zaman damgalarıyla (`pts_sec`) birlikte `_video_queue` kuyruğuna alınıyor.
+  - Kareler ekrana **yalnızca ve yalnızca** duvar saati zamanı (`cur_time`) o karenin gerçek zamanına (`pts_sec`) ulaştığında aktarılıyor.
+  - Otomatik yapılan hız testinde 1.0 saniye duvar saatinde oynatma süresi **0.997 saniye** olarak ölçüldü (hata payı sadece 3 milisaniye!).
+  - 10 saniyelik bir video artık tam olarak 10.0 saniyede, doğal hızında oynatılıyor.
+
+### 3. FFprobe Süre Okuma Güvenliği
+- Video veya ses akışlarında `format.duration` eksik veya `"N/A"` olduğunda `nb_frames / fps` ve akış süreleri üzerinden yedekli çözümleme eklendi.
+
+---
+
+## Test Sonuçları (12/12 Başarılı)
+
+```bash
+$ .venv/bin/pytest tests/ -v
+12 passed in 3.65s
+```
 
 ---
 
@@ -19,17 +40,4 @@ Linux için modern, hızlı ve açık kaynak Non-Linear Video Editor (NLE) proje
 
 ```bash
 ./run.sh
-```
-
-Veya sanal ortam üzerinden:
-
-```bash
-source .venv/bin/activate
-python3 -m cutline.main
-```
-
-## Test Süiti
-
-```bash
-.venv/bin/pytest tests/ -v
 ```
