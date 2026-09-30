@@ -16,7 +16,7 @@ from cutline.core.track import Track, TrackType
 
 
 class SingleTrackHeader(QWidget):
-    """Header for an individual track displaying name, lock, mute, and visibility toggles."""
+    """Header for an individual track with Turkish tooltips."""
 
     def __init__(self, track: Track, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -40,14 +40,14 @@ class SingleTrackHeader(QWidget):
         # Visibility / Mute button
         self.btn_vis = QPushButton("👁" if track.visible else "🚫")
         self.btn_vis.setFixedSize(26, 24)
-        self.btn_vis.setToolTip("Toggle Visibility")
+        self.btn_vis.setToolTip("Görünürlüğü Aç / Kapat")
         self.btn_vis.clicked.connect(self._toggle_vis)
         layout.addWidget(self.btn_vis)
 
         # Lock button
         self.btn_lock = QPushButton("🔓" if not track.locked else "🔒")
         self.btn_lock.setFixedSize(26, 24)
-        self.btn_lock.setToolTip("Toggle Lock")
+        self.btn_lock.setToolTip("Kanalı Kilitle / Aç")
         self.btn_lock.clicked.connect(self._toggle_lock)
         layout.addWidget(self.btn_lock)
 
@@ -69,7 +69,7 @@ class TrackHeadersWidget(QWidget):
         self.setFixedWidth(140)
 
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(0, 38, 0, 0)  # Offset for ruler height
+        self._layout.setContentsMargins(0, 38, 0, 0)
         self._layout.setSpacing(6)
         self._layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
@@ -77,7 +77,6 @@ class TrackHeadersWidget(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
-        # Clear existing
         while self._layout.count():
             item = self._layout.takeAt(0)
             if item.widget():

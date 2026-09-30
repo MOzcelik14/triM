@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QCloseEvent, QIcon, QKeySequence, QShortcut, QUndoStack
+from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut, QUndoStack
 from PySide6.QtWidgets import (
     QFileDialog,
     QMainWindow,
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
-    """Cutline Primary Application Window."""
+    """Cutline Primary Application Window with complete Turkish localization."""
 
     def __init__(self, project: Optional[Project] = None) -> None:
         super().__init__()
@@ -43,7 +43,7 @@ class MainWindow(QMainWindow):
         self.playback_engine = PlaybackEngine(self.project, parent=self)
         self.autosave_mgr = AutosaveManager(self.project, parent=self)
 
-        self.setWindowTitle("Cutline - Video Editor")
+        self.setWindowTitle("Cutline - Video Düzenleyici")
         self.resize(1366, 850)
         self.setStyleSheet(DARK_THEME_QSS)
 
@@ -85,7 +85,7 @@ class MainWindow(QMainWindow):
         self.inspector = InspectorWidget(self.project, parent=self)
         self.top_splitter.addWidget(self.inspector)
 
-        # Set default proportions for top panels (25% Bin, 50% Preview, 25% Inspector)
+        # Proportions: Bin 25%, Preview 50%, Inspector 25%
         self.top_splitter.setSizes([320, 700, 320])
         self.v_splitter.addWidget(self.top_splitter)
 
@@ -93,36 +93,39 @@ class MainWindow(QMainWindow):
         self.timeline_widget = TimelineWidget(self.project, self.undo_stack, parent=self)
         self.v_splitter.addWidget(self.timeline_widget)
 
-        # Vertical proportions (60% Top, 40% Timeline)
+        # Vertical proportions: 60% Top, 40% Timeline
         self.v_splitter.setSizes([520, 330])
         self.setCentralWidget(self.v_splitter)
 
         # Status Bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+        self._update_status_bar()
+
+    def _update_status_bar(self) -> None:
         self.status_bar.showMessage(
-            f"Project: {self.project.settings.name} | {self.project.timeline.width}x{self.project.timeline.height} @ {self.project.timeline.fps}fps"
+            f"Proje: {self.project.settings.name} | {self.project.timeline.width}x{self.project.timeline.height} @ {self.project.timeline.fps:.0f}fps"
         )
 
     def _setup_actions(self) -> None:
-        toolbar = QToolBar("Main Toolbar")
+        toolbar = QToolBar("Ana Araç Çubuğu")
         toolbar.setMovable(False)
         self.addToolBar(toolbar)
 
         # New
-        self.act_new = QAction("New Project", self)
+        self.act_new = QAction("Yeni Proje", self)
         self.act_new.setShortcut(QKeySequence.StandardKey.New)
         self.act_new.triggered.connect(self.new_project)
         toolbar.addAction(self.act_new)
 
         # Open
-        self.act_open = QAction("Open Project", self)
+        self.act_open = QAction("Proje Aç", self)
         self.act_open.setShortcut(QKeySequence.StandardKey.Open)
         self.act_open.triggered.connect(self.open_project)
         toolbar.addAction(self.act_open)
 
         # Save
-        self.act_save = QAction("Save", self)
+        self.act_save = QAction("Kaydet", self)
         self.act_save.setShortcut(QKeySequence.StandardKey.Save)
         self.act_save.triggered.connect(self.save_project)
         toolbar.addAction(self.act_save)
@@ -130,61 +133,61 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
 
         # Import Media
-        self.act_import = QAction("Import Media", self)
+        self.act_import = QAction("Medya İçe Aktar", self)
         self.act_import.triggered.connect(self.media_bin.prompt_import_media)
         toolbar.addAction(self.act_import)
 
         toolbar.addSeparator()
 
         # Undo
-        self.act_undo = self.undo_stack.createUndoAction(self, "Undo")
+        self.act_undo = self.undo_stack.createUndoAction(self, "Geri Al")
         self.act_undo.setShortcut(QKeySequence.StandardKey.Undo)
         toolbar.addAction(self.act_undo)
 
         # Redo
-        self.act_redo = self.undo_stack.createRedoAction(self, "Redo")
+        self.act_redo = self.undo_stack.createRedoAction(self, "Yinele")
         self.act_redo.setShortcut(QKeySequence.StandardKey.Redo)
         toolbar.addAction(self.act_redo)
 
         toolbar.addSeparator()
 
         # Export
-        self.act_export = QAction("Export Video", self)
+        self.act_export = QAction("Videoyu Dışa Aktar", self)
         self.act_export.setShortcut(QKeySequence("Ctrl+E"))
         self.act_export.triggered.connect(self.export_video)
         toolbar.addAction(self.act_export)
 
         # Setup Menu Bar
         menu_bar = self.menuBar()
-        file_menu = menu_bar.addMenu("&File")
+        file_menu = menu_bar.addMenu("&Dosya")
         file_menu.addAction(self.act_new)
         file_menu.addAction(self.act_open)
         file_menu.addAction(self.act_save)
-        act_save_as = file_menu.addAction("Save As...")
+        act_save_as = file_menu.addAction("Farklı Kaydet...")
         act_save_as.triggered.connect(self.save_project_as)
         file_menu.addSeparator()
         file_menu.addAction(self.act_import)
         file_menu.addAction(self.act_export)
         file_menu.addSeparator()
-        act_exit = file_menu.addAction("Exit")
+        act_exit = file_menu.addAction("Çıkış")
         act_exit.triggered.connect(self.close)
 
-        edit_menu = menu_bar.addMenu("&Edit")
+        edit_menu = menu_bar.addMenu("&Düzen")
         edit_menu.addAction(self.act_undo)
         edit_menu.addAction(self.act_redo)
         edit_menu.addSeparator()
-        act_split = edit_menu.addAction("Split at Playhead")
+        act_split = edit_menu.addAction("Oynatma Çizgisinden Kes / Böl")
         act_split.setShortcut(QKeySequence("S"))
         act_split.triggered.connect(self.timeline_widget.canvas.split_at_playhead)
-        act_del = edit_menu.addAction("Delete Selected")
+        act_del = edit_menu.addAction("Seçileni Sil")
         act_del.setShortcut(QKeySequence.StandardKey.Delete)
         act_del.triggered.connect(self.timeline_widget.canvas.delete_selected)
-        act_ripple = edit_menu.addAction("Ripple Delete")
+        act_ripple = edit_menu.addAction("Boşluksuz Sil (Ripple Delete)")
         act_ripple.setShortcut(QKeySequence("Shift+Delete"))
         act_ripple.triggered.connect(self.timeline_widget.canvas.ripple_delete_selected)
 
-        help_menu = menu_bar.addMenu("&Help")
-        act_about = help_menu.addAction("About Cutline")
+        help_menu = menu_bar.addMenu("&Yardım")
+        act_about = help_menu.addAction("Cutline Hakkında")
         act_about.triggered.connect(self._show_about)
 
     def _setup_shortcuts(self) -> None:
@@ -245,8 +248,9 @@ class MainWindow(QMainWindow):
 
     def _update_window_title(self, *args) -> None:
         dirty_flag = " *" if self.project.is_dirty else ""
-        name = Path(self.project.file_path).name if self.project.file_path else (self.project.settings.name or "Untitled")
+        name = Path(self.project.file_path).name if self.project.file_path else (self.project.settings.name or "İsimsiz Proje")
         self.setWindowTitle(f"Cutline - {name}{dirty_flag}")
+        self._update_status_bar()
 
     def _add_media_to_timeline_at_playhead(self, media_id: str) -> None:
         item = self.project.get_media(media_id)
@@ -267,8 +271,8 @@ class MainWindow(QMainWindow):
         if self.project.is_dirty:
             res = QMessageBox.question(
                 self,
-                "Unsaved Changes",
-                "Current project has unsaved changes. Do you want to save before creating a new project?",
+                "Kaydedilmemiş Değişiklikler",
+                "Mevcut projede kaydedilmemiş değişiklikler var. Yeni bir proje oluşturmadan önce kaydetmek istiyor musunuz?",
                 QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
             )
             if res == QMessageBox.StandardButton.Save:
@@ -287,8 +291,8 @@ class MainWindow(QMainWindow):
         if self.project.is_dirty:
             res = QMessageBox.question(
                 self,
-                "Unsaved Changes",
-                "Current project has unsaved changes. Do you want to save before opening another project?",
+                "Kaydedilmemiş Değişiklikler",
+                "Mevcut projede kaydedilmemiş değişiklikler var. Başka bir proje açmadan önce kaydetmek istiyor musunuz?",
                 QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
             )
             if res == QMessageBox.StandardButton.Save:
@@ -298,9 +302,9 @@ class MainWindow(QMainWindow):
 
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open Cutline Project",
+            "Cutline Projesi Aç",
             "",
-            "Cutline Projects (*.cutline);;JSON Files (*.json);;All Files (*)",
+            "Cutline Projeleri (*.cutline);;JSON Dosyaları (*.json);;Tüm Dosyalar (*)",
         )
         if not path:
             return
@@ -313,10 +317,10 @@ class MainWindow(QMainWindow):
             self.project = Project.load(path, parent=self)
             self._reload_project_ui()
             self.autosave_mgr.cleanup_recovery_file()
-            self.status_bar.showMessage(f"Project loaded: {path}", 5000)
+            self.status_bar.showMessage(f"Proje yüklendi: {path}", 5000)
         except Exception as e:
             logger.error("Failed to load project %s: %s", path, e)
-            QMessageBox.critical(self, "Load Error", f"Failed to load project:\n{e}")
+            QMessageBox.critical(self, "Yükleme Hatası", f"Proje yüklenemedi:\n{e}")
 
     def save_project(self) -> bool:
         if not self.project.file_path:
@@ -325,19 +329,19 @@ class MainWindow(QMainWindow):
             self.project.save()
             self.autosave_mgr.cleanup_recovery_file()
             self._update_window_title()
-            self.status_bar.showMessage(f"Project saved: {self.project.file_path}", 4000)
+            self.status_bar.showMessage(f"Proje kaydedildi: {self.project.file_path}", 4000)
             return True
         except Exception as e:
             logger.error("Failed to save project: %s", e)
-            QMessageBox.critical(self, "Save Error", f"Failed to save project:\n{e}")
+            QMessageBox.critical(self, "Kaydetme Hatası", f"Proje kaydedilemedi:\n{e}")
             return False
 
     def save_project_as(self) -> bool:
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "Save Cutline Project As",
-            self.project.file_path or "project.cutline",
-            "Cutline Projects (*.cutline);;All Files (*)",
+            "Cutline Projesini Farklı Kaydet",
+            self.project.file_path or "proje.cutline",
+            "Cutline Projeleri (*.cutline);;Tüm Dosyalar (*)",
         )
         if not path:
             return False
@@ -349,11 +353,11 @@ class MainWindow(QMainWindow):
             self.project.save(path)
             self.autosave_mgr.cleanup_recovery_file()
             self._update_window_title()
-            self.status_bar.showMessage(f"Project saved: {path}", 4000)
+            self.status_bar.showMessage(f"Proje kaydedildi: {path}", 4000)
             return True
         except Exception as e:
             logger.error("Failed to save project: %s", e)
-            QMessageBox.critical(self, "Save Error", f"Failed to save project:\n{e}")
+            QMessageBox.critical(self, "Kaydetme Hatası", f"Proje kaydedilemedi:\n{e}")
             return False
 
     def export_video(self) -> None:
@@ -361,11 +365,9 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     def _reload_project_ui(self) -> None:
-        # Recreate playback engine and reconnect
         self.playback_engine = PlaybackEngine(self.project, parent=self)
         self.autosave_mgr = AutosaveManager(self.project, parent=self)
 
-        # Update sub-widgets
         self.media_bin.project = self.project
         self.media_bin.refresh()
 
@@ -388,37 +390,37 @@ class MainWindow(QMainWindow):
         rec_path = self.autosave_mgr.get_recovery_file_path()
         res = QMessageBox.question(
             self,
-            "Crash Recovery Available",
-            "An unsaved session from an unexpected shutdown was detected.\nWould you like to recover it?",
+            "Kurtarma Dosyası Bulundu",
+            "Beklenmeyen bir kapanma sonrası kaydedilmemiş bir çalışma oturumu tespit edildi.\nKurtarmak istiyor musunuz?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if res == QMessageBox.StandardButton.Yes:
             try:
                 self.project = Project.load(str(rec_path), parent=self)
                 self._reload_project_ui()
-                self.status_bar.showMessage("Project recovered successfully from autosave.", 5000)
+                self.status_bar.showMessage("Proje otomatik kurtarmadan başarıyla geri yüklendi.", 5000)
             except Exception as e:
                 logger.error("Failed to recover project: %s", e)
-                QMessageBox.warning(self, "Recovery Error", f"Could not recover autosave: {e}")
+                QMessageBox.warning(self, "Kurtarma Hatası", f"Kurtarma dosyası yüklenemedi: {e}")
         else:
             self.autosave_mgr.cleanup_recovery_file()
 
     def _show_about(self) -> None:
         QMessageBox.about(
             self,
-            "About Cutline",
+            "Cutline Hakkında",
             "<b>Cutline 0.1.0</b><br><br>"
-            "Modern, Fast, Open-Source Non-Linear Video Editor for Linux.<br>"
-            "Powered by Python 3.12, PySide6, FFmpeg, and PyAV.<br><br>"
-            "Milestone 1 Release.",
+            "Linux için modern, hızlı ve açık kaynak Non-Linear Video Editor (NLE).<br>"
+            "Python 3.12, PySide6, FFmpeg ve PyAV altyapısıyla geliştirilmiştir.<br><br>"
+            "Milestone 1 Türkçe Sürümü.",
         )
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.project.is_dirty:
             res = QMessageBox.question(
                 self,
-                "Save Changes?",
-                "Do you want to save changes before exiting?",
+                "Değişiklikler Kaydedilsin mi?",
+                "Çıkmadan önce yaptığınız değişiklikleri kaydetmek istiyor musunuz?",
                 QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
             )
             if res == QMessageBox.StandardButton.Save:

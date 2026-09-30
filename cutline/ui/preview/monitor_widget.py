@@ -31,14 +31,14 @@ class MonitorWidget(QWidget):
 
         if self._current_frame is None or self._current_frame.isNull():
             # Draw placeholder when empty
-            painter.setPen(QColor(70, 70, 80))
+            painter.setPen(QColor(90, 90, 105))
             font = QFont()
             font.setPointSize(12)
             painter.setFont(font)
             painter.drawText(
                 self.rect(),
                 Qt.AlignmentFlag.AlignCenter,
-                "No Media Active\nImport media or move playhead over clips",
+                "Aktif Medya Yok\nMedya içe aktarın veya oynatma çizgisini klip üzerine getirin",
             )
             return
 

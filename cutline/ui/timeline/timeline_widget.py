@@ -22,7 +22,7 @@ from cutline.ui.timeline.track_header import TrackHeadersWidget
 
 
 class TimelineWidget(QWidget):
-    """Main timeline panel assembling ruler, canvas, headers, tools, and zoom controls."""
+    """Main timeline panel assembling ruler, canvas, headers, tools, and zoom controls in Turkish."""
 
     clip_selected = Signal(str, str)  # (track_id, clip_id)
     seek_requested = Signal(float)  # (timeline_time)
@@ -46,36 +46,36 @@ class TimelineWidget(QWidget):
         tools_layout = QHBoxLayout()
         tools_layout.setSpacing(6)
 
-        self.btn_split = QPushButton("✂ Cut / Split (S)")
-        self.btn_split.setToolTip("Split clip at playhead (S)")
+        self.btn_split = QPushButton("✂ Kes / Böl (S)")
+        self.btn_split.setToolTip("Oynatma çizgisinden klibi böl (S)")
         self.btn_split.clicked.connect(self._on_split_clicked)
         tools_layout.addWidget(self.btn_split)
 
-        self.btn_delete = QPushButton("🗑 Delete (Del)")
-        self.btn_delete.setToolTip("Delete selected clip (Delete/Backspace)")
+        self.btn_delete = QPushButton("🗑 Sil (Del)")
+        self.btn_delete.setToolTip("Seçili klibi sil (Delete / Backspace)")
         self.btn_delete.clicked.connect(self._on_delete_clicked)
         tools_layout.addWidget(self.btn_delete)
 
-        self.btn_ripple = QPushButton("⏪ Ripple Delete")
-        self.btn_ripple.setToolTip("Delete selected clip and shift subsequent clips left")
+        self.btn_ripple = QPushButton("⏪ Boşluksuz Sil")
+        self.btn_ripple.setToolTip("Seçili klibi sil ve sonraki klipleri sola kaydır (Shift+Delete)")
         self.btn_ripple.clicked.connect(self._on_ripple_clicked)
         tools_layout.addWidget(self.btn_ripple)
 
         tools_layout.addStretch()
 
         # Add Track Buttons
-        self.btn_add_v = QPushButton("+ Video Track")
+        self.btn_add_v = QPushButton("+ Video Kanalı")
         self.btn_add_v.clicked.connect(self._add_video_track)
         tools_layout.addWidget(self.btn_add_v)
 
-        self.btn_add_a = QPushButton("+ Audio Track")
+        self.btn_add_a = QPushButton("+ Ses Kanalı")
         self.btn_add_a.clicked.connect(self._add_audio_track)
         tools_layout.addWidget(self.btn_add_a)
 
         tools_layout.addSpacing(16)
 
         # Zoom Controls
-        tools_layout.addWidget(QLabel("Zoom:"))
+        tools_layout.addWidget(QLabel("Yakınlaştırma:"))
         self.btn_zoom_out = QPushButton("−")
         self.btn_zoom_out.setFixedSize(26, 24)
         self.btn_zoom_out.clicked.connect(lambda: self.zoom_slider.setValue(self.zoom_slider.value() - 10))
@@ -158,5 +158,5 @@ class TimelineWidget(QWidget):
 
     def _add_audio_track(self) -> None:
         count = len(self.project.timeline.get_audio_tracks()) + 1
-        self.project.timeline.add_track(Track(name=f"Audio {count}", track_type=TrackType.AUDIO))
+        self.project.timeline.add_track(Track(name=f"Ses {count}", track_type=TrackType.AUDIO))
         self.project.mark_dirty()

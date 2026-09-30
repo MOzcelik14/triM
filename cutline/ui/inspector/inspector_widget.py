@@ -21,7 +21,7 @@ from cutline.core.track import Track
 
 
 class InspectorWidget(QWidget):
-    """Properties and transform inspector panel."""
+    """Properties and transform inspector panel in Turkish."""
 
     def __init__(self, project: Project, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -36,7 +36,7 @@ class InspectorWidget(QWidget):
         main_layout.setContentsMargins(8, 8, 8, 8)
         main_layout.setSpacing(8)
 
-        title = QLabel("Inspector / Properties")
+        title = QLabel("Özellikler / Denetçi")
         title.setStyleSheet("font-weight: bold; font-size: 13px; color: #d0d0dc;")
         main_layout.addWidget(title)
 
@@ -48,29 +48,29 @@ class InspectorWidget(QWidget):
         self.form_layout.setSpacing(10)
 
         # 1. Info Group
-        self.grp_info = QGroupBox("Clip Info")
+        self.grp_info = QGroupBox("Klip Bilgisi")
         info_layout = QFormLayout(self.grp_info)
         info_layout.setSpacing(6)
 
         self.txt_name = QLineEdit()
         self.txt_name.editingFinished.connect(self._on_name_changed)
-        info_layout.addRow("Name:", self.txt_name)
+        info_layout.addRow("İsim:", self.txt_name)
 
         self.lbl_file = QLabel("-")
         self.lbl_file.setWordWrap(True)
         self.lbl_file.setStyleSheet("color: #8e8ea0; font-size: 11px;")
-        info_layout.addRow("Source:", self.lbl_file)
+        info_layout.addRow("Kaynak:", self.lbl_file)
 
         self.lbl_track = QLabel("-")
-        info_layout.addRow("Track:", self.lbl_track)
+        info_layout.addRow("Kanal:", self.lbl_track)
 
         self.lbl_duration = QLabel("0.00s")
-        info_layout.addRow("Duration:", self.lbl_duration)
+        info_layout.addRow("Süre:", self.lbl_duration)
 
         self.form_layout.addWidget(self.grp_info)
 
         # 2. Timing Group
-        self.grp_timing = QGroupBox("Timing")
+        self.grp_timing = QGroupBox("Zamanlama")
         timing_layout = QFormLayout(self.grp_timing)
         timing_layout.setSpacing(6)
 
@@ -79,19 +79,19 @@ class InspectorWidget(QWidget):
         self.spn_timeline_in.setSingleStep(0.1)
         self.spn_timeline_in.setSuffix(" s")
         self.spn_timeline_in.valueChanged.connect(self._on_timing_changed)
-        timing_layout.addRow("Timeline In:", self.spn_timeline_in)
+        timing_layout.addRow("Başlangıç:", self.spn_timeline_in)
 
         self.spn_timeline_out = QDoubleSpinBox()
         self.spn_timeline_out.setRange(0.0, 99999.0)
         self.spn_timeline_out.setSingleStep(0.1)
         self.spn_timeline_out.setSuffix(" s")
         self.spn_timeline_out.valueChanged.connect(self._on_timing_changed)
-        timing_layout.addRow("Timeline Out:", self.spn_timeline_out)
+        timing_layout.addRow("Bitiş:", self.spn_timeline_out)
 
         self.form_layout.addWidget(self.grp_timing)
 
         # 3. Video Transform Group
-        self.grp_transform = QGroupBox("Video Transform")
+        self.grp_transform = QGroupBox("Video Dönüşümü")
         trans_layout = QFormLayout(self.grp_transform)
         trans_layout.setSpacing(6)
 
@@ -100,19 +100,19 @@ class InspectorWidget(QWidget):
         self.spn_opacity.setSingleStep(0.05)
         self.spn_opacity.setValue(1.0)
         self.spn_opacity.valueChanged.connect(self._on_transform_changed)
-        trans_layout.addRow("Opacity:", self.spn_opacity)
+        trans_layout.addRow("Opaklık:", self.spn_opacity)
 
         self.spn_scale = QDoubleSpinBox()
         self.spn_scale.setRange(0.1, 5.0)
         self.spn_scale.setSingleStep(0.1)
         self.spn_scale.setValue(1.0)
         self.spn_scale.valueChanged.connect(self._on_transform_changed)
-        trans_layout.addRow("Scale:", self.spn_scale)
+        trans_layout.addRow("Ölçek:", self.spn_scale)
 
         self.form_layout.addWidget(self.grp_transform)
 
         # 4. Audio Group
-        self.grp_audio = QGroupBox("Audio")
+        self.grp_audio = QGroupBox("Ses")
         audio_layout = QFormLayout(self.grp_audio)
         audio_layout.setSpacing(6)
 
@@ -121,9 +121,9 @@ class InspectorWidget(QWidget):
         self.spn_volume.setSingleStep(0.05)
         self.spn_volume.setValue(1.0)
         self.spn_volume.valueChanged.connect(self._on_audio_changed)
-        audio_layout.addRow("Volume:", self.spn_volume)
+        audio_layout.addRow("Ses Düzeyi:", self.spn_volume)
 
-        self.chk_muted = QCheckBox("Mute Clip")
+        self.chk_muted = QCheckBox("Klibi Sessize Al")
         self.chk_muted.toggled.connect(self._on_audio_changed)
         audio_layout.addRow("", self.chk_muted)
 
@@ -134,7 +134,7 @@ class InspectorWidget(QWidget):
         main_layout.addWidget(self.scroll)
 
         # Placeholder label
-        self.lbl_placeholder = QLabel("Select a clip on the timeline\nto view and edit its properties.")
+        self.lbl_placeholder = QLabel("Özelliklerini görüntülemek ve düzenlemek için\nzaman çizgisinden bir klip seçin.")
         self.lbl_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_placeholder.setStyleSheet("color: #707080; font-size: 12px;")
         main_layout.addWidget(self.lbl_placeholder)
@@ -162,10 +162,11 @@ class InspectorWidget(QWidget):
 
         self._show_placeholder(False)
         self.txt_name.setText(clip.name)
-        self.lbl_track.setText(f"{track.name} ({track.track_type.value})")
+        type_str = "Video" if track.track_type.value == "video" else "Ses"
+        self.lbl_track.setText(f"{track.name} ({type_str})")
 
         media = self.project.get_media(clip.media_id)
-        self.lbl_file.setText(media.file_path if media else "Unknown")
+        self.lbl_file.setText(media.file_path if media else "Bilinmiyor")
         self.lbl_duration.setText(f"{clip.duration:.2f}s")
 
         self.spn_timeline_in.setValue(clip.timeline_in)

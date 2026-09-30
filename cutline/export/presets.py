@@ -21,8 +21,8 @@ class ExportPreset:
 
 DEFAULT_PRESETS = [
     ExportPreset(
-        name="1080p H.264 (Standard MP4)",
-        description="High quality 1080p MP4 suitable for YouTube, Web, and Archiving.",
+        name="1080p H.264 (Standart MP4)",
+        description="YouTube, web ve arşivleme için yüksek kaliteli 1080p MP4 çıktısı.",
         width=1920,
         height=1080,
         fps=30.0,
@@ -32,8 +32,8 @@ DEFAULT_PRESETS = [
         audio_codec="aac",
     ),
     ExportPreset(
-        name="720p H.264 (Fast MP4)",
-        description="Faster render, lower file size 720p MP4 for quick sharing.",
+        name="720p H.264 (Hızlı MP4)",
+        description="Daha hızlı render ve düşük dosya boyutu sağlayan 720p MP4 çıktısı.",
         width=1280,
         height=720,
         fps=30.0,
@@ -43,8 +43,8 @@ DEFAULT_PRESETS = [
         audio_codec="aac",
     ),
     ExportPreset(
-        name="Source / Match Timeline",
-        description="Exports at native project resolution and framerate.",
+        name="Kaynak / Projeyle Eşleşen",
+        description="Projenin doğal çözünürlük ve kare hızında doğrudan çıktı.",
         width=None,
         height=None,
         fps=None,
@@ -55,7 +55,7 @@ DEFAULT_PRESETS = [
     ),
     ExportPreset(
         name="1080p H.265 / HEVC",
-        description="Modern HEVC codec with smaller file sizes at high fidelity.",
+        description="Yüksek kalitede daha küçük dosya boyutu sağlayan modern HEVC çıktısı.",
         width=1920,
         height=1080,
         fps=30.0,

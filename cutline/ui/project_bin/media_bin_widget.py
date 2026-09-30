@@ -73,7 +73,7 @@ class MediaListWidget(QListWidget):
 
 
 class MediaBinWidget(QWidget):
-    """Media Library / Project Bin widget."""
+    """Media Library / Project Bin widget in Turkish."""
 
     media_selected = Signal(str)  # media_id
     add_to_timeline_requested = Signal(str)  # media_id
@@ -89,12 +89,12 @@ class MediaBinWidget(QWidget):
 
         # Header / Toolbar
         header_layout = QHBoxLayout()
-        title_lbl = QLabel("Project Bin")
+        title_lbl = QLabel("Medya Havuzu")
         title_lbl.setStyleSheet("font-weight: bold; font-size: 13px; color: #d0d0dc;")
         header_layout.addWidget(title_lbl)
         header_layout.addStretch()
 
-        self.btn_import = QPushButton("+ Import Media")
+        self.btn_import = QPushButton("+ Medya İçe Aktar")
         self.btn_import.setObjectName("PrimaryButton")
         self.btn_import.clicked.connect(self.prompt_import_media)
         header_layout.addWidget(self.btn_import)
@@ -102,7 +102,7 @@ class MediaBinWidget(QWidget):
 
         # Filter search box
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("Filter media...")
+        self.search_box.setPlaceholderText("Medyalarda filtrele...")
         self.search_box.textChanged.connect(self._filter_items)
         layout.addWidget(self.search_box)
 
@@ -122,13 +122,13 @@ class MediaBinWidget(QWidget):
     def prompt_import_media(self) -> None:
         files, _ = QFileDialog.getOpenFileNames(
             self,
-            "Import Media Files",
+            "Medya Dosyalarını İçe Aktar",
             "",
-            "All Supported Media (*.mp4 *.mov *.mkv *.webm *.avi *.mp3 *.wav *.aac *.flac *.png *.jpg *.jpeg *.webp);;"
-            "Video Files (*.mp4 *.mov *.mkv *.webm *.avi);;"
-            "Audio Files (*.mp3 *.wav *.aac *.flac);;"
-            "Image Files (*.png *.jpg *.jpeg *.webp);;"
-            "All Files (*)",
+            "Desteklenen Tüm Medyalar (*.mp4 *.mov *.mkv *.webm *.avi *.mp3 *.wav *.aac *.flac *.png *.jpg *.jpeg *.webp);;"
+            "Video Dosyaları (*.mp4 *.mov *.mkv *.webm *.avi);;"
+            "Ses Dosyaları (*.mp3 *.wav *.aac *.flac);;"
+            "Görsel Dosyaları (*.png *.jpg *.jpeg *.webp);;"
+            "Tüm Dosyalar (*)",
         )
         if files:
             for f in files:
@@ -182,9 +182,9 @@ class MediaBinWidget(QWidget):
         if item.media_type == MediaType.VIDEO:
             detail = f"{item.width}x{item.height} | {item.fps:.0f}fps | {dur_str}"
         elif item.media_type == MediaType.AUDIO:
-            detail = f"Audio | {item.sample_rate}Hz | {dur_str}"
+            detail = f"Ses | {item.sample_rate}Hz | {dur_str}"
         elif item.media_type == MediaType.IMAGE:
-            detail = f"Image | {item.width}x{item.height}"
+            detail = f"Görsel | {item.width}x{item.height}"
         else:
             detail = dur_str
 
@@ -214,8 +214,8 @@ class MediaBinWidget(QWidget):
         media_id = item.data(Qt.ItemDataRole.UserRole)
         menu = QMenu(self)
 
-        act_add = menu.addAction("Add to Timeline")
-        act_remove = menu.addAction("Remove from Project")
+        act_add = menu.addAction("Zaman Çizgisine Ekle")
+        act_remove = menu.addAction("Projeden Kaldır")
 
         action = menu.exec(self.list_widget.mapToGlobal(pos))
         if action == act_add:

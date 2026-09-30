@@ -53,14 +53,14 @@ class TransportBar(QWidget):
 
         # Step back
         self.btn_prev = QPushButton("⏮")
-        self.btn_prev.setToolTip("Previous Frame (Left Arrow)")
+        self.btn_prev.setToolTip("Önceki Kare (Sol Ok)")
         self.btn_prev.setFixedWidth(36)
         self.btn_prev.clicked.connect(self.prev_frame_requested.emit)
         layout.addWidget(self.btn_prev)
 
         # Stop
         self.btn_stop = QPushButton("⏹")
-        self.btn_stop.setToolTip("Stop")
+        self.btn_stop.setToolTip("Durdur")
         self.btn_stop.setFixedWidth(36)
         self.btn_stop.clicked.connect(self.stop_requested.emit)
         layout.addWidget(self.btn_stop)
@@ -68,14 +68,14 @@ class TransportBar(QWidget):
         # Play / Pause toggle
         self.btn_play = QPushButton("▶")
         self.btn_play.setObjectName("PrimaryButton")
-        self.btn_play.setToolTip("Play / Pause (Space)")
+        self.btn_play.setToolTip("Oynat / Duraklat (Boşluk)")
         self.btn_play.setFixedWidth(44)
         self.btn_play.clicked.connect(self._toggle_play)
         layout.addWidget(self.btn_play)
 
         # Step forward
         self.btn_next = QPushButton("⏭")
-        self.btn_next.setToolTip("Next Frame (Right Arrow)")
+        self.btn_next.setToolTip("Sonraki Kare (Sağ Ok)")
         self.btn_next.setFixedWidth(36)
         self.btn_next.clicked.connect(self.next_frame_requested.emit)
         layout.addWidget(self.btn_next)
