@@ -26,6 +26,11 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="0.3.0" date="2026-09-30">
+      <description>
+        <p>triM. v0.3.0 introduces timeline markers with magnetic snapping, keyframe animation for transform and opacity properties, and variable clip playback speed and reverse.</p>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-09-30">
       <description>
         <p>triM. v0.2.0 introduces multi-clip selection and batch manipulation, track mixer with mute/solo controls, audio detach workflow, and Q/W ripple trim shortcuts.</p>

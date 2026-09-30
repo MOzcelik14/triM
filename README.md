@@ -56,11 +56,11 @@ Built on Python 3.12, PySide6 (Qt6), FFmpeg, and PyAV, it provides a clean, prec
 
 #### Option 1: Ubuntu / Debian / Linux Mint / Pop!_OS (.deb Package)
 
-Download the prebuilt `.deb` package (for Ubuntu, Debian, Linux Mint, Pop!_OS, and other Debian-based distributions) from the [v0.2.0 Release](https://github.com/MOzcelik14/triM/releases/tag/v0.2.0):
+Download the prebuilt `.deb` package (for Ubuntu, Debian, Linux Mint, Pop!_OS, and other Debian-based distributions) from the [v0.3.0 Release](https://github.com/MOzcelik14/triM/releases/tag/v0.3.0):
 
 ```bash
-wget https://github.com/MOzcelik14/triM/releases/download/v0.2.0/trim_0.2.0_all.deb
-sudo apt install ./trim_0.2.0_all.deb
+wget https://github.com/MOzcelik14/triM/releases/download/v0.3.0/trim_0.3.0_all.deb
+sudo apt install ./trim_0.3.0_all.deb
 ```
 
 Once installed, launch `triM.` from your desktop application launcher (under *Sound & Video*) or run:
@@ -162,6 +162,9 @@ triM/
 ### Roadmap
 
 - [x] Multi-track video and audio timeline
+- [x] Timeline markers with magnetic snapping (`M` shortcut)
+- [x] Keyframe animation for position, scale, and opacity
+- [x] Variable clip playback speed and reverse (`0.1x` to `10.0x`)
 - [x] Hardware-assisted PyAV playback engine & audio sync
 - [x] Waveform extraction and interactive fade handles
 - [x] Real-time stereo VU meter with peak hold
@@ -173,7 +176,6 @@ triM/
 - [x] Audio detach ("Detach Audio") workflow
 - [x] Ripple trim shortcuts (Q/W)
 - [ ] Flatpak package distribution (`io.github.mozcelik14.triM`)
-- [ ] Keyframe transform animation (Position, Scale, Opacity)
 - [ ] 4K proxy media workflow for resource-constrained hardware
 
 ### Contributing
@@ -222,11 +224,11 @@ Python 3.12, PySide6 (Qt6), FFmpeg ve PyAV altyapısıyla geliştirilmiştir. Ş
 
 #### Yöntem 1: Ubuntu / Debian / Linux Mint / Pop!_OS (.deb Paketi)
 
-Ubuntu, Debian, Linux Mint, Pop!_OS ve Debian tabanlı tüm dağıtımlar için hazır `.deb` paketini [v0.2.0 Sürüm Sayfası](https://github.com/MOzcelik14/triM/releases/tag/v0.2.0) üzerinden indirin:
+Ubuntu, Debian, Linux Mint, Pop!_OS ve Debian tabanlı tüm dağıtımlar için hazır `.deb` paketini [v0.3.0 Sürüm Sayfası](https://github.com/MOzcelik14/triM/releases/tag/v0.3.0) üzerinden indirin:
 
 ```bash
-wget https://github.com/MOzcelik14/triM/releases/download/v0.2.0/trim_0.2.0_all.deb
-sudo apt install ./trim_0.2.0_all.deb
+wget https://github.com/MOzcelik14/triM/releases/download/v0.3.0/trim_0.3.0_all.deb
+sudo apt install ./trim_0.3.0_all.deb
 ```
 
 Kurulum tamamlandığında uygulama menünüzden (*Ses ve Video* altında) veya terminalden doğrudan çalıştırabilirsiniz:
@@ -328,6 +330,9 @@ triM/
 ### Geliştirme Yol Haritası
 
 - [x] Çok kanallı video ve ses zaman çizgisi
+- [x] Zaman çizgisi işaretçileri (markers) ve manyetik yakalama (`M` kısayolu)
+- [x] Konum, ölçek ve opaklık için Keyframe animasyonu
+- [x] Değişken klip hızı ve geriye doğru oynatma (`0.1x` - `10.0x`)
 - [x] Donanım destekli PyAV oynatma motoru ve ses senkronu
 - [x] Dalga formu çıkarımı ve interaktif fade kolları
 - [x] Canlı stereo VU metre ve tepe göstergesi
@@ -339,7 +344,6 @@ triM/
 - [x] Sesi Ayır (Detach Audio) iş akışı
 - [x] Q/W ripple kırpma kısayolları
 - [ ] Flatpak paket dağıtımı (`io.github.mozcelik14.triM`)
-- [ ] Konum, ölçek ve opaklık için Keyframe animasyonu
 - [ ] Düşük donanımlı sistemler için 4K proxy akışı
 
 ### Katkıda Bulunma

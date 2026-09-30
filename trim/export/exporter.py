@@ -19,6 +19,25 @@ class TimelineExporter:
     """Builds FFmpeg commands for rendering a timeline."""
 
     @staticmethod
+    def get_atempo_filters(speed: float) -> list[str]:
+        """Generates chained atempo filters for speeds outside [0.5, 2.0]."""
+        filters: list[str] = []
+        curr = float(speed)
+        if curr > 1.0:
+            while curr > 2.0:
+                filters.append("atempo=2.0")
+                curr /= 2.0
+            if abs(curr - 1.0) > 0.001:
+                filters.append(f"atempo={curr:.4f}")
+        elif curr < 1.0:
+            while curr < 0.5:
+                filters.append("atempo=0.5")
+                curr /= 0.5
+            if abs(curr - 1.0) > 0.001:
+                filters.append(f"atempo={curr:.4f}")
+        return filters
+
+    @staticmethod
     def build_export_pipeline(
         project: Project,
         preset: ExportPreset,
@@ -109,16 +128,26 @@ class TimelineExporter:
                 input_idx += 2
             else:
                 # Video file with in-point and duration
+                # Account for speed: to fill 'dur' seconds on timeline at speed 'clip.speed',
+                # we need 'dur * clip.speed' seconds of source material.
+                src_dur = dur * clip.speed
                 cmd_inputs.extend([
-                    "-ss", f"{src_in:.4f}", "-t", f"{dur:.4f}", "-i", media_item.file_path,
+                    "-ss", f"{src_in:.4f}", "-t", f"{src_dur:.4f}", "-i", media_item.file_path,
                 ])
-                v_filters = [
+                v_filters = []
+                if clip.reverse:
+                    v_filters.append("reverse")
+                if abs(clip.speed - 1.0) > 0.001:
+                    v_filters.append(f"setpts=(1.0/{clip.speed:.4f})*(PTS-STARTPTS)")
+                else:
+                    v_filters.append("setpts=PTS-STARTPTS")
+
+                v_filters.extend([
                     f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease",
                     f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2",
                     "setsar=1",
                     f"fps={out_fps}",
-                    "setpts=PTS-STARTPTS",
-                ]
+                ])
                 if clip.brightness != 0.0 or clip.contrast != 1.0 or clip.saturation != 1.0:
                     v_filters.append(f"eq=brightness={clip.brightness:.3f}:contrast={clip.contrast:.3f}:saturation={clip.saturation:.3f}")
                 if clip.fade_in > 0:
@@ -142,8 +171,13 @@ class TimelineExporter:
                 if media_item.audio_codec and not is_audio_muted:
                     a_filters = [
                         "aformat=sample_rates=48000:channel_layouts=stereo",
-                        "asetpts=PTS-STARTPTS",
                     ]
+                    if clip.reverse:
+                        a_filters.append("areverse")
+                    a_filters.append("asetpts=PTS-STARTPTS")
+                    if abs(clip.speed - 1.0) > 0.001:
+                        a_filters.extend(TimelineExporter.get_atempo_filters(clip.speed))
+
                     if abs(eff_volume - 1.0) > 0.01:
                         a_filters.append(f"volume={eff_volume:.4f}")
                     if clip.fade_in > 0:

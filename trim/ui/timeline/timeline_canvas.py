@@ -23,6 +23,7 @@ from PySide6.QtWidgets import QMenu, QWidget
 
 from trim.commands.timeline_commands import (
     AddClipCommand,
+    ChangeClipSpeedCommand,
     DetachAudioCommand,
     MoveClipCommand,
     MoveMultipleClipsCommand,
@@ -38,6 +39,7 @@ from trim.core.project import Project
 from trim.core.timeline import TimelineModel
 from trim.core.track import Track, TrackType
 from trim.media.waveform import WaveformGenerator, WaveformWorker
+from trim.ui.dialogs.speed_dialog import SpeedDialog
 from trim.ui.project_bin.media_bin_widget import MIME_MEDIA_ID
 import numpy as np
 
@@ -107,6 +109,7 @@ class TimelineCanvas(QWidget):
         self.timeline.clip_removed.connect(self._on_model_changed)
         self.timeline.clip_modified.connect(self._on_model_changed)
         self.timeline.tracks_changed.connect(self._on_model_changed)
+        self.timeline.markers_changed.connect(self._on_model_changed)
 
         self._update_geometry()
 
@@ -545,6 +548,10 @@ class TimelineCanvas(QWidget):
             }
         """)
 
+        # Speed and Duration
+        act_speed = menu.addAction("⚡ Hız ve Süre (Speed & Duration)...")
+        act_speed.triggered.connect(lambda: self.prompt_speed_for_clip(track.id, clip.id))
+
         # Detach audio (for video tracks)
         if track.track_type == TrackType.VIDEO:
             act_detach = menu.addAction("🔊 Sesi Ayır (Detach Audio)")
@@ -562,6 +569,27 @@ class TimelineCanvas(QWidget):
         act_ripple.triggered.connect(self.ripple_delete_selected)
 
         menu.exec(event.globalPos())
+
+    def prompt_speed_for_clip(self, track_id: str, clip_id: str) -> None:
+        track = self.timeline.get_track(track_id)
+        if not track:
+            return
+        clip = track.get_clip(clip_id)
+        if not clip:
+            return
+        dlg = SpeedDialog(
+            current_speed=clip.speed,
+            reverse=clip.reverse,
+            current_duration=clip.duration,
+            parent=self,
+        )
+        if dlg.exec():
+            new_speed, new_reverse = dlg.get_values()
+            if abs(new_speed - clip.speed) > 1e-4 or new_reverse != clip.reverse:
+                cmd = ChangeClipSpeedCommand(self.timeline, track_id, clip_id, new_speed, new_reverse)
+                self.undo_stack.push(cmd)
+                self.project.mark_dirty()
+                self.update()
 
     def detach_audio_for_clip(self, track_id: str, clip_id: str) -> None:
         cmd = DetachAudioCommand(self.timeline, track_id, clip_id)
@@ -863,11 +891,54 @@ class TimelineCanvas(QWidget):
                     clip_rect.height() - 8,
                 )
                 display_name = clip.name or "Clip"
+                speed_str = ""
+                if abs(clip.speed - 1.0) > 0.01 or clip.reverse:
+                    parts = []
+                    if abs(clip.speed - 1.0) > 0.01:
+                        parts.append(f"{clip.speed:g}x")
+                    if clip.reverse:
+                        parts.append("REV")
+                    speed_str = f" [{' '.join(parts)}]"
+
+                kf_str = " ◆" if clip.has_keyframes() else ""
                 painter.drawText(
                     text_rect,
                     Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
-                    f"{display_name}  [{dur_str}]",
+                    f"{display_name}  [{dur_str}]{speed_str}{kf_str}",
                 )
+
+                # Draw keyframe markers on the clip
+                if clip.has_keyframes():
+                    painter.save()
+                    painter.setClipPath(path)
+                    drawn_times: set[float] = set()
+                    for kfs in clip.keyframes.values():
+                        for kf in kfs:
+                            t_rounded = round(kf.time, 3)
+                            if t_rounded in drawn_times:
+                                continue
+                            drawn_times.add(t_rounded)
+                            kx = clip_rect.left() + kf.time * self.pixels_per_second
+                            ky = clip_rect.bottom() - 7
+                            diamond = QPainterPath()
+                            diamond.moveTo(kx, ky - 4)
+                            diamond.lineTo(kx + 4, ky)
+                            diamond.lineTo(kx, ky + 4)
+                            diamond.lineTo(kx - 4, ky)
+                            diamond.closeSubpath()
+                            painter.fillPath(diamond, QBrush(QColor(224, 122, 56)))
+                            painter.setPen(QPen(QColor(20, 20, 25), 0.8))
+                            painter.drawPath(diamond)
+                    painter.restore()
+
+        # Draw vertical marker guidelines across canvas
+        for marker in self.timeline.markers:
+            mx = int(marker.time * self.pixels_per_second)
+            if 0 <= mx <= self.width():
+                m_color = QColor(marker.color)
+                m_color.setAlpha(120)
+                painter.setPen(QPen(m_color, 1.0, Qt.PenStyle.DashLine))
+                painter.drawLine(mx, 0, mx, self.height())
 
         # Draw vertical Playhead line across the entire canvas height
         ph_x = self._current_time * self.pixels_per_second

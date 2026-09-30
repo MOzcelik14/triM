@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -30,6 +31,7 @@ class InspectorWidget(QWidget):
         self.project = project
         self._current_track: Optional[Track] = None
         self._current_clip: Optional[Clip] = None
+        self._current_time: float = 0.0
         self._updating_ui: bool = False
 
         self.setMinimumWidth(240)
@@ -93,23 +95,38 @@ class InspectorWidget(QWidget):
         self.form_layout.addWidget(self.grp_timing)
 
         # 3. Video Transform Group
-        self.grp_transform = QGroupBox("Video Dönüşümü")
+        self.grp_transform = QGroupBox("Video Dönüşümü & Keyframe")
         trans_layout = QFormLayout(self.grp_transform)
         trans_layout.setSpacing(6)
+
+        def _make_kf_field(spinbox: QDoubleSpinBox, prop: str) -> tuple[QHBoxLayout, QPushButton]:
+            box = QHBoxLayout()
+            box.setSpacing(4)
+            box.setContentsMargins(0, 0, 0, 0)
+            box.addWidget(spinbox)
+            btn = QPushButton("◆")
+            btn.setFixedSize(22, 22)
+            btn.setToolTip(f"{prop} için Keyframe Ekle/Sil")
+            btn.setStyleSheet("QPushButton { padding: 0; font-size: 11px; color: #707080; }")
+            btn.clicked.connect(lambda: self._on_toggle_keyframe(prop, spinbox.value(), btn))
+            box.addWidget(btn)
+            return box, btn
 
         self.spn_pos_x = QDoubleSpinBox()
         self.spn_pos_x.setRange(-3840.0, 3840.0)
         self.spn_pos_x.setSingleStep(10.0)
         self.spn_pos_x.setSuffix(" px")
         self.spn_pos_x.valueChanged.connect(self._on_transform_changed)
-        trans_layout.addRow("Konum X:", self.spn_pos_x)
+        box_pos_x, self.btn_kf_pos_x = _make_kf_field(self.spn_pos_x, "pos_x")
+        trans_layout.addRow("Konum X:", box_pos_x)
 
         self.spn_pos_y = QDoubleSpinBox()
         self.spn_pos_y.setRange(-2160.0, 2160.0)
         self.spn_pos_y.setSingleStep(10.0)
         self.spn_pos_y.setSuffix(" px")
         self.spn_pos_y.valueChanged.connect(self._on_transform_changed)
-        trans_layout.addRow("Konum Y:", self.spn_pos_y)
+        box_pos_y, self.btn_kf_pos_y = _make_kf_field(self.spn_pos_y, "pos_y")
+        trans_layout.addRow("Konum Y:", box_pos_y)
 
         self.spn_scale = QDoubleSpinBox()
         self.spn_scale.setRange(0.05, 10.0)
@@ -117,16 +134,46 @@ class InspectorWidget(QWidget):
         self.spn_scale.setValue(1.0)
         self.spn_scale.setSuffix("x")
         self.spn_scale.valueChanged.connect(self._on_transform_changed)
-        trans_layout.addRow("Ölçek:", self.spn_scale)
+        box_scale, self.btn_kf_scale = _make_kf_field(self.spn_scale, "scale")
+        trans_layout.addRow("Ölçek:", box_scale)
 
         self.spn_opacity = QDoubleSpinBox()
         self.spn_opacity.setRange(0.0, 1.0)
         self.spn_opacity.setSingleStep(0.05)
         self.spn_opacity.setValue(1.0)
         self.spn_opacity.valueChanged.connect(self._on_transform_changed)
-        trans_layout.addRow("Opaklık:", self.spn_opacity)
+        box_opacity, self.btn_kf_opacity = _make_kf_field(self.spn_opacity, "opacity")
+        trans_layout.addRow("Opaklık:", box_opacity)
 
         self.form_layout.addWidget(self.grp_transform)
+
+        # 3.5 Speed & Direction Group
+        self.grp_speed = QGroupBox("Hız ve Yön")
+        speed_layout = QFormLayout(self.grp_speed)
+        speed_layout.setSpacing(6)
+
+        self.spn_speed = QDoubleSpinBox()
+        self.spn_speed.setRange(0.1, 10.0)
+        self.spn_speed.setSingleStep(0.1)
+        self.spn_speed.setValue(1.0)
+        self.spn_speed.setSuffix("x")
+        self.spn_speed.valueChanged.connect(self._on_speed_changed)
+        speed_layout.addRow("Hız:", self.spn_speed)
+
+        preset_box = QHBoxLayout()
+        preset_box.setSpacing(4)
+        for p in [0.5, 1.0, 2.0]:
+            p_btn = QPushButton(f"{p}x")
+            p_btn.setStyleSheet("padding: 2px 6px; font-size: 11px;")
+            p_btn.clicked.connect(lambda _, val=p: self.spn_speed.setValue(val))
+            preset_box.addWidget(p_btn)
+        speed_layout.addRow("Hazır:", preset_box)
+
+        self.chk_reverse = QCheckBox("Geriye Oynat (Reverse)")
+        self.chk_reverse.toggled.connect(self._on_reverse_changed)
+        speed_layout.addRow("", self.chk_reverse)
+
+        self.form_layout.addWidget(self.grp_speed)
 
         # 4. Color & Filters Group
         self.grp_color = QGroupBox("Renk ve Filtreler")
@@ -280,6 +327,10 @@ class InspectorWidget(QWidget):
         self.spn_volume.setValue(clip.volume)
         self.chk_muted.setChecked(clip.muted)
 
+        self.spn_speed.setValue(getattr(clip, "speed", 1.0))
+        self.chk_reverse.setChecked(getattr(clip, "reverse", False))
+        self._update_kf_buttons()
+
         self._updating_ui = False
 
     def _on_name_changed(self) -> None:
@@ -357,3 +408,56 @@ class InspectorWidget(QWidget):
         self.project.mark_dirty()
         assert self._current_track is not None
         self.project.timeline.notify_clip_modified(self._current_track.id, self._current_clip.id)
+
+    def set_current_time(self, time: float) -> None:
+        """Updates inspector current playhead time reference."""
+        self._current_time = max(0.0, time)
+
+    def _update_kf_buttons(self) -> None:
+        if not self._current_clip:
+            return
+        for prop, btn in [
+            ("pos_x", self.btn_kf_pos_x),
+            ("pos_y", self.btn_kf_pos_y),
+            ("scale", self.btn_kf_scale),
+            ("opacity", self.btn_kf_opacity),
+        ]:
+            if self._current_clip.has_keyframes(prop):
+                btn.setStyleSheet("QPushButton { padding: 0; font-size: 11px; color: #e07a38; font-weight: bold; }")
+            else:
+                btn.setStyleSheet("QPushButton { padding: 0; font-size: 11px; color: #707080; }")
+
+    def _on_toggle_keyframe(self, prop: str, value: float, btn: QPushButton) -> None:
+        if not self._current_clip or not self._current_track:
+            return
+        # Calculate clip-relative time from current timeline time
+        clip_rel_time = max(0.0, min(self._current_clip.duration, self._current_time - self._current_clip.timeline_in))
+        # Toggle: if keyframe exists around clip_rel_time, remove it; else add it
+        removed = self._current_clip.remove_keyframe(prop, clip_rel_time, tolerance=0.04)
+        if not removed:
+            self._current_clip.add_keyframe(prop, clip_rel_time, value)
+        self.project.mark_dirty()
+        self.project.timeline.notify_clip_modified(self._current_track.id, self._current_clip.id)
+        self._update_kf_buttons()
+
+    def _on_speed_changed(self) -> None:
+        if self._updating_ui or not self._current_clip or not self._current_track:
+            return
+        new_speed = self.spn_speed.value()
+        self._current_clip.speed = new_speed
+        source_dur = (self._current_clip.source_out or (self._current_clip.source_in + self._current_clip.duration)) - self._current_clip.source_in
+        new_dur = max(0.04, source_dur / new_speed)
+        self._current_clip.timeline_out = self._current_clip.timeline_in + new_dur
+        self.lbl_duration.setText(f"{self._current_clip.duration:.2f}s")
+        self.project.mark_dirty()
+        self.project.timeline.notify_clip_modified(self._current_track.id, self._current_clip.id)
+        self.project.timeline.tracks_changed.emit()
+        self.project.timeline.duration_changed.emit(self.project.timeline.duration)
+
+    def _on_reverse_changed(self) -> None:
+        if self._updating_ui or not self._current_clip or not self._current_track:
+            return
+        self._current_clip.reverse = self.chk_reverse.isChecked()
+        self.project.mark_dirty()
+        self.project.timeline.notify_clip_modified(self._current_track.id, self._current_clip.id)
+

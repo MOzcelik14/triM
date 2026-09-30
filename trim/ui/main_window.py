@@ -22,11 +22,14 @@ from PySide6.QtWidgets import (
 from trim import __version__
 from trim.commands.timeline_commands import (
     AddClipCommand,
+    AddMarkerCommand,
+    RemoveMarkerCommand,
     RippleTrimHeadCommand,
     RippleTrimTailCommand,
 )
 from trim.core.autosave import AutosaveManager
 from trim.core.clip import Clip
+from trim.core.marker import Marker
 from trim.core.project import Project, ProjectSettings
 from trim.core.track import Track, TrackType
 from trim.media.playback import PlaybackEngine
@@ -287,6 +290,25 @@ class MainWindow(QMainWindow):
         sc_l = QShortcut(QKeySequence(Qt.Key.Key_L), self)
         sc_l.activated.connect(self._on_shuttle_forward)
 
+        # M: Marker (Add / Toggle Marker at playhead)
+        self.sc_m = QShortcut(QKeySequence(Qt.Key.Key_M), self)
+        self.sc_m.activated.connect(self._on_toggle_marker)
+
+    def _on_toggle_marker(self) -> None:
+        cur_time = self.playback_engine.current_time
+        existing = self.project.timeline.get_marker_at(cur_time, threshold=0.15)
+        if existing:
+            cmd = RemoveMarkerCommand(self.project.timeline, existing.id)
+            self.undo_stack.push(cmd)
+            self.project.mark_dirty()
+            self.statusBar().showMessage(f"İşaretçi silindi ({self.project.timeline.time_to_timecode(cur_time)})", 2000)
+        else:
+            marker = Marker(time=cur_time)
+            cmd = AddMarkerCommand(self.project.timeline, marker)
+            self.undo_stack.push(cmd)
+            self.project.mark_dirty()
+            self.statusBar().showMessage(f"İşaretçi eklendi ({self.project.timeline.time_to_timecode(cur_time)})", 2000)
+
     def _on_ripple_trim_head(self) -> None:
         cur_time = self.playback_engine.current_time
         target_track = None
@@ -346,6 +368,7 @@ class MainWindow(QMainWindow):
         # Playback to Monitor & Timeline
         self.playback_engine.frame_ready.connect(self.monitor.set_frame)
         self.playback_engine.position_changed.connect(self.timeline_widget.set_current_time)
+        self.playback_engine.position_changed.connect(self.inspector.set_current_time)
 
         # Audio VU meter levels & Playback speed
         self.playback_engine.audio_levels_ready.connect(self.vu_meter.set_levels)

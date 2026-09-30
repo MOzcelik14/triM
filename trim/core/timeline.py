@@ -7,6 +7,7 @@ import uuid
 from PySide6.QtCore import QObject, Signal
 
 from .clip import Clip
+from .marker import Marker
 from .track import Track, TrackType
 
 
@@ -18,6 +19,7 @@ class TimelineModel(QObject):
     clip_modified = Signal(str, str)  # track_id, clip_id
     tracks_changed = Signal()
     duration_changed = Signal(float)
+    markers_changed = Signal()
 
     def __init__(
         self,
@@ -31,6 +33,7 @@ class TimelineModel(QObject):
         self.width = width
         self.height = height
         self.tracks: list[Track] = []
+        self.markers: list[Marker] = []
 
     @property
     def duration(self) -> float:
@@ -112,14 +115,51 @@ class TimelineModel(QObject):
                 clips.append((track, clip))
         return clips
 
+    def add_marker(self, marker_or_time: Marker | float, name: str = "", color: str = "#E07A38") -> Marker:
+        """Adds a marker and emits markers_changed."""
+        if isinstance(marker_or_time, Marker):
+            m = marker_or_time
+        else:
+            m = Marker(time=float(marker_or_time), name=name, color=color)
+        self.markers.append(m)
+        self.markers.sort(key=lambda x: x.time)
+        self.markers_changed.emit()
+        return m
+
+    def remove_marker(self, marker_id: str) -> Optional[Marker]:
+        """Removes a marker by id and emits markers_changed."""
+        for i, m in enumerate(self.markers):
+            if m.id == marker_id:
+                removed = self.markers.pop(i)
+                self.markers_changed.emit()
+                return removed
+        return None
+
+    def get_marker_at(
+        self,
+        time: float,
+        threshold: float = 0.1,
+        tolerance: Optional[float] = None,
+    ) -> Optional[Marker]:
+        """Finds a marker within threshold seconds of time."""
+        th = tolerance if tolerance is not None else threshold
+        for m in self.markers:
+            if abs(m.time - time) <= th:
+                return m
+        return None
+
     def snap_time(
         self,
         target_time: float,
         threshold: float = 0.15,
         ignore_clip_id: Optional[str] = None,
     ) -> float:
-        """Finds closest snap point (clip edges, 0.0) within threshold."""
+        """Finds closest snap point (clip edges, markers, 0.0) within threshold."""
         snap_points = [0.0]
+        # Include markers as magnetic snap targets
+        for marker in self.markers:
+            snap_points.append(marker.time)
+
         for track in self.tracks:
             for clip in track.clips:
                 if ignore_clip_id and clip.id == ignore_clip_id:
@@ -185,6 +225,7 @@ class TimelineModel(QObject):
             "width": self.width,
             "height": self.height,
             "tracks": [t.to_dict() for t in self.tracks],
+            "markers": [m.to_dict() for m in self.markers],
         }
 
     @classmethod
@@ -197,4 +238,6 @@ class TimelineModel(QObject):
         )
         for td in data.get("tracks", []):
             model.tracks.append(Track.from_dict(td))
+        for md in data.get("markers", []):
+            model.markers.append(Marker.from_dict(md))
         return model

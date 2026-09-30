@@ -27,6 +27,8 @@ class TimeRuler(QWidget):
         self._is_scrubbing: bool = False
         self.setFixedHeight(28)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setMouseTracking(True)
+        self.timeline.markers_changed.connect(self.update)
 
     def set_pixels_per_second(self, pps: float) -> None:
         self.pixels_per_second = max(5.0, min(1000.0, pps))
@@ -44,6 +46,19 @@ class TimeRuler(QWidget):
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
         if self._is_scrubbing:
             self._seek_from_x(event.position().x())
+        else:
+            x = event.position().x()
+            hovered_marker = None
+            for m in self.timeline.markers:
+                if abs(m.time * self.pixels_per_second - x) <= 6:
+                    hovered_marker = m
+                    break
+            if hovered_marker:
+                tc = self.timeline.time_to_timecode(hovered_marker.time)
+                name = hovered_marker.name or "İşaretçi"
+                self.setToolTip(f"{name} [{tc}]")
+            else:
+                self.setToolTip("")
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -111,6 +126,20 @@ class TimeRuler(QWidget):
             painter.drawText(x + 4, 14, short_tc)
 
             cur_t += step_sec
+
+        # Draw Markers
+        for marker in self.timeline.markers:
+            mx = marker.time * pps
+            marker_color = QColor(marker.color)
+            m_poly = QPolygonF([
+                QPointF(mx, 4),
+                QPointF(mx + 5, 11),
+                QPointF(mx, 18),
+                QPointF(mx - 5, 11),
+            ])
+            painter.setBrush(QBrush(marker_color))
+            painter.setPen(QColor(20, 20, 24))
+            painter.drawPolygon(m_poly)
 
         # Draw Playhead triangle
         ph_x = self._current_time * pps

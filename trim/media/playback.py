@@ -514,7 +514,16 @@ class PlaybackEngine(QObject):
         canvas_h: int,
         current_time: float,
     ) -> None:
-        eff_opacity = max(0.0, min(1.0, clip.opacity))
+        clip_time = max(0.0, current_time - clip.timeline_in)
+
+        # Dynamic / animated properties (using keyframes if available)
+        animated_opacity = clip.get_property_at_time("opacity", clip_time)
+        animated_scale = clip.get_property_at_time("scale", clip_time)
+        animated_pos_x = clip.get_property_at_time("pos_x", clip_time)
+        animated_pos_y = clip.get_property_at_time("pos_y", clip_time)
+        animated_rot = clip.get_property_at_time("rotation", clip_time)
+
+        eff_opacity = max(0.0, min(1.0, animated_opacity))
         dt = current_time - clip.timeline_in
         rem = clip.timeline_out - current_time
 
@@ -544,16 +553,22 @@ class PlaybackEngine(QObject):
         base_w = fw * scale_fit
         base_h = fh * scale_fit
 
-        final_w = base_w * max(0.01, clip.scale)
-        final_h = base_h * max(0.01, clip.scale)
+        final_w = base_w * max(0.01, animated_scale)
+        final_h = base_h * max(0.01, animated_scale)
 
-        final_x = (canvas_w - final_w) / 2.0 + clip.pos_x
-        final_y = (canvas_h - final_h) / 2.0 + clip.pos_y
+        final_x = (canvas_w - final_w) / 2.0 + animated_pos_x
+        final_y = (canvas_h - final_h) / 2.0 + animated_pos_y
 
         painter.save()
         painter.setOpacity(eff_opacity)
         dest_rect = QRectF(final_x, final_y, final_w, final_h)
-        painter.drawImage(dest_rect, frame_img)
+
+        if abs(animated_rot) > 0.01:
+            painter.translate(dest_rect.center())
+            painter.rotate(animated_rot)
+            painter.drawImage(QRectF(-final_w / 2.0, -final_h / 2.0, final_w, final_h), frame_img)
+        else:
+            painter.drawImage(dest_rect, frame_img)
 
         # Dip to White overlay transition
         if clip.transition_in == "dip_white" and fade_in_factor < 1.0:

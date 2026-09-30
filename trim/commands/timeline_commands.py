@@ -5,6 +5,7 @@ from typing import Optional
 from PySide6.QtGui import QUndoCommand
 
 from trim.core.clip import Clip
+from trim.core.marker import Marker
 from trim.core.timeline import TimelineModel
 from trim.core.track import Track, TrackType
 
@@ -516,3 +517,122 @@ class RippleTrimTailCommand(QUndoCommand):
             track.sort_clips()
             self.timeline.tracks_changed.emit()
             self.timeline.duration_changed.emit(self.timeline.duration)
+
+
+class AddMarkerCommand(QUndoCommand):
+    """Command to add a timeline marker."""
+
+    def __init__(
+        self,
+        timeline: TimelineModel,
+        marker_or_time: Marker | float,
+        name: str = "",
+        color: str = "#E07A38",
+        description: str = "İşaretçi Ekle",
+    ) -> None:
+        super().__init__(description)
+        self.timeline = timeline
+        if isinstance(marker_or_time, Marker):
+            self.marker = marker_or_time
+        else:
+            self.marker = Marker(time=float(marker_or_time), name=name, color=color)
+
+    @property
+    def marker_id(self) -> str:
+        return self.marker.id
+
+    def redo(self) -> None:
+        self.timeline.add_marker(self.marker)
+
+    def undo(self) -> None:
+        self.timeline.remove_marker(self.marker.id)
+
+
+class RemoveMarkerCommand(QUndoCommand):
+    """Command to remove a timeline marker."""
+
+    def __init__(
+        self,
+        timeline: TimelineModel,
+        marker_id: str,
+        description: str = "İşaretçiyi Sil",
+    ) -> None:
+        super().__init__(description)
+        self.timeline = timeline
+        self.marker_id = marker_id
+        self._saved_marker: Optional[Marker] = None
+
+    def redo(self) -> None:
+        self._saved_marker = self.timeline.remove_marker(self.marker_id)
+
+    def undo(self) -> None:
+        if self._saved_marker:
+            self.timeline.add_marker(self._saved_marker)
+
+
+class ChangeClipSpeedCommand(QUndoCommand):
+    """Command to change clip playback speed and reverse direction."""
+
+    def __init__(
+        self,
+        timeline: TimelineModel,
+        track_id: str,
+        clip_id: str,
+        new_speed: float,
+        new_reverse: bool = False,
+        description: str = "Klip Hızını Değiştir",
+    ) -> None:
+        super().__init__(description)
+        self.timeline = timeline
+        self.track_id = track_id
+        self.clip_id = clip_id
+        self.new_speed = max(0.1, min(10.0, new_speed))
+        self.new_reverse = new_reverse
+
+        self.old_speed: float = 1.0
+        self.old_reverse: bool = False
+        self.old_timeline_out: float = 0.0
+        self.new_timeline_out: float = 0.0
+
+    def redo(self) -> None:
+        track = self.timeline.get_track_by_id(self.track_id)
+        if not track:
+            return
+        clip = track.get_clip_by_id(self.clip_id)
+        if not clip:
+            return
+
+        self.old_speed = getattr(clip, "speed", 1.0)
+        self.old_reverse = getattr(clip, "reverse", False)
+        self.old_timeline_out = clip.timeline_out
+
+        source_dur = (clip.source_out or (clip.source_in + clip.duration)) - clip.source_in
+        new_dur = max(0.04, source_dur / self.new_speed)
+        self.new_timeline_out = clip.timeline_in + new_dur
+
+        clip.speed = self.new_speed
+        clip.reverse = self.new_reverse
+        clip.timeline_out = self.new_timeline_out
+
+        track.sort_clips()
+        self.timeline.notify_clip_modified(self.track_id, self.clip_id)
+        self.timeline.tracks_changed.emit()
+        self.timeline.duration_changed.emit(self.timeline.duration)
+
+    def undo(self) -> None:
+        track = self.timeline.get_track_by_id(self.track_id)
+        if not track:
+            return
+        clip = track.get_clip_by_id(self.clip_id)
+        if not clip:
+            return
+
+        clip.speed = self.old_speed
+        clip.reverse = self.old_reverse
+        clip.timeline_out = self.old_timeline_out
+
+        track.sort_clips()
+        self.timeline.notify_clip_modified(self.track_id, self.clip_id)
+        self.timeline.tracks_changed.emit()
+        self.timeline.duration_changed.emit(self.timeline.duration)
+
