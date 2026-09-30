@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>triM. — A Lightweight Non-Linear Video Editor for Linux</title>
+  
+  <meta name="description" content="A fast, modern, native non-linear video editor for Linux. Built with Python 3.12, Qt6/PySide6, FFmpeg, and PyAV. No Electron bloat.">
+  <meta name="author" content="M. Özçelik">
+  <meta name="theme-color" content="#151518">
+  
+  <!-- Canonical & Open Graph -->
+  <link rel="canonical" href="https://mozcelik14.github.io/triM/">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://mozcelik14.github.io/triM/">
+  <meta property="og:title" content="triM. — Modern Non-Linear Video Editor for Linux">
+  <meta property="og:description" content="Fast, native, precision video editing for Linux desktop. Built with Python, Qt6, PyAV and FFmpeg.">
+  <meta property="og:image" content="./assets/screenshots/trim_timeline.png">
+  
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="triM. — Video Editor for Linux">
+  <meta name="twitter:description" content="A lightweight, native non-linear video editor for Linux with precision audio sync and multi-track timeline.">
+  <meta name="twitter:image" content="./assets/screenshots/trim_timeline.png">
+
+  <!-- Favicons -->
+  <link rel="icon" type="image/svg+xml" href="./assets/icons/io.github.mozcelik14.triM.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="./assets/icons/trim_32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="./assets/icons/trim_16x16.png">
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+  <!-- Site Navigation Header -->
+  <header class="site-header">
+    <div class="nav-container">
+      <a href="./" class="brand-link" aria-label="triM. Homepage">
+        <img src="./assets/branding/logo_wordmark.svg" alt="triM. Logo" class="logo-img" height="28" width="86">
+      </a>
+
+      <nav aria-label="Main Navigation">
+        <ul class="nav-links">
+          <li><a href="#features" data-i18n="nav_features">Features</a></li>
+          <li><a href="#architecture" data-i18n="nav_architecture">Architecture</a></li>
+          <li><a href="#installation" data-i18n="nav_install">Installation</a></li>
+          <li><a href="#roadmap" data-i18n="nav_roadmap">Roadmap</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <!-- Language Switcher -->
+        <div class="lang-switcher" role="group" aria-label="Language selection">
+          <button type="button" class="lang-btn" data-lang="tr" aria-label="Türkçe">TR</button>
+          <button type="button" class="lang-btn active" data-lang="en" aria-label="English">EN</button>
+        </div>
+
+        <!-- GitHub Repository Link -->
+        <a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer" class="icon-btn" aria-label="GitHub Repository">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="container">
+        <div class="hero-pill">
+          <span class="status-indicator"></span>
+          <span data-i18n="hero_badge">v0.1.0 Released — Debian & Linux</span>
+        </div>
+
+        <h1 class="hero-title">
+          <span class="brand-wordmark">tri<span class="bold-m">M</span><span class="accent-dot">.</span></span>
+        </h1>
+
+        <p class="hero-subtitle" data-i18n="hero_subtitle">
+          A lightweight, native non-linear video editor for Linux.
+        </p>
+
+        <p class="hero-description" data-i18n="hero_desc">
+          A streamlined creative desktop experience focused on cutting, trimming, timeline sequencing, and audio synchronization. Built with Python, Qt6, FFmpeg, and PyAV — without cloud lock-in or Electron memory bloat.
+        </p>
+
+        <div class="hero-cta">
+          <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.1.0" class="btn btn-primary">
+            <span data-i18n="cta_download">Download .deb Package</span>
+            <span class="btn-badge">v0.1.0</span>
+          </a>
+          <a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" data-i18n="cta_source">
+            Source Code
+          </a>
+        </div>
+
+        <!-- Terminal Quick Install -->
+        <div class="quick-install">
+          <code><span class="prompt-symbol">$</span>git clone https://github.com/MOzcelik14/triM.git &amp;&amp; cd triM &amp;&amp; ./install.sh</code>
+          <button type="button" class="copy-btn" data-clipboard-text="git clone https://github.com/MOzcelik14/triM.git &amp;&amp; cd triM &amp;&amp; ./install.sh" data-i18n="quick_install_copy">
+            Copy
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- App Showcase / Preview -->
+    <section class="showcase-section" aria-label="Application Showcase">
+      <div class="container">
+        <div class="preview-frame">
+          <div class="preview-topbar">
+            <div class="preview-dots">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <div class="preview-title">triM. — Native Linux Interface</div>
+            <div class="preview-tabs">
+              <button type="button" class="preview-tab-btn active" id="tab-preview-timeline" data-i18n="preview_tab_timeline">
+                Timeline &amp; Editing
+              </button>
+              <button type="button" class="preview-tab-btn" id="tab-preview-empty" data-i18n="preview_tab_empty">
+                Clean Empty State
+              </button>
+            </div>
+          </div>
+          <div class="preview-image-container">
+            <img id="preview-image" src="./assets/screenshots/trim_timeline.png" alt="triM. Timeline and Video Preview Interface" width="1366" height="768" loading="eager">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="section">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-label" data-i18n="feat_section_label">Capabilities</div>
+          <h2 class="section-title" data-i18n="feat_section_title">Fast, Precise, and Solid Editing Tools</h2>
+          <p class="section-lead" data-i18n="feat_section_lead">
+            Essential non-linear editing capabilities focused purely on cutting, arranging, and exporting video without visual clutter.
+          </p>
+        </div>
+
+        <div class="grid-3">
+          <!-- Feature 1 -->
+          <article class="feature-card">
+            <div class="feature-header">
+              <h3 class="feature-title" data-i18n="feat_1_title">Multi-Track Timeline</h3>
+              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
+            </div>
+            <p class="feature-text" data-i18n="feat_1_desc">
+              Independent video and audio tracks with magnetic frame snapping, razor cuts (S), and ripple deletion (Shift+Delete).
+            </p>
+          </article>
+
+          <!-- Feature 2 -->
+          <article class="feature-card">
+            <div class="feature-header">
+              <h3 class="feature-title" data-i18n="feat_2_title">Hardware-Assisted Playback &amp; Sync</h3>
+              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
+            </div>
+            <p class="feature-text" data-i18n="feat_2_desc">
+              Accurate sequential demuxing with PyAV and ffmpeg libav, zero-crackling audio buffer queue, and exact real-time playback.
+            </p>
+          </article>
+
+          <!-- Feature 3 -->
+          <article class="feature-card">
+            <div class="feature-header">
+              <h3 class="feature-title" data-i18n="feat_3_title">Audio Waveforms &amp; Live VU Meter</h3>
+              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
+            </div>
+            <p class="feature-text" data-i18n="feat_3_desc">
+              Multi-threaded peak extraction, persistent caching, and dual-channel dynamic RMS dBFS meters with peak hold.
+            </p>
+          </article>
+
+          <!-- Feature 4 -->
+          <article class="feature-card">
+            <div class="feature-header">
+              <h3 class="feature-title" data-i18n="feat_4_title">Interactive Fade &amp; Transition Handles</h3>
+              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
+            </div>
+            <p class="feature-text" data-i18n="feat_4_desc">
+              Direct clip-level draggable opacity curves, audio gain ramps, and smooth Dip to Black / Dip to White transitions.
+            </p>
+          </article>
+
+          <!-- Feature 5 -->
+          <article class="feature-card">
+            <div class="feature-header">
+              <h3 class="feature-title" data-i18n="feat_5_title">Typography &amp; Title Generator</h3>
+              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
+            </div>
+            <p class="feature-text" data-i18n="feat_5_desc">
+              Native title, subtitle, and lower-third generation with system font selection, alignment flags, and alpha transparency.
+            </p>
+          </article>
+
+          <!-- Feature 6 -->
+          <article class="feature-card">
+            <div class="feature-header">
+              <h3 class="feature-title" data-i18n="feat_6_title">Color Adjustments &amp; Transforms</h3>
+              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
+            </div>
+            <p class="feature-text" data-i18n="feat_6_desc">
+              Live brightness, contrast, and saturation controls, instant black-and-white conversion, and position/scale transforms.
+            </p>
+          </article>
+
+          <!-- Feature 7 -->
+          <article class="feature-card">
+            <div class="feature-header">
+              <h3 class="feature-title" data-i18n="feat_7_title">Background FFmpeg Rendering</h3>
+              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
+            </div>
+            <p class="feature-text" data-i18n="feat_7_desc">
+              Preset-driven resolution and framerate exports, multi-threaded filtergraph execution, and non-blocking background queue.
+            </p>
+          </article>
+
+          <!-- Feature 8 -->
+          <article class="feature-card">
+            <div class="feature-header">
+              <h3 class="feature-title" data-i18n="feat_8_title">Autosave &amp; Crash Recovery</h3>
+              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
+            </div>
+            <p class="feature-text" data-i18n="feat_8_desc">
+              Periodic background state snapshots ensuring immediate one-click project recovery in the event of power or system failure.
+            </p>
+          </article>
+
+          <!-- Feature 9 (Planned) -->
+          <article class="feature-card">
+            <div class="feature-header">
+              <h3 class="feature-title" data-i18n="feat_9_title">Flatpak Distribution</h3>
+              <span class="feature-badge badge-planned" data-i18n="badge_planned">Planned</span>
+            </div>
+            <p class="feature-text" data-i18n="feat_9_desc">
+              AppStream metadata and Flatpak sandbox packaging for one-click installation via Flathub.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Architecture & Engineering Section -->
+    <section id="architecture" class="section">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-label" data-i18n="spec_section_label">Engineering</div>
+          <h2 class="section-title" data-i18n="spec_section_title">True Native Desktop Performance</h2>
+          <p class="section-lead" data-i18n="spec_section_lead">
+            triM. rejects heavy web wrappers. It connects directly to Linux display servers via Qt6 and Wayland.
+          </p>
+        </div>
+
+        <div class="grid-2">
+          <div class="spec-box">
+            <ul class="spec-list">
+              <li class="spec-item">
+                <span class="spec-label" data-i18n="spec_ui">User Interface (GUI)</span>
+                <span class="spec-val" data-i18n="spec_ui_val">PySide6 / Qt6 (Wayland &amp; X11)</span>
+              </li>
+              <li class="spec-item">
+                <span class="spec-label" data-i18n="spec_media">Media Demuxing &amp; Audio</span>
+                <span class="spec-val" data-i18n="spec_media_val">PyAV (FFmpeg C API bindings)</span>
+              </li>
+              <li class="spec-item">
+                <span class="spec-label" data-i18n="spec_render">Render &amp; Filter Engine</span>
+                <span class="spec-val" data-i18n="spec_render_val">FFmpeg CLI filtergraph</span>
+              </li>
+              <li class="spec-item">
+                <span class="spec-label" data-i18n="spec_data">Numerical &amp; Waveforms</span>
+                <span class="spec-val" data-i18n="spec_data_val">NumPy 1.26+</span>
+              </li>
+              <li class="spec-item">
+                <span class="spec-label" data-i18n="spec_app_id">Application ID</span>
+                <span class="spec-val" data-i18n="spec_app_id_val">io.github.mozcelik14.triM</span>
+              </li>
+            </ul>
+          </div>
+
+          <div class="spec-box">
+            <h3 style="font-size: 1.05rem; margin-bottom: 0.8rem; font-weight: 600;">Linux Native Integration</h3>
+            <p style="font-size: 0.88rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 1rem;">
+              Complies with FreeDesktop standards including scalable hicolor icon hierarchy, MIME association for <code>.trim</code> and legacy <code>.cutline</code> files, Wayland fractional scaling, and AppStream cataloging.
+            </p>
+            <div style="font-family: var(--font-mono); font-size: 0.82rem; color: var(--text-muted); background: var(--code-bg); padding: 0.8rem; border-radius: 4px; border: 1px solid var(--border-subtle);">
+              StartupWMClass=triM.<br>
+              Categories=AudioVideo;Video;AudioVideoEditing;
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Installation Section -->
+    <section id="installation" class="section">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-label" data-i18n="install_section_label">Distribution</div>
+          <h2 class="section-title" data-i18n="install_section_title">Install in Seconds</h2>
+          <p class="section-lead" data-i18n="install_section_lead">
+            Download the prebuilt Debian package directly or install seamlessly using the automated desktop script.
+          </p>
+        </div>
+
+        <div class="install-tabs" role="tablist">
+          <button type="button" class="install-tab-btn active" data-target="panel-deb" data-i18n="install_tab_deb">Debian / Ubuntu (.deb)</button>
+          <button type="button" class="install-tab-btn" data-target="panel-script" data-i18n="install_tab_script">One-Line Installer</button>
+          <button type="button" class="install-tab-btn" data-target="panel-source" data-i18n="install_tab_source">From Source</button>
+        </div>
+
+        <!-- Panel 1: Debian -->
+        <div id="panel-deb" class="install-panel active">
+          <pre class="code-block"><code><span class="comment"># 1. Download trim_0.1.0_all.deb from GitHub Releases</span>
+wget https://github.com/MOzcelik14/triM/releases/download/v0.1.0/trim_0.1.0_all.deb
+
+<span class="comment"># 2. Install with apt (automatically handles dependencies)</span>
+sudo apt install ./trim_0.1.0_all.deb
+
+<span class="comment"># 3. Launch from application menu or terminal</span>
+trim</code></pre>
+        </div>
+
+        <!-- Panel 2: One-Line Script -->
+        <div id="panel-script" class="install-panel">
+          <pre class="code-block"><code><span class="comment"># Clone and run automated desktop installer</span>
+git clone https://github.com/MOzcelik14/triM.git
+cd triM
+./install.sh
+
+<span class="comment"># Installs icons, desktop shortcuts, ~/.local/bin/trim, and environment</span></code></pre>
+        </div>
+
+        <!-- Panel 3: Source -->
+        <div id="panel-source" class="install-panel">
+          <pre class="code-block"><code><span class="comment"># Developer virtual environment setup</span>
+git clone https://github.com/MOzcelik14/triM.git
+cd triM
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+trim</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Roadmap Section -->
+    <section id="roadmap" class="section">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-label" data-i18n="roadmap_section_label">Roadmap</div>
+          <h2 class="section-title" data-i18n="roadmap_section_title">Development Milestones</h2>
+          <p class="section-lead" data-i18n="roadmap_section_lead">
+            Transparent roadmap showing current verified capabilities and planned architecture milestones.
+          </p>
+        </div>
+
+        <div class="grid-3">
+          <!-- Current -->
+          <div class="roadmap-col">
+            <div class="roadmap-header">
+              <span data-i18n="roadmap_current">v0.1.0 — Current Release</span>
+              <span class="feature-badge badge-ready">Done</span>
+            </div>
+            <ul class="roadmap-list">
+              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_1">Multi-track video and audio timeline</span></li>
+              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_2">Frame-accurate audio sync and PyAV engine</span></li>
+              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_3">Interactive fade handles &amp; waveform caching</span></li>
+              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_4">Dual-channel stereo VU meter &amp; J-K-L shuttle</span></li>
+              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_5">Color adjustments, transitions &amp; title cards</span></li>
+              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_6">Debian (.deb) packaging and desktop installer</span></li>
+            </ul>
+          </div>
+
+          <!-- Next -->
+          <div class="roadmap-col">
+            <div class="roadmap-header">
+              <span data-i18n="roadmap_next">v0.2.0 — Up Next</span>
+              <span class="feature-badge badge-planned">Planned</span>
+            </div>
+            <ul class="roadmap-list">
+              <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_7">Multi-clip box selection and batch drag</span></li>
+              <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_8">Flathub / Flatpak manifest packaging</span></li>
+              <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_9">Master and track-level audio gain sliders</span></li>
+            </ul>
+          </div>
+
+          <!-- Later -->
+          <div class="roadmap-col">
+            <div class="roadmap-header">
+              <span data-i18n="roadmap_later">Future Milestones</span>
+              <span class="feature-badge badge-planned">Future</span>
+            </div>
+            <ul class="roadmap-list">
+              <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_10">Keyframe animation for position, scale, and opacity</span></li>
+              <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_11">Background 4K proxy generation workflow</span></li>
+              <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_12">LADSPA / LV2 audio effect plugin architecture</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Open Source Section -->
+    <section class="section">
+      <div class="container" style="text-align: center;">
+        <div class="section-label" data-i18n="oss_section_label">Community</div>
+        <h2 class="section-title" data-i18n="oss_section_title">Free and Open Source</h2>
+        <p class="section-lead" style="margin: 0 auto 2rem;" data-i18n="oss_section_lead">
+          triM. is built openly under the permissive MIT license. Independent, hackable, and welcoming to contributors.
+        </p>
+        <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+          <a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" data-i18n="oss_btn_repo">
+            GitHub Repository
+          </a>
+          <a href="https://github.com/MOzcelik14/triM/issues" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" data-i18n="oss_btn_issues">
+            Issue Tracker
+          </a>
+          <a href="https://github.com/MOzcelik14/triM/releases" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" data-i18n="oss_btn_releases">
+            All Releases
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Site Footer -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div data-i18n="footer_copy">
+          triM. — Modern, lightweight open-source video editing for Linux.
+        </div>
+        <ul class="footer-links">
+          <li><a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+          <li><a href="https://github.com/MOzcelik14/triM/blob/master/LICENSE" target="_blank" rel="noopener noreferrer" data-i18n="footer_license">MIT License</a></li>
+          <li><span data-i18n="footer_author">M. Özçelik</span></li>
+        </ul>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="./js/main.js"></script>
+</body>
+</html>

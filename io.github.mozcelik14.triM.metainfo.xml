@@ -20,8 +20,8 @@
     </ul>
   </description>
   <launchable type="desktop-id">io.github.mozcelik14.triM.desktop</launchable>
-  <url type="homepage">https://github.com/MOzcelik14/VideoEditor</url>
-  <url type="bugtracker">https://github.com/MOzcelik14/VideoEditor/issues</url>
+  <url type="homepage">https://github.com/MOzcelik14/triM</url>
+  <url type="bugtracker">https://github.com/MOzcelik14/triM/issues</url>
   <provides>
     <binary>trim</binary>
   </provides>
