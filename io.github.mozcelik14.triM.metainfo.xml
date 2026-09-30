@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.mozcelik14.triM</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>triM.</name>
+  <summary>A lightweight non-linear video editor</summary>
+  <description>
+    <p>
+      triM. is a modern, fast, and native non-linear video editor designed for Linux.
+      Built with Python 3.12, PySide6 (Qt6), FFmpeg, and PyAV, it provides a clean,
+      precision-oriented workflow for video cutting, trimming, audio mixing, and exporting.
+    </p>
+    <ul>
+      <li>Multi-track timeline with ripple edits, snapping, and frame-accurate navigation</li>
+      <li>Real-time preview monitor with live stereo audio VU metering</li>
+      <li>Interactive fade handles, picture-in-picture transformations, and color adjustments</li>
+      <li>Title and text generation with typography controls</li>
+      <li>High-performance FFmpeg rendering pipeline</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.mozcelik14.triM.desktop</launchable>
+  <url type="homepage">https://github.com/MOzcelik14/VideoEditor</url>
+  <url type="bugtracker">https://github.com/MOzcelik14/VideoEditor/issues</url>
+  <provides>
+    <binary>trim</binary>
+  </provides>
+  <releases>
+    <release version="0.1.0" date="2026-09-30" />
+  </releases>
+  <content_rating type="oars-1.1" />
+</component>

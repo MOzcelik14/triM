@@ -6,12 +6,12 @@ import pytest
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
-from cutline.app.application import CutlineApplication
-from cutline.core.clip import Clip
-from cutline.core.project import Project
-from cutline.export.presets import DEFAULT_PRESETS
-from cutline.media.ffprobe import FFprobeAnalyzer
-from cutline.ui.main_window import MainWindow
+from trim.app.application import CutlineApplication
+from trim.core.clip import Clip
+from trim.core.project import Project
+from trim.export.presets import DEFAULT_PRESETS
+from trim.media.ffprobe import FFprobeAnalyzer
+from trim.ui.main_window import MainWindow
 
 
 def create_synthetic_media(dir_path: Path):
@@ -124,7 +124,7 @@ def test_full_nle_workflow():
         assert v_track.clips[0].timeline_out == 1.5
 
         # 6. Test Save Project
-        project_file = tmp_path / "test_session.cutline"
+        project_file = tmp_path / "test_session.trim"
         win.save_project_as = lambda: win.project.save(str(project_file))
         win.save_project_as()
         assert project_file.is_file()
@@ -139,7 +139,7 @@ def test_full_nle_workflow():
         # 8. Test Export to MP4
         out_mp4 = tmp_path / "export_final.mp4"
         preset = DEFAULT_PRESETS[1]  # 720p fast
-        from cutline.export.exporter import TimelineExporter
+        from trim.export.exporter import TimelineExporter
         cmd, dur = TimelineExporter.build_export_pipeline(win.project, preset, str(out_mp4))
         res = subprocess.run(cmd, capture_output=True, text=True)
         assert res.returncode == 0, f"Export failed: {res.stderr}"

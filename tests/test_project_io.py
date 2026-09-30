@@ -3,10 +3,10 @@ from pathlib import Path
 import tempfile
 import pytest
 
-from cutline.core.project import Project, ProjectSettings
-from cutline.core.media import MediaItem, MediaType
-from cutline.core.track import Track, TrackType
-from cutline.core.clip import Clip
+from trim.core.project import Project, ProjectSettings
+from trim.core.media import MediaItem, MediaType
+from trim.core.track import Track, TrackType
+from trim.core.clip import Clip
 
 
 def test_project_save_and_load():

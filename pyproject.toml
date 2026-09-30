@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cutline"
+name = "trim"
 version = "0.1.0"
-description = "Modern, fast, and robust non-linear video editor for Linux"
+description = "A lightweight non-linear video editor"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -15,4 +15,11 @@ dependencies = [
 ]
 
 [project.scripts]
-cutline = "cutline.main:main"
+trim = "trim.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["trim*", "cutline*"]
+
+[tool.setuptools.package-data]
+"trim.resources" = ["*/*"]

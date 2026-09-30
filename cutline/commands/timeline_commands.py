@@ -16,7 +16,7 @@ class AddClipCommand(QUndoCommand):
         timeline: TimelineModel,
         track_id: str,
         clip: Clip,
-        description: str = "Add Clip",
+        description: str = "Klip Ekle",
     ) -> None:
         super().__init__(description)
         self.timeline = timeline
@@ -44,7 +44,7 @@ class RemoveClipCommand(QUndoCommand):
         timeline: TimelineModel,
         track_id: str,
         clip_id: str,
-        description: str = "Delete Clip",
+        description: str = "Klip Sil",
     ) -> None:
         super().__init__(description)
         self.timeline = timeline
@@ -79,7 +79,7 @@ class MoveClipCommand(QUndoCommand):
         clip_id: str,
         old_time: float,
         new_time: float,
-        description: str = "Move Clip",
+        description: str = "Klip Taşı",
     ) -> None:
         super().__init__(description)
         self.timeline = timeline
@@ -117,7 +117,7 @@ class TrimClipCommand(QUndoCommand):
         clip_id: str,
         old_bounds: tuple[float, float, float, float],  # (tl_in, tl_out, src_in, src_out)
         new_bounds: tuple[float, float, float, float],
-        description: str = "Trim Clip",
+        description: str = "Klip Kırp",
     ) -> None:
         super().__init__(description)
         self.timeline = timeline
@@ -154,7 +154,7 @@ class SplitClipCommand(QUndoCommand):
         track_id: str,
         clip_id: str,
         split_time: float,
-        description: str = "Split Clip",
+        description: str = "Klip Böl",
     ) -> None:
         super().__init__(description)
         self.timeline = timeline
@@ -202,7 +202,7 @@ class RippleDeleteCommand(QUndoCommand):
         timeline: TimelineModel,
         track_id: str,
         clip_id: str,
-        description: str = "Ripple Delete",
+        description: str = "Boşluksuz Sil",
     ) -> None:
         super().__init__(description)
         self.timeline = timeline

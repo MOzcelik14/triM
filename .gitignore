@@ -9,3 +9,6 @@ build/
 *.mp4
 *.tmp
 .cutline.recovery
+*.trim.recovery
+*.deb
+.cache/

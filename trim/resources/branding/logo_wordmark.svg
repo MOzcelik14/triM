@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" width="400" height="120">
+  <style>
+    .wordmark {
+      font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      font-size: 84px;
+      letter-spacing: -2px;
+    }
+    .tri {
+      fill: #EDEDF2;
+      font-weight: 550;
+    }
+    .m-char {
+      fill: #FFFFFF;
+      font-weight: 800;
+    }
+    .dot {
+      fill: #E07A38;
+      font-weight: 900;
+    }
+  </style>
+  <text x="30" y="88" class="wordmark">
+    <tspan class="tri">tri</tspan><tspan class="m-char">M</tspan><tspan class="dot">.</tspan>
+  </text>
+</svg>

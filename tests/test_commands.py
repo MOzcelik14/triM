@@ -1,8 +1,8 @@
 from PySide6.QtGui import QUndoStack
-from cutline.core.clip import Clip
-from cutline.core.timeline import TimelineModel
-from cutline.core.track import Track, TrackType
-from cutline.commands.timeline_commands import (
+from trim.core.clip import Clip
+from trim.core.timeline import TimelineModel
+from trim.core.track import Track, TrackType
+from trim.commands.timeline_commands import (
     AddClipCommand,
     RemoveClipCommand,
     MoveClipCommand,

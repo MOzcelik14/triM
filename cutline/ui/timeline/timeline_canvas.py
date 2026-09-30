@@ -30,10 +30,13 @@ from cutline.commands.timeline_commands import (
     TrimClipCommand,
 )
 from cutline.core.clip import Clip
+from cutline.core.media import MediaType
 from cutline.core.project import Project
 from cutline.core.timeline import TimelineModel
 from cutline.core.track import Track, TrackType
+from cutline.media.waveform import WaveformGenerator
 from cutline.ui.project_bin.media_bin_widget import MIME_MEDIA_ID
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +47,8 @@ class DragMode(Enum):
     TRIM_IN = 2
     TRIM_OUT = 3
     SCRUB = 4
+    FADE_IN = 5
+    FADE_OUT = 6
 
 
 class TimelineCanvas(QWidget):
@@ -69,6 +74,10 @@ class TimelineCanvas(QWidget):
         self.track_spacing = 6
         self.trim_handle_width = 8
 
+        self.waveform_generator = WaveformGenerator()
+        self._waveform_cache: dict[str, Optional[np.ndarray]] = {}
+        self._waveform_workers: list[WaveformWorker] = []
+
         self._current_time: float = 0.0
         self._selected_track_id: Optional[str] = None
         self._selected_clip_id: Optional[str] = None
@@ -90,6 +99,26 @@ class TimelineCanvas(QWidget):
         self.timeline.tracks_changed.connect(self._on_model_changed)
 
         self._update_geometry()
+
+    def _request_waveform(self, media_id: str, file_path: str) -> None:
+        if media_id in self._waveform_cache:
+            return
+        peaks = self.waveform_generator.get_waveform(file_path)
+        if peaks is not None:
+            self._waveform_cache[media_id] = peaks
+            return
+
+        worker = WaveformWorker(media_id, file_path, self.waveform_generator, self)
+
+        def _on_ready(m_id: str, data: np.ndarray) -> None:
+            self._waveform_cache[m_id] = data
+            if worker in self._waveform_workers:
+                self._waveform_workers.remove(worker)
+            self.update()
+
+        worker.waveform_ready.connect(_on_ready)
+        self._waveform_workers.append(worker)
+        worker.start()
 
     def set_pixels_per_second(self, pps: float) -> None:
         self.pixels_per_second = max(5.0, min(1000.0, pps))
@@ -130,6 +159,20 @@ class TimelineCanvas(QWidget):
             for clip in track.clips:
                 clip_rect = self._get_clip_rect(idx, clip)
                 if clip_rect.contains(pos):
+                    # Check fade handles first
+                    fi_x = clip_rect.left() + (clip.fade_in * self.pixels_per_second)
+                    fo_x = clip_rect.right() - (clip.fade_out * self.pixels_per_second)
+                    fade_y = clip_rect.top() + 6.0
+
+                    dist_fi = ((pos.x() - fi_x) ** 2 + (pos.y() - fade_y) ** 2) ** 0.5
+                    dist_fo = ((pos.x() - fo_x) ** 2 + (pos.y() - fade_y) ** 2) ** 0.5
+
+                    if dist_fi <= 10.0 or (clip.fade_in == 0.0 and pos.y() <= clip_rect.top() + 14 and clip_rect.left() <= pos.x() <= clip_rect.left() + 14):
+                        return track, clip, DragMode.FADE_IN
+
+                    if dist_fo <= 10.0 or (clip.fade_out == 0.0 and pos.y() <= clip_rect.top() + 14 and clip_rect.right() - 14 <= pos.x() <= clip_rect.right()):
+                        return track, clip, DragMode.FADE_OUT
+
                     # Check trim handles
                     left_handle = QRectF(clip_rect.left(), clip_rect.top(), self.trim_handle_width, clip_rect.height())
                     right_handle = QRectF(clip_rect.right() - self.trim_handle_width, clip_rect.top(), self.trim_handle_width, clip_rect.height())
@@ -181,6 +224,8 @@ class TimelineCanvas(QWidget):
             _, clip, mode = self._find_clip_at_pos(pos)
             if mode in (DragMode.TRIM_IN, DragMode.TRIM_OUT):
                 self.setCursor(Qt.CursorShape.SizeHorCursor)
+            elif mode in (DragMode.FADE_IN, DragMode.FADE_OUT):
+                self.setCursor(Qt.CursorShape.PointingHandCursor)
             elif mode == DragMode.MOVE:
                 self.setCursor(Qt.CursorShape.SizeAllCursor)
             else:
@@ -215,6 +260,20 @@ class TimelineCanvas(QWidget):
             target_out = max(self._drag_clip.timeline_in + 0.04, orig_out + dt)
             snapped_out = self.timeline.snap_time(target_out, threshold=0.1, ignore_clip_id=self._drag_clip.id)
             self._drag_clip.trim_out(snapped_out)
+            self.update()
+
+        elif self._drag_mode == DragMode.FADE_IN and self._drag_clip and self._drag_track:
+            idx = self.timeline.tracks.index(self._drag_track)
+            clip_rect = self._get_clip_rect(idx, self._drag_clip)
+            raw_dt = (pos.x() - clip_rect.left()) / self.pixels_per_second
+            self._drag_clip.fade_in = round(max(0.0, min(self._drag_clip.duration / 2.0, raw_dt)), 2)
+            self.update()
+
+        elif self._drag_mode == DragMode.FADE_OUT and self._drag_clip and self._drag_track:
+            idx = self.timeline.tracks.index(self._drag_track)
+            clip_rect = self._get_clip_rect(idx, self._drag_clip)
+            raw_dt = (clip_rect.right() - pos.x()) / self.pixels_per_second
+            self._drag_clip.fade_out = round(max(0.0, min(self._drag_clip.duration / 2.0, raw_dt)), 2)
             self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
@@ -253,6 +312,10 @@ class TimelineCanvas(QWidget):
                     )
                     self.undo_stack.push(cmd)
                     self.project.mark_dirty()
+
+            elif self._drag_mode in (DragMode.FADE_IN, DragMode.FADE_OUT):
+                self.project.mark_dirty()
+                self.timeline.notify_clip_modified(self._drag_track.id, self._drag_clip.id)
 
         self._drag_mode = DragMode.NONE
         self._drag_clip = None
@@ -402,6 +465,104 @@ class TimelineCanvas(QWidget):
                     base_color = QColor(36, 100, 70) if not is_selected else QColor(45, 125, 88)
 
                 painter.fillPath(path, QBrush(base_color))
+
+                # Audio waveform rendering
+                media_item = self.project.get_media(clip.media_id)
+                if media_item and media_item.media_type != MediaType.IMAGE and (track.track_type == TrackType.AUDIO or getattr(media_item, "has_audio", False)):
+                    self._request_waveform(clip.media_id, media_item.file_path)
+                    wf = self._waveform_cache.get(clip.media_id)
+                    if wf is not None and len(wf) > 0:
+                        src_in = clip.source_in
+                        src_out = clip.source_out or (src_in + clip.duration)
+                        pps = self.waveform_generator.points_per_second
+                        idx_start = max(0, int(src_in * pps))
+                        idx_end = min(len(wf), int(src_out * pps))
+
+                        if idx_end > idx_start:
+                            slice_wf = wf[idx_start:idx_end]
+                            painter.save()
+                            painter.setClipPath(path)
+                            wf_pen = QPen(
+                                QColor(100, 230, 160, 180)
+                                if track.track_type == TrackType.AUDIO
+                                else QColor(140, 205, 255, 140),
+                                1.5,
+                            )
+                            painter.setPen(wf_pen)
+
+                            c_w = int(clip_rect.width())
+                            cy = clip_rect.center().y()
+                            max_amp = (clip_rect.height() - 16) / 2.0
+
+                            for px in range(0, c_w, 2):
+                                t_norm = px / max(1, c_w)
+                                s_idx = int(t_norm * len(slice_wf))
+                                if s_idx < len(slice_wf):
+                                    v_min, v_max = slice_wf[s_idx]
+                                    x_pos = clip_rect.left() + px
+                                    y1 = cy + float(v_min) * max_amp
+                                    y2 = cy + float(v_max) * max_amp
+                                    painter.drawLine(int(x_pos), int(y1), int(x_pos), int(y2))
+
+                            painter.restore()
+
+                # Fade In overlay & handle
+                fi_w = clip.fade_in * self.pixels_per_second
+                if clip.fade_in > 0:
+                    painter.save()
+                    painter.setClipPath(path)
+                    fi_path = QPainterPath()
+                    fi_path.moveTo(clip_rect.left(), clip_rect.top())
+                    fi_path.lineTo(clip_rect.left() + fi_w, clip_rect.top())
+                    fi_path.lineTo(clip_rect.left(), clip_rect.bottom())
+                    fi_path.closeSubpath()
+                    painter.fillPath(fi_path, QBrush(QColor(0, 0, 0, 110)))
+                    painter.setPen(QPen(QColor(255, 255, 255, 180), 1.5))
+                    painter.drawLine(
+                        int(clip_rect.left()),
+                        int(clip_rect.bottom()),
+                        int(clip_rect.left() + fi_w),
+                        int(clip_rect.top()),
+                    )
+                    painter.restore()
+
+                    # Handle dot
+                    painter.setBrush(QBrush(QColor(255, 255, 255, 230)))
+                    painter.setPen(QPen(QColor(20, 20, 25), 1.0))
+                    painter.drawEllipse(QPointF(clip_rect.left() + fi_w, clip_rect.top() + 6), 4.0, 4.0)
+                else:
+                    painter.setBrush(QBrush(QColor(255, 255, 255, 120)))
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.drawEllipse(QPointF(clip_rect.left() + 5, clip_rect.top() + 5), 3.0, 3.0)
+
+                # Fade Out overlay & handle
+                fo_w = clip.fade_out * self.pixels_per_second
+                if clip.fade_out > 0:
+                    painter.save()
+                    painter.setClipPath(path)
+                    fo_path = QPainterPath()
+                    fo_path.moveTo(clip_rect.right() - fo_w, clip_rect.top())
+                    fo_path.lineTo(clip_rect.right(), clip_rect.top())
+                    fo_path.lineTo(clip_rect.right(), clip_rect.bottom())
+                    fo_path.closeSubpath()
+                    painter.fillPath(fo_path, QBrush(QColor(0, 0, 0, 110)))
+                    painter.setPen(QPen(QColor(255, 255, 255, 180), 1.5))
+                    painter.drawLine(
+                        int(clip_rect.right() - fo_w),
+                        int(clip_rect.top()),
+                        int(clip_rect.right()),
+                        int(clip_rect.bottom()),
+                    )
+                    painter.restore()
+
+                    # Handle dot
+                    painter.setBrush(QBrush(QColor(255, 255, 255, 230)))
+                    painter.setPen(QPen(QColor(20, 20, 25), 1.0))
+                    painter.drawEllipse(QPointF(clip_rect.right() - fo_w, clip_rect.top() + 6), 4.0, 4.0)
+                else:
+                    painter.setBrush(QBrush(QColor(255, 255, 255, 120)))
+                    painter.setPen(Qt.PenStyle.NoPen)
+                    painter.drawEllipse(QPointF(clip_rect.right() - 5, clip_rect.top() + 5), 3.0, 3.0)
 
                 # Clip outline
                 if is_selected:

@@ -1,0 +1,15 @@
+[Desktop Entry]
+Name=triM.
+GenericName=Video Editor
+GenericName[tr]=Video Düzenleyici
+Comment=A lightweight non-linear video editor
+Comment[tr]=Hafif ve modern lineer olmayan video düzenleyici
+Exec=trim %F
+Icon=io.github.mozcelik14.triM
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;AudioVideoEditing;
+MimeType=application/x-trim-project;application/x-cutline-project;
+StartupNotify=true
+StartupWMClass=triM.
+Keywords=video;editor;cut;trim;timeline;ffmpeg;nle;

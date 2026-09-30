@@ -1,8 +1,8 @@
 import pytest
-from cutline.core.clip import Clip
-from cutline.core.track import Track, TrackType
-from cutline.core.timeline import TimelineModel
-from cutline.core.media import MediaItem, MediaType
+from trim.core.clip import Clip
+from trim.core.track import Track, TrackType
+from trim.core.timeline import TimelineModel
+from trim.core.media import MediaItem, MediaType
 
 
 def test_clip_duration_and_mapping():

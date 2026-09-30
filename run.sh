@@ -12,4 +12,4 @@ if [ ! -d ".venv" ]; then
 fi
 
 export PYTHONPATH="$DIR:$PYTHONPATH"
-exec .venv/bin/python3 -m cutline.main "$@"
+exec .venv/bin/python3 -m trim.main "$@"

@@ -3,11 +3,11 @@ import subprocess
 import tempfile
 import pytest
 
-from cutline.core.clip import Clip
-from cutline.core.project import Project
-from cutline.export.presets import DEFAULT_PRESETS
-from cutline.export.exporter import TimelineExporter
-from cutline.media.ffprobe import FFprobeAnalyzer
+from trim.core.clip import Clip
+from trim.core.project import Project
+from trim.export.presets import DEFAULT_PRESETS
+from trim.export.exporter import TimelineExporter
+from trim.media.ffprobe import FFprobeAnalyzer
 
 
 def create_synthetic_video(path: Path, duration: float = 1.0, color: str = "blue") -> None:

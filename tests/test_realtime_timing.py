@@ -7,11 +7,11 @@ import pytest
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
-from cutline.app.application import CutlineApplication
-from cutline.core.clip import Clip
-from cutline.core.project import Project
-from cutline.media.ffprobe import FFprobeAnalyzer
-from cutline.media.playback import PlaybackEngine
+from trim.app.application import CutlineApplication
+from trim.core.clip import Clip
+from trim.core.project import Project
+from trim.media.ffprobe import FFprobeAnalyzer
+from trim.media.playback import PlaybackEngine
 
 
 def test_playback_realtime_speed():

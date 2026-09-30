@@ -7,7 +7,9 @@ from typing import Optional
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QShortcut, QUndoStack
 from PySide6.QtWidgets import (
+    QDialog,
     QFileDialog,
+    QHBoxLayout,
     QMainWindow,
     QMessageBox,
     QSplitter,
@@ -21,11 +23,14 @@ from cutline.commands.timeline_commands import AddClipCommand
 from cutline.core.autosave import AutosaveManager
 from cutline.core.clip import Clip
 from cutline.core.project import Project, ProjectSettings
+from cutline.core.track import Track, TrackType
 from cutline.media.playback import PlaybackEngine
 from cutline.ui.dialogs.export_dialog import ExportDialog
+from cutline.ui.dialogs.title_dialog import TitleDialog
 from cutline.ui.inspector.inspector_widget import InspectorWidget
 from cutline.ui.preview.monitor_widget import MonitorWidget
 from cutline.ui.preview.transport_bar import TransportBar
+from cutline.ui.preview.vu_meter import AudioVUMeterWidget
 from cutline.ui.project_bin.media_bin_widget import MediaBinWidget
 from cutline.ui.theme import DARK_THEME_QSS
 from cutline.ui.timeline.timeline_widget import TimelineWidget
@@ -68,14 +73,24 @@ class MainWindow(QMainWindow):
         self.media_bin = MediaBinWidget(self.project, parent=self)
         self.top_splitter.addWidget(self.media_bin)
 
-        # Center: Program Monitor + Transport Bar
+        # Center: Program Monitor + VU Meter + Transport Bar
         center_widget = QWidget()
         center_layout = QVBoxLayout(center_widget)
         center_layout.setContentsMargins(0, 0, 0, 0)
         center_layout.setSpacing(0)
 
+        monitor_container = QWidget()
+        monitor_layout = QHBoxLayout(monitor_container)
+        monitor_layout.setContentsMargins(0, 0, 0, 0)
+        monitor_layout.setSpacing(4)
+
         self.monitor = MonitorWidget()
-        center_layout.addWidget(self.monitor, stretch=1)
+        monitor_layout.addWidget(self.monitor, stretch=1)
+
+        self.vu_meter = AudioVUMeterWidget()
+        monitor_layout.addWidget(self.vu_meter)
+
+        center_layout.addWidget(monitor_container, stretch=1)
 
         self.transport_bar = TransportBar(self.playback_engine, self.project.timeline)
         center_layout.addWidget(self.transport_bar)
@@ -137,6 +152,12 @@ class MainWindow(QMainWindow):
         self.act_import.triggered.connect(self.media_bin.prompt_import_media)
         toolbar.addAction(self.act_import)
 
+        # Title Generator
+        self.act_add_title = QAction("Başlık / Metin Ekle", self)
+        self.act_add_title.setShortcut(QKeySequence("Ctrl+T"))
+        self.act_add_title.triggered.connect(self.prompt_add_title)
+        toolbar.addAction(self.act_add_title)
+
         toolbar.addSeparator()
 
         # Undo
@@ -167,6 +188,7 @@ class MainWindow(QMainWindow):
         act_save_as.triggered.connect(self.save_project_as)
         file_menu.addSeparator()
         file_menu.addAction(self.act_import)
+        file_menu.addAction(self.act_add_title)
         file_menu.addAction(self.act_export)
         file_menu.addSeparator()
         act_exit = file_menu.addAction("Çıkış")
@@ -203,6 +225,26 @@ class MainWindow(QMainWindow):
         sc_next = QShortcut(QKeySequence(Qt.Key.Key_Right), self)
         sc_next.activated.connect(lambda: self.playback_engine.step_frame(1))
 
+        # Shift+Left: 1 second back
+        sc_skip_back = QShortcut(QKeySequence("Shift+Left"), self)
+        sc_skip_back.activated.connect(lambda: self.playback_engine.seek(max(0.0, self.playback_engine.current_time - 1.0)))
+
+        # Shift+Right: 1 second forward
+        sc_skip_fwd = QShortcut(QKeySequence("Shift+Right"), self)
+        sc_skip_fwd.activated.connect(lambda: self.playback_engine.seek(min(self.project.timeline.duration, self.playback_engine.current_time + 1.0)))
+
+        # Up / Down: Jump between edit cut points
+        sc_cut_prev = QShortcut(QKeySequence(Qt.Key.Key_Up), self)
+        sc_cut_prev.activated.connect(self._jump_to_prev_edit_point)
+        sc_cut_next = QShortcut(QKeySequence(Qt.Key.Key_Down), self)
+        sc_cut_next.activated.connect(self._jump_to_next_edit_point)
+
+        # Home / End: Start / End of timeline
+        sc_home = QShortcut(QKeySequence(Qt.Key.Key_Home), self)
+        sc_home.activated.connect(lambda: self.playback_engine.seek(0.0))
+        sc_end = QShortcut(QKeySequence(Qt.Key.Key_End), self)
+        sc_end.activated.connect(lambda: self.playback_engine.seek(self.project.timeline.duration))
+
         # S: Split
         sc_split = QShortcut(QKeySequence(Qt.Key.Key_S), self)
         sc_split.activated.connect(self.timeline_widget.canvas.split_at_playhead)
@@ -213,18 +255,22 @@ class MainWindow(QMainWindow):
         sc_back = QShortcut(QKeySequence(Qt.Key.Key_Backspace), self)
         sc_back.activated.connect(self.timeline_widget.canvas.delete_selected)
 
-        # J/K/L navigation
+        # J/K/L Shuttle navigation
         sc_j = QShortcut(QKeySequence(Qt.Key.Key_J), self)
-        sc_j.activated.connect(lambda: self.playback_engine.step_frame(-5))
+        sc_j.activated.connect(self._on_shuttle_reverse)
         sc_k = QShortcut(QKeySequence(Qt.Key.Key_K), self)
         sc_k.activated.connect(self.playback_engine.pause)
         sc_l = QShortcut(QKeySequence(Qt.Key.Key_L), self)
-        sc_l.activated.connect(lambda: self.playback_engine.step_frame(5))
+        sc_l.activated.connect(self._on_shuttle_forward)
 
     def _connect_signals(self) -> None:
         # Playback to Monitor & Timeline
         self.playback_engine.frame_ready.connect(self.monitor.set_frame)
         self.playback_engine.position_changed.connect(self.timeline_widget.set_current_time)
+
+        # Audio VU meter levels & Playback speed
+        self.playback_engine.audio_levels_ready.connect(self.vu_meter.set_levels)
+        self.playback_engine.speed_changed.connect(self._on_speed_changed)
 
         # Timeline seek to Playback
         self.timeline_widget.seek_requested.connect(self.playback_engine.seek)
@@ -245,6 +291,56 @@ class MainWindow(QMainWindow):
 
         # Initial frame render
         self.playback_engine.refresh_current_frame()
+
+    def _on_shuttle_forward(self) -> None:
+        speeds = [1.0, 2.0, 4.0, 8.0]
+        cur = self.playback_engine.speed
+        if not self.playback_engine.is_playing or cur <= 0.0:
+            self.playback_engine.set_speed(1.0)
+        else:
+            next_speeds = [s for s in speeds if s > cur + 0.1]
+            new_speed = next_speeds[0] if next_speeds else speeds[-1]
+            self.playback_engine.set_speed(new_speed)
+
+    def _on_shuttle_reverse(self) -> None:
+        speeds = [-1.0, -2.0, -4.0, -8.0]
+        cur = self.playback_engine.speed
+        if not self.playback_engine.is_playing or cur >= 0.0:
+            self.playback_engine.set_speed(-1.0)
+        else:
+            next_speeds = [s for s in speeds if s < cur - 0.1]
+            new_speed = next_speeds[0] if next_speeds else speeds[-1]
+            self.playback_engine.set_speed(new_speed)
+
+    def _on_speed_changed(self, speed: float) -> None:
+        if abs(speed - 1.0) < 0.01:
+            self._update_status_bar()
+        elif speed > 1.0:
+            self.status_bar.showMessage(f"İleri Sarma >> {speed:.0f}x | {self.project.settings.name}")
+        elif speed < 0.0:
+            self.status_bar.showMessage(f"Geri Sarma << {abs(speed):.0f}x | {self.project.settings.name}")
+
+    def _jump_to_prev_edit_point(self) -> None:
+        cur = self.playback_engine.current_time
+        points = [0.0]
+        for track in self.project.timeline.tracks:
+            for clip in track.clips:
+                points.append(clip.timeline_in)
+                points.append(clip.timeline_out)
+        prev_points = [p for p in sorted(set(points)) if p < cur - 0.05]
+        target = prev_points[-1] if prev_points else 0.0
+        self.playback_engine.seek(target)
+
+    def _jump_to_next_edit_point(self) -> None:
+        cur = self.playback_engine.current_time
+        points = [self.project.timeline.duration]
+        for track in self.project.timeline.tracks:
+            for clip in track.clips:
+                points.append(clip.timeline_in)
+                points.append(clip.timeline_out)
+        next_points = [p for p in sorted(set(points)) if p > cur + 0.05]
+        target = next_points[0] if next_points else self.project.timeline.duration
+        self.playback_engine.seek(target)
 
     def _update_window_title(self, *args) -> None:
         dirty_flag = " *" if self.project.is_dirty else ""
@@ -359,6 +455,32 @@ class MainWindow(QMainWindow):
             logger.error("Failed to save project: %s", e)
             QMessageBox.critical(self, "Kaydetme Hatası", f"Proje kaydedilemedi:\n{e}")
             return False
+
+    def prompt_add_title(self) -> None:
+        dlg = TitleDialog(self.project, playhead_time=self.playback_engine.current_time, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            media_item, add_to_timeline = dlg.create_title_media()
+            self.project.add_media(media_item)
+
+            if add_to_timeline:
+                v_tracks = self.project.timeline.get_video_tracks()
+                target_track = v_tracks[0] if v_tracks else None
+                if target_track is None:
+                    target_track = Track(name="Video 1", track_type=TrackType.VIDEO)
+                    self.project.timeline.add_track(target_track)
+
+                t_in = self.playback_engine.current_time
+                new_clip = Clip(
+                    media_id=media_item.id,
+                    timeline_in=t_in,
+                    timeline_out=t_in + media_item.duration,
+                    name=media_item.name,
+                )
+                cmd = AddClipCommand(self.project.timeline, target_track.id, new_clip)
+                self.undo_stack.push(cmd)
+                self.project.mark_dirty()
+                self.playback_engine.seek(t_in)
+                self.status_bar.showMessage(f"Başlık klibi eklendi: {media_item.name}", 3000)
 
     def export_video(self) -> None:
         dlg = ExportDialog(self.project, parent=self)

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background rounded rectangle gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1B1B1F" />
+      <stop offset="100%" stop-color="#121215" />
+    </linearGradient>
+    <!-- Left clip subtle gradient -->
+    <linearGradient id="leftClipGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#2D2D36" />
+      <stop offset="100%" stop-color="#343440" />
+    </linearGradient>
+    <!-- Right clip subtle gradient -->
+    <linearGradient id="rightClipGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#23232B" />
+      <stop offset="100%" stop-color="#282832" />
+    </linearGradient>
+    <!-- Playhead / Trim line glow -->
+    <filter id="cutGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#E07A38" flood-opacity="0.3" />
+    </filter>
+  </defs>
+
+  <!-- Base container: Squircle -->
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#bgGrad)" stroke="#2B2B33" stroke-width="3" />
+
+  <!-- Timeline track container -->
+  <rect x="68" y="160" width="376" height="192" rx="14" fill="#18181D" stroke="#26262E" stroke-width="2" />
+
+  <!-- Left Clip (Active trimmed segment) -->
+  <rect x="76" y="172" width="168" height="168" rx="8" fill="url(#leftClipGrad)" />
+  <!-- Left clip internal frame notches -->
+  <line x1="132" y1="172" x2="132" y2="340" stroke="#3A3A48" stroke-width="1.5" stroke-dasharray="4,6" opacity="0.4" />
+  <line x1="188" y1="172" x2="188" y2="340" stroke="#3A3A48" stroke-width="1.5" stroke-dasharray="4,6" opacity="0.4" />
+
+  <!-- Right Clip (Adjacent cut segment) -->
+  <rect x="268" y="172" width="168" height="168" rx="8" fill="url(#rightClipGrad)" />
+  <line x1="324" y1="172" x2="324" y2="340" stroke="#2E2E3A" stroke-width="1.5" stroke-dasharray="4,6" opacity="0.4" />
+  <line x1="380" y1="172" x2="380" y2="340" stroke="#2E2E3A" stroke-width="1.5" stroke-dasharray="4,6" opacity="0.4" />
+
+  <!-- Precision Trim Cut Marker & Playhead -->
+  <!-- Top Marker Head -->
+  <polygon points="256,128 244,148 268,148" fill="#E07A38" />
+
+  <!-- Playhead Vertical Line -->
+  <line x1="256" y1="148" x2="256" y2="364" stroke="#E07A38" stroke-width="12" stroke-linecap="round" filter="url(#cutGlow)" />
+
+  <!-- Bottom Marker Anchor -->
+  <polygon points="256,384 244,364 268,364" fill="#E07A38" />
+
+  <!-- Trim Brackets: Opposing precision brackets at cut point -->
+  <!-- Left In-Trim Bracket [ -->
+  <path d="M 238,228 L 226,228 L 226,284 L 238,284" fill="none" stroke="#E07A38" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+
+  <!-- Right Out-Trim Bracket ] -->
+  <path d="M 274,228 L 286,228 L 286,284 L 274,284" fill="none" stroke="#E07A38" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.85" />
+</svg>

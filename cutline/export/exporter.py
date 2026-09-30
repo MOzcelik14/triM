@@ -81,10 +81,24 @@ class TimelineExporter:
                 cmd_inputs.extend([
                     "-loop", "1", "-t", f"{dur:.4f}", "-i", media_item.file_path,
                 ])
-                filter_parts.append(
-                    f"[{input_idx}:v]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease,"
-                    f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={out_fps}[v{input_idx}];"
-                )
+                v_filters = [
+                    f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease",
+                    f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2",
+                    "setsar=1",
+                    f"fps={out_fps}",
+                ]
+                if clip.brightness != 0.0 or clip.contrast != 1.0 or clip.saturation != 1.0:
+                    v_filters.append(f"eq=brightness={clip.brightness:.3f}:contrast={clip.contrast:.3f}:saturation={clip.saturation:.3f}")
+                if clip.fade_in > 0:
+                    color = "white" if clip.transition_in == "dip_white" else "black"
+                    v_filters.append(f"fade=t=in:st=0:d={clip.fade_in:.4f}:color={color}")
+                if clip.fade_out > 0:
+                    st_out = max(0.0, dur - clip.fade_out)
+                    color = "white" if clip.transition_out == "dip_white" else "black"
+                    v_filters.append(f"fade=t=out:st={st_out:.4f}:d={clip.fade_out:.4f}:color={color}")
+
+                filter_parts.append(f"[{input_idx}:v]{','.join(v_filters)}[v{input_idx}];")
+
                 # Silent audio
                 cmd_inputs.extend([
                     "-f", "lavfi", "-t", f"{dur:.4f}", "-i", "anullsrc=r=48000:cl=stereo",
@@ -98,15 +112,39 @@ class TimelineExporter:
                 cmd_inputs.extend([
                     "-ss", f"{src_in:.4f}", "-t", f"{dur:.4f}", "-i", media_item.file_path,
                 ])
-                filter_parts.append(
-                    f"[{input_idx}:v]scale={out_w}:{out_h}:force_original_aspect_ratio=decrease,"
-                    f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={out_fps},setpts=PTS-STARTPTS[v{input_idx}];"
-                )
+                v_filters = [
+                    f"scale={out_w}:{out_h}:force_original_aspect_ratio=decrease",
+                    f"pad={out_w}:{out_h}:(ow-iw)/2:(oh-ih)/2",
+                    "setsar=1",
+                    f"fps={out_fps}",
+                    "setpts=PTS-STARTPTS",
+                ]
+                if clip.brightness != 0.0 or clip.contrast != 1.0 or clip.saturation != 1.0:
+                    v_filters.append(f"eq=brightness={clip.brightness:.3f}:contrast={clip.contrast:.3f}:saturation={clip.saturation:.3f}")
+                if clip.fade_in > 0:
+                    color = "white" if clip.transition_in == "dip_white" else "black"
+                    v_filters.append(f"fade=t=in:st=0:d={clip.fade_in:.4f}:color={color}")
+                if clip.fade_out > 0:
+                    st_out = max(0.0, dur - clip.fade_out)
+                    color = "white" if clip.transition_out == "dip_white" else "black"
+                    v_filters.append(f"fade=t=out:st={st_out:.4f}:d={clip.fade_out:.4f}:color={color}")
+
+                filter_parts.append(f"[{input_idx}:v]{','.join(v_filters)}[v{input_idx}];")
 
                 if media_item.audio_codec and not clip.muted:
-                    filter_parts.append(
-                        f"[{input_idx}:a]aformat=sample_rates=48000:channel_layouts=stereo,asetpts=PTS-STARTPTS[a{input_idx}];"
-                    )
+                    a_filters = [
+                        "aformat=sample_rates=48000:channel_layouts=stereo",
+                        "asetpts=PTS-STARTPTS",
+                    ]
+                    if abs(clip.volume - 1.0) > 0.01:
+                        a_filters.append(f"volume={clip.volume:.4f}")
+                    if clip.fade_in > 0:
+                        a_filters.append(f"afade=t=in:ss=0:d={clip.fade_in:.4f}")
+                    if clip.fade_out > 0:
+                        st_out = max(0.0, dur - clip.fade_out)
+                        a_filters.append(f"afade=t=out:st={st_out:.4f}:d={clip.fade_out:.4f}")
+
+                    filter_parts.append(f"[{input_idx}:a]{','.join(a_filters)}[a{input_idx}];")
                 else:
                     # Provide silent audio if file lacks audio or is muted
                     cmd_inputs.extend([
