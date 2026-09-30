@@ -19,7 +19,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from trim.commands.timeline_commands import AddClipCommand
+from trim.commands.timeline_commands import (
+    AddClipCommand,
+    RippleTrimHeadCommand,
+    RippleTrimTailCommand,
+)
 from trim.core.autosave import AutosaveManager
 from trim.core.clip import Clip
 from trim.core.project import Project, ProjectSettings
@@ -206,6 +210,12 @@ class MainWindow(QMainWindow):
         act_split = edit_menu.addAction("Oynatma Çizgisinden Kes / Böl")
         act_split.setShortcut(QKeySequence("S"))
         act_split.triggered.connect(self.timeline_widget.canvas.split_at_playhead)
+        act_q = edit_menu.addAction("Başı Çizgiye Kırp ve Kaydır")
+        act_q.setShortcut(QKeySequence("Q"))
+        act_q.triggered.connect(self._on_ripple_trim_head)
+        act_w = edit_menu.addAction("Sonu Çizgiye Kırp ve Kaydır")
+        act_w.setShortcut(QKeySequence("W"))
+        act_w.triggered.connect(self._on_ripple_trim_tail)
         act_del = edit_menu.addAction("Seçileni Sil")
         act_del.setShortcut(QKeySequence.StandardKey.Delete)
         act_del.triggered.connect(self.timeline_widget.canvas.delete_selected)
@@ -254,6 +264,14 @@ class MainWindow(QMainWindow):
         sc_split = QShortcut(QKeySequence(Qt.Key.Key_S), self)
         sc_split.activated.connect(self.timeline_widget.canvas.split_at_playhead)
 
+        # Q: Ripple Trim Head
+        sc_q = QShortcut(QKeySequence(Qt.Key.Key_Q), self)
+        sc_q.activated.connect(self._on_ripple_trim_head)
+
+        # W: Ripple Trim Tail
+        sc_w = QShortcut(QKeySequence(Qt.Key.Key_W), self)
+        sc_w.activated.connect(self._on_ripple_trim_tail)
+
         # Delete / Backspace
         sc_del = QShortcut(QKeySequence(Qt.Key.Key_Delete), self)
         sc_del.activated.connect(self.timeline_widget.canvas.delete_selected)
@@ -267,6 +285,61 @@ class MainWindow(QMainWindow):
         sc_k.activated.connect(self.playback_engine.pause)
         sc_l = QShortcut(QKeySequence(Qt.Key.Key_L), self)
         sc_l.activated.connect(self._on_shuttle_forward)
+
+    def _on_ripple_trim_head(self) -> None:
+        cur_time = self.playback_engine.current_time
+        target_track = None
+        target_clip = None
+
+        if self.timeline_widget.canvas.selected_track and self.timeline_widget.canvas.selected_clip:
+            c = self.timeline_widget.canvas.selected_clip
+            if c.timeline_in + 0.04 < cur_time <= c.timeline_out:
+                target_clip = c
+                target_track = self.timeline_widget.canvas.selected_track
+
+        if not target_clip:
+            for track in self.project.timeline.tracks:
+                if track.locked:
+                    continue
+                c = track.find_clip_at(cur_time)
+                if c and c.timeline_in + 0.04 < cur_time <= c.timeline_out:
+                    target_clip = c
+                    target_track = track
+                    break
+
+        if target_clip and target_track:
+            orig_in = target_clip.timeline_in
+            cmd = RippleTrimHeadCommand(self.project.timeline, target_track.id, target_clip.id, cur_time)
+            self.undo_stack.push(cmd)
+            self.project.mark_dirty()
+            self.playback_engine.seek(orig_in)
+
+    def _on_ripple_trim_tail(self) -> None:
+        cur_time = self.playback_engine.current_time
+        target_track = None
+        target_clip = None
+
+        if self.timeline_widget.canvas.selected_track and self.timeline_widget.canvas.selected_clip:
+            c = self.timeline_widget.canvas.selected_clip
+            if c.timeline_in <= cur_time < c.timeline_out - 0.04:
+                target_clip = c
+                target_track = self.timeline_widget.canvas.selected_track
+
+        if not target_clip:
+            for track in self.project.timeline.tracks:
+                if track.locked:
+                    continue
+                c = track.find_clip_at(cur_time)
+                if c and c.timeline_in <= cur_time < c.timeline_out - 0.04:
+                    target_clip = c
+                    target_track = track
+                    break
+
+        if target_clip and target_track:
+            cmd = RippleTrimTailCommand(self.project.timeline, target_track.id, target_clip.id, cur_time)
+            self.undo_stack.push(cmd)
+            self.project.mark_dirty()
+            self.playback_engine.seek(cur_time)
 
     def _connect_signals(self) -> None:
         # Playback to Monitor & Timeline

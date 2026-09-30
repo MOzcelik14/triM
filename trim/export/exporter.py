@@ -131,13 +131,21 @@ class TimelineExporter:
 
                 filter_parts.append(f"[{input_idx}:v]{','.join(v_filters)}[v{input_idx}];")
 
-                if media_item.audio_codec and not clip.muted:
+                track = project.timeline.find_track_for_clip(clip.id)
+                track_vol = getattr(track, "volume", 1.0) if track else 1.0
+                track_muted = getattr(track, "muted", False) if track else False
+                any_solo = any(t.solo for t in project.timeline.tracks)
+                track_solo = getattr(track, "solo", False) if track else False
+                is_audio_muted = clip.muted or track_muted or (any_solo and not track_solo)
+                eff_volume = clip.volume * track_vol
+
+                if media_item.audio_codec and not is_audio_muted:
                     a_filters = [
                         "aformat=sample_rates=48000:channel_layouts=stereo",
                         "asetpts=PTS-STARTPTS",
                     ]
-                    if abs(clip.volume - 1.0) > 0.01:
-                        a_filters.append(f"volume={clip.volume:.4f}")
+                    if abs(eff_volume - 1.0) > 0.01:
+                        a_filters.append(f"volume={eff_volume:.4f}")
                     if clip.fade_in > 0:
                         a_filters.append(f"afade=t=in:ss=0:d={clip.fade_in:.4f}")
                     if clip.fade_out > 0:

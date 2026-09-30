@@ -19,12 +19,15 @@ from PySide6.QtGui import (
     QPen,
     QUndoStack,
 )
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QMenu, QWidget
 
 from trim.commands.timeline_commands import (
     AddClipCommand,
+    DetachAudioCommand,
     MoveClipCommand,
+    MoveMultipleClipsCommand,
     RemoveClipCommand,
+    RemoveMultipleClipsCommand,
     RippleDeleteCommand,
     SplitClipCommand,
     TrimClipCommand,
@@ -34,7 +37,7 @@ from trim.core.media import MediaType
 from trim.core.project import Project
 from trim.core.timeline import TimelineModel
 from trim.core.track import Track, TrackType
-from trim.media.waveform import WaveformGenerator
+from trim.media.waveform import WaveformGenerator, WaveformWorker
 from trim.ui.project_bin.media_bin_widget import MIME_MEDIA_ID
 import numpy as np
 
@@ -49,6 +52,7 @@ class DragMode(Enum):
     SCRUB = 4
     FADE_IN = 5
     FADE_OUT = 6
+    RUBBERBAND = 7
 
 
 class TimelineCanvas(QWidget):
@@ -81,12 +85,18 @@ class TimelineCanvas(QWidget):
         self._current_time: float = 0.0
         self._selected_track_id: Optional[str] = None
         self._selected_clip_id: Optional[str] = None
+        self._selected_clip_pairs: list[tuple[str, str]] = []
 
         self._drag_mode = DragMode.NONE
         self._drag_clip: Optional[Clip] = None
         self._drag_track: Optional[Track] = None
         self._drag_start_x: float = 0.0
         self._drag_orig_bounds: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)
+        self._batch_orig_bounds: dict[str, tuple[float, float, float, float]] = {}
+
+        self._rubberband_start: Optional[QPointF] = None
+        self._rubberband_rect: Optional[QRectF] = None
+        self._snap_guide_x: Optional[float] = None
 
         self.setAcceptDrops(True)
         self.setMouseTracking(True)
@@ -99,6 +109,67 @@ class TimelineCanvas(QWidget):
         self.timeline.tracks_changed.connect(self._on_model_changed)
 
         self._update_geometry()
+
+    @property
+    def selected_clips(self) -> list[tuple[Track, Clip]]:
+        """Returns list of selected (track, clip) pairs."""
+        result = []
+        for tr_id, cl_id in self._selected_clip_pairs:
+            tr = self.timeline.get_track_by_id(tr_id)
+            if tr:
+                cl = tr.get_clip_by_id(cl_id)
+                if cl:
+                    result.append((tr, cl))
+        return result
+
+    @selected_clips.setter
+    def selected_clips(self, pairs: list[tuple[Track, Clip]]) -> None:
+        self._selected_clip_pairs = [(tr.id, cl.id) for tr, cl in pairs]
+        if pairs:
+            self._selected_track_id = pairs[0][0].id
+            self._selected_clip_id = pairs[0][1].id
+            self.clip_selected.emit(self._selected_track_id, self._selected_clip_id)
+        else:
+            self._selected_track_id = None
+            self._selected_clip_id = None
+        self.update()
+
+    @property
+    def selected_clip(self) -> Optional[Clip]:
+        """Returns the primary selected clip for backwards compatibility."""
+        clips = self.selected_clips
+        return clips[0][1] if clips else None
+
+    @selected_clip.setter
+    def selected_clip(self, clip: Optional[Clip]) -> None:
+        if clip:
+            tr = self.timeline.find_track_for_clip(clip.id)
+            if tr:
+                self.selected_clips = [(tr, clip)]
+            else:
+                self.clear_selection()
+        else:
+            self.clear_selection()
+
+    @property
+    def selected_track(self) -> Optional[Track]:
+        """Returns the primary selected track for backwards compatibility."""
+        clips = self.selected_clips
+        if clips:
+            return clips[0][0]
+        if self._selected_track_id:
+            return self.timeline.get_track_by_id(self._selected_track_id)
+        return None
+
+    @selected_track.setter
+    def selected_track(self, track: Optional[Track]) -> None:
+        self._selected_track_id = track.id if track else None
+
+    def clear_selection(self) -> None:
+        self._selected_clip_pairs.clear()
+        self._selected_track_id = None
+        self._selected_clip_id = None
+        self.update()
 
     def _request_waveform(self, media_id: str, file_path: str) -> None:
         if media_id in self._waveform_cache:
@@ -195,11 +266,33 @@ class TimelineCanvas(QWidget):
 
         pos = event.position()
         track, clip, mode = self._find_clip_at_pos(pos)
+        is_ctrl_or_shift = bool(
+            event.modifiers() & (Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.ControlModifier)
+        )
 
         if clip and track:
-            self._selected_track_id = track.id
-            self._selected_clip_id = clip.id
-            self.clip_selected.emit(track.id, clip.id)
+            pair = (track.id, clip.id)
+            if is_ctrl_or_shift:
+                if pair in self._selected_clip_pairs:
+                    self._selected_clip_pairs.remove(pair)
+                else:
+                    self._selected_clip_pairs.append(pair)
+
+                if self._selected_clip_pairs:
+                    self._selected_track_id, self._selected_clip_id = self._selected_clip_pairs[0]
+                    self.clip_selected.emit(self._selected_track_id, self._selected_clip_id)
+                else:
+                    self._selected_track_id = None
+                    self._selected_clip_id = None
+            else:
+                if pair not in self._selected_clip_pairs:
+                    self._selected_clip_pairs = [pair]
+                    self._selected_track_id = track.id
+                    self._selected_clip_id = clip.id
+                    self.clip_selected.emit(track.id, clip.id)
+                else:
+                    self._selected_track_id = track.id
+                    self._selected_clip_id = clip.id
 
             self._drag_mode = mode
             self._drag_clip = clip
@@ -207,13 +300,30 @@ class TimelineCanvas(QWidget):
             self._drag_start_x = pos.x()
             assert clip.source_out is not None
             self._drag_orig_bounds = (clip.timeline_in, clip.timeline_out, clip.source_in, clip.source_out)
-        else:
-            self._selected_clip_id = None
-            self._drag_mode = DragMode.SCRUB
-            t = max(0.0, pos.x() / self.pixels_per_second)
-            snapped = self.timeline.snap_time(t, threshold=0.1)
-            self.seek_requested.emit(snapped)
 
+            self._batch_orig_bounds = {}
+            for tr_id, cl_id in self._selected_clip_pairs:
+                tr = self.timeline.get_track_by_id(tr_id)
+                if tr:
+                    cl = tr.get_clip_by_id(cl_id)
+                    if cl and cl.source_out is not None:
+                        self._batch_orig_bounds[cl.id] = (
+                            cl.timeline_in,
+                            cl.timeline_out,
+                            cl.source_in,
+                            cl.source_out,
+                        )
+        else:
+            if not is_ctrl_or_shift:
+                self._selected_clip_pairs = []
+                self._selected_track_id = None
+                self._selected_clip_id = None
+
+            self._drag_mode = DragMode.RUBBERBAND
+            self._rubberband_start = pos
+            self._rubberband_rect = QRectF(pos, pos)
+
+        self._snap_guide_x = None
         self.update()
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
@@ -236,22 +346,72 @@ class TimelineCanvas(QWidget):
         dx = pos.x() - self._drag_start_x
         dt = dx / self.pixels_per_second
 
-        if self._drag_mode == DragMode.SCRUB:
+        if self._drag_mode == DragMode.RUBBERBAND and self._rubberband_start:
+            self._rubberband_rect = QRectF(self._rubberband_start, pos).normalized()
+            intersected_pairs = []
+            for idx, track in enumerate(self.timeline.tracks):
+                for clip in track.clips:
+                    clip_rect = self._get_clip_rect(idx, clip)
+                    if self._rubberband_rect.intersects(clip_rect):
+                        intersected_pairs.append((track.id, clip.id))
+            self._selected_clip_pairs = intersected_pairs
+            if intersected_pairs:
+                self._selected_track_id, self._selected_clip_id = intersected_pairs[0]
+                self.clip_selected.emit(self._selected_track_id, self._selected_clip_id)
+            else:
+                self._selected_track_id = None
+                self._selected_clip_id = None
+            self.update()
+            return
+
+        elif self._drag_mode == DragMode.SCRUB:
             t = max(0.0, pos.x() / self.pixels_per_second)
             snapped = self.timeline.snap_time(t, threshold=0.1)
+            self._snap_guide_x = snapped * self.pixels_per_second if abs(snapped - t) > 1e-4 else None
             self.seek_requested.emit(snapped)
+            self.update()
+            return
 
         elif self._drag_mode == DragMode.MOVE and self._drag_clip and self._drag_track:
-            orig_in = self._drag_orig_bounds[0]
-            target_in = max(0.0, orig_in + dt)
-            snapped_in = self.timeline.snap_time(target_in, threshold=0.1, ignore_clip_id=self._drag_clip.id)
-            self._drag_clip.move_to(snapped_in)
+            is_batch = len(self._selected_clip_pairs) > 1 and self._drag_clip.id in self._batch_orig_bounds
+            if is_batch:
+                min_in = min(b[0] for b in self._batch_orig_bounds.values())
+                dt = max(-min_in, dt)
+                orig_in = self._drag_orig_bounds[0]
+                target_in = max(0.0, orig_in + dt)
+                snapped_in = self.timeline.snap_time(target_in, threshold=0.1, ignore_clip_id=self._drag_clip.id)
+                if abs(snapped_in - target_in) > 1e-4:
+                    self._snap_guide_x = snapped_in * self.pixels_per_second
+                    dt = snapped_in - orig_in
+                else:
+                    self._snap_guide_x = None
+
+                for tr_id, cl_id in self._selected_clip_pairs:
+                    tr = self.timeline.get_track_by_id(tr_id)
+                    if tr and cl_id in self._batch_orig_bounds:
+                        cl = tr.get_clip_by_id(cl_id)
+                        if cl:
+                            cl.move_to(max(0.0, self._batch_orig_bounds[cl_id][0] + dt))
+            else:
+                orig_in = self._drag_orig_bounds[0]
+                target_in = max(0.0, orig_in + dt)
+                snapped_in = self.timeline.snap_time(target_in, threshold=0.1, ignore_clip_id=self._drag_clip.id)
+                if abs(snapped_in - target_in) > 1e-4:
+                    self._snap_guide_x = snapped_in * self.pixels_per_second
+                else:
+                    self._snap_guide_x = None
+                self._drag_clip.move_to(snapped_in)
+
             self.update()
 
         elif self._drag_mode == DragMode.TRIM_IN and self._drag_clip:
             orig_in = self._drag_orig_bounds[0]
             target_in = max(0.0, orig_in + dt)
             snapped_in = self.timeline.snap_time(target_in, threshold=0.1, ignore_clip_id=self._drag_clip.id)
+            if abs(snapped_in - target_in) > 1e-4:
+                self._snap_guide_x = snapped_in * self.pixels_per_second
+            else:
+                self._snap_guide_x = None
             self._drag_clip.trim_in(snapped_in)
             self.update()
 
@@ -259,6 +419,10 @@ class TimelineCanvas(QWidget):
             orig_out = self._drag_orig_bounds[1]
             target_out = max(self._drag_clip.timeline_in + 0.04, orig_out + dt)
             snapped_out = self.timeline.snap_time(target_out, threshold=0.1, ignore_clip_id=self._drag_clip.id)
+            if abs(snapped_out - target_out) > 1e-4:
+                self._snap_guide_x = snapped_out * self.pixels_per_second
+            else:
+                self._snap_guide_x = None
             self._drag_clip.trim_out(snapped_out)
             self.update()
 
@@ -280,28 +444,53 @@ class TimelineCanvas(QWidget):
         if event.button() != Qt.MouseButton.LeftButton:
             return super().mouseReleaseEvent(event)
 
-        if self._drag_clip and self._drag_track:
-            assert self._drag_clip.source_out is not None
-            new_bounds = (
-                self._drag_clip.timeline_in,
-                self._drag_clip.timeline_out,
-                self._drag_clip.source_in,
-                self._drag_clip.source_out,
-            )
+        if self._drag_mode == DragMode.RUBBERBAND:
+            if self._rubberband_rect and self._rubberband_start:
+                drag_dist = (event.position() - self._rubberband_start).manhattanLength()
+                if drag_dist < 5:
+                    t = max(0.0, event.position().x() / self.pixels_per_second)
+                    snapped = self.timeline.snap_time(t, threshold=0.1)
+                    self.seek_requested.emit(snapped)
+            self._rubberband_rect = None
+            self._rubberband_start = None
 
+        elif self._drag_clip and self._drag_track:
             if self._drag_mode == DragMode.MOVE:
-                if abs(new_bounds[0] - self._drag_orig_bounds[0]) > 1e-4:
-                    cmd = MoveClipCommand(
-                        self.timeline,
-                        self._drag_track.id,
-                        self._drag_clip.id,
-                        self._drag_orig_bounds[0],
-                        new_bounds[0],
-                    )
-                    self.undo_stack.push(cmd)
-                    self.project.mark_dirty()
+                is_batch = len(self._selected_clip_pairs) > 1 and self._drag_clip.id in self._batch_orig_bounds
+                if is_batch:
+                    moves = []
+                    for tr_id, cl_id in self._selected_clip_pairs:
+                        tr = self.timeline.get_track_by_id(tr_id)
+                        if tr and cl_id in self._batch_orig_bounds:
+                            cl = tr.get_clip_by_id(cl_id)
+                            if cl:
+                                orig_in = self._batch_orig_bounds[cl_id][0]
+                                if abs(cl.timeline_in - orig_in) > 1e-4:
+                                    moves.append((tr_id, cl_id, orig_in, cl.timeline_in))
+                    if moves:
+                        cmd = MoveMultipleClipsCommand(self.timeline, moves)
+                        self.undo_stack.push(cmd)
+                        self.project.mark_dirty()
+                else:
+                    if abs(self._drag_clip.timeline_in - self._drag_orig_bounds[0]) > 1e-4:
+                        cmd = MoveClipCommand(
+                            self.timeline,
+                            self._drag_track.id,
+                            self._drag_clip.id,
+                            self._drag_orig_bounds[0],
+                            self._drag_clip.timeline_in,
+                        )
+                        self.undo_stack.push(cmd)
+                        self.project.mark_dirty()
 
             elif self._drag_mode in (DragMode.TRIM_IN, DragMode.TRIM_OUT):
+                assert self._drag_clip.source_out is not None
+                new_bounds = (
+                    self._drag_clip.timeline_in,
+                    self._drag_clip.timeline_out,
+                    self._drag_clip.source_in,
+                    self._drag_clip.source_out,
+                )
                 if new_bounds != self._drag_orig_bounds:
                     cmd = TrimClipCommand(
                         self.timeline,
@@ -320,7 +509,64 @@ class TimelineCanvas(QWidget):
         self._drag_mode = DragMode.NONE
         self._drag_clip = None
         self._drag_track = None
+        self._snap_guide_x = None
         self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.update()
+
+    def contextMenuEvent(self, event) -> None:
+        pos = event.position() if hasattr(event, "position") else event.pos()
+        track, clip, _ = self._find_clip_at_pos(pos)
+        if not clip or not track:
+            return
+
+        pair = (track.id, clip.id)
+        if pair not in self._selected_clip_pairs:
+            self._selected_clip_pairs = [pair]
+            self._selected_track_id = track.id
+            self._selected_clip_id = clip.id
+            self.clip_selected.emit(track.id, clip.id)
+            self.update()
+
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #24242c;
+                color: #e0e0e8;
+                border: 1px solid #383842;
+                padding: 4px;
+            }
+            QMenu::item {
+                padding: 6px 20px;
+                border-radius: 3px;
+            }
+            QMenu::item:selected {
+                background-color: #e07a38;
+                color: #ffffff;
+            }
+        """)
+
+        # Detach audio (for video tracks)
+        if track.track_type == TrackType.VIDEO:
+            act_detach = menu.addAction("🔊 Sesi Ayır (Detach Audio)")
+            act_detach.triggered.connect(lambda: self.detach_audio_for_clip(track.id, clip.id))
+
+        act_split = menu.addAction("✂ Klibi Böl (S)")
+        act_split.triggered.connect(self.split_at_playhead)
+
+        menu.addSeparator()
+
+        act_delete = menu.addAction("🗑 Sil (Delete)")
+        act_delete.triggered.connect(self.delete_selected)
+
+        act_ripple = menu.addAction("⏪ Boşluksuz Sil (Ripple Delete)")
+        act_ripple.triggered.connect(self.ripple_delete_selected)
+
+        menu.exec(event.globalPos())
+
+    def detach_audio_for_clip(self, track_id: str, clip_id: str) -> None:
+        cmd = DetachAudioCommand(self.timeline, track_id, clip_id)
+        self.undo_stack.push(cmd)
+        self.project.mark_dirty()
         self.update()
 
     # Drag and Drop from Media Bin
@@ -374,6 +620,7 @@ class TimelineCanvas(QWidget):
 
         self._selected_track_id = target_track.id
         self._selected_clip_id = new_clip.id
+        self._selected_clip_pairs = [(target_track.id, new_clip.id)]
         self.clip_selected.emit(target_track.id, new_clip.id)
 
         event.acceptProposedAction()
@@ -411,12 +658,24 @@ class TimelineCanvas(QWidget):
                 self.update()
 
     def delete_selected(self) -> None:
+        if len(self._selected_clip_pairs) > 1:
+            cmd = RemoveMultipleClipsCommand(self.timeline, list(self._selected_clip_pairs))
+            self.undo_stack.push(cmd)
+            self.project.mark_dirty()
+            self._selected_clip_pairs.clear()
+            self._selected_track_id = None
+            self._selected_clip_id = None
+            self.update()
+            return
+
         if not self._selected_track_id or not self._selected_clip_id:
             return
 
         cmd = RemoveClipCommand(self.timeline, self._selected_track_id, self._selected_clip_id)
         self.undo_stack.push(cmd)
         self.project.mark_dirty()
+        self._selected_clip_pairs.clear()
+        self._selected_track_id = None
         self._selected_clip_id = None
         self.update()
 
@@ -427,6 +686,8 @@ class TimelineCanvas(QWidget):
         cmd = RippleDeleteCommand(self.timeline, self._selected_track_id, self._selected_clip_id)
         self.undo_stack.push(cmd)
         self.project.mark_dirty()
+        self._selected_clip_pairs.clear()
+        self._selected_track_id = None
         self._selected_clip_id = None
         self.update()
 
@@ -436,6 +697,11 @@ class TimelineCanvas(QWidget):
 
         # Background
         painter.fillRect(self.rect(), QColor(22, 22, 26))
+
+        # Track multi-selection clip IDs for quick lookup
+        selected_clip_ids = {cl_id for _, cl_id in self._selected_clip_pairs}
+        if self._selected_clip_id:
+            selected_clip_ids.add(self._selected_clip_id)
 
         # Draw track lanes
         for idx, track in enumerate(self.timeline.tracks):
@@ -453,7 +719,7 @@ class TimelineCanvas(QWidget):
             # Draw clips on track
             for clip in track.clips:
                 clip_rect = self._get_clip_rect(idx, clip)
-                is_selected = clip.id == self._selected_clip_id
+                is_selected = clip.id in selected_clip_ids
 
                 path = QPainterPath()
                 path.addRoundedRect(clip_rect, 4, 4)
@@ -607,3 +873,14 @@ class TimelineCanvas(QWidget):
         ph_x = self._current_time * self.pixels_per_second
         painter.setPen(QPen(QColor(224, 122, 56), 2.0))
         painter.drawLine(int(ph_x), 0, int(ph_x), self.height())
+
+        # Draw magnetic snapping visual guide line
+        if self._snap_guide_x is not None:
+            painter.setPen(QPen(QColor(224, 122, 56), 1.5, Qt.PenStyle.DashLine))
+            painter.drawLine(int(self._snap_guide_x), 0, int(self._snap_guide_x), self.height())
+
+        # Draw rubberband rectangle
+        if self._rubberband_rect and not self._rubberband_rect.isEmpty():
+            painter.fillRect(self._rubberband_rect, QColor(224, 122, 56, 45))
+            painter.setPen(QPen(QColor(224, 122, 56, 200), 1.0, Qt.PenStyle.DashLine))
+            painter.drawRect(self._rubberband_rect)

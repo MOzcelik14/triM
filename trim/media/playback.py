@@ -361,7 +361,9 @@ class PlaybackEngine(QObject):
                     packet = next(self._seq_generator)
                     for f in packet.decode():
                         if isinstance(f, av.AudioFrame):
-                            if not clip.muted and not track.muted and self._seq_a_stream:
+                            any_solo = any(t.solo for t in self.project.timeline.tracks)
+                            track_active = (not any_solo or track.solo) and not track.muted
+                            if not clip.muted and track_active and self._seq_a_stream:
                                 if f.pts is not None:
                                     a_pts_sec = float(f.pts * self._seq_a_stream.time_base)
                                     # Discard past audio frames prior to seek start point
@@ -379,7 +381,7 @@ class PlaybackEngine(QObject):
                                                     fade *= max(0.0, dt / clip.fade_in)
                                                 if clip.fade_out > 0.0 and rem < clip.fade_out:
                                                     fade *= max(0.0, rem / clip.fade_out)
-                                                eff_vol = max(0.0, min(3.0, clip.volume * fade))
+                                                eff_vol = max(0.0, min(3.0, clip.volume * getattr(track, 'volume', 1.0) * fade))
                                                 if abs(eff_vol - 1.0) > 0.01:
                                                     arr = np.clip(arr.astype(np.float32) * eff_vol, -32768, 32767).astype(np.int16)
                                                 self._audio_queue.extend(arr.tobytes())

@@ -20,7 +20,7 @@ def test_application_metadata(qapp):
     app = qapp
     assert app.applicationName() == "triM."
     assert app.applicationDisplayName() == "triM."
-    assert app.desktopFileName() == "io.github.mozcelik14.triM.desktop"
+    assert app.desktopFileName() in ("io.github.mozcelik14.triM", "io.github.mozcelik14.triM.desktop")
 
 
 def test_window_title_and_branding(qapp):

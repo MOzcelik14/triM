@@ -99,10 +99,13 @@ class TimelineModel(QObject):
         return clips
 
     def get_active_audio_clips_at(self, time: float) -> list[tuple[Track, Clip]]:
-        """Returns all unmuted audio/video clips with audio at timestamp."""
+        """Returns all unmuted audio/video clips with audio at timestamp, respecting mute and solo."""
         clips = []
+        has_solo = any(t.solo for t in self.tracks)
         for track in self.tracks:
             if track.muted:
+                continue
+            if has_solo and not track.solo:
                 continue
             clip = track.find_clip_at(time)
             if clip and not clip.muted:

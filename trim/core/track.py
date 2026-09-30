@@ -20,8 +20,10 @@ class Track:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     clips: list[Clip] = field(default_factory=list)
     muted: bool = False
+    solo: bool = False
     locked: bool = False
     visible: bool = True
+    volume: float = 1.0  # 0.0 to 1.5 gain multiplier
 
     def __post_init__(self) -> None:
         if isinstance(self.track_type, str) and not isinstance(self.track_type, TrackType):
@@ -116,8 +118,10 @@ class Track:
             "name": self.name,
             "track_type": self.track_type.value,
             "muted": self.muted,
+            "solo": self.solo,
             "locked": self.locked,
             "visible": self.visible,
+            "volume": self.volume,
             "clips": [c.to_dict() for c in self.clips],
         }
 
@@ -128,8 +132,10 @@ class Track:
             name=data.get("name", "Track"),
             track_type=TrackType(data.get("track_type", "video")),
             muted=bool(data.get("muted", False)),
+            solo=bool(data.get("solo", False)),
             locked=bool(data.get("locked", False)),
             visible=bool(data.get("visible", True)),
+            volume=float(data.get("volume", 1.0)),
         )
         track.clips = [Clip.from_dict(cd) for cd in data.get("clips", [])]
         track.sort_clips()
