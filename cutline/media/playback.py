@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 import logging
 from pathlib import Path
 from typing import Generator, Optional
@@ -20,10 +21,10 @@ class PlaybackEngine(QObject):
     """High-performance frame-accurate video & audio playback engine.
 
     Features:
-    - Audio playback via QAudioSink and PyAV AudioResampler (48kHz 16-bit Stereo PCM)
-    - Sequential demuxing/decoding during playback (300+ FPS capability, zero stutter)
-    - Wall-clock synchronization via QElapsedTimer to eliminate timer drift
-    - Frame-accurate keyframe seeking on scrubbing / pause
+    - Queue-buffered A/V synchronization (zero-crackle audio + 1.000x exact playback speed)
+    - Audio output via QAudioSink and PyAV AudioResampler (48kHz 16-bit Stereo PCM)
+    - Wall-clock synchronization via QElapsedTimer eliminating timer jitter
+    - Instant frame-accurate seeking for timeline scrubbing and editing
     """
 
     frame_ready = Signal(QImage, float)  # (rendered_frame, timeline_time)
@@ -48,6 +49,7 @@ class PlaybackEngine(QObject):
 
         try:
             self._audio_sink: Optional[QAudioSink] = QAudioSink(self._audio_format, self)
+            self._audio_sink.setBufferSize(96000)  # ~0.5 second buffer
         except Exception as e:
             logger.warning("Could not initialize QAudioSink: %s", e)
             self._audio_sink = None
@@ -59,12 +61,16 @@ class PlaybackEngine(QObject):
         self._playback_clock = QElapsedTimer()
         self._playback_start_time = 0.0
 
-        # Sequential stream state
+        # Queue-buffered state
+        self._video_queue: deque[tuple[QImage, float]] = deque()
+        self._audio_queue = bytearray()
+
         self._seq_clip_id: Optional[str] = None
-        self._seq_container: Optional[av.container.InputContainer] = None
         self._seq_generator: Optional[Generator] = None
+        self._seq_v_stream = None
         self._last_rendered_frame: Optional[QImage] = None
 
+        # Playback timer (runs at 10ms / 100Hz for ultra-smooth queue updates)
         self._timer = QTimer(self)
         self._timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._timer.timeout.connect(self._on_playback_tick)
@@ -120,7 +126,10 @@ class PlaybackEngine(QObject):
         self._playback_start_time = self._current_time
         self._playback_clock.start()
 
-        # Start audio output
+        self._video_queue.clear()
+        self._audio_queue.clear()
+
+        # Start audio output device
         if self._audio_sink:
             try:
                 self._audio_sink.reset()
@@ -130,8 +139,7 @@ class PlaybackEngine(QObject):
                 self._audio_io = None
 
         self._setup_sequential_stream(self._current_time)
-        # 16ms timer tick (approx 60 Hz) for buttery smooth updating
-        self._timer.start(16)
+        self._timer.start(10)  # 100 Hz timer
         self.state_changed.emit(True)
 
     def pause(self) -> None:
@@ -147,6 +155,8 @@ class PlaybackEngine(QObject):
                 pass
         self._audio_io = None
         self._seq_generator = None
+        self._video_queue.clear()
+        self._audio_queue.clear()
 
         self.state_changed.emit(False)
 
@@ -172,6 +182,10 @@ class PlaybackEngine(QObject):
             self.pause()
 
         self._current_time = max(0.0, timeline_time)
+        self._video_queue.clear()
+        self._audio_queue.clear()
+        self._seq_generator = None
+
         frame = self._seek_and_render_frame(self._current_time)
         self.frame_ready.emit(frame, self._current_time)
         self.position_changed.emit(self._current_time)
@@ -180,10 +194,14 @@ class PlaybackEngine(QObject):
             self.play()
 
     def _setup_sequential_stream(self, timeline_time: float) -> None:
+        self._video_queue.clear()
+        self._audio_queue.clear()
+
         res = self.project.timeline.get_top_visible_video_clip_at(timeline_time)
         if not res:
             self._seq_clip_id = None
             self._seq_generator = None
+            self._seq_v_stream = None
             return
 
         track, clip = res
@@ -191,6 +209,7 @@ class PlaybackEngine(QObject):
         if not media_item:
             self._seq_clip_id = None
             self._seq_generator = None
+            self._seq_v_stream = None
             return
 
         self._seq_clip_id = clip.id
@@ -200,14 +219,16 @@ class PlaybackEngine(QObject):
 
         if media_item.media_type == MediaType.IMAGE:
             self._seq_generator = None
+            self._seq_v_stream = None
             return
 
         container, v_stream, a_stream = self._get_media_streams(media_item.file_path)
         if not container or not v_stream:
             self._seq_generator = None
+            self._seq_v_stream = None
             return
 
-        self._seq_container = container
+        self._seq_v_stream = v_stream
         source_time = clip.map_timeline_to_source(timeline_time)
 
         try:
@@ -222,22 +243,23 @@ class PlaybackEngine(QObject):
         except Exception as e:
             logger.debug("Failed to set up stream generator at %s: %s", source_time, e)
             self._seq_generator = None
+            self._seq_v_stream = None
 
     def _on_playback_tick(self) -> None:
         if not self._is_playing:
             return
 
         elapsed_sec = self._playback_clock.elapsed() / 1000.0
-        new_time = self._playback_start_time + elapsed_sec
+        cur_time = self._playback_start_time + elapsed_sec
 
         timeline_dur = self.project.timeline.duration
-        if timeline_dur > 0 and new_time >= timeline_dur:
+        if timeline_dur > 0 and cur_time >= timeline_dur:
             self._current_time = timeline_dur
             self.pause()
             self.seek(self._current_time)
             return
 
-        self._current_time = new_time
+        self._current_time = cur_time
         res = self.project.timeline.get_top_visible_video_clip_at(self._current_time)
 
         # Handle clip transitions or gaps
@@ -245,70 +267,86 @@ class PlaybackEngine(QObject):
         if current_clip_id != self._seq_clip_id:
             self._setup_sequential_stream(self._current_time)
 
-        rendered_img = None
-
         if not res:
             # Empty gap
             target_w = self.project.timeline.width or 1920
             target_h = self.project.timeline.height or 1080
             blank = QImage(target_w, target_h, QImage.Format.Format_RGB32)
             blank.fill(QColor(14, 14, 16))
-            rendered_img = blank
+            self._last_rendered_frame = blank
+            self.frame_ready.emit(blank, self._current_time)
+            self.position_changed.emit(self._current_time)
+            return
 
-        elif self._seq_generator:
-            track, clip = res
-            src_target = clip.map_timeline_to_source(self._current_time)
-            media_item = self.project.get_media(clip.media_id)
-            assert media_item is not None
-            _, v_stream, _ = self._get_media_streams(media_item.file_path)
+        track, clip = res
+        media_item = self.project.get_media(clip.media_id)
+        if not media_item:
+            return
 
+        # Static image handling
+        if media_item.media_type == MediaType.IMAGE:
+            if media_item.file_path not in self._image_cache:
+                img = QImage(media_item.file_path)
+                if not img.isNull():
+                    self._image_cache[media_item.file_path] = img
+            img = self._image_cache.get(media_item.file_path)
+            if img:
+                self._last_rendered_frame = img
+                self.frame_ready.emit(img, self._current_time)
+            self.position_changed.emit(self._current_time)
+            return
+
+        # Video & Audio queue processing
+        if self._seq_generator and self._seq_v_stream:
+            # 1. Replenish queues (maintain up to 10 video frames and ~0.5s audio)
             try:
-                # Consume packets from generator until video matches current time
-                for packet in self._seq_generator:
+                while len(self._video_queue) < 10:
+                    packet = next(self._seq_generator)
                     for f in packet.decode():
                         if isinstance(f, av.AudioFrame):
-                            if self._audio_io and not clip.muted and not track.muted:
+                            if not clip.muted and not track.muted:
                                 resampled_list = self._resampler.resample(f)
                                 if resampled_list:
                                     for rf in resampled_list:
-                                        self._audio_io.write(bytes(rf.planes[0]))
-
+                                        self._audio_queue.extend(bytes(rf.planes[0]))
                         elif isinstance(f, av.VideoFrame):
-                            if f.pts is not None and v_stream:
-                                f_time = float(f.pts * v_stream.time_base)
-                                if f_time >= src_target - 0.05:
-                                    rgb = f.to_rgb()
-                                    arr = rgb.to_ndarray()
-                                    rendered_img = QImage(
-                                        arr.data,
-                                        f.width,
-                                        f.height,
-                                        arr.strides[0],
-                                        QImage.Format.Format_RGB888,
-                                    ).copy()
-                                    break
-                    if rendered_img is not None:
-                        break
+                            if f.pts is not None:
+                                pts_sec = float(f.pts * self._seq_v_stream.time_base)
+                                rgb = f.to_rgb()
+                                arr = rgb.to_ndarray()
+                                qimg = QImage(
+                                    arr.data,
+                                    f.width,
+                                    f.height,
+                                    arr.strides[0],
+                                    QImage.Format.Format_RGB888,
+                                ).copy()
+                                self._video_queue.append((qimg, pts_sec))
+            except StopIteration:
+                pass
             except Exception as e:
-                logger.debug("Sequential decode exception: %s", e)
-                self._seq_generator = None
+                logger.debug("Sequential demux error: %s", e)
 
-        elif res:
-            # Static image
-            _, clip = res
-            media_item = self.project.get_media(clip.media_id)
-            if media_item and media_item.media_type == MediaType.IMAGE:
-                if media_item.file_path not in self._image_cache:
-                    img = QImage(media_item.file_path)
-                    if not img.isNull():
-                        self._image_cache[media_item.file_path] = img
-                rendered_img = self._image_cache.get(media_item.file_path)
+            # 2. Feed audio sink (only write what free bytes allow)
+            if self._audio_sink and self._audio_io:
+                free_bytes = self._audio_sink.bytesFree()
+                if free_bytes > 0 and self._audio_queue:
+                    to_write = min(free_bytes, len(self._audio_queue))
+                    written = self._audio_io.write(self._audio_queue[:to_write])
+                    if written > 0:
+                        del self._audio_queue[:written]
 
-        if rendered_img is not None:
-            self._last_rendered_frame = rendered_img
-            self.frame_ready.emit(rendered_img, self._current_time)
-        elif self._last_rendered_frame is not None:
-            self.frame_ready.emit(self._last_rendered_frame, self._current_time)
+            # 3. Deliver video frame whose PTS matches current source target
+            src_target = clip.map_timeline_to_source(self._current_time)
+            frame_to_show = None
+            while self._video_queue and src_target >= self._video_queue[0][1]:
+                frame_to_show, _ = self._video_queue.popleft()
+
+            if frame_to_show is not None:
+                self._last_rendered_frame = frame_to_show
+                self.frame_ready.emit(frame_to_show, self._current_time)
+            elif self._last_rendered_frame is not None:
+                self.frame_ready.emit(self._last_rendered_frame, self._current_time)
 
         self.position_changed.emit(self._current_time)
 

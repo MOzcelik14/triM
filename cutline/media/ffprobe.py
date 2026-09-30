@@ -58,10 +58,14 @@ class FFprobeAnalyzer:
                 audio_stream = s
 
         ext = path.suffix.lower()
-        duration = float(fmt.get("duration", 0.0))
+        duration = 0.0
+        try:
+            duration = float(fmt.get("duration", 0.0))
+        except (ValueError, TypeError):
+            duration = 0.0
 
         # Determine media type
-        if ext in IMAGE_EXTENSIONS or (video_stream and duration == 0.0 and ext not in VIDEO_EXTENSIONS):
+        if ext in IMAGE_EXTENSIONS:
             media_type = MediaType.IMAGE
             duration = 5.0  # Default duration for static images on timeline
         elif video_stream:
@@ -99,6 +103,12 @@ class FFprobeAnalyzer:
             if duration <= 0.0 and "duration" in video_stream:
                 try:
                     duration = float(video_stream["duration"])
+                except (ValueError, TypeError):
+                    pass
+
+            if duration <= 0.0 and "nb_frames" in video_stream and fps > 0:
+                try:
+                    duration = float(video_stream["nb_frames"]) / fps
                 except (ValueError, TypeError):
                     pass
 
