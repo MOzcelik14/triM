@@ -117,7 +117,7 @@
               <span></span>
               <span></span>
             </div>
-            <div class="preview-title">triM. — Native Linux Interface</div>
+            <div class="preview-title" data-i18n="preview_title">triM. — Native Linux Interface</div>
             <div class="preview-tabs">
               <button type="button" class="preview-tab-btn active" id="tab-preview-timeline" data-i18n="preview_tab_timeline">
                 Timeline &amp; Editing
@@ -286,8 +286,8 @@
           </div>
 
           <div class="spec-box">
-            <h3 style="font-size: 1.05rem; margin-bottom: 0.8rem; font-weight: 600;">Linux Native Integration</h3>
-            <p style="font-size: 0.88rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 1rem;">
+            <h3 style="font-size: 1.05rem; margin-bottom: 0.8rem; font-weight: 600;" data-i18n="spec_integration_title">Linux Native Integration</h3>
+            <p style="font-size: 0.88rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 1rem;" data-i18n="spec_integration_desc">
               Complies with FreeDesktop standards including scalable hicolor icon hierarchy, MIME association for <code>.trim</code> and legacy <code>.cutline</code> files, Wayland fractional scaling, and AppStream cataloging.
             </p>
             <div style="font-family: var(--font-mono); font-size: 0.82rem; color: var(--text-muted); background: var(--code-bg); padding: 0.8rem; border-radius: 4px; border: 1px solid var(--border-subtle);">
@@ -306,41 +306,41 @@
           <div class="section-label" data-i18n="install_section_label">Distribution</div>
           <h2 class="section-title" data-i18n="install_section_title">Install in Seconds</h2>
           <p class="section-lead" data-i18n="install_section_lead">
-            Download the prebuilt Debian package directly or install seamlessly using the automated desktop script.
+            Download the prebuilt .deb package directly for Ubuntu, Debian, Linux Mint, Pop!_OS and derivatives, or install seamlessly using the automated desktop script.
           </p>
         </div>
 
         <div class="install-tabs" role="tablist">
-          <button type="button" class="install-tab-btn active" data-target="panel-deb" data-i18n="install_tab_deb">Debian / Ubuntu (.deb)</button>
+          <button type="button" class="install-tab-btn active" data-target="panel-deb" data-i18n="install_tab_deb">Ubuntu / Debian / Mint (.deb)</button>
           <button type="button" class="install-tab-btn" data-target="panel-script" data-i18n="install_tab_script">One-Line Installer</button>
           <button type="button" class="install-tab-btn" data-target="panel-source" data-i18n="install_tab_source">From Source</button>
         </div>
 
         <!-- Panel 1: Debian -->
         <div id="panel-deb" class="install-panel active">
-          <pre class="code-block"><code><span class="comment"># 1. Download trim_0.1.0_all.deb from GitHub Releases</span>
+          <pre class="code-block"><code><span class="comment" data-i18n="deb_comment_1"># 1. Download trim_0.1.0_all.deb from GitHub Releases</span>
 wget https://github.com/MOzcelik14/triM/releases/download/v0.1.0/trim_0.1.0_all.deb
 
-<span class="comment"># 2. Install with apt (automatically handles dependencies)</span>
+<span class="comment" data-i18n="deb_comment_2"># 2. Install with apt (automatically handles dependencies)</span>
 sudo apt install ./trim_0.1.0_all.deb
 
-<span class="comment"># 3. Launch from application menu or terminal</span>
+<span class="comment" data-i18n="deb_comment_3"># 3. Launch from application menu or terminal</span>
 trim</code></pre>
         </div>
 
         <!-- Panel 2: One-Line Script -->
         <div id="panel-script" class="install-panel">
-          <pre class="code-block"><code><span class="comment"># Clone and run automated desktop installer</span>
+          <pre class="code-block"><code><span class="comment" data-i18n="script_comment_1"># Clone and run automated desktop installer</span>
 git clone https://github.com/MOzcelik14/triM.git
 cd triM
 ./install.sh
 
-<span class="comment"># Installs icons, desktop shortcuts, ~/.local/bin/trim, and environment</span></code></pre>
+<span class="comment" data-i18n="script_comment_2"># Installs icons, desktop shortcuts, ~/.local/bin/trim, and environment</span></code></pre>
         </div>
 
         <!-- Panel 3: Source -->
         <div id="panel-source" class="install-panel">
-          <pre class="code-block"><code><span class="comment"># Developer virtual environment setup</span>
+          <pre class="code-block"><code><span class="comment" data-i18n="source_comment_1"># Developer virtual environment setup</span>
 git clone https://github.com/MOzcelik14/triM.git
 cd triM
 python3 -m venv .venv
@@ -368,7 +368,7 @@ trim</code></pre>
           <div class="roadmap-col">
             <div class="roadmap-header">
               <span data-i18n="roadmap_current">v0.1.0 — Current Release</span>
-              <span class="feature-badge badge-ready">Done</span>
+              <span class="feature-badge badge-ready" data-i18n="badge_done">Done</span>
             </div>
             <ul class="roadmap-list">
               <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_1">Multi-track video and audio timeline</span></li>
@@ -376,7 +376,7 @@ trim</code></pre>
               <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_3">Interactive fade handles &amp; waveform caching</span></li>
               <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_4">Dual-channel stereo VU meter &amp; J-K-L shuttle</span></li>
               <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_5">Color adjustments, transitions &amp; title cards</span></li>
-              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_6">Debian (.deb) packaging and desktop installer</span></li>
+              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_6">Ubuntu / Debian (.deb) packaging and automated desktop installer</span></li>
             </ul>
           </div>
 
@@ -384,7 +384,7 @@ trim</code></pre>
           <div class="roadmap-col">
             <div class="roadmap-header">
               <span data-i18n="roadmap_next">v0.2.0 — Up Next</span>
-              <span class="feature-badge badge-planned">Planned</span>
+              <span class="feature-badge badge-planned" data-i18n="badge_planned">Planned</span>
             </div>
             <ul class="roadmap-list">
               <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_7">Multi-clip box selection and batch drag</span></li>
@@ -397,7 +397,7 @@ trim</code></pre>
           <div class="roadmap-col">
             <div class="roadmap-header">
               <span data-i18n="roadmap_later">Future Milestones</span>
-              <span class="feature-badge badge-planned">Future</span>
+              <span class="feature-badge badge-planned" data-i18n="badge_future">Future</span>
             </div>
             <ul class="roadmap-list">
               <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_10">Keyframe animation for position, scale, and opacity</span></li>

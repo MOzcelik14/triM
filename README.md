@@ -50,9 +50,9 @@ Built on Python 3.12, PySide6 (Qt6), FFmpeg, and PyAV, it provides a clean, prec
 
 ### Installation
 
-#### Option 1: Debian / Ubuntu (.deb Package)
+#### Option 1: Ubuntu / Debian / Linux Mint / Pop!_OS (.deb Package)
 
-Download the prebuilt `.deb` package from the [v0.1.0 Release](https://github.com/MOzcelik14/triM/releases/tag/v0.1.0):
+Download the prebuilt `.deb` package (for Ubuntu, Debian, Linux Mint, Pop!_OS, and other Debian-based distributions) from the [v0.1.0 Release](https://github.com/MOzcelik14/triM/releases/tag/v0.1.0):
 
 ```bash
 wget https://github.com/MOzcelik14/triM/releases/download/v0.1.0/trim_0.1.0_all.deb
@@ -163,7 +163,7 @@ triM/
 - [x] Real-time stereo VU meter with peak hold
 - [x] J-K-L shuttle playback and keyboard navigation
 - [x] Color adjustments, transitions, and title generator
-- [x] Debian (`.deb`) packaging and automated installer
+- [x] Ubuntu / Debian (.deb) packaging and automated installer
 - [ ] Flatpak package distribution (`io.github.mozcelik14.triM`)
 - [ ] Multi-clip box selection and batch drag operations
 - [ ] Track-level audio gain sliders
@@ -210,9 +210,9 @@ Python 3.12, PySide6 (Qt6), FFmpeg ve PyAV altyapısıyla geliştirilmiştir. Ş
 
 ### Kurulum
 
-#### Yöntem 1: Debian / Ubuntu (.deb Paketi)
+#### Yöntem 1: Ubuntu / Debian / Linux Mint / Pop!_OS (.deb Paketi)
 
-Hazır `.deb` paketini [v0.1.0 Sürüm Sayfası](https://github.com/MOzcelik14/triM/releases/tag/v0.1.0) üzerinden indirin:
+Ubuntu, Debian, Linux Mint, Pop!_OS ve Debian tabanlı tüm dağıtımlar için hazır `.deb` paketini [v0.1.0 Sürüm Sayfası](https://github.com/MOzcelik14/triM/releases/tag/v0.1.0) üzerinden indirin:
 
 ```bash
 wget https://github.com/MOzcelik14/triM/releases/download/v0.1.0/trim_0.1.0_all.deb
@@ -323,7 +323,7 @@ triM/
 - [x] Canlı stereo VU metre ve tepe göstergesi
 - [x] J-K-L shuttle kontrolleri ve klavye gezintisi
 - [x] Renk ayarları, geçişler ve başlık üretici
-- [x] Debian (`.deb`) paketleme ve otomatik yükleyici
+- [x] Ubuntu / Debian (.deb) paketleme ve otomatik yükleyici
 - [ ] Flatpak paket dağıtımı (`io.github.mozcelik14.triM`)
 - [ ] Çoklu klip kutu seçimi ve toplu taşıma
 - [ ] Kanal bazlı ses seviye denetimi
