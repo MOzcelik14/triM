@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from trim import __version__
 from trim.commands.timeline_commands import (
     AddClipCommand,
     RippleTrimHeadCommand,
@@ -624,7 +625,7 @@ class MainWindow(QMainWindow):
             "triM. Hakkında",
             "<h2 style='margin-bottom:2px;'><span style='color:#EDEDF2;'>tri</span><span style='color:#FFFFFF;'>M</span><span style='color:#E07A38;'>.</span></h2>"
             "<b>A lightweight non-linear video editor.</b><br><br>"
-            "Sürüm 0.1.0<br><br>"
+            f"Sürüm {__version__}<br><br>"
             "Python 3.12, PySide6, FFmpeg ve PyAV altyapısıyla geliştirilmiş<br>"
             "bağımsız, hafif ve modern video düzenleyici.",
         )

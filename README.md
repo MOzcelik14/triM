@@ -12,7 +12,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12+-blue.svg?style=flat-square" alt="Python 3.12+"></a>
   <a href="https://www.qt.io/"><img src="https://img.shields.io/badge/GUI-Qt6%20%2F%20PySide6-41CD52.svg?style=flat-square" alt="Qt6 / PySide6"></a>
-  <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.1.0"><img src="https://img.shields.io/badge/release-v0.1.0-E07A38.svg?style=flat-square" alt="Release v0.1.0"></a>
+  <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.2.0"><img src="https://img.shields.io/badge/release-v0.2.0-E07A38.svg?style=flat-square" alt="Release v0.2.0"></a>
   <img src="https://img.shields.io/badge/platform-Linux%20(Wayland%20%7C%20X11)-28282E.svg?style=flat-square" alt="Linux">
 </p>
 
@@ -38,6 +38,10 @@ Built on Python 3.12, PySide6 (Qt6), FFmpeg, and PyAV, it provides a clean, prec
 ### Features
 
 - **Multi-Track Timeline:** Independent video and audio tracks with split/razor cuts (`S`), ripple delete (`Shift+Delete`), frame-snapping, and drag-and-drop sequencing.
+- **Multi-Clip Selection & Dragging:** Rubberband marquee box selection, Shift-click toggling, and atomic multi-clip moving with snapping alignment.
+- **Track Mixer & Gain Controls:** Track-level volume faders, solo, and mute controls with responsive SVG toggles for precise audio balancing.
+- **Audio Detach Workflow:** Right-click instant audio separation ("Detach Audio") into dedicated audio tracks.
+- **Ripple Trim Shortcuts:** Industry-standard `Q` (ripple trim head) and `W` (ripple trim tail) shortcuts for lightning-fast top-and-tail editing.
 - **Hardware-Assisted Playback & Sync:** Sequential video demuxing and queued audio streaming via PyAV for smooth, stutter-free playback and frame-accurate real-time speed.
 - **Waveform Visualizations:** Multi-threaded audio peak extraction with persistent caching directly rendered on timeline audio clips.
 - **Interactive Fade Handles:** Clip-level draggable visual handles for video opacity curves and live audio gain ramps.
@@ -52,11 +56,11 @@ Built on Python 3.12, PySide6 (Qt6), FFmpeg, and PyAV, it provides a clean, prec
 
 #### Option 1: Ubuntu / Debian / Linux Mint / Pop!_OS (.deb Package)
 
-Download the prebuilt `.deb` package (for Ubuntu, Debian, Linux Mint, Pop!_OS, and other Debian-based distributions) from the [v0.1.0 Release](https://github.com/MOzcelik14/triM/releases/tag/v0.1.0):
+Download the prebuilt `.deb` package (for Ubuntu, Debian, Linux Mint, Pop!_OS, and other Debian-based distributions) from the [v0.2.0 Release](https://github.com/MOzcelik14/triM/releases/tag/v0.2.0):
 
 ```bash
-wget https://github.com/MOzcelik14/triM/releases/download/v0.1.0/trim_0.1.0_all.deb
-sudo apt install ./trim_0.1.0_all.deb
+wget https://github.com/MOzcelik14/triM/releases/download/v0.2.0/trim_0.2.0_all.deb
+sudo apt install ./trim_0.2.0_all.deb
 ```
 
 Once installed, launch `triM.` from your desktop application launcher (under *Sound & Video*) or run:
@@ -164,9 +168,11 @@ triM/
 - [x] J-K-L shuttle playback and keyboard navigation
 - [x] Color adjustments, transitions, and title generator
 - [x] Ubuntu / Debian (.deb) packaging and automated installer
+- [x] Multi-clip box selection and batch drag operations
+- [x] Track mixer with mute, solo, and audio gain sliders
+- [x] Audio detach ("Detach Audio") workflow
+- [x] Ripple trim shortcuts (Q/W)
 - [ ] Flatpak package distribution (`io.github.mozcelik14.triM`)
-- [ ] Multi-clip box selection and batch drag operations
-- [ ] Track-level audio gain sliders
 - [ ] Keyframe transform animation (Position, Scale, Opacity)
 - [ ] 4K proxy media workflow for resource-constrained hardware
 
@@ -198,6 +204,10 @@ Python 3.12, PySide6 (Qt6), FFmpeg ve PyAV altyapısıyla geliştirilmiştir. Ş
 ### Temel Özellikler
 
 - **Çok Kanallı Zaman Çizgisi:** Bağımsız video ve ses kanalları, jilet kesimi (`S`), boşluksuz silme (`Shift+Delete`), manyetik kare yakalama ve sürükle-bırak sıralama.
+- **Çoklu Klip Seçimi ve Toplu Taşıma:** Fareyle çerçeve içine alma (marquee kutu seçimi), Shift ile çoklu seçim ve manyetik yakalama ile toplu taşıma.
+- **Kanal Mikseri ve Kazanç Kontrolü:** Kanal bazlı ses seviye faderları, solo ve sessize alma (mute) kontrolleri ile hassas ses dengeleme.
+- **Sesi Ayır (Detach Audio):** Sağ tık menüsüyle video klibinin sesini tek tıkla bağımsız ses kanalına aktarma iş akışı.
+- **Hızlı Ripple Kırpma Kısayolları:** Sektör standardı `Q` (başlangıcı kırpıp boşluğu kapat) ve `W` (bitişi kırpıp boşluğu kapat) kısayolları.
 - **Donanım Destekli Oynatma ve Ses Senkronu:** PyAV ve FFmpeg libav ile kare hassasiyetinde sıralı demuxing, çıtırtısız ses tampon kuyruğu ve gerçek zamanlı (1.0x) oynatma hızı.
 - **Dalga Formu Görselleştirme:** Çok iş parçacıklı ses tepe noktası analizi, önbellekleme ve doğrudan zaman çizgisi kliplerinde dalga formu çizimi.
 - **İnteraktif Fade Kolları:** Klip üzerinde doğrudan fareyle ayarlanabilen video opaklık eğrileri ve canlı ses kazanç rampaları.
@@ -212,11 +222,11 @@ Python 3.12, PySide6 (Qt6), FFmpeg ve PyAV altyapısıyla geliştirilmiştir. Ş
 
 #### Yöntem 1: Ubuntu / Debian / Linux Mint / Pop!_OS (.deb Paketi)
 
-Ubuntu, Debian, Linux Mint, Pop!_OS ve Debian tabanlı tüm dağıtımlar için hazır `.deb` paketini [v0.1.0 Sürüm Sayfası](https://github.com/MOzcelik14/triM/releases/tag/v0.1.0) üzerinden indirin:
+Ubuntu, Debian, Linux Mint, Pop!_OS ve Debian tabanlı tüm dağıtımlar için hazır `.deb` paketini [v0.2.0 Sürüm Sayfası](https://github.com/MOzcelik14/triM/releases/tag/v0.2.0) üzerinden indirin:
 
 ```bash
-wget https://github.com/MOzcelik14/triM/releases/download/v0.1.0/trim_0.1.0_all.deb
-sudo apt install ./trim_0.1.0_all.deb
+wget https://github.com/MOzcelik14/triM/releases/download/v0.2.0/trim_0.2.0_all.deb
+sudo apt install ./trim_0.2.0_all.deb
 ```
 
 Kurulum tamamlandığında uygulama menünüzden (*Ses ve Video* altında) veya terminalden doğrudan çalıştırabilirsiniz:
@@ -324,9 +334,11 @@ triM/
 - [x] J-K-L shuttle kontrolleri ve klavye gezintisi
 - [x] Renk ayarları, geçişler ve başlık üretici
 - [x] Ubuntu / Debian (.deb) paketleme ve otomatik yükleyici
+- [x] Çoklu klip kutu seçimi ve toplu taşıma
+- [x] Kanal mikseri, ses sürgüleri ve Mute/Solo denetimleri
+- [x] Sesi Ayır (Detach Audio) iş akışı
+- [x] Q/W ripple kırpma kısayolları
 - [ ] Flatpak paket dağıtımı (`io.github.mozcelik14.triM`)
-- [ ] Çoklu klip kutu seçimi ve toplu taşıma
-- [ ] Kanal bazlı ses seviye denetimi
 - [ ] Konum, ölçek ve opaklık için Keyframe animasyonu
 - [ ] Düşük donanımlı sistemler için 4K proxy akışı
 

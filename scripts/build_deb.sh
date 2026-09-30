@@ -7,7 +7,7 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 PKG_NAME="trim"
-PKG_VERSION="0.1.0"
+PKG_VERSION="0.2.0"
 PKG_ARCH="all"
 DEB_NAME="${PKG_NAME}_${PKG_VERSION}_${PKG_ARCH}"
 STAGE_DIR="$PROJECT_DIR/build/deb/$DEB_NAME"
