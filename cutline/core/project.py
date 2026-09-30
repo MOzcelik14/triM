@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ProjectSettings:
-    name: str = "Untitled Project"
+    name: str = "İsimsiz Proje"
     fps: float = 30.0
     width: int = 1920
     height: int = 1080
