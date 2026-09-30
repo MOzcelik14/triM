@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -14,6 +16,8 @@ from PySide6.QtWidgets import (
 
 from trim.core.timeline import TimelineModel
 from trim.core.track import Track, TrackType
+
+ICONS_DIR = Path(__file__).resolve().parent.parent.parent / "resources" / "icons"
 
 
 class SingleTrackHeader(QWidget):
@@ -49,15 +53,17 @@ class SingleTrackHeader(QWidget):
         row1.addStretch()
 
         if track.track_type == TrackType.VIDEO:
-            self.btn_vis = QPushButton("👁" if track.visible else "🚫")
-            self.btn_vis.setFixedSize(24, 22)
+            self.btn_vis = QPushButton()
+            self.btn_vis.setFixedSize(26, 22)
+            self.btn_vis.setIconSize(QSize(16, 16))
             self.btn_vis.setToolTip("Görünürlüğü Aç / Kapat")
+            self._update_vis_style()
             self.btn_vis.clicked.connect(self._toggle_vis)
             row1.addWidget(self.btn_vis)
         else:
             # Audio Mute button
             self.btn_mute = QPushButton("M")
-            self.btn_mute.setFixedSize(22, 22)
+            self.btn_mute.setFixedSize(24, 22)
             self.btn_mute.setToolTip("Sesi Kapat (Mute)")
             self.btn_mute.setCheckable(True)
             self.btn_mute.setChecked(track.muted)
@@ -67,7 +73,7 @@ class SingleTrackHeader(QWidget):
 
             # Audio Solo button
             self.btn_solo = QPushButton("S")
-            self.btn_solo.setFixedSize(22, 22)
+            self.btn_solo.setFixedSize(24, 22)
             self.btn_solo.setToolTip("Yalnız Dinle (Solo)")
             self.btn_solo.setCheckable(True)
             self.btn_solo.setChecked(track.solo)
@@ -76,9 +82,11 @@ class SingleTrackHeader(QWidget):
             row1.addWidget(self.btn_solo)
 
         # Lock button
-        self.btn_lock = QPushButton("🔓" if not track.locked else "🔒")
-        self.btn_lock.setFixedSize(24, 22)
+        self.btn_lock = QPushButton()
+        self.btn_lock.setFixedSize(26, 22)
+        self.btn_lock.setIconSize(QSize(16, 16))
         self.btn_lock.setToolTip("Kanalı Kilitle / Aç")
+        self._update_lock_style()
         self.btn_lock.clicked.connect(self._toggle_lock)
         row1.addWidget(self.btn_lock)
         main_layout.addLayout(row1)
@@ -121,35 +129,59 @@ class SingleTrackHeader(QWidget):
 
             main_layout.addLayout(row2)
 
+    def _update_vis_style(self) -> None:
+        if self.track.visible:
+            self.btn_vis.setIcon(QIcon(str(ICONS_DIR / "eye.svg")))
+            self.btn_vis.setStyleSheet(
+                "padding: 0px; margin: 0px; background-color: #2e2e38; border: 1px solid #3e3e4a; border-radius: 3px;"
+            )
+        else:
+            self.btn_vis.setIcon(QIcon(str(ICONS_DIR / "eye_off.svg")))
+            self.btn_vis.setStyleSheet(
+                "padding: 0px; margin: 0px; background-color: #1a1a20; border: 1px solid #282830; border-radius: 3px;"
+            )
+
+    def _update_lock_style(self) -> None:
+        if self.track.locked:
+            self.btn_lock.setIcon(QIcon(str(ICONS_DIR / "lock.svg")))
+            self.btn_lock.setStyleSheet(
+                "padding: 0px; margin: 0px; background-color: #382418; border: 1px solid #e07a38; border-radius: 3px;"
+            )
+        else:
+            self.btn_lock.setIcon(QIcon(str(ICONS_DIR / "lock_open.svg")))
+            self.btn_lock.setStyleSheet(
+                "padding: 0px; margin: 0px; background-color: #2e2e38; border: 1px solid #3e3e4a; border-radius: 3px;"
+            )
+
     def _update_mute_style(self) -> None:
         if self.track.muted:
             self.btn_mute.setStyleSheet(
-                "background-color: #e07a38; color: #ffffff; font-weight: bold; border-radius: 3px; border: none; font-size: 10px;"
+                "padding: 0px; margin: 0px; text-align: center; background-color: #e07a38; color: #ffffff; font-weight: bold; border-radius: 3px; border: none; font-size: 11px;"
             )
         else:
             self.btn_mute.setStyleSheet(
-                "background-color: #2e2e38; color: #8e8e99; font-weight: bold; border-radius: 3px; border: 1px solid #3e3e4a; font-size: 10px;"
+                "padding: 0px; margin: 0px; text-align: center; background-color: #2e2e38; color: #a0a0b2; font-weight: bold; border-radius: 3px; border: 1px solid #3e3e4a; font-size: 11px;"
             )
 
     def _update_solo_style(self) -> None:
         if self.track.solo:
             self.btn_solo.setStyleSheet(
-                "background-color: #38c172; color: #ffffff; font-weight: bold; border-radius: 3px; border: none; font-size: 10px;"
+                "padding: 0px; margin: 0px; text-align: center; background-color: #38c172; color: #ffffff; font-weight: bold; border-radius: 3px; border: none; font-size: 11px;"
             )
         else:
             self.btn_solo.setStyleSheet(
-                "background-color: #2e2e38; color: #8e8e99; font-weight: bold; border-radius: 3px; border: 1px solid #3e3e4a; font-size: 10px;"
+                "padding: 0px; margin: 0px; text-align: center; background-color: #2e2e38; color: #a0a0b2; font-weight: bold; border-radius: 3px; border: 1px solid #3e3e4a; font-size: 11px;"
             )
 
     def _toggle_vis(self) -> None:
         self.track.visible = not self.track.visible
-        self.btn_vis.setText("👁" if self.track.visible else "🚫")
+        self._update_vis_style()
         if self.timeline:
             self.timeline.tracks_changed.emit()
 
     def _toggle_lock(self) -> None:
         self.track.locked = not self.track.locked
-        self.btn_lock.setText("🔓" if not self.track.locked else "🔒")
+        self._update_lock_style()
         if self.timeline:
             self.timeline.tracks_changed.emit()
 

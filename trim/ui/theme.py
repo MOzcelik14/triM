@@ -60,6 +60,12 @@ QPushButton {
     font-weight: 500;
 }
 
+SingleTrackHeader QPushButton {
+    padding: 0px;
+    margin: 0px;
+    text-align: center;
+}
+
 QPushButton:hover {
     background-color: #2f2f38;
     border-color: #42424e;
