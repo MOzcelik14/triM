@@ -27,7 +27,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg dpkg-dev libgl1-mesa-glx libegl1 libxkbcommon-x11-0
+          sudo apt-get install -y ffmpeg dpkg-dev libgl1 libglx-mesa0 libegl1 libxkbcommon-x11-0
 
       - name: Install Python dependencies
         run: |
