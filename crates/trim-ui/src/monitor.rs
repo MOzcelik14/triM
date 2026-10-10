@@ -127,7 +127,9 @@ impl<'a> MonitorWidget<'a> {
                 Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
                 Color32::WHITE,
             );
-        } else {
+        } else if self.media_label.is_some() {
+            // An active clip is loading/decoding; show progress messaging.
+            // If the playhead is outside all video clips, leave the viewport black.
             painter.text(
                 frame_rect.center(),
                 egui::Align2::CENTER_CENTER,
