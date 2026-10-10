@@ -66,6 +66,9 @@ build_deb() {
   local stage="$ROOT/build/linux/deb"
   rm -rf "$stage"
   install_payload "$stage"
+  # A previously installed per-user ~/​.local/bin/trim Python launcher can
+  # shadow /usr/bin/trim on PATH; use an absolute Exec for distro packages.
+  sed -i 's|^Exec=trim |Exec=/usr/bin/trim |' "$stage/usr/share/applications/io.github.mozcelik14.triM.desktop"
   mkdir -p "$stage/DEBIAN"
   cat > "$stage/DEBIAN/control" <<EOF
 Package: trim
@@ -93,6 +96,7 @@ build_rpm() {
   mkdir -p "$top"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
   install -m755 "$BIN" "$top/SOURCES/trim"
   cp "$DESKTOP" "$top/SOURCES/triM.desktop"
+  sed -i 's|^Exec=trim |Exec=/usr/bin/trim |' "$top/SOURCES/triM.desktop"
   cp "$METAINFO" "$top/SOURCES/triM.metainfo.xml"
   cp "$ICON" "$top/SOURCES/triM.svg"
   local size
