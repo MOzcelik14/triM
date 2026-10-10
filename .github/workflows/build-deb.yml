@@ -1,62 +1,49 @@
-name: Test & Build Debian Package
+# Legacy Python/PySide6 edition only. Rust packages are built by release-linux.yml.
+name: Legacy Python regression tests
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: [master]
+    paths:
+      - "trim/**"
+      - "cutline/**"
+      - "tests/**"
+      - "requirements.txt"
+      - "pyproject.toml"
+      - ".github/workflows/build-deb.yml"
   pull_request:
-    branches: [ "master", "main" ]
-  release:
-    types: [ "created", "published" ]
+    branches: [master]
+    paths:
+      - "trim/**"
+      - "cutline/**"
+      - "tests/**"
+      - "requirements.txt"
+      - "pyproject.toml"
+      - ".github/workflows/build-deb.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  test-and-build:
-    name: Run Tests & Build .deb
-    runs-on: ubuntu-latest
-
+  python-tests:
+    name: Python GUI tests (headless)
+    runs-on: ubuntu-22.04
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-          cache: "pip"
-
-      - name: Install system dependencies
+          cache: pip
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg dpkg-dev libgl1 libglx-mesa0 libegl1 libxkbcommon-x11-0
-
-      - name: Install Python dependencies
-        run: |
-          python3 -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -e .
-
-      - name: Run Test Suite
+          sudo apt-get install -y ffmpeg libgl1 libegl1 libxkbcommon-x11-0
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+      - name: Run legacy tests
         env:
           QT_QPA_PLATFORM: offscreen
-        run: |
-          pytest tests/ -v
-
-      - name: Build Debian Package (.deb)
-        run: |
-          chmod +x scripts/build_deb.sh
-          ./scripts/build_deb.sh
-
-      - name: Upload .deb Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: trim-debian-package
-          path: dist/*.deb
-          if-no-files-found: error
-
-      - name: Upload to GitHub Release
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*.deb
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pytest tests/ -q
