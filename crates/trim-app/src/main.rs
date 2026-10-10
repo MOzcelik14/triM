@@ -7,26 +7,27 @@ use trim_ui::TrimApp;
 
 fn main() -> Result<(), eframe::Error> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    log::info!("Starting triM. v0.3.0 (Rust Desktop NLE)...");
+    log::info!("Starting triM. v{} (Rust Desktop NLE)...", env!("CARGO_PKG_VERSION"));
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("triM.")
         .with_inner_size([1366.0, 850.0])
         .with_min_inner_size([1024.0, 600.0]);
 
-    // Load window icon if present
-    let icon_path = Path::new("trim/resources/icons/trim_256x256.png");
-    if icon_path.is_file() {
-        if let Ok(img) = image::open(icon_path) {
-            let rgba = img.to_rgba8();
-            let (width, height) = rgba.dimensions();
-            let icon_data = egui::IconData {
-                rgba: rgba.into_raw(),
-                width,
-                height,
-            };
-            viewport = viewport.with_icon(Arc::new(icon_data));
-        }
+    // Embed the icon: installed builds cannot rely on the current directory.
+    let icon_bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../trim/resources/icons/trim_256x256.png"
+    ));
+    if let Ok(img) = image::load_from_memory(icon_bytes) {
+        let rgba = img.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        let icon_data = egui::IconData {
+            rgba: rgba.into_raw(),
+            width,
+            height,
+        };
+        viewport = viewport.with_icon(Arc::new(icon_data));
     }
 
     let native_options = eframe::NativeOptions {
