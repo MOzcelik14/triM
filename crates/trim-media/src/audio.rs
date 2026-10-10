@@ -107,7 +107,7 @@ impl AudioMixer {
                 }
 
                 let pcm = match self.get_audio_pcm(&media_item.file_path) {
-                    Some(p) => p.clone(),
+                    Some(p) => p,
                     None => continue,
                 };
 
