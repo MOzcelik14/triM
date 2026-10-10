@@ -813,7 +813,7 @@ mod tests {
             .unwrap();
 
         let mut project = Project::default();
-        let mut media = MediaItem::new(image_path.to_string_lossy());
+        let mut media = MediaItem::new(&image_path);
         media.media_type = MediaType::Image;
         let media_id = media.id.clone();
         project.add_media(media);
