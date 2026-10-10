@@ -8,6 +8,7 @@ on:
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
+      - "crates/**"
       - "scripts/package-linux.sh"
       - ".github/workflows/release-linux.yml"
   workflow_dispatch:
