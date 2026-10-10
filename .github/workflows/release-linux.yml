@@ -1,0 +1,133 @@
+name: Build & Release Linux Packages
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trim-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rust-tests:
+    name: Rust workspace tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config build-essential libasound2-dev libx11-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev ffmpeg
+      - name: Use current stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Check Rust workspace
+        run: cargo check --workspace --locked
+      - name: Run Rust tests
+        run: cargo test --workspace --locked
+
+  deb-appimage:
+    name: Ubuntu build · deb + AppImage
+    needs: rust-tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install packaging requirements
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config build-essential libasound2-dev libx11-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev ffmpeg curl file desktop-file-utils
+      - name: Use current stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Build optimized native executable
+        run: cargo build --locked --release -p trim-app
+      - name: Build Debian package
+        run: bash scripts/package-linux.sh deb
+      - name: Build AppImage
+        run: bash scripts/package-linux.sh appimage
+      - name: Validate Debian package and release outputs
+        run: |
+          test "$(find dist -name '*.deb' | wc -l)" -eq 1
+          test "$(find dist -name '*.AppImage' | wc -l)" -eq 1
+          dpkg-deb -f dist/*.deb Package Version Architecture
+          test -x target/release/trim
+          bash -n scripts/package-linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trim-ubuntu-packages
+          path: |
+            dist/*.deb
+            dist/*.AppImage
+          if-no-files-found: error
+          retention-days: 30
+
+  rpm:
+    name: Fedora build · rpm
+    needs: rust-tests
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - name: Install native build and packaging tools
+        run: |
+          dnf install -y git gcc gcc-c++ make pkgconf-pkg-config alsa-lib-devel libX11-devel mesa-libGL-devel libxkbcommon-devel wayland-devel ffmpeg-free rpm-build curl ca-certificates rust cargo
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Build Rust binary on Fedora
+        run: cargo build --locked --release -p trim-app
+      - name: Package RPM
+        run: bash scripts/package-linux.sh rpm
+      - name: Validate RPM
+        run: |
+          test "$(find dist -name '*.rpm' | wc -l)" -eq 1
+          rpm -qpl dist/*.rpm | grep -E '/usr/bin/trim$'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trim-fedora-package
+          path: dist/*.rpm
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish GitHub Release
+    needs: [deb-appimage, rpm]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: trim-*-package*
+          merge-multiple: true
+          path: dist
+      - name: Verify package set and generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(find dist -maxdepth 1 -name '*.deb' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -name '*.rpm' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -name '*.AppImage' | wc -l)" -eq 1
+          (cd dist && sha256sum -- *.deb *.rpm *.AppImage > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
+      - name: Create or update release with all packages
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+          generate_release_notes: true
