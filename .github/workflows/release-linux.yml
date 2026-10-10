@@ -18,7 +18,9 @@ permissions:
 
 concurrency:
   group: trim-release-${{ github.ref }}
-  cancel-in-progress: false
+  # On master, only the newest commit needs distributable CI artifacts.
+  # Tagged releases must never be cancelled by later pushes.
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   rust-tests:
