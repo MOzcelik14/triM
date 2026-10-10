@@ -214,7 +214,7 @@ Tüm çalışma alanı testleri Cargo üzerinden doğrudan çalıştırılabilir
 cargo test --workspace
 ```
 
-Birim testleri, geri alma yığını, ses mikseri, manyetik yapışma, video çözümleme ve entegrasyon iş akışlarını kapsayan **33/33 test %100 başarılıdır.**
+Birim ve entegrasyon testleri; geri alma yığını, ses mikseri, manyetik yapışma, video çözümleme ve kurgu iş akışlarını kapsar. GitHub Actions, her ilgili değişiklikte Rust çalışma alanını yeniden derleyip test eder.
 
 ---
 
