@@ -1,27 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>triM. — A Lightweight Non-Linear Video Editor for Linux</title>
+  <title>triM. — Linux İçin Modern ve Hafif Video Düzenleyici (Rust NLE)</title>
   
-  <meta name="description" content="A fast, modern, native non-linear video editor for Linux written in Rust. egui, FFmpeg. No Electron bloat.">
+  <meta name="description" content="Linux için modern, hafif ve yerel video düzenleyici (NLE). Rust, egui ve FFmpeg ile geliştirildi. Electron veya web şişkinliği içermez.">
   <meta name="author" content="M. Özçelik">
-  <meta name="theme-color" content="#151518">
+  <meta name="theme-color" content="#0a0a0d">
   
   <!-- Canonical & Open Graph -->
   <link rel="canonical" href="https://mozcelik14.github.io/triM/">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://mozcelik14.github.io/triM/">
-  <meta property="og:title" content="triM. — Modern Non-Linear Video Editor for Linux">
-  <meta property="og:description" content="Fast, native, precision video editing for Linux desktop. Built with Rust, egui, and FFmpeg.">
-  <meta property="og:image" content="./assets/screenshots/trim_timeline.png">
+  <meta property="og:title" content="triM. — Modern Non-Linear Video Editor for Linux (Rust)">
+  <meta property="og:description" content="Ultra-fast native video editing for Linux. 100% Rust, egui, and FFmpeg. Zero Electron bloat.">
+  <meta property="og:image" content="./assets/screenshots/trim_rust_preview.png">
   
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="triM. — Video Editor for Linux">
-  <meta name="twitter:description" content="A lightweight, native non-linear video editor for Linux with precision audio sync and multi-track timeline.">
-  <meta name="twitter:image" content="./assets/screenshots/trim_timeline.png">
+  <meta name="twitter:title" content="triM. — Native Linux Video Editor in Rust">
+  <meta name="twitter:description" content="A lightweight, Electron-free non-linear video editor for Linux with 235+ FPS streaming engine and precision timeline.">
+  <meta name="twitter:image" content="./assets/screenshots/trim_rust_preview.png">
 
   <!-- Favicons -->
   <link rel="icon" type="image/svg+xml" href="./assets/icons/io.github.mozcelik14.triM.svg">
@@ -33,34 +33,41 @@
 </head>
 <body>
 
-  <!-- Site Navigation Header -->
-  <header class="site-header">
+  <!-- Sticky Glassmorphic Navbar -->
+  <header class="site-header" id="site-header">
     <div class="nav-container">
-      <a href="./" class="brand-link" aria-label="triM. Homepage">
-        <img src="./assets/branding/logo_wordmark.svg" alt="triM. Logo" class="logo-img" height="28" width="86">
-      </a>
+      <div class="brand-wrapper">
+        <a href="./" class="brand-link" aria-label="triM. Anasayfa">
+          <img src="./assets/branding/logo_wordmark.svg" alt="triM. Logo" class="logo-img" height="26" width="80">
+        </a>
+        <div class="brand-badge">
+          <span class="pulse-dot"></span>
+          <span>v0.3.0 Rust</span>
+        </div>
+      </div>
 
-      <nav aria-label="Main Navigation">
+      <nav aria-label="Ana Menü">
         <ul class="nav-links">
-          <li><a href="#features" data-i18n="nav_features">Features</a></li>
-          <li><a href="#architecture" data-i18n="nav_architecture">Architecture</a></li>
-          <li><a href="#installation" data-i18n="nav_install">Installation</a></li>
-          <li><a href="#roadmap" data-i18n="nav_roadmap">Roadmap</a></li>
+          <li><a href="#features" data-i18n="nav_features">Özellikler</a></li>
+          <li><a href="#architecture" data-i18n="nav_architecture">Mimari</a></li>
+          <li><a href="#shortcuts" data-i18n="nav_shortcuts">Kısayollar</a></li>
+          <li><a href="#installation" data-i18n="nav_install">Kurulum</a></li>
         </ul>
       </nav>
 
       <div class="nav-actions">
         <!-- Language Switcher -->
-        <div class="lang-switcher" role="group" aria-label="Language selection">
-          <button type="button" class="lang-btn" data-lang="tr" aria-label="Türkçe">TR</button>
-          <button type="button" class="lang-btn active" data-lang="en" aria-label="English">EN</button>
+        <div class="lang-switcher" role="group" aria-label="Dil seçimi">
+          <button type="button" class="lang-btn active" data-lang="tr" aria-label="Türkçe">TR</button>
+          <button type="button" class="lang-btn" data-lang="en" aria-label="English">EN</button>
         </div>
 
         <!-- GitHub Repository Link -->
-        <a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer" class="icon-btn" aria-label="GitHub Repository">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+        <a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer" class="github-btn" aria-label="GitHub Deposu">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/>
           </svg>
+          <span data-i18n="nav_github">GitHub</span>
         </a>
       </div>
     </div>
@@ -71,45 +78,43 @@
     <section class="hero">
       <div class="container">
         <div class="hero-pill">
-          <span class="status-indicator"></span>
-          <span data-i18n="hero_badge">v0.3.0 Released — Ubuntu / Debian &amp; Linux</span>
+          <span class="hero-pill-sparkle">⚡</span>
+          <span data-i18n="hero_pill">%100 Saf Rust • Sıfır Electron • 19 MB Yerel Linux İkili Dosyası</span>
         </div>
 
         <h1 class="hero-title">
-          <span class="brand-wordmark">tri<span class="bold-m">M</span><span class="accent-dot">.</span></span>
+          <span data-i18n="hero_title_1">Linux İçin</span> <br>
+          <span class="gradient-text" data-i18n="hero_title_2">Yüksek Performanslı</span> <br>
+          <span data-i18n="hero_title_3">Yerel Video Düzenleyici.</span>
         </h1>
 
-        <p class="hero-subtitle" data-i18n="hero_subtitle">
-          A lightweight, native non-linear video editor for Linux.
-        </p>
-
         <p class="hero-description" data-i18n="hero_desc">
-          A streamlined creative desktop experience focused on cutting, trimming, timeline sequencing, and audio synchronization. Built with Rust, egui, and FFmpeg — without cloud lock-in or Electron memory bloat.
+          Rust, egui ve FFmpeg üzerine sıfırdan inşa edilmiş modern NLE. 235+ FPS asenkron oynatma akışı, çok kanallı stereo ses mikseri ve manyetik kurgu zaman çizgisi — Electron hantallığı ve web yükü olmadan.
         </p>
 
         <div class="hero-cta">
-          <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.3.0" class="btn btn-primary">
-            <span data-i18n="cta_download">Download Latest Release (.deb)</span>
-            <span class="btn-badge">v0.3.0</span>
+          <a href="https://github.com/MOzcelik14/triM/releases" class="btn btn-primary">
+            <span data-i18n="cta_download">Son Sürümü İndir</span>
+            <span style="font-size: 0.8em; opacity: 0.85;">(v0.3.0)</span>
           </a>
-          <a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" data-i18n="cta_source">
-            Source Code
+          <a href="#architecture" class="btn btn-secondary" data-i18n="cta_architecture">
+            Mimarisi ve Modülleri İncele
           </a>
         </div>
 
         <!-- Terminal Quick Install -->
         <div class="quick-install">
           <code><span class="prompt-symbol">$</span>git clone https://github.com/MOzcelik14/triM.git &amp;&amp; cd triM &amp;&amp; cargo build --release</code>
-          <button type="button" class="copy-btn" data-clipboard-text="git clone https://github.com/MOzcelik14/triM.git &amp;&amp; cd triM &amp;&amp; cargo build --release" data-i18n="quick_install_copy">
-            Copy
+          <button type="button" class="copy-btn" id="copy-quick-install" data-text="git clone https://github.com/MOzcelik14/triM.git && cd triM && cargo build --release" data-i18n="quick_install_copy">
+            Kopyala
           </button>
         </div>
       </div>
     </section>
 
-    <!-- App Showcase / Preview -->
-    <section class="showcase-section" aria-label="Application Showcase">
-      <div class="container">
+    <!-- App Showcase / Hero Preview Window -->
+    <section class="showcase-section" aria-label="Uygulama Arayüzü">
+      <div class="container showcase-glow">
         <div class="preview-frame">
           <div class="preview-topbar">
             <div class="preview-dots">
@@ -117,337 +122,352 @@
               <span></span>
               <span></span>
             </div>
-            <div class="preview-title" data-i18n="preview_title">triM. — Native Linux Interface</div>
             <div class="preview-tabs">
-              <button type="button" class="preview-tab-btn active" id="tab-preview-timeline" data-i18n="preview_tab_timeline">
-                Timeline &amp; Editing
-              </button>
-              <button type="button" class="preview-tab-btn" id="tab-preview-empty" data-i18n="preview_tab_empty">
-                Clean Empty State
-              </button>
+              <button type="button" class="tab-btn active" data-tab="timeline" data-i18n="tab_timeline">Aktif Kurgu &amp; Monitör</button>
+              <button type="button" class="tab-btn" data-tab="empty" data-i18n="tab_empty">Minimal Açılış Ekranı</button>
             </div>
           </div>
-          <div class="preview-image-container">
-            <img id="preview-image" src="./assets/screenshots/trim_timeline.png" alt="triM. Timeline and Video Preview Interface" width="1366" height="768" loading="eager">
+          <div class="preview-content">
+            <img src="./assets/screenshots/trim_rust_preview.png" alt="triM. Rust Kurgu Arayüzü" class="preview-img active" id="img-timeline" loading="eager">
+            <img src="./assets/screenshots/trim_empty_state.png" alt="triM. Açılış Ekranı" class="preview-img" id="img-empty" loading="lazy">
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Features Section -->
-    <section id="features" class="section">
+    <!-- Key Metrics / Stats Strip -->
+    <section class="stats-strip">
       <div class="container">
-        <div class="section-header">
-          <div class="section-label" data-i18n="feat_section_label">Capabilities</div>
-          <h2 class="section-title" data-i18n="feat_section_title">Fast, Precise, and Solid Editing Tools</h2>
-          <p class="section-lead" data-i18n="feat_section_lead">
-            Essential non-linear editing capabilities focused purely on cutting, arranging, and exporting video without visual clutter.
-          </p>
-        </div>
-
-        <div class="grid-3">
-          <!-- Feature 1 -->
-          <article class="feature-card">
-            <div class="feature-header">
-              <h3 class="feature-title" data-i18n="feat_1_title">Multi-Track Timeline</h3>
-              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
-            </div>
-            <p class="feature-text" data-i18n="feat_1_desc">
-              Independent video and audio tracks with magnetic frame snapping, razor cuts (S), and ripple deletion (Shift+Delete).
-            </p>
-          </article>
-
-          <!-- Feature 2 -->
-          <article class="feature-card">
-            <div class="feature-header">
-              <h3 class="feature-title" data-i18n="feat_2_title">Hardware-Assisted Playback &amp; Sync</h3>
-              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
-            </div>
-            <p class="feature-text" data-i18n="feat_2_desc">
-              Accurate sequential demuxing with PyAV and ffmpeg libav, zero-crackling audio buffer queue, and exact real-time playback.
-            </p>
-          </article>
-
-          <!-- Feature 3 -->
-          <article class="feature-card">
-            <div class="feature-header">
-              <h3 class="feature-title" data-i18n="feat_3_title">Audio Waveforms &amp; Live VU Meter</h3>
-              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
-            </div>
-            <p class="feature-text" data-i18n="feat_3_desc">
-              Multi-threaded peak extraction, persistent caching, and dual-channel dynamic RMS dBFS meters with peak hold.
-            </p>
-          </article>
-
-          <!-- Feature 4 -->
-          <article class="feature-card">
-            <div class="feature-header">
-              <h3 class="feature-title" data-i18n="feat_4_title">Interactive Fade &amp; Transition Handles</h3>
-              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
-            </div>
-            <p class="feature-text" data-i18n="feat_4_desc">
-              Direct clip-level draggable opacity curves, audio gain ramps, and smooth Dip to Black / Dip to White transitions.
-            </p>
-          </article>
-
-          <!-- Feature 5 -->
-          <article class="feature-card">
-            <div class="feature-header">
-              <h3 class="feature-title" data-i18n="feat_5_title">Typography &amp; Title Generator</h3>
-              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
-            </div>
-            <p class="feature-text" data-i18n="feat_5_desc">
-              Native title, subtitle, and lower-third generation with system font selection, alignment flags, and alpha transparency.
-            </p>
-          </article>
-
-          <!-- Feature 6 -->
-          <article class="feature-card">
-            <div class="feature-header">
-              <h3 class="feature-title" data-i18n="feat_6_title">Color Adjustments &amp; Transforms</h3>
-              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
-            </div>
-            <p class="feature-text" data-i18n="feat_6_desc">
-              Live brightness, contrast, and saturation controls, instant black-and-white conversion, and position/scale transforms.
-            </p>
-          </article>
-
-          <!-- Feature 7 -->
-          <article class="feature-card">
-            <div class="feature-header">
-              <h3 class="feature-title" data-i18n="feat_7_title">Background FFmpeg Rendering</h3>
-              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
-            </div>
-            <p class="feature-text" data-i18n="feat_7_desc">
-              Preset-driven resolution and framerate exports, multi-threaded filtergraph execution, and non-blocking background queue.
-            </p>
-          </article>
-
-          <!-- Feature 8 -->
-          <article class="feature-card">
-            <div class="feature-header">
-              <h3 class="feature-title" data-i18n="feat_8_title">Autosave &amp; Crash Recovery</h3>
-              <span class="feature-badge badge-ready" data-i18n="badge_ready">Available</span>
-            </div>
-            <p class="feature-text" data-i18n="feat_8_desc">
-              Periodic background state snapshots ensuring immediate one-click project recovery in the event of power or system failure.
-            </p>
-          </article>
-
-          <!-- Feature 9 (Planned) -->
-          <article class="feature-card">
-            <div class="feature-header">
-              <h3 class="feature-title" data-i18n="feat_9_title">Flatpak Distribution</h3>
-              <span class="feature-badge badge-planned" data-i18n="badge_planned">Planned</span>
-            </div>
-            <p class="feature-text" data-i18n="feat_9_desc">
-              AppStream metadata and Flatpak sandbox packaging for one-click installation via Flathub.
-            </p>
-          </article>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-value">19 MB</div>
+            <div class="stat-label" data-i18n="stat_1_label">Bağımsız Native ELF</div>
+            <div class="stat-desc" data-i18n="stat_1_desc">Sıfır Electron / 0 web bellek yükü</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">235+</div>
+            <div class="stat-label" data-i18n="stat_2_label">FPS Oynatma Akışı</div>
+            <div class="stat-desc" data-i18n="stat_2_desc">PlaybackStreamer rawvideo borusu</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">0 ms</div>
+            <div class="stat-label" data-i18n="stat_3_label">UI Kilitlenme Süresi</div>
+            <div class="stat-desc" data-i18n="stat_3_desc">AsyncFrameDecoder ile akıcı sarma</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">33 / 33</div>
+            <div class="stat-label" data-i18n="stat_4_label">Birim &amp; Entegrasyon Testi</div>
+            <div class="stat-desc" data-i18n="stat_4_desc">%100 başarılı test kapsamı</div>
+          </div>
         </div>
       </div>
     </section>
 
-    <!-- Architecture & Engineering Section -->
-    <section id="architecture" class="section">
+    <!-- Bento Grid Features Section -->
+    <section class="features-section" id="features">
       <div class="container">
         <div class="section-header">
-          <div class="section-label" data-i18n="spec_section_label">Engineering</div>
-          <h2 class="section-title" data-i18n="spec_section_title">True Native Desktop Performance</h2>
-          <p class="section-lead" data-i18n="spec_section_lead">
-            triM. rejects heavy web wrappers. It connects directly to Linux display servers via Qt6 and Wayland.
-          </p>
+          <span class="section-label" data-i18n="feat_label">Yetenekler &amp; Motor</span>
+          <h2 class="section-title" data-i18n="feat_title">Hızlı, Kararlı ve Güçlü Masaüstü Kurgusu</h2>
+          <p class="section-subtitle" data-i18n="feat_subtitle">Gereksiz katmanlar ve şişkinlik olmadan, yalnızca videonuzu en yüksek hızda kesip işlemeye odaklanan modern NLE mimarisi.</p>
         </div>
 
-        <div class="grid-2">
-          <div class="spec-box">
-            <ul class="spec-list">
-              <li class="spec-item">
-                <span class="spec-label" data-i18n="spec_ui">User Interface (GUI)</span>
-                <span class="spec-val" data-i18n="spec_ui_val">PySide6 / Qt6 (Wayland &amp; X11)</span>
-              </li>
-              <li class="spec-item">
-                <span class="spec-label" data-i18n="spec_media">Media Demuxing &amp; Audio</span>
-                <span class="spec-val" data-i18n="spec_media_val">PyAV (FFmpeg C API bindings)</span>
-              </li>
-              <li class="spec-item">
-                <span class="spec-label" data-i18n="spec_render">Render &amp; Filter Engine</span>
-                <span class="spec-val" data-i18n="spec_render_val">FFmpeg CLI filtergraph</span>
-              </li>
-              <li class="spec-item">
-                <span class="spec-label" data-i18n="spec_data">Numerical &amp; Waveforms</span>
-                <span class="spec-val" data-i18n="spec_data_val">NumPy 1.26+</span>
-              </li>
-              <li class="spec-item">
-                <span class="spec-label" data-i18n="spec_app_id">Application ID</span>
-                <span class="spec-val" data-i18n="spec_app_id_val">io.github.mozcelik14.triM</span>
-              </li>
-            </ul>
+        <div class="bento-grid">
+          <!-- Card 1: 235+ FPS Video Pipeline (2 cols) -->
+          <div class="bento-card col-span-2">
+            <div>
+              <div class="card-icon">⚡</div>
+              <h3 class="card-title" data-i18n="card_1_title">Yüksek Hızlı Asenkron Video Akış Motoru</h3>
+              <p class="card-desc" data-i18n="card_1_desc">Oynatma sırasında UI thread'i dondurmadan arka planda çalışan PlaybackStreamer; 640x360 rawvideo borusu ile 235+ FPS hızında kare üretir. Zaman çizgisi sarılırken eski istekler otomatik olarak atılarak sıfır takılmayla en güncel kare gösterilir.</p>
+            </div>
+            <div class="card-metric-badge">
+              <span>●</span> <span>Kare Başına ~4.2ms Çözüm Süresi</span>
+            </div>
           </div>
 
-          <div class="spec-box">
-            <h3 style="font-size: 1.05rem; margin-bottom: 0.8rem; font-weight: 600;" data-i18n="spec_integration_title">Linux Native Integration</h3>
-            <p style="font-size: 0.88rem; color: var(--text-secondary); line-height: 1.6; margin-bottom: 1rem;" data-i18n="spec_integration_desc">
-              Complies with FreeDesktop standards including scalable hicolor icon hierarchy, MIME association for <code>.trim</code> and legacy <code>.cutline</code> files, Wayland fractional scaling, and AppStream cataloging.
-            </p>
-            <div style="font-family: var(--font-mono); font-size: 0.82rem; color: var(--text-muted); background: var(--code-bg); padding: 0.8rem; border-radius: 4px; border: 1px solid var(--border-subtle);">
-              StartupWMClass=triM.<br>
-              Categories=AudioVideo;Video;AudioVideoEditing;
+          <!-- Card 2: Audio Mixing -->
+          <div class="bento-card">
+            <div>
+              <div class="card-icon">🎚️</div>
+              <h3 class="card-title" data-i18n="card_2_title">48kHz Stereo Ses Mikseri</h3>
+              <p class="card-desc" data-i18n="card_2_desc">Çok kanallı 16-bit PCM miksajı, canlı RMS / Peak çift kanallı VU göstergesi, kanal bazlı ses/mute/solo denetimleri ve tek tıkla sesi ayırma (Detach Audio).</p>
             </div>
+            <div class="card-waveform-mockup">
+              <span style="height: 30%;"></span>
+              <span style="height: 70%;"></span>
+              <span style="height: 45%;"></span>
+              <span style="height: 90%;"></span>
+              <span style="height: 60%;"></span>
+              <span style="height: 100%;"></span>
+              <span style="height: 50%;"></span>
+              <span style="height: 80%;"></span>
+              <span style="height: 35%;"></span>
+              <span style="height: 65%;"></span>
+            </div>
+          </div>
+
+          <!-- Card 3: Multi-Track Timeline -->
+          <div class="bento-card">
+            <div>
+              <div class="card-icon">🎞️</div>
+              <h3 class="card-title" data-i18n="card_3_title">Manyetik Çok Kanallı Zaman Çizgisi</h3>
+              <p class="card-desc" data-i18n="card_3_desc">Katmanlı video (V1..Vn) ve ses (A1..An) kanalları. Oynatma çizgisinden jilet kesimi (S), başı kırpıp kaydırma (Q), sonu kırpıp kaydırma (W) ve boşluğu kapatarak silme (Shift+Delete).</p>
+            </div>
+            <div class="card-metric-badge">
+              <span>Magnetic Snap • Edit Points Jump</span>
+            </div>
+          </div>
+
+          <!-- Card 4: Color Grading & Keyframes -->
+          <div class="bento-card">
+            <div>
+              <div class="card-icon">🎨</div>
+              <h3 class="card-title" data-i18n="card_4_title">Anahtar Kareler &amp; Renk Ayarları</h3>
+              <p class="card-desc" data-i18n="card_4_desc">Klip opaklığı, konum X/Y, ölçek, döndürme, parlaklık, kontrast ve doygunluk üzerinde Smoothstep Ease-In-Out eğrileri ile hassas anahtar kare animasyonu.</p>
+            </div>
+            <div class="card-metric-badge">
+              <span>Linear • Hold • Smoothstep Ease</span>
+            </div>
+          </div>
+
+          <!-- Card 5: Production Exporter -->
+          <div class="bento-card">
+            <div>
+              <div class="card-icon">🚀</div>
+              <h3 class="card-title" data-i18n="card_5_title">FFmpeg Filtergraph Dışa Aktarımı</h3>
+              <p class="card-desc" data-i18n="card_5_desc">Çok iş parçacıklı karmaşık filtre grafikleri ([v0][v1]overlay, scale, pad, eq, fade). 1080p, 720p, 4K, YouTube 60fps ve WebM önayarları ile canlı ilerleme takibi.</p>
+            </div>
+            <div class="card-metric-badge">
+              <span>GPU &amp; Multi-threaded CPU Encoding</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Architecture Section (8 Cargo Crates) -->
+    <section class="architecture-section" id="architecture">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-label" data-i18n="arch_label">Yazılım Mimarisi</span>
+          <h2 class="section-title" data-i18n="arch_title">8 Modüllü Cargo Çalışma Alanı</h2>
+          <p class="section-subtitle" data-i18n="arch_subtitle">Uygulama, sorumlulukların net olarak ayrıldığı ve birbirinden bağımsız test edilebilen 8 katmanlı Cargo workspace yapısına sahiptir.</p>
+        </div>
+
+        <div class="crates-grid">
+          <div class="crate-card">
+            <div class="crate-header">
+              <span class="crate-name">trim-core</span>
+              <span class="crate-tag">Domain</span>
+            </div>
+            <p class="crate-desc" data-i18n="crate_core">Zaman kodu (SMPTE), medya modelleri, zaman çizgisi hiyerarşisi, işaretçiler ve anahtar kare enterpolasyonu.</p>
+          </div>
+
+          <div class="crate-card">
+            <div class="crate-header">
+              <span class="crate-name">trim-commands</span>
+              <span class="crate-tag">Undo/Redo</span>
+            </div>
+            <p class="crate-desc" data-i18n="crate_commands">14 adet atomik, geri alınabilir komut ve kurgu geçmişi yığını (Command Pattern &amp; UndoStack).</p>
+          </div>
+
+          <div class="crate-card">
+            <div class="crate-header">
+              <span class="crate-name">trim-timeline</span>
+              <span class="crate-tag">Algorithms</span>
+            </div>
+            <p class="crate-desc" data-i18n="crate_timeline">Çizgiden bölme, baş/kuyruk ripple trimleme ve edit noktaları arasında atlama algoritmaları.</p>
+          </div>
+
+          <div class="crate-card">
+            <div class="crate-header">
+              <span class="crate-name">trim-project</span>
+              <span class="crate-tag">Storage</span>
+            </div>
+            <p class="crate-desc" data-i18n="crate_project">Atomik kaydetme (.tmp -> rename), .trim ve .cutline JSON geriye dönük uyumu, Autosave yöneticisi.</p>
+          </div>
+
+          <div class="crate-card">
+            <div class="crate-header">
+              <span class="crate-name">trim-media</span>
+              <span class="crate-tag">Engine</span>
+            </div>
+            <p class="crate-desc" data-i18n="crate_media">PlaybackStreamer (235+ FPS pipe), AsyncFrameDecoder, 48kHz stereo ses mikseri ve cpal ses cihazı.</p>
+          </div>
+
+          <div class="crate-card">
+            <div class="crate-header">
+              <span class="crate-name">trim-export</span>
+              <span class="crate-tag">FFmpeg</span>
+            </div>
+            <p class="crate-desc" data-i18n="crate_export">FFmpeg filtergraph oluşturucu, dışa aktarma işçisi ve canlı yüzde/kare ilerleme bildirimleri.</p>
+          </div>
+
+          <div class="crate-card">
+            <div class="crate-header">
+              <span class="crate-name">trim-ui</span>
+              <span class="crate-tag">egui GUI</span>
+            </div>
+            <p class="crate-desc" data-i18n="crate_ui">Donanım hızlandırmalı modern egui arayüzü: kanvas, sinema monitörü, denetçi, VU metre, diyaloglar.</p>
+          </div>
+
+          <div class="crate-card">
+            <div class="crate-header">
+              <span class="crate-name">trim-app</span>
+              <span class="crate-tag">Binary</span>
+            </div>
+            <p class="crate-desc" data-i18n="crate_app">Masaüstü ikili dosya giriş noktası, pencere oluşturma ve komut satırı dosya açma desteği (CLI).</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Keyboard Shortcuts Drawer -->
+    <section class="shortcuts-section" id="shortcuts">
+      <div class="container">
+        <div class="section-header">
+          <span class="section-label" data-i18n="sc_label">Üretkenlik &amp; Hız</span>
+          <h2 class="section-title" data-i18n="sc_title">Profesyonel Klavye Kısayolları</h2>
+          <p class="section-subtitle" data-i18n="sc_subtitle">Farenizi bırakmadan, endüstri standardı NLE kısayollarıyla yıldırım hızında kurgu yapın.</p>
+        </div>
+
+        <div class="shortcuts-filter">
+          <button type="button" class="filter-btn active" data-category="all" data-i18n="filter_all">Tümü</button>
+          <button type="button" class="filter-btn" data-category="editing" data-i18n="filter_editing">Kurgu &amp; Kesme</button>
+          <button type="button" class="filter-btn" data-category="playback" data-i18n="filter_playback">Oynatma &amp; Gezinme</button>
+          <button type="button" class="filter-btn" data-category="project" data-i18n="filter_project">Proje &amp; Dosya</button>
+        </div>
+
+        <div class="shortcuts-grid" id="shortcuts-grid">
+          <div class="shortcut-item" data-cat="playback">
+            <span class="shortcut-desc" data-i18n="sc_play">Oynat / Duraklat</span>
+            <span class="shortcut-keys"><kbd>Space</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="editing">
+            <span class="shortcut-desc" data-i18n="sc_split">Çizgiden Kes / Razor Böl</span>
+            <span class="shortcut-keys"><kbd>S</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="editing">
+            <span class="shortcut-desc" data-i18n="sc_q">Başı Çizgiye Kırp ve Kaydır</span>
+            <span class="shortcut-keys"><kbd>Q</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="editing">
+            <span class="shortcut-desc" data-i18n="sc_w">Sonu Çizgiye Kırp ve Kaydır</span>
+            <span class="shortcut-keys"><kbd>W</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="editing">
+            <span class="shortcut-desc" data-i18n="sc_delete">Seçili Klibi Sil</span>
+            <span class="shortcut-keys"><kbd>Delete</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="editing">
+            <span class="shortcut-desc" data-i18n="sc_ripple_del">Boşluğu Kapatıp Sil (Ripple)</span>
+            <span class="shortcut-keys"><kbd>Shift</kbd> + <kbd>Delete</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="playback">
+            <span class="shortcut-desc" data-i18n="sc_shuttle_rev">Geri Shuttle (-1x..-8x)</span>
+            <span class="shortcut-keys"><kbd>J</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="playback">
+            <span class="shortcut-desc" data-i18n="sc_shuttle_pause">Shuttle Duraklat</span>
+            <span class="shortcut-keys"><kbd>K</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="playback">
+            <span class="shortcut-desc" data-i18n="sc_shuttle_fwd">İleri Shuttle (1x..8x)</span>
+            <span class="shortcut-keys"><kbd>L</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="playback">
+            <span class="shortcut-desc" data-i18n="sc_step">1 Kare Geri / İleri</span>
+            <span class="shortcut-keys"><kbd>←</kbd> / <kbd>→</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="playback">
+            <span class="shortcut-desc" data-i18n="sc_jump_edit">Önceki / Sonraki Kesim Noktası</span>
+            <span class="shortcut-keys"><kbd>↑</kbd> / <kbd>↓</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="playback">
+            <span class="shortcut-desc" data-i18n="sc_home_end">Başa / Sona Git</span>
+            <span class="shortcut-keys"><kbd>Home</kbd> / <kbd>End</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="editing">
+            <span class="shortcut-desc" data-i18n="sc_marker">İşaretçi (Marker) Ekle</span>
+            <span class="shortcut-keys"><kbd>M</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="project">
+            <span class="shortcut-desc" data-i18n="sc_undo">Geri Al / Yinele</span>
+            <span class="shortcut-keys"><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd></span>
+          </div>
+
+          <div class="shortcut-item" data-cat="project">
+            <span class="shortcut-desc" data-i18n="sc_save">Projeyi Kaydet</span>
+            <span class="shortcut-keys"><kbd>Ctrl+S</kbd></span>
           </div>
         </div>
       </div>
     </section>
 
     <!-- Installation Section -->
-    <section id="installation" class="section">
+    <section class="install-section" id="installation">
       <div class="container">
         <div class="section-header">
-          <div class="section-label" data-i18n="install_section_label">Distribution</div>
-          <h2 class="section-title" data-i18n="install_section_title">Install in Seconds</h2>
-          <p class="section-lead" data-i18n="install_section_lead">
-            Download the prebuilt .deb package directly for Ubuntu, Debian, Linux Mint, Pop!_OS and derivatives, or install seamlessly using the automated desktop script.
+          <span class="section-label" data-i18n="inst_label">Hemen Başlayın</span>
+          <h2 class="section-title" data-i18n="inst_title">Kurulum ve Kaynak Kodu Derleme</h2>
+          <p class="section-subtitle" data-i18n="inst_subtitle">Tek bir terminal komutuyla derleyip saniyeler içinde çalıştırmaya başlayın.</p>
+        </div>
+
+        <div class="install-box">
+          <div class="distro-tabs">
+            <button type="button" class="distro-tab active" data-distro="debian">Ubuntu / Debian / Pop!_OS</button>
+            <button type="button" class="distro-tab" data-distro="fedora">Fedora</button>
+            <button type="button" class="distro-tab" data-distro="arch">Arch Linux</button>
+          </div>
+
+          <!-- Dependencies block -->
+          <div class="code-block-wrapper">
+            <button type="button" class="block-copy-btn" id="copy-deps" data-i18n="copy_deps">Kopyala</button>
+            <pre><code id="deps-code">sudo apt update && sudo apt install build-essential pkg-config libasound2-dev libx11-dev libgl1-mesa-dev ffmpeg</code></pre>
+          </div>
+
+          <p style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.75rem;" data-i18n="build_step">
+            Ardından depoyu klonlayıp release profilinde derleyin:
           </p>
-        </div>
 
-        <div class="install-tabs" role="tablist">
-          <button type="button" class="install-tab-btn active" data-target="panel-deb" data-i18n="install_tab_deb">Ubuntu / Debian / Mint (.deb)</button>
-          <button type="button" class="install-tab-btn" data-target="panel-script" data-i18n="install_tab_script">One-Line Installer</button>
-          <button type="button" class="install-tab-btn" data-target="panel-source" data-i18n="install_tab_source">From Source</button>
-        </div>
-
-        <!-- Panel 1: Debian -->
-        <div id="panel-deb" class="install-panel active">
-          <pre class="code-block"><code><span class="comment" data-i18n="deb_comment_1"># 1. Download trim_0.3.0_all.deb from GitHub Releases</span>
-wget https://github.com/MOzcelik14/triM/releases/download/v0.3.0/trim_0.3.0_all.deb
-
-<span class="comment" data-i18n="deb_comment_2"># 2. Install with apt (automatically handles dependencies)</span>
-sudo apt install ./trim_0.3.0_all.deb
-
-<span class="comment" data-i18n="deb_comment_3"># 3. Launch from application menu or terminal</span>
-trim</code></pre>
-        </div>
-
-        <!-- Panel 2: One-Line Script -->
-        <div id="panel-script" class="install-panel">
-          <pre class="code-block"><code><span class="comment" data-i18n="script_comment_1"># Clone and run automated desktop installer</span>
-git clone https://github.com/MOzcelik14/triM.git
+          <div class="code-block-wrapper">
+            <button type="button" class="block-copy-btn" id="copy-build" data-i18n="copy_build">Kopyala</button>
+            <pre><code>git clone https://github.com/MOzcelik14/triM.git
 cd triM
-./install.sh
-
-<span class="comment" data-i18n="script_comment_2"># Installs icons, desktop shortcuts, ~/.local/bin/trim, and environment</span></code></pre>
-        </div>
-
-        <!-- Panel 3: Source -->
-        <div id="panel-source" class="install-panel">
-          <pre class="code-block"><code><span class="comment" data-i18n="source_comment_1"># Developer virtual environment setup</span>
-git clone https://github.com/MOzcelik14/triM.git
-cd triM
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
-trim</code></pre>
-        </div>
-      </div>
-    </section>
-
-    <!-- Roadmap Section -->
-    <section id="roadmap" class="section">
-      <div class="container">
-        <div class="section-header">
-          <div class="section-label" data-i18n="roadmap_section_label">Roadmap</div>
-          <h2 class="section-title" data-i18n="roadmap_section_title">Development Milestones</h2>
-          <p class="section-lead" data-i18n="roadmap_section_lead">
-            Transparent roadmap showing current verified capabilities and planned architecture milestones.
-          </p>
-        </div>
-
-        <div class="grid-3">
-          <!-- Current -->
-          <div class="roadmap-col">
-            <div class="roadmap-header">
-              <span data-i18n="roadmap_current">v0.3.0 — Current Release</span>
-              <span class="feature-badge badge-ready" data-i18n="badge_done">Done</span>
-            </div>
-            <ul class="roadmap-list">
-              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_1">Multi-track video and audio timeline</span></li>
-              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_17">Timeline markers &amp; magnetic snapping (M shortcut)</span></li>
-              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_10">Keyframe animation for position, scale, and opacity</span></li>
-              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_18">Clip speed multiplier &amp; reverse playback (0.1x - 10x)</span></li>
-              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_7">Multi-clip box selection and batch drag</span></li>
-              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_9">Track mixer with mute/solo &amp; gain sliders</span></li>
-              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_13">Audio detach ("Detach Audio") workflow</span></li>
-              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_14">Ripple trim shortcuts (Q/W)</span></li>
-              <li class="roadmap-item"><span class="check">✓</span> <span data-i18n="road_6">Ubuntu / Debian (.deb) packaging and automated desktop installer</span></li>
-            </ul>
+cargo build --release
+./target/release/trim</code></pre>
           </div>
-
-          <!-- Next -->
-          <div class="roadmap-col">
-            <div class="roadmap-header">
-              <span data-i18n="roadmap_next">v0.4.0 — Up Next</span>
-              <span class="feature-badge badge-planned" data-i18n="badge_planned">Planned</span>
-            </div>
-            <ul class="roadmap-list">
-              <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_8">Flathub / Flatpak manifest packaging</span></li>
-              <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_11">Background 4K proxy generation workflow</span></li>
-              <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_19">Titling typography presets &amp; motion graphics</span></li>
-            </ul>
-          </div>
-
-          <!-- Later -->
-          <div class="roadmap-col">
-            <div class="roadmap-header">
-              <span data-i18n="roadmap_later">Future Milestones</span>
-              <span class="feature-badge badge-planned" data-i18n="badge_future">Future</span>
-            </div>
-            <ul class="roadmap-list">
-              <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_12">LADSPA / LV2 audio effect plugin architecture</span></li>
-              <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_15">Speed ramping &amp; optical flow time remapping</span></li>
-              <li class="roadmap-item pending"><span class="bullet">○</span> <span data-i18n="road_16">Nested timelines &amp; multicam synchronization</span></li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Open Source Section -->
-    <section class="section">
-      <div class="container" style="text-align: center;">
-        <div class="section-label" data-i18n="oss_section_label">Community</div>
-        <h2 class="section-title" data-i18n="oss_section_title">Free and Open Source</h2>
-        <p class="section-lead" style="margin: 0 auto 2rem;" data-i18n="oss_section_lead">
-          triM. is built openly under the permissive MIT license. Independent, hackable, and welcoming to contributors.
-        </p>
-        <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-          <a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" data-i18n="oss_btn_repo">
-            GitHub Repository
-          </a>
-          <a href="https://github.com/MOzcelik14/triM/issues" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" data-i18n="oss_btn_issues">
-            Issue Tracker
-          </a>
-          <a href="https://github.com/MOzcelik14/triM/releases" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" data-i18n="oss_btn_releases">
-            All Releases
-          </a>
         </div>
       </div>
     </section>
   </main>
 
-  <!-- Site Footer -->
+  <!-- Modern Site Footer -->
   <footer class="site-footer">
-    <div class="container">
-      <div class="footer-inner">
-        <div data-i18n="footer_copy">
-          triM. — Modern, lightweight open-source video editing for Linux.
-        </div>
-        <ul class="footer-links">
-          <li><a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer">GitHub</a></li>
-          <li><a href="https://github.com/MOzcelik14/triM/blob/master/LICENSE" target="_blank" rel="noopener noreferrer" data-i18n="footer_license">MIT License</a></li>
-          <li><span data-i18n="footer_author">M. Özçelik</span></li>
-        </ul>
+    <div class="container footer-container">
+      <div class="footer-left">
+        <img src="./assets/branding/logo_wordmark.svg" alt="triM. Logo" height="22" width="70">
+        <span>&copy; 2026 M. Özçelik. MIT Lisansı.</span>
       </div>
+
+      <ul class="footer-links">
+        <li><a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+        <li><a href="https://github.com/MOzcelik14/triM/releases" target="_blank" rel="noopener noreferrer" data-i18n="footer_releases">Sürümler</a></li>
+        <li><a href="https://github.com/MOzcelik14/triM/blob/master/LICENSE" target="_blank" rel="noopener noreferrer">Lisans</a></li>
+      </ul>
     </div>
   </footer>
 
