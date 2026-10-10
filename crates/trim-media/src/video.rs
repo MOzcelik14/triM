@@ -345,25 +345,37 @@ impl VideoEngine {
         timeline_time: f64,
         is_playing: bool,
     ) -> Option<Arc<RgbaImage>> {
-        // Poll any completed background seek frames
-        if let Some(res) = self.async_decoder.poll_result() {
-            self.is_decoding_seek = false;
-            if let Some(frame) = res.frame {
-                let key = (res.path.clone(), (res.time * 30.0).round() as u64);
-                if let Ok(mut cache) = self.frame_cache.write() {
-                    if cache.len() > 300 {
-                        cache.clear();
-                    }
-                    cache.insert(key, frame.clone());
-                }
-                self.last_rendered_frame = Some(frame);
-            }
-        }
-
         let visible_clips = project.timeline.get_visible_video_clips_at(timeline_time);
         if visible_clips.is_empty() {
+            // Never retain the final frame when the playhead leaves a clip.
+            // Invalidate outstanding seek requests so late results cannot
+            // repopulate a blank monitor after a timeline gap.
             self.streamer.stop();
+            self.last_rendered_frame = None;
+            if self.is_decoding_seek {
+                self.async_decoder.latest_req_id += 1;
+                self.is_decoding_seek = false;
+            }
+            let _ = self.async_decoder.poll_result();
             return None;
+        }
+
+        // Only accept a result from the latest requested seek. Results from
+        // a clip we already left must not be displayed on another clip.
+        if let Some(res) = self.async_decoder.poll_result() {
+            if res.id == self.async_decoder.latest_req_id {
+                self.is_decoding_seek = false;
+                if let Some(frame) = res.frame {
+                    let key = (res.path.clone(), (res.time * 30.0).round() as u64);
+                    if let Ok(mut cache) = self.frame_cache.write() {
+                        if cache.len() > 300 {
+                            cache.clear();
+                        }
+                        cache.insert(key, frame.clone());
+                    }
+                    self.last_rendered_frame = Some(frame);
+                }
+            }
         }
 
         // Fast Path: Single full-screen video/image clip without opacity or complex effects
@@ -785,6 +797,45 @@ mod tests {
             let frame = decoder.decode_frame(user_file, 11.467);
             assert!(frame.is_some());
         }
+    }
+
+    #[test]
+    fn test_image_preview_clears_at_end_and_during_gaps() {
+        use trim_core::clip::Clip;
+        use trim_core::media::MediaItem;
+        use trim_core::project::Project;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let image_path = dir.path().join("preview.png");
+        RgbaImage::from_pixel(8, 8, Rgba([200, 30, 40, 255]))
+            .save(&image_path)
+            .unwrap();
+
+        let mut project = Project::default();
+        let mut media = MediaItem::new(image_path.to_string_lossy());
+        media.media_type = MediaType::Image;
+        let media_id = media.id.clone();
+        project.add_media(media);
+
+        let track = project.timeline.get_video_tracks_mut().into_iter().next().unwrap();
+        track.add_clip(Clip::new(&media_id, 0.0, 2.0));
+        track.add_clip(Clip::new(&media_id, 3.0, 4.0));
+
+        let mut engine = VideoEngine::new();
+        assert!(engine.render_timeline_frame(&project, 1.9, false).is_some());
+        assert!(engine.last_rendered_frame.is_some());
+
+        // The clip's out-point and the following gap must both be black.
+        assert!(engine.render_timeline_frame(&project, 2.0, false).is_none());
+        assert!(engine.last_rendered_frame.is_none());
+        assert!(!engine.is_decoding_seek);
+        assert!(engine.render_timeline_frame(&project, 2.5, false).is_none());
+
+        // Seeking to another image must draw it, then clear at its out-point.
+        assert!(engine.render_timeline_frame(&project, 3.0, false).is_some());
+        assert!(engine.render_timeline_frame(&project, 4.0, false).is_none());
+        assert!(engine.last_rendered_frame.is_none());
     }
 
     #[test]
