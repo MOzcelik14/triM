@@ -150,6 +150,9 @@ impl TimelineExporter {
                 concat_a_inputs.push(format!("[a{}]", input_idx));
                 input_idx += 2;
             } else {
+                // Keep FFmpeg video/audio labels tied to the original source input.
+                // Adding a silence generator below advances input_idx.
+                let video_input_idx = input_idx;
                 let src_dur = dur * clip.speed;
                 cmd_inputs.extend([
                     "-ss".into(),
@@ -239,8 +242,8 @@ impl TimelineExporter {
                     input_idx += 1;
                 }
 
-                concat_v_inputs.push(format!("[v{}]", input_idx));
-                concat_a_inputs.push(format!("[a{}]", input_idx));
+                concat_v_inputs.push(format!("[v{}]", video_input_idx));
+                concat_a_inputs.push(format!("[a{}]", video_input_idx));
                 input_idx += 1;
             }
 
@@ -320,6 +323,30 @@ mod tests {
         assert_eq!(f025.len(), 2);
         assert_eq!(f025[0], "atempo=0.5");
         assert_eq!(f025[1], "atempo=0.5000");
+    }
+
+    #[test]
+    fn test_silent_video_uses_correct_filtergraph_labels() {
+        let mut project = Project::new("Silent video");
+        let mut media = MediaItem::new("/videos/no-audio.mp4");
+        media.media_type = MediaType::Video;
+        media.duration = 5.0;
+        media.audio_codec.clear();
+        let id = media.id.clone();
+        project.add_media(media);
+        project.timeline.get_video_tracks_mut()[0].add_clip(Clip::new(id, 0.0, 5.0));
+
+        let (command, _) = TimelineExporter::build_export_pipeline(
+            &project,
+            &ExportPreset::default(),
+            "/tmp/out.mp4",
+        ).unwrap();
+        let index = command.iter().position(|arg| arg == "-filter_complex").unwrap();
+        let graph = &command[index + 1];
+        assert!(graph.contains("[0:v]"), "video input missing: {graph}");
+        assert!(graph.contains("[1:a]"), "silence input missing: {graph}");
+        assert!(graph.contains("[v0][a0]concat=n=1"), "incorrect concat labels: {graph}");
+        assert!(!graph.contains("[v1]"), "video incorrectly points at audio: {graph}");
     }
 
     #[test]
