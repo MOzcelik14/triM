@@ -8,8 +8,8 @@
   <description>
     <p>
       triM. is a modern, fast, and native non-linear video editor designed for Linux.
-      Built with Python 3.12, PySide6 (Qt6), FFmpeg, and PyAV, it provides a clean,
-      precision-oriented workflow for video cutting, trimming, audio mixing, and exporting.
+      Built natively with Rust, egui, and FFmpeg, it offers a focused workflow
+      for video cutting, multi-track editing, audio mixing, and exporting.
     </p>
     <ul>
       <li>Multi-track timeline with ripple edits, snapping, and frame-accurate navigation</li>
