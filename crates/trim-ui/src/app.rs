@@ -356,6 +356,10 @@ impl TrimApp {
             } else {
                 self.monitor_texture = Some(ctx.load_texture("monitor_preview", color_image, TextureOptions::LINEAR));
             }
+        } else {
+            // A timeline gap or the end of the last clip must remove the
+            // previous GPU texture instead of freezing its final frame.
+            self.monitor_texture = None;
         }
     }
 }
