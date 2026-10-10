@@ -61,6 +61,9 @@ class TimelineModel(QObject):
                 return t
         return None
 
+    def get_track(self, track_id: str) -> Optional[Track]:
+        return self.get_track_by_id(track_id)
+
     def find_track_for_clip(self, clip_id: str) -> Optional[Track]:
         for t in self.tracks:
             if t.get_clip_by_id(clip_id) is not None:
@@ -73,6 +76,9 @@ class TimelineModel(QObject):
             if c is not None:
                 return c
         return None
+
+    def get_clip(self, clip_id: str) -> Optional[Clip]:
+        return self.get_clip_by_id(clip_id)
 
     def get_video_tracks(self) -> list[Track]:
         return [t for t in self.tracks if t.track_type == TrackType.VIDEO]

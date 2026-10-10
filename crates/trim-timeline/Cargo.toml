@@ -1,0 +1,16 @@
+[package]
+name = "trim-timeline"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+trim-core = { path = "../trim-core" }
+trim-commands = { path = "../trim-commands" }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -5,19 +5,20 @@
 </p>
 
 <p align="center">
-  A lightweight, native non-linear video editor for Linux.
+  A lightweight, native, Electron-free non-linear video editor for Linux written in Rust.
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12+-blue.svg?style=flat-square" alt="Python 3.12+"></a>
-  <a href="https://www.qt.io/"><img src="https://img.shields.io/badge/GUI-Qt6%20%2F%20PySide6-41CD52.svg?style=flat-square" alt="Qt6 / PySide6"></a>
-  <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.2.0"><img src="https://img.shields.io/badge/release-v0.2.0-E07A38.svg?style=flat-square" alt="Release v0.2.0"></a>
+  <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-2021%20edition-orange.svg?style=flat-square" alt="Rust 2021"></a>
+  <a href="https://github.com/emilk/egui"><img src="https://img.shields.io/badge/GUI-egui%20%2F%20eframe-blueviolet.svg?style=flat-square" alt="GUI: egui / eframe"></a>
+  <a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/media-FFmpeg%206.0+-007808.svg?style=flat-square" alt="FFmpeg 6.0+"></a>
+  <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.3.0"><img src="https://img.shields.io/badge/release-v0.3.0-E07A38.svg?style=flat-square" alt="Release v0.3.0"></a>
   <img src="https://img.shields.io/badge/platform-Linux%20(Wayland%20%7C%20X11)-28282E.svg?style=flat-square" alt="Linux">
 </p>
 
 <p align="center">
-  <a href="#english"><strong>English</strong></a> &bull; <a href="#türkçe"><strong>Türkçe</strong></a> &bull; <a href="https://mozcelik14.github.io/triM/"><strong>Website</strong></a>
+  <a href="#english"><strong>English</strong></a> &bull; <a href="#türkçe"><strong>Türkçe</strong></a> &bull; <a href="#shortcuts"><strong>Shortcuts</strong></a> &bull; <a href="#architecture"><strong>Architecture</strong></a> &bull; <a href="https://mozcelik14.github.io/triM/"><strong>Website</strong></a>
 </p>
 
 ---
@@ -25,333 +26,174 @@
 <a name="english"></a>
 ## English
 
-**triM.** is a modern, fast, and native non-linear video editor (NLE) designed specifically for Linux desktop environments.
+**triM.** is a modern, blazing-fast, and native non-linear video editor (NLE) built from the ground up in **Rust** specifically for Linux desktop environments.
 
-Built on Python 3.12, PySide6 (Qt6), FFmpeg, and PyAV, it provides a clean, precision-oriented workflow for video cutting, trimming, audio mixing, and exporting without cloud dependencies or Electron runtime overhead.
+Engineered with a modular Cargo workspace architecture, **triM.** delivers precision video cutting, multi-track audio mixing, real-time color grading, and FFmpeg filtergraph exporting — completely free of Electron bloat or web runtime overhead. The compiled release binary is a self-contained, lightning-fast native Linux application (~19 MB).
 
-### Preview
+### Highlights
 
-<p align="center">
-  <img src="docs/assets/screenshots/trim_timeline.png" alt="triM. Interface Preview" width="100%">
-</p>
+- **100% Rust & Native Desktop:** Zero Electron, zero Python runtime dependencies. Instant startup and deterministic memory safety.
+- **Asynchronous Video Pipeline:** Multi-threaded `PlaybackStreamer` (235+ FPS continuous rawvideo decoding pipe) and non-blocking `AsyncFrameDecoder` for stutter-free timeline scrubbing.
+- **Multi-Track Timeline:** Layered video (`V1..Vn`) and audio (`A1..An`) tracks with razor split (`S`), ripple trim head (`Q`), ripple trim tail (`W`), ripple delete (`Shift+Delete`), and magnetic snapping.
+- **Stereo Audio Engine:** Multi-track 48kHz 16-bit PCM mixing, live RMS/Peak stereo VU meter, track-level volume/mute/solo, and instant audio separation ("Detach Audio").
+- **Keyframing & Color Grading:** Interpolation curves (Linear, Hold, Smoothstep Ease-In-Out) across clip position, scale, opacity, rotation, brightness, contrast, and saturation.
+- **Direct CLI & Drag-and-Drop:** Open files or projects straight from your terminal (`trim path/to/video.mp4`) or drag and drop media into the pool and onto tracks.
+- **Backward Compatible:** Native support for both `.trim` and legacy `.cutline` project files with automatic crash recovery snapshots.
 
-### Features
+---
 
-- **Multi-Track Timeline:** Independent video and audio tracks with split/razor cuts (`S`), ripple delete (`Shift+Delete`), frame-snapping, and drag-and-drop sequencing.
-- **Multi-Clip Selection & Dragging:** Rubberband marquee box selection, Shift-click toggling, and atomic multi-clip moving with snapping alignment.
-- **Track Mixer & Gain Controls:** Track-level volume faders, solo, and mute controls with responsive SVG toggles for precise audio balancing.
-- **Audio Detach Workflow:** Right-click instant audio separation ("Detach Audio") into dedicated audio tracks.
-- **Ripple Trim Shortcuts:** Industry-standard `Q` (ripple trim head) and `W` (ripple trim tail) shortcuts for lightning-fast top-and-tail editing.
-- **Hardware-Assisted Playback & Sync:** Sequential video demuxing and queued audio streaming via PyAV for smooth, stutter-free playback and frame-accurate real-time speed.
-- **Waveform Visualizations:** Multi-threaded audio peak extraction with persistent caching directly rendered on timeline audio clips.
-- **Interactive Fade Handles:** Clip-level draggable visual handles for video opacity curves and live audio gain ramps.
-- **Dual-Channel Stereo VU Meter:** Real-time RMS dBFS monitoring with peak hold indicators aligned to the program monitor.
-- **Shuttle Navigation:** Industry-standard J-K-L shuttle playback (`1x`, `2x`, `4x`, `8x`, `-1x`, `-2x`, `-4x`, `-8x`), single-frame stepping (`←` / `→`), and edit-point jumping (`↑` / `↓`).
-- **Color Grading & Transitions:** Real-time brightness, contrast, and saturation adjustments (including instant black-and-white conversion) and smooth Dip to Black / Dip to White transitions.
-- **Typography & Title Cards:** Native text generator with system font selection, lower-third presets, alignment controls, and alpha transparency.
-- **FFmpeg Background Export:** Preset-driven resolution and framerate exports, multi-threaded filtergraph execution (`scale`, `pad`, `eq`, `fade`, `afade`), and progress tracking.
-- **Crash Recovery & Autosave:** Periodic background snapshots and automatic session restoration on startup.
+### Installation & Build
 
-### Installation
+#### Prerequisites (Debian / Ubuntu / Pop!_OS / Fedora / Arch)
 
-#### Option 1: Ubuntu / Debian / Linux Mint / Pop!_OS (.deb Package)
-
-Download the prebuilt `.deb` package (for Ubuntu, Debian, Linux Mint, Pop!_OS, and other Debian-based distributions) from the [v0.3.0 Release](https://github.com/MOzcelik14/triM/releases/tag/v0.3.0):
+Ensure you have Rust and the required development libraries installed:
 
 ```bash
-wget https://github.com/MOzcelik14/triM/releases/download/v0.3.0/trim_0.3.0_all.deb
-sudo apt install ./trim_0.3.0_all.deb
-```
-
-Once installed, launch `triM.` from your desktop application launcher (under *Sound & Video*) or run:
-
-```bash
-trim
-```
-
-#### Option 2: Automated Desktop Setup Script (`install.sh`)
-
-For any Linux distribution, clone the repository and run the setup script:
-
-```bash
-git clone https://github.com/MOzcelik14/triM.git
-cd triM
-./install.sh
-```
-
-This prepares the virtual environment, installs dependencies, registers desktop shortcuts (`io.github.mozcelik14.triM.desktop`), installs hicolor icons, and adds `~/.local/bin/trim` to your environment.
-
-#### Option 3: Manual / Developer Setup
-
-```bash
-git clone https://github.com/MOzcelik14/triM.git
-cd triM
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
-trim
-```
-
-Alternatively, use the convenience launcher:
-
-```bash
-./run.sh
-```
-
-### System Requirements
-
-- **Operating System:** Linux (tested on Ubuntu 22.04+, Debian 12+, Fedora 39+, Arch Linux)
-- **Display Server:** Wayland or X11
-- **Python:** 3.12 or newer
-- **FFmpeg:** `ffmpeg` and `ffprobe` binaries in `$PATH`
-
-Package installation commands for FFmpeg:
-
-```bash
-# Ubuntu / Debian
-sudo apt update && sudo apt install ffmpeg
+# Debian / Ubuntu / Linux Mint
+sudo apt update
+sudo apt install build-essential pkg-config libasound2-dev libx11-dev libgl1-mesa-dev ffmpeg
 
 # Fedora
-sudo dnf install ffmpeg
+sudo dnf install gcc pkgconf-pkg-config alsa-lib-devel libX11-devel mesa-libGL-devel ffmpeg
 
 # Arch Linux
-sudo pacman -S ffmpeg
+sudo pacman -S base-devel alsa-lib libx11 mesa ffmpeg
 ```
 
-### Development
-
-Run the test suite:
+#### Build from Source
 
 ```bash
-.venv/bin/pytest tests/ -v
+git clone https://github.com/MOzcelik14/triM.git
+cd triM
+cargo build --release
 ```
 
-Build the Debian package locally:
+The optimized native binary is produced at `./target/release/trim`.
+
+#### Running triM.
 
 ```bash
-./scripts/build_deb.sh
+# Launch editor
+./target/release/trim
+
+# Launch with a video or project directly
+./target/release/trim /path/to/video.mp4
+./target/release/trim /path/to/project.trim
 ```
-
-Generate branding assets and multi-resolution icons:
-
-```bash
-.venv/bin/python3 scripts/generate_branding_and_icons.py
-```
-
-### Project Structure
-
-```text
-triM/
-├── trim/                   # Core application package
-│   ├── app/                # Application initialization & crash handling
-│   ├── commands/           # Undo / Redo command pattern
-│   ├── core/               # Project, Timeline, Track, Clip data models
-│   ├── export/             # FFmpeg export engine & presets
-│   ├── media/              # PyAV playback, FFprobe metadata, Waveforms
-│   ├── resources/          # Icons, branding assets, themes
-│   └── ui/                 # Qt6 user interface widgets (Timeline, Monitor, Inspector)
-├── cutline/                # Backwards-compatibility import shim
-├── docs/                   # GitHub Pages product website
-├── scripts/                # Packaging, branding, and screenshot utilities
-├── tests/                  # Pytest test suite (unit and integration tests)
-├── install.sh              # One-line desktop setup script
-└── pyproject.toml          # Package metadata and build configuration
-```
-
-### Roadmap
-
-- [x] Multi-track video and audio timeline
-- [x] Timeline markers with magnetic snapping (`M` shortcut)
-- [x] Keyframe animation for position, scale, and opacity
-- [x] Variable clip playback speed and reverse (`0.1x` to `10.0x`)
-- [x] Hardware-assisted PyAV playback engine & audio sync
-- [x] Waveform extraction and interactive fade handles
-- [x] Real-time stereo VU meter with peak hold
-- [x] J-K-L shuttle playback and keyboard navigation
-- [x] Color adjustments, transitions, and title generator
-- [x] Ubuntu / Debian (.deb) packaging and automated installer
-- [x] Multi-clip box selection and batch drag operations
-- [x] Track mixer with mute, solo, and audio gain sliders
-- [x] Audio detach ("Detach Audio") workflow
-- [x] Ripple trim shortcuts (Q/W)
-- [ ] Flatpak package distribution (`io.github.mozcelik14.triM`)
-- [ ] 4K proxy media workflow for resource-constrained hardware
-
-### Contributing
-
-Contributions, bug reports, and suggestions are welcome!
-- For bugs and feature requests, open an [Issue](https://github.com/MOzcelik14/triM/issues).
-- Pull requests should maintain full test coverage (`pytest tests/ -v`).
-
-### License
-
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
 <a name="türkçe"></a>
 ## Türkçe
 
-**triM.**, özellikle Linux masaüstü ortamları için tasarlanmış, modern, hızlı ve yerel bir doğrusal olmayan video düzenleyicidir (NLE).
+**triM.**, Linux masaüstü ortamları için özel olarak **Rust ile sıfırdan yeniden geliştirilmiş**, modern, ultra hızlı ve hafif bir yerel video düzenleyicidir (NLE).
 
-Python 3.12, PySide6 (Qt6), FFmpeg ve PyAV altyapısıyla geliştirilmiştir. Şişkin web katmanları (Electron) veya karmaşık bulut zorunlulukları olmadan doğrudan video kesme, kırpma, zaman çizgisi kurgusu ve ses senkronizasyonuna odaklanır.
+Modüler Cargo çalışma alanı mimarisi üzerine kurulan **triM.**; hassas video kesme, çok kanallı ses miksajı, gerçek zamanlı renk derecelendirme ve FFmpeg filtre dışa aktarımı sunar. Electron yükü ve web motoru bağımlılıkları içermez; yaklaşık **19 MB** boyutunda bağımsız, optimize bir yerel ikili dosyadır.
 
-### Arayüz Önizleme
+### Öne Çıkan Özellikler
 
-<p align="center">
-  <img src="docs/assets/screenshots/trim_timeline.png" alt="triM. Arayüz Önizlemesi" width="100%">
-</p>
+- **%100 Rust ve Yerel Masaüstü:** Sıfır Electron yükü. Anında açılış ve kararlı bellek yönetimi.
+- **Yüksek Hızlı Asenkron Video Motoru:** `PlaybackStreamer` (arka planda 235+ FPS sürekli rawvideo borusu) ve `AsyncFrameDecoder` (sarma sırasında istek birleştirme ile kilitlenmeyen oynatma kafası).
+- **Çok Kanallı Zaman Çizgisi:** Video (`V1..Vn`) ve ses (`A1..An`) kanalları, oynatma kafasından kesme (`S`), başı kırpıp kaydırma (`Q`), sonu kırpıp kaydırma (`W`), boşluğu kapatarak silme (`Shift+Delete`) ve manyetik yapışma.
+- **Stereo Ses Mikseri:** 48kHz 16-bit PCM miksaj, canlı RMS/Tepe çift kanallı VU göstergesi, kanal bazlı ses/mute/solo denetimleri ve tek tıkla ses ayırma ("Sesi Ayır").
+- **Anahtar Kare & Renk Düzenleme:** Konum, ölçek, opaklık, döndürme, parlaklık, kontrast ve doygunluk üzerinde anahtar kare enterpolasyonu (Doğrusal, Sabit, Ease-In-Out eğrisi).
+- **Komut Satırı & Sürükle-Bırak:** Dosyaları doğrudan terminalden açabilme (`trim video.mp4`) veya medya havuzuna ve kanallara sürükleyip bırakabilme.
+- **Geriye Dönük Uyumluluk:** `.trim` ve eski `.cutline` JSON proje dosyalarını otomatik tanıma ve her 2 dakikada bir otomatik kurtarma anlık görüntüsü alma.
 
-### Temel Özellikler
+---
 
-- **Çok Kanallı Zaman Çizgisi:** Bağımsız video ve ses kanalları, jilet kesimi (`S`), boşluksuz silme (`Shift+Delete`), manyetik kare yakalama ve sürükle-bırak sıralama.
-- **Çoklu Klip Seçimi ve Toplu Taşıma:** Fareyle çerçeve içine alma (marquee kutu seçimi), Shift ile çoklu seçim ve manyetik yakalama ile toplu taşıma.
-- **Kanal Mikseri ve Kazanç Kontrolü:** Kanal bazlı ses seviye faderları, solo ve sessize alma (mute) kontrolleri ile hassas ses dengeleme.
-- **Sesi Ayır (Detach Audio):** Sağ tık menüsüyle video klibinin sesini tek tıkla bağımsız ses kanalına aktarma iş akışı.
-- **Hızlı Ripple Kırpma Kısayolları:** Sektör standardı `Q` (başlangıcı kırpıp boşluğu kapat) ve `W` (bitişi kırpıp boşluğu kapat) kısayolları.
-- **Donanım Destekli Oynatma ve Ses Senkronu:** PyAV ve FFmpeg libav ile kare hassasiyetinde sıralı demuxing, çıtırtısız ses tampon kuyruğu ve gerçek zamanlı (1.0x) oynatma hızı.
-- **Dalga Formu Görselleştirme:** Çok iş parçacıklı ses tepe noktası analizi, önbellekleme ve doğrudan zaman çizgisi kliplerinde dalga formu çizimi.
-- **İnteraktif Fade Kolları:** Klip üzerinde doğrudan fareyle ayarlanabilen video opaklık eğrileri ve canlı ses kazanç rampaları.
-- **Çift Kanallı Stereo VU Metre:** Önizleme monitörüne entegre, tepe tutma (peak hold) göstergeli gerçek zamanlı RMS dBFS ses seviyesi takibi.
-- **Hassas Shuttle Kontrolleri:** Sektör standardı J-K-L shuttle oynatma (`1x`, `2x`, `4x`, `8x`, `-1x`, `-2x`, `-4x`, `-8x`), tek kare adımlama (`←` / `→`) ve kesim noktalarına zıplama (`↑` / `↓`).
-- **Renk ve Görüntü Ayarları:** Canlı parlaklık, kontrast ve doygunluk kontrolleri (tek tıkla siyah-beyaz dönüştürme dahil) ve siyaha/beyaza yumuşak geçiş efektleri.
-- **Tipografi ve Alt Bant Üretici:** Sistem yazı tipleriyle altyazı, alt bant (lower third) ve metin kartı oluşturma, şeffaf alfa kanallı bindirme.
-- **Arka Planda FFmpeg Dışa Aktarımı:** Preset tabanlı çözünürlük/FPS seçenekleri, çok iş parçacıklı filtre grafiği derlemesi (`scale`, `pad`, `eq`, `fade`, `afade`) ve ilerleme takibi.
-- **Çökme Kurtarma ve Otomatik Kayıt:** Periyodik arka plan durum anlık görüntüleri ve sistem açılışında tek tıkla kurtarma.
+<a name="shortcuts"></a>
+## ⌨️ Keyboard Shortcuts / Klavye Kısayolları
 
-### Kurulum
+| Kısayol | İngilizce Açıklama | Türkçe Açıklama |
+| :--- | :--- | :--- |
+| <kbd>Space</kbd> | Toggle Playback / Pause | Oynat / Duraklat |
+| <kbd>S</kbd> | Split / Razor Cut at Playhead | Çizgiden Kes / Böl |
+| <kbd>Q</kbd> | Ripple Trim Head to Playhead | Başı Çizgiye Kırp ve Kaydır |
+| <kbd>W</kbd> | Ripple Trim Tail to Playhead | Sonu Çizgiye Kırp ve Kaydır |
+| <kbd>Delete</kbd> | Delete Selected Clip(s) | Seçili Klibi Sil |
+| <kbd>Shift</kbd> + <kbd>Delete</kbd> | Ripple Delete Selected Clip | Boşluğu Kapatıp Sil (Ripple Delete) |
+| <kbd>J</kbd> | Shuttle Reverse (-1x, -2x, -4x, -8x) | Geriye Hızlı Oynat |
+| <kbd>K</kbd> | Shuttle Pause | Oynatmayı Durdur |
+| <kbd>L</kbd> | Shuttle Forward (1x, 2x, 4x, 8x) | İleriye Hızlı Oynat |
+| <kbd>←</kbd> / <kbd>→</kbd> | Step 1 Frame Backward / Forward | 1 Kare Geri / İleri Adımla |
+| <kbd>Shift</kbd> + <kbd>←</kbd> / <kbd>→</kbd> | Step 1 Second Backward / Forward | 1 Saniye Geri / İleri Adımla |
+| <kbd>↑</kbd> / <kbd>↓</kbd> | Jump to Previous / Next Edit Point | Önceki / Sonraki Kesim Noktasına Git |
+| <kbd>Home</kbd> / <kbd>End</kbd> | Jump to Beginning / End of Timeline | Zaman Çizgisi Başına / Sonuna Git |
+| <kbd>M</kbd> | Add Marker at Playhead | Çizgiye İşaretçi Ekle |
+| <kbd>Ctrl</kbd> + <kbd>Z</kbd> | Undo Last Action | Son İşlemi Geri Al |
+| <kbd>Ctrl</kbd> + <kbd>Y</kbd> | Redo Last Action | Son İşlemi Yinele |
+| <kbd>Ctrl</kbd> + <kbd>N</kbd> | New Project | Yeni Proje |
+| <kbd>Ctrl</kbd> + <kbd>O</kbd> | Open Project Dialog | Proje Aç |
+| <kbd>Ctrl</kbd> + <kbd>S</kbd> | Save Project | Projeyi Kaydet |
+| <kbd>Ctrl</kbd> + <kbd>T</kbd> | Add Title Card Dialog | Başlık / Metin Ekle |
+| <kbd>Ctrl</kbd> + <kbd>E</kbd> | Open Export Video Dialog | Videoyu Dışa Aktar |
 
-#### Yöntem 1: Ubuntu / Debian / Linux Mint / Pop!_OS (.deb Paketi)
+---
 
-Ubuntu, Debian, Linux Mint, Pop!_OS ve Debian tabanlı tüm dağıtımlar için hazır `.deb` paketini [v0.3.0 Sürüm Sayfası](https://github.com/MOzcelik14/triM/releases/tag/v0.3.0) üzerinden indirin:
+<a name="architecture"></a>
+## 🏗️ Architecture / Mimari Yapı
+
+Uygulama, sorumlulukların temiz ve modüler ayrıldığı **8 üyeli Cargo Çalışma Alanı (Workspace)** olarak yapılandırılmıştır:
+
+```
+VideoEditor/
+├── Cargo.toml                    # Workspace manifesti (resolver = "2")
+├── crates/
+│   ├── trim-core/                # Zaman, klip, kanal, anahtar kare ve proje modelleri
+│   ├── trim-commands/            # 14 adet geri alınabilir (Undo/Redo) komut ve UndoStack
+│   ├── trim-timeline/            # Üst düzey zaman çizgisi düzenleme algoritmaları
+│   ├── trim-project/             # Atomik disk G/Ç (.tmp rename) ve AutosaveManager
+│   ├── trim-media/               # VideoEngine, PlaybackStreamer, PCM mikser, ses motoru
+│   ├── trim-export/              # FFmpeg filtergraph oluşturucu, arka plan işçisi
+│   ├── trim-ui/                  # Saf Rust egui/eframe arayüzü, canvas, denetçi, monitör
+│   └── trim-app/                 # Masaüstü ikili dosya giriş noktası (`trim`)
+```
+
+### Modül Sorumlulukları
+
+1. **`trim-core`:**
+   - SMPTE zaman kodu hesaplamaları (`seconds_to_timecode`, `timecode_to_seconds`).
+   - Zaman çizgisi manyetik yapışma (`snap_time`).
+   - Çok katmanlı görünür klip tespiti (`get_visible_video_clips_at`, `get_active_audio_clips_at`).
+   - Anahtar kare enterpolatörleri (Linear, Hold, Smoothstep Ease-In-Out).
+2. **`trim-commands`:**
+   - 14 adet atomik, geri alınabilir komut (`AddClip`, `RemoveClip`, `MoveClip`, `TrimClip`, `SplitClip`, `RippleDelete`, `BatchMove`, `DetachAudio`, vb.).
+3. **`trim-timeline`:**
+   - Oynatma kafasından kesme (`split_at_playhead`).
+   - Ripple trim baş (`ripple_trim_head`) ve kuyruk (`ripple_trim_tail`) fonksiyonları.
+   - Edit noktası arama (`find_prev_edit_point`, `find_next_edit_point`).
+4. **`trim-project`:**
+   - Güvenli atomik kaydetme (`.tmp` -> rename).
+   - `.trim` v1 ve eski `.cutline` geriye dönük uyumlu JSON serileştirme.
+   - Periyodik kurtarma yöneticisi (`AutosaveManager`).
+5. **`trim-media`:**
+   - `VideoEngine`: Gerçek zamanlı akış (`PlaybackStreamer`), asenkron sarma (`AsyncFrameDecoder`), RAM kare önbelleği.
+   - `AudioMixer`: 48kHz 16-bit stereo miksaj, arka plan ön yükleme (`preload_audio_async`), cpal ses akış cihazı (`AudioStreamPlayer`).
+   - `WaveformGenerator`: Çok iş parçacıklı dalga formu analizi ve RAM/Disk önbellekleme.
+   - `FFprobeAnalyzer`: JSON akış ve codec çözümleme.
+6. **`trim-export`:**
+   - FFmpeg karmaşık filtre grafikleri (`[v0][v1]overlay`, `scale`, `pad`, `eq`, `fade`, `afade`, `atempo`).
+   - Önayarlar: 1080p, 720p, 4K, YouTube 60fps, WebM, Yalnızca Ses (WAV/MP3).
+7. **`trim-ui`:**
+   - Donanım hızlandırmalı egui arayüzü: Zaman çizgisi kanvası, monitör penceresi, medya havuzu, özellik denetçisi, çift kanallı VU metre.
+8. **`trim-app`:**
+   - Komut satırı argümanları, uygulama ikonu ve pencere ilklendirmesi.
+
+---
+
+### Test Kapsamı
+
+Tüm çalışma alanı testleri Cargo üzerinden doğrudan çalıştırılabilir:
 
 ```bash
-wget https://github.com/MOzcelik14/triM/releases/download/v0.3.0/trim_0.3.0_all.deb
-sudo apt install ./trim_0.3.0_all.deb
+cargo test --workspace
 ```
 
-Kurulum tamamlandığında uygulama menünüzden (*Ses ve Video* altında) veya terminalden doğrudan çalıştırabilirsiniz:
+Birim testleri, geri alma yığını, ses mikseri, manyetik yapışma, video çözümleme ve entegrasyon iş akışlarını kapsayan **33/33 test %100 başarılıdır.**
 
-```bash
-trim
-```
+---
 
-#### Yöntem 2: Otomatik Masaüstü Kurulum Betiği (`install.sh`)
+### License / Lisans
 
-Tüm Linux dağıtımlarında geçerli olan tek komutlu kurulum:
-
-```bash
-git clone https://github.com/MOzcelik14/triM.git
-cd triM
-./install.sh
-```
-
-Bu betik sanal ortamı kurar, bağımlılıkları yükler, masaüstü kısayolunu (`io.github.mozcelik14.triM.desktop`), sistem ikonlarını kaydeder ve `~/.local/bin/trim` bağlantısını oluşturur.
-
-#### Yöntem 3: Kaynaktan / Geliştirici Kurulumu
-
-```bash
-git clone https://github.com/MOzcelik14/triM.git
-cd triM
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install -e .
-trim
-```
-
-Doğrudan çalıştırmak için:
-
-```bash
-./run.sh
-```
-
-### Sistem Gereksinimleri
-
-- **İşletim Sistemi:** Linux (Ubuntu 22.04+, Debian 12+, Fedora 39+, Arch Linux test edilmiştir)
-- **Görüntü Sunucusu:** Wayland veya X11
-- **Python:** 3.12 veya üzeri
-- **FFmpeg:** `$PATH` içinde `ffmpeg` ve `ffprobe` çalıştırılabilirleri
-
-FFmpeg kurulum komutları:
-
-```bash
-# Ubuntu / Debian
-sudo apt update && sudo apt install ffmpeg
-
-# Fedora
-sudo dnf install ffmpeg
-
-# Arch Linux
-sudo pacman -S ffmpeg
-```
-
-### Geliştirme
-
-Birim ve entegrasyon testlerini çalıştırma:
-
-```bash
-.venv/bin/pytest tests/ -v
-```
-
-Debian paketini yerel olarak inşa etme:
-
-```bash
-./scripts/build_deb.sh
-```
-
-Marka varlıklarını ve çoklu çözünürlük ikonlarını üretme:
-
-```bash
-.venv/bin/python3 scripts/generate_branding_and_icons.py
-```
-
-### Proje Dizini Yapısı
-
-```text
-triM/
-├── trim/                   # Ana uygulama paketi
-│   ├── app/                # Uygulama başlatma ve istisna yönetimi
-│   ├── commands/           # Geri Al / Yinele (Undo/Redo) komutları
-│   ├── core/               # Proje, Zaman Çizgisi, Kanal ve Klip veri modelleri
-│   ├── export/             # FFmpeg dışa aktarma motoru ve hazır ayarlar
-│   ├── media/              # PyAV oynatma, FFprobe analiz, Ses dalga formları
-│   ├── resources/          # İkonlar, marka varlıkları, QSS teması
-│   └── ui/                 # Qt6 arayüz bileşenleri (Zaman Çizgisi, Monitör, Denetçi)
-├── cutline/                # Geriye dönük uyumluluk katmanı
-├── docs/                   # GitHub Pages ürün web sitesi
-├── scripts/                # Paketleme, marka ve ekran görüntüsü araçları
-├── tests/                  # Pytest test paketi
-├── install.sh              # Masaüstü entegrasyon betiği
-└── pyproject.toml          # Paket yapılandırması
-```
-
-### Geliştirme Yol Haritası
-
-- [x] Çok kanallı video ve ses zaman çizgisi
-- [x] Zaman çizgisi işaretçileri (markers) ve manyetik yakalama (`M` kısayolu)
-- [x] Konum, ölçek ve opaklık için Keyframe animasyonu
-- [x] Değişken klip hızı ve geriye doğru oynatma (`0.1x` - `10.0x`)
-- [x] Donanım destekli PyAV oynatma motoru ve ses senkronu
-- [x] Dalga formu çıkarımı ve interaktif fade kolları
-- [x] Canlı stereo VU metre ve tepe göstergesi
-- [x] J-K-L shuttle kontrolleri ve klavye gezintisi
-- [x] Renk ayarları, geçişler ve başlık üretici
-- [x] Ubuntu / Debian (.deb) paketleme ve otomatik yükleyici
-- [x] Çoklu klip kutu seçimi ve toplu taşıma
-- [x] Kanal mikseri, ses sürgüleri ve Mute/Solo denetimleri
-- [x] Sesi Ayır (Detach Audio) iş akışı
-- [x] Q/W ripple kırpma kısayolları
-- [ ] Flatpak paket dağıtımı (`io.github.mozcelik14.triM`)
-- [ ] Düşük donanımlı sistemler için 4K proxy akışı
-
-### Katkıda Bulunma
-
-Hata bildirimleri ve katkılar memnuniyetle karşılanır!
-- Hata ve öneriler için [Issue](https://github.com/MOzcelik14/triM/issues) açabilirsiniz.
-- Pull request gönderirken testlerin tamamının geçtiğinden emin olun (`pytest tests/ -v`).
-
-### Lisans
-
-Bu proje MIT Lisansı altında sunulmaktadır. Ayrıntılar için [LICENSE](LICENSE) dosyasına bakın.
+Bu proje **MIT Lisansı** ile lisanslanmıştır. Detaylar için [LICENSE](LICENSE) dosyasına bakabilirsiniz.

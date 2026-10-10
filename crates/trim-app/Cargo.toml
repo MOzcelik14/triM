@@ -1,0 +1,24 @@
+[package]
+name = "trim-app"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "trim"
+path = "src/main.rs"
+
+[dependencies]
+trim-core = { path = "../trim-core" }
+trim-commands = { path = "../trim-commands" }
+trim-timeline = { path = "../trim-timeline" }
+trim-project = { path = "../trim-project" }
+trim-media = { path = "../trim-media" }
+trim-export = { path = "../trim-export" }
+trim-ui = { path = "../trim-ui" }
+egui = { workspace = true }
+eframe = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+image = { workspace = true }

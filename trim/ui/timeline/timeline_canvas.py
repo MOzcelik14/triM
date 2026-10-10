@@ -549,12 +549,12 @@ class TimelineCanvas(QWidget):
         """)
 
         # Speed and Duration
-        act_speed = menu.addAction("⚡ Hız ve Süre (Speed & Duration)...")
+        act_speed = menu.addAction("⚡ Hız ve Süre...")
         act_speed.triggered.connect(lambda: self.prompt_speed_for_clip(track.id, clip.id))
 
         # Detach audio (for video tracks)
         if track.track_type == TrackType.VIDEO:
-            act_detach = menu.addAction("🔊 Sesi Ayır (Detach Audio)")
+            act_detach = menu.addAction("🔊 Sesi Ayır")
             act_detach.triggered.connect(lambda: self.detach_audio_for_clip(track.id, clip.id))
 
         act_split = menu.addAction("✂ Klibi Böl (S)")
@@ -562,10 +562,10 @@ class TimelineCanvas(QWidget):
 
         menu.addSeparator()
 
-        act_delete = menu.addAction("🗑 Sil (Delete)")
+        act_delete = menu.addAction("🗑 Sil (Del)")
         act_delete.triggered.connect(self.delete_selected)
 
-        act_ripple = menu.addAction("⏪ Boşluksuz Sil (Ripple Delete)")
+        act_ripple = menu.addAction("⏪ Boşluksuz Sil (Shift+Del)")
         act_ripple.triggered.connect(self.ripple_delete_selected)
 
         menu.exec(event.globalPos())

@@ -46,7 +46,7 @@ class SingleTrackHeader(QWidget):
         row1.setSpacing(4)
         row1.setContentsMargins(0, 0, 0, 0)
 
-        type_prefix = "V" if track.track_type == TrackType.VIDEO else "A"
+        type_prefix = "V" if track.track_type == TrackType.VIDEO else "S"
         self.lbl_name = QLabel(f"{type_prefix}: {track.name}")
         self.lbl_name.setStyleSheet("font-weight: bold; color: #d0d0e0; font-size: 11px;")
         row1.addWidget(self.lbl_name)

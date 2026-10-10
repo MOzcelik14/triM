@@ -95,9 +95,16 @@ class InspectorWidget(QWidget):
         self.form_layout.addWidget(self.grp_timing)
 
         # 3. Video Transform Group
-        self.grp_transform = QGroupBox("Video Dönüşümü & Keyframe")
+        self.grp_transform = QGroupBox("Video Dönüşümü & Anahtar Kareler")
         trans_layout = QFormLayout(self.grp_transform)
         trans_layout.setSpacing(6)
+
+        prop_labels = {
+            "pos_x": "Konum X",
+            "pos_y": "Konum Y",
+            "scale": "Ölçek",
+            "opacity": "Opaklık",
+        }
 
         def _make_kf_field(spinbox: QDoubleSpinBox, prop: str) -> tuple[QHBoxLayout, QPushButton]:
             box = QHBoxLayout()
@@ -106,7 +113,8 @@ class InspectorWidget(QWidget):
             box.addWidget(spinbox)
             btn = QPushButton("◆")
             btn.setFixedSize(22, 22)
-            btn.setToolTip(f"{prop} için Keyframe Ekle/Sil")
+            label_tr = prop_labels.get(prop, prop)
+            btn.setToolTip(f"{label_tr} için Anahtar Kare Ekle/Kaldır")
             btn.setStyleSheet("QPushButton { padding: 0; font-size: 11px; color: #707080; }")
             btn.clicked.connect(lambda: self._on_toggle_keyframe(prop, spinbox.value(), btn))
             box.addWidget(btn)
@@ -169,7 +177,7 @@ class InspectorWidget(QWidget):
             preset_box.addWidget(p_btn)
         speed_layout.addRow("Hazır:", preset_box)
 
-        self.chk_reverse = QCheckBox("Geriye Oynat (Reverse)")
+        self.chk_reverse = QCheckBox("Geriye Doğru Oynat")
         self.chk_reverse.toggled.connect(self._on_reverse_changed)
         speed_layout.addRow("", self.chk_reverse)
 
@@ -218,12 +226,12 @@ class InspectorWidget(QWidget):
         self.spn_fade_in.setSingleStep(0.1)
         self.spn_fade_in.setSuffix(" s")
         self.spn_fade_in.valueChanged.connect(self._on_fade_changed)
-        fade_layout.addRow("Giriş (Fade In):", self.spn_fade_in)
+        fade_layout.addRow("Giriş Kararması:", self.spn_fade_in)
 
         self.cmb_transition_in = QComboBox()
         self.cmb_transition_in.addItem("Yok (Düz Kararma)", None)
-        self.cmb_transition_in.addItem("Siyaha Geçiş (Dip to Black)", "dip_black")
-        self.cmb_transition_in.addItem("Beyaza Geçiş (Dip to White)", "dip_white")
+        self.cmb_transition_in.addItem("Siyaha Geçiş", "dip_black")
+        self.cmb_transition_in.addItem("Beyaza Geçiş", "dip_white")
         self.cmb_transition_in.currentIndexChanged.connect(self._on_transition_changed)
         fade_layout.addRow("Giriş Geçişi:", self.cmb_transition_in)
 
@@ -232,12 +240,12 @@ class InspectorWidget(QWidget):
         self.spn_fade_out.setSingleStep(0.1)
         self.spn_fade_out.setSuffix(" s")
         self.spn_fade_out.valueChanged.connect(self._on_fade_changed)
-        fade_layout.addRow("Çıkış (Fade Out):", self.spn_fade_out)
+        fade_layout.addRow("Çıkış Kararması:", self.spn_fade_out)
 
         self.cmb_transition_out = QComboBox()
         self.cmb_transition_out.addItem("Yok (Düz Kararma)", None)
-        self.cmb_transition_out.addItem("Siyaha Geçiş (Dip to Black)", "dip_black")
-        self.cmb_transition_out.addItem("Beyaza Geçiş (Dip to White)", "dip_white")
+        self.cmb_transition_out.addItem("Siyaha Geçiş", "dip_black")
+        self.cmb_transition_out.addItem("Beyaza Geçiş", "dip_white")
         self.cmb_transition_out.currentIndexChanged.connect(self._on_transition_changed)
         fade_layout.addRow("Çıkış Geçişi:", self.cmb_transition_out)
 

@@ -121,8 +121,8 @@ class TitleDialog(QDialog):
         # Layout & Alignment
         self.cmb_position = QComboBox()
         self.cmb_position.addItem("Ekran Ortası", "center")
-        self.cmb_position.addItem("Alt Üçte Bir (Lower Third)", "lower_third")
-        self.cmb_position.addItem("Üst Başlık (Header)", "top")
+        self.cmb_position.addItem("Alt Bant (Alt Üçte Bir)", "lower_third")
+        self.cmb_position.addItem("Üst Başlık", "top")
         self.cmb_position.currentIndexChanged.connect(self._update_preview)
         style_layout.addRow("Konum:", self.cmb_position)
 

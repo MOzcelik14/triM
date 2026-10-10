@@ -90,7 +90,7 @@ class SpeedDialog(QDialog):
         form.addRow("Hazır:", preset_layout)
 
         # Reverse checkbox
-        self.chk_reverse = QCheckBox("Geriye Doğru Oynat (Reverse)")
+        self.chk_reverse = QCheckBox("Geriye Doğru Oynat")
         self.chk_reverse.setChecked(init_reverse)
         form.addRow("", self.chk_reverse)
 

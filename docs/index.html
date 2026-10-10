@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>triM. — A Lightweight Non-Linear Video Editor for Linux</title>
   
-  <meta name="description" content="A fast, modern, native non-linear video editor for Linux. Built with Python 3.12, Qt6/PySide6, FFmpeg, and PyAV. No Electron bloat.">
+  <meta name="description" content="A fast, modern, native non-linear video editor for Linux written in Rust. egui, FFmpeg. No Electron bloat.">
   <meta name="author" content="M. Özçelik">
   <meta name="theme-color" content="#151518">
   
@@ -14,7 +14,7 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://mozcelik14.github.io/triM/">
   <meta property="og:title" content="triM. — Modern Non-Linear Video Editor for Linux">
-  <meta property="og:description" content="Fast, native, precision video editing for Linux desktop. Built with Python, Qt6, PyAV and FFmpeg.">
+  <meta property="og:description" content="Fast, native, precision video editing for Linux desktop. Built with Rust, egui, and FFmpeg.">
   <meta property="og:image" content="./assets/screenshots/trim_timeline.png">
   
   <!-- Twitter Card -->
@@ -84,12 +84,12 @@
         </p>
 
         <p class="hero-description" data-i18n="hero_desc">
-          A streamlined creative desktop experience focused on cutting, trimming, timeline sequencing, and audio synchronization. Built with Python, Qt6, FFmpeg, and PyAV — without cloud lock-in or Electron memory bloat.
+          A streamlined creative desktop experience focused on cutting, trimming, timeline sequencing, and audio synchronization. Built with Rust, egui, and FFmpeg — without cloud lock-in or Electron memory bloat.
         </p>
 
         <div class="hero-cta">
           <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.3.0" class="btn btn-primary">
-            <span data-i18n="cta_download">Download Ubuntu / Debian Package (.deb)</span>
+            <span data-i18n="cta_download">Download Latest Release (.deb)</span>
             <span class="btn-badge">v0.3.0</span>
           </a>
           <a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer" class="btn btn-secondary" data-i18n="cta_source">
@@ -99,8 +99,8 @@
 
         <!-- Terminal Quick Install -->
         <div class="quick-install">
-          <code><span class="prompt-symbol">$</span>git clone https://github.com/MOzcelik14/triM.git &amp;&amp; cd triM &amp;&amp; ./install.sh</code>
-          <button type="button" class="copy-btn" data-clipboard-text="git clone https://github.com/MOzcelik14/triM.git &amp;&amp; cd triM &amp;&amp; ./install.sh" data-i18n="quick_install_copy">
+          <code><span class="prompt-symbol">$</span>git clone https://github.com/MOzcelik14/triM.git &amp;&amp; cd triM &amp;&amp; cargo build --release</code>
+          <button type="button" class="copy-btn" data-clipboard-text="git clone https://github.com/MOzcelik14/triM.git &amp;&amp; cd triM &amp;&amp; cargo build --release" data-i18n="quick_install_copy">
             Copy
           </button>
         </div>

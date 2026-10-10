@@ -37,7 +37,7 @@ class MonitorWidget(QWidget):
         lbl_brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
         overlay_layout.addWidget(lbl_brand)
 
-        lbl_desc = QLabel("A lightweight non-linear video editor.")
+        lbl_desc = QLabel("Hafif ve modern video düzenleyici.")
         lbl_desc.setStyleSheet("color: #7E7E8C; font-size: 11px; margin-bottom: 6px;")
         lbl_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
         overlay_layout.addWidget(lbl_desc)

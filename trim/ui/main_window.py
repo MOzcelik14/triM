@@ -223,7 +223,7 @@ class MainWindow(QMainWindow):
         act_del = edit_menu.addAction("Seçileni Sil")
         act_del.setShortcut(QKeySequence.StandardKey.Delete)
         act_del.triggered.connect(self.timeline_widget.canvas.delete_selected)
-        act_ripple = edit_menu.addAction("Boşluksuz Sil (Ripple Delete)")
+        act_ripple = edit_menu.addAction("Boşluksuz Sil")
         act_ripple.setShortcut(QKeySequence("Shift+Delete"))
         act_ripple.triggered.connect(self.timeline_widget.canvas.ripple_delete_selected)
 
@@ -478,13 +478,28 @@ class MainWindow(QMainWindow):
         self.undo_stack.push(cmd)
         self.project.mark_dirty()
 
+    def _prompt_save_changes_dialog(self, title: str, text: str) -> QMessageBox.StandardButton:
+        msg = QMessageBox(self)
+        msg.setWindowTitle(f"{title} — triM.")
+        msg.setText(text)
+        msg.setIcon(QMessageBox.Icon.Question)
+        btn_save = msg.addButton("Kaydet", QMessageBox.ButtonRole.AcceptRole)
+        btn_discard = msg.addButton("Kaydetmeden Kapat", QMessageBox.ButtonRole.DestructiveRole)
+        btn_cancel = msg.addButton("İptal", QMessageBox.ButtonRole.RejectRole)
+        msg.setDefaultButton(btn_save)
+        msg.exec()
+        clicked = msg.clickedButton()
+        if clicked == btn_save:
+            return QMessageBox.StandardButton.Save
+        elif clicked == btn_discard:
+            return QMessageBox.StandardButton.Discard
+        return QMessageBox.StandardButton.Cancel
+
     def new_project(self) -> None:
         if self.project.is_dirty:
-            res = QMessageBox.question(
-                self,
+            res = self._prompt_save_changes_dialog(
                 "Kaydedilmemiş Değişiklikler",
                 "Mevcut projede kaydedilmemiş değişiklikler var. Yeni bir proje oluşturmadan önce kaydetmek istiyor musunuz?",
-                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
             )
             if res == QMessageBox.StandardButton.Save:
                 self.save_project()
@@ -500,11 +515,9 @@ class MainWindow(QMainWindow):
 
     def open_project(self) -> None:
         if self.project.is_dirty:
-            res = QMessageBox.question(
-                self,
+            res = self._prompt_save_changes_dialog(
                 "Kaydedilmemiş Değişiklikler",
                 "Mevcut projede kaydedilmemiş değişiklikler var. Başka bir proje açmadan önce kaydetmek istiyor musunuz?",
-                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
             )
             if res == QMessageBox.StandardButton.Save:
                 self.save_project()
@@ -625,13 +638,15 @@ class MainWindow(QMainWindow):
 
     def _prompt_recovery(self) -> None:
         rec_path = self.autosave_mgr.get_recovery_file_path()
-        res = QMessageBox.question(
-            self,
-            "Kurtarma Dosyası Bulundu",
-            "Beklenmeyen bir kapanma sonrası kaydedilmemiş bir çalışma oturumu tespit edildi.\nKurtarmak istiyor musunuz?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if res == QMessageBox.StandardButton.Yes:
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Kurtarma Dosyası Bulundu — triM.")
+        msg.setText("Beklenmeyen bir kapanma sonrası kaydedilmemiş bir çalışma oturumu tespit edildi.\nKurtarmak istiyor musunuz?")
+        msg.setIcon(QMessageBox.Icon.Question)
+        btn_yes = msg.addButton("Kurtar", QMessageBox.ButtonRole.YesRole)
+        btn_no = msg.addButton("Yoksay ve Sil", QMessageBox.ButtonRole.NoRole)
+        msg.setDefaultButton(btn_yes)
+        msg.exec()
+        if msg.clickedButton() == btn_yes:
             try:
                 self.project = Project.load(str(rec_path), parent=self)
                 self._reload_project_ui()
@@ -647,7 +662,7 @@ class MainWindow(QMainWindow):
             self,
             "triM. Hakkında",
             "<h2 style='margin-bottom:2px;'><span style='color:#EDEDF2;'>tri</span><span style='color:#FFFFFF;'>M</span><span style='color:#E07A38;'>.</span></h2>"
-            "<b>A lightweight non-linear video editor.</b><br><br>"
+            "<b>Hafif ve modern video düzenleyici.</b><br><br>"
             f"Sürüm {__version__}<br><br>"
             "Python 3.12, PySide6, FFmpeg ve PyAV altyapısıyla geliştirilmiş<br>"
             "bağımsız, hafif ve modern video düzenleyici.",
@@ -655,11 +670,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         if self.project.is_dirty:
-            res = QMessageBox.question(
-                self,
+            res = self._prompt_save_changes_dialog(
                 "Değişiklikler Kaydedilsin mi?",
                 "Çıkmadan önce yaptığınız değişiklikleri kaydetmek istiyor musunuz?",
-                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
             )
             if res == QMessageBox.StandardButton.Save:
                 if self.save_project():

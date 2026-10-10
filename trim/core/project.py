@@ -72,7 +72,7 @@ class Project(QObject):
         # Add initial default tracks if empty
         if not self.timeline.tracks:
             self.timeline.add_track(Track(name="Video 1", track_type=TrackType.VIDEO))
-            self.timeline.add_track(Track(name="Audio 1", track_type=TrackType.AUDIO))
+            self.timeline.add_track(Track(name="Ses 1", track_type=TrackType.AUDIO))
 
     @property
     def is_dirty(self) -> bool:

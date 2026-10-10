@@ -45,6 +45,9 @@ class Track:
                 return clip
         return None
 
+    def get_clip(self, clip_id: str) -> Optional[Clip]:
+        return self.get_clip_by_id(clip_id)
+
     def find_clip_at(self, time: float) -> Optional[Clip]:
         for clip in self.clips:
             if clip.contains_timeline_time(time):

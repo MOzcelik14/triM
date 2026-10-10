@@ -12,3 +12,4 @@ build/
 *.trim.recovery
 *.deb
 .cache/
+target/
