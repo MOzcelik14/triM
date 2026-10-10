@@ -100,6 +100,13 @@ def test_audio_only_track_playback():
         assert db_l > -40.0
         assert db_r > -40.0
 
+        # Audio signal output requires a device; hosted CI has none.
+        # PCM generation above is still tested on headless runners.
+        from PySide6.QtMultimedia import QMediaDevices
+        if QMediaDevices.defaultAudioOutput().isNull():
+            engine.close()
+            pytest.skip("No audio output device in headless CI (PCM rendering passed)")
+
         # Start playback
         engine.play()
         assert engine.is_playing
