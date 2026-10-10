@@ -127,7 +127,9 @@ impl Clip {
     }
 
     pub fn contains_timeline_time(&self, t: f64) -> bool {
-        self.timeline_in <= t && t <= self.timeline_out + 0.001
+        // Timeline intervals are half-open: [in, out). The out point is the
+        // first instant after this clip, not another visible frame.
+        self.timeline_in <= t && t < self.timeline_out
     }
 
     pub fn move_to(&mut self, new_in: f64) {
@@ -199,6 +201,16 @@ impl Clip {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_clip_visibility_excludes_out_point() {
+        let clip = Clip::new("frame", 1.0, 3.0);
+        assert!(!clip.contains_timeline_time(0.999));
+        assert!(clip.contains_timeline_time(1.0));
+        assert!(clip.contains_timeline_time(2.999));
+        assert!(!clip.contains_timeline_time(3.0));
+        assert!(!clip.contains_timeline_time(3.001));
+    }
 
     #[test]
     fn test_clip_source_mapping_forward_and_reverse() {
