@@ -2,8 +2,14 @@ name: Build & Release Linux Packages
 
 on:
   push:
+    branches: [master]
     tags:
       - "v[0-9]*"
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/package-linux.sh"
+      - ".github/workflows/release-linux.yml"
   workflow_dispatch:
 
 permissions:
