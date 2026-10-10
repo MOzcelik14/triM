@@ -1,0 +1,48 @@
+name: Rust CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "scripts/package-linux.sh"
+      - ".github/workflows/rust-ci.yml"
+      - ".github/workflows/release-linux.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "scripts/package-linux.sh"
+      - ".github/workflows/rust-ci.yml"
+      - ".github/workflows/release-linux.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Cargo check and tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config build-essential libasound2-dev libx11-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev ffmpeg
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Check
+        run: cargo check --workspace --locked
+      - name: Test
+        run: cargo test --workspace --locked
+      - name: Shell syntax
+        run: bash -n scripts/package-linux.sh
