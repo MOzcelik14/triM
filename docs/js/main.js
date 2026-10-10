@@ -1,367 +1,150 @@
-/**
- * triM. — Product Website Interactive Scripts
- * Features:
- * - Dynamic i18n Translation (TR/EN) with localStorage persistence
- * - Interactive Bento Card Cursor Spotlight Effect
- * - Showcase Preview Tab Switcher
- * - Distro Dependencies Tab Switcher
- * - Keyboard Shortcuts Category Filter
- * - Clipboard Copy Buttons with Animated Toast Feedback
- * - Sticky Header Scroll Detection
- */
-
+// triM. — static GitHub Pages interactions; no framework required.
 document.addEventListener("DOMContentLoaded", () => {
-  // ------------------------------------------------------------------------
-  // 1. i18n Translations Dictionary
-  // ------------------------------------------------------------------------
-  const translations = {
-    tr: {
-      site_title: "triM. — Linux İçin Modern ve Hafif Video Düzenleyici (Rust NLE)",
-      nav_features: "Özellikler",
-      nav_architecture: "Mimari",
-      nav_shortcuts: "Kısayollar",
-      nav_install: "Kurulum",
-      nav_github: "GitHub",
-
-      hero_pill: "%100 Saf Rust • Sıfır Electron • 19 MB Yerel Linux İkili Dosyası",
-      hero_title_1: "Linux İçin",
-      hero_title_2: "Yüksek Performanslı",
-      hero_title_3: "Yerel Video Düzenleyici.",
-      hero_desc: "Rust, egui ve FFmpeg üzerine sıfırdan inşa edilmiş modern NLE. 235+ FPS asenkron oynatma akışı, çok kanallı stereo ses mikseri ve manyetik kurgu zaman çizgisi — Electron hantallığı ve web yükü olmadan.",
-      cta_download: "Son Sürümü İndir",
-      cta_architecture: "Mimarisi ve Modülleri İncele",
-      quick_install_copy: "Kopyala",
-      quick_install_copied: "Kopyalandı!",
-
-      tab_timeline: "Aktif Kurgu & Monitör",
-      tab_empty: "Minimal Açılış Ekranı",
-
-      stat_1_label: "Bağımsız Native ELF",
-      stat_1_desc: "Sıfır Electron / 0 web bellek yükü",
-      stat_2_label: "FPS Oynatma Akışı",
-      stat_2_desc: "PlaybackStreamer rawvideo borusu",
-      stat_3_label: "UI Kilitlenme Süresi",
-      stat_3_desc: "AsyncFrameDecoder ile akıcı sarma",
-      stat_4_label: "Birim & Entegrasyon Testi",
-      stat_4_desc: "%100 başarılı test kapsamı",
-
-      feat_label: "Yetenekler & Motor",
-      feat_title: "Hızlı, Kararlı ve Güçlü Masaüstü Kurgusu",
-      feat_subtitle: "Gereksiz katmanlar ve şişkinlik olmadan, yalnızca videonuzu en yüksek hızda kesip işlemeye odaklanan modern NLE mimarisi.",
-
-      card_1_title: "Yüksek Hızlı Asenkron Video Akış Motoru",
-      card_1_desc: "Oynatma sırasında UI thread'i dondurmadan arka planda çalışan PlaybackStreamer; 640x360 rawvideo borusu ile 235+ FPS hızında kare üretir. Zaman çizgisi sarılırken eski istekler otomatik olarak atılarak sıfır takılmayla en güncel kare gösterilir.",
-      card_2_title: "48kHz Stereo Ses Mikseri",
-      card_2_desc: "Çok kanallı 16-bit PCM miksajı, canlı RMS / Peak çift kanallı VU göstergesi, kanal bazlı ses/mute/solo denetimleri ve tek tıkla sesi ayırma (Detach Audio).",
-      card_3_title: "Manyetik Çok Kanallı Zaman Çizgisi",
-      card_3_desc: "Katmanlı video (V1..Vn) ve ses (A1..An) kanalları. Oynatma çizgisinden jilet kesimi (S), başı kırpıp kaydırma (Q), sonu kırpıp kaydırma (W) ve boşluğu kapatarak silme (Shift+Delete).",
-      card_4_title: "Anahtar Kareler & Renk Ayarları",
-      card_4_desc: "Klip opaklığı, konum X/Y, ölçek, döndürme, parlaklık, kontrast ve doygunluk üzerinde Smoothstep Ease-In-Out eğrileri ile hassas anahtar kare animasyonu.",
-      card_5_title: "FFmpeg Filtergraph Dışa Aktarımı",
-      card_5_desc: "Çok iş parçacıklı karmaşık filtre grafikleri ([v0][v1]overlay, scale, pad, eq, fade). 1080p, 720p, 4K, YouTube 60fps ve WebM önayarları ile canlı ilerleme takibi.",
-
-      arch_label: "Yazılım Mimarisi",
-      arch_title: "8 Modüllü Cargo Çalışma Alanı",
-      arch_subtitle: "Uygulama, sorumlulukların net olarak ayrıldığı ve birbirinden bağımsız test edilebilen 8 katmanlı Cargo workspace yapısına sahiptir.",
-
-      crate_core: "Zaman kodu (SMPTE), medya modelleri, zaman çizgisi hiyerarşisi, işaretçiler ve anahtar kare enterpolasyonu.",
-      crate_commands: "14 adet atomik, geri alınabilir komut ve kurgu geçmişi yığını (Command Pattern & UndoStack).",
-      crate_timeline: "Çizgiden bölme, baş/kuyruk ripple trimleme ve edit noktaları arasında atlama algoritmaları.",
-      crate_project: "Atomik kaydetme (.tmp -> rename), .trim ve .cutline JSON geriye dönük uyumu, Autosave yöneticisi.",
-      crate_media: "PlaybackStreamer (235+ FPS pipe), AsyncFrameDecoder, 48kHz stereo ses mikseri ve cpal ses cihazı.",
-      crate_export: "FFmpeg filtergraph oluşturucu, dışa aktarma işçisi ve canlı yüzde/kare ilerleme bildirimleri.",
-      crate_ui: "Donanım hızlandırmalı modern egui arayüzü: kanvas, sinema monitörü, denetçi, VU metre, diyaloglar.",
-      crate_app: "Masaüstü ikili dosya giriş noktası, pencere oluşturma ve komut satırı dosya açma desteği (CLI).",
-
-      sc_label: "Üretkenlik & Hız",
-      sc_title: "Profesyonel Klavye Kısayolları",
-      sc_subtitle: "Farenizi bırakmadan, endüstri standardı NLE kısayollarıyla yıldırım hızında kurgu yapın.",
-      filter_all: "Tümü",
-      filter_editing: "Kurgu & Kesme",
-      filter_playback: "Oynatma & Gezinme",
-      filter_project: "Proje & Dosya",
-
-      sc_play: "Oynat / Duraklat",
-      sc_split: "Çizgiden Kes / Razor Böl",
-      sc_q: "Başı Çizgiye Kırp ve Kaydır",
-      sc_w: "Sonu Çizgiye Kırp ve Kaydır",
-      sc_delete: "Seçili Klibi Sil",
-      sc_ripple_del: "Boşluğu Kapatıp Sil (Ripple)",
-      sc_shuttle_rev: "Geri Shuttle (-1x..-8x)",
-      sc_shuttle_pause: "Shuttle Duraklat",
-      sc_shuttle_fwd: "İleri Shuttle (1x..8x)",
-      sc_step: "1 Kare Geri / İleri",
-      sc_jump_edit: "Önceki / Sonraki Kesim Noktası",
-      sc_home_end: "Başa / Sona Git",
-      sc_marker: "İşaretçi (Marker) Ekle",
-      sc_undo: "Geri Al / Yinele",
-      sc_save: "Projeyi Kaydet",
-
-      inst_label: "Hemen Başlayın",
-      inst_title: "Kurulum ve Kaynak Kodu Derleme",
-      inst_subtitle: "Tek bir terminal komutuyla derleyip saniyeler içinde çalıştırmaya başlayın.",
-      copy_deps: "Kopyala",
-      copy_build: "Kopyala",
-      build_step: "Ardından depoyu klonlayıp release profilinde derleyin:",
-      footer_releases: "Sürümler"
-    },
-
-    en: {
-      site_title: "triM. — Modern, Native Video Editor for Linux in Rust",
-      nav_features: "Features",
-      nav_architecture: "Architecture",
-      nav_shortcuts: "Shortcuts",
-      nav_install: "Installation",
-      nav_github: "GitHub",
-
-      hero_pill: "100% Pure Rust • Zero Electron • 19 MB Native Linux Binary",
-      hero_title_1: "High-Performance",
-      hero_title_2: "Native Video Editing",
-      hero_title_3: "Built for Linux.",
-      hero_desc: "A modern NLE written from scratch in Rust, egui, and FFmpeg. Multi-threaded 235+ FPS playback streaming, multi-track stereo audio mixing, and precision magnetic timeline — with zero Electron bloat.",
-      cta_download: "Download Latest Release",
-      cta_architecture: "Explore Architecture & Crates",
-      quick_install_copy: "Copy",
-      quick_install_copied: "Copied!",
-
-      tab_timeline: "Active Timeline & Monitor",
-      tab_empty: "Clean Empty State",
-
-      stat_1_label: "Standalone Native ELF",
-      stat_1_desc: "Zero Electron / 0 web memory overhead",
-      stat_2_label: "Playback Stream FPS",
-      stat_2_desc: "PlaybackStreamer rawvideo pipeline",
-      stat_3_label: "UI Lockup / Latency",
-      stat_3_desc: "AsyncFrameDecoder silky scrubbing",
-      stat_4_label: "Unit & Integration Tests",
-      stat_4_desc: "100% passing test coverage",
-
-      feat_label: "Capabilities & Engine",
-      feat_title: "Fast, Resilient Desktop Video Editing",
-      feat_subtitle: "A modern NLE architecture focused entirely on cutting, sequencing, and exporting video at maximum speed without visual clutter.",
-
-      card_1_title: "High-Speed Asynchronous Video Pipeline",
-      card_1_desc: "PlaybackStreamer operates in the background without locking the UI thread, feeding 640x360 rawvideo at 235+ FPS. During scrubbing, stale requests are automatically discarded (request coalescing) to display the freshest frame with zero lag.",
-      card_2_title: "48kHz Stereo Audio Engine",
-      card_2_desc: "Multi-track 16-bit PCM mixing, live RMS / Peak stereo VU meters, track-level volume/mute/solo controls, and instant audio separation (Detach Audio).",
-      card_3_title: "Magnetic Multi-Track Timeline",
-      card_3_desc: "Layered video (V1..Vn) and audio (A1..An) tracks. Razor split cuts (S), ripple trim head (Q), ripple trim tail (W), and gapless ripple delete (Shift+Delete).",
-      card_4_title: "Keyframes & Color Grading",
-      card_4_desc: "Smoothstep Ease-In-Out animation curves across clip position, scale, opacity, rotation, brightness, contrast, and saturation.",
-      card_5_title: "FFmpeg Filtergraph Exporter",
-      card_5_desc: "Multi-threaded complex filtergraphs ([v0][v1]overlay, scale, pad, eq, fade). Production presets for 1080p, 720p, 4K, YouTube 60fps, and WebM with real-time progress.",
-
-      arch_label: "Software Architecture",
-      arch_title: "8-Crate Modular Cargo Workspace",
-      arch_subtitle: "The application is structured into 8 cleanly decoupled layers, each isolated and independently testable.",
-
-      crate_core: "SMPTE timecode, media models, timeline hierarchy, markers, and keyframe interpolators.",
-      crate_commands: "14 atomic undoable commands and editing history stack (Command Pattern & UndoStack).",
-      crate_timeline: "Razor splitting, ripple trimming (head/tail), and edit point jumping algorithms.",
-      crate_project: "Atomic disk I/O (.tmp -> rename), .trim and .cutline JSON compatibility, Autosave manager.",
-      crate_media: "PlaybackStreamer (235+ FPS pipe), AsyncFrameDecoder, 48kHz stereo mixer, and cpal audio device.",
-      crate_export: "FFmpeg filtergraph builder, export runner thread, and live progress percentage/frame notifications.",
-      crate_ui: "Hardware-accelerated egui interface: timeline canvas, cinema monitor, inspector, VU meter, dialogs.",
-      crate_app: "Desktop binary entry point, window bootstrap, and command-line file loading (CLI).",
-
-      sc_label: "Productivity & Speed",
-      sc_title: "Industry-Standard Keyboard Shortcuts",
-      sc_subtitle: "Edit at lightning speed without reaching for the mouse using standard NLE bindings.",
-      filter_all: "All",
-      filter_editing: "Editing & Cuts",
-      filter_playback: "Playback & Scrub",
-      filter_project: "Project & File",
-
-      sc_play: "Play / Pause",
-      sc_split: "Razor Cut / Split at Playhead",
-      sc_q: "Ripple Trim Head to Playhead",
-      sc_w: "Ripple Trim Tail to Playhead",
-      sc_delete: "Delete Selected Clip",
-      sc_ripple_del: "Ripple Delete (Close Gap)",
-      sc_shuttle_rev: "Shuttle Reverse (-1x..-8x)",
-      sc_shuttle_pause: "Shuttle Pause",
-      sc_shuttle_fwd: "Shuttle Forward (1x..8x)",
-      sc_step: "Step 1 Frame Backward / Forward",
-      sc_jump_edit: "Jump to Prev / Next Edit Point",
-      sc_home_end: "Jump to Timeline Start / End",
-      sc_marker: "Add Marker at Playhead",
-      sc_undo: "Undo / Redo",
-      sc_save: "Save Project",
-
-      inst_label: "Get Started",
-      inst_title: "Installation & Source Compilation",
-      inst_subtitle: "Build with a single terminal command and launch in seconds.",
-      copy_deps: "Copy",
-      copy_build: "Copy",
-      build_step: "Then clone the repository and build in release profile:",
-      footer_releases: "Releases"
-    }
+  const tr = {
+    title: "triM. — Linux için video kurgusu, kendi ritminde.",
+    description: "triM. — Linux için Rust ile geliştirilmiş, hafif ve yerel video düzenleyici. Çok kanallı kurgu, ses miksajı ve FFmpeg ile dışa aktarım.",
+    skip: "İçeriğe geç", nav_features: "Özellikler", nav_workflow: "Yaklaşım", nav_shortcuts: "Kısayollar", nav_download: "İndir",
+    hero_kicker: "LINUX İÇİN, LINUX'TA.", hero_line1: "İyi bir kurgu", hero_line2: "akışını", hero_line3: "bozmaz.",
+    hero_description: "triM. Linux için geliştirilen açık kaynaklı, yerel bir video editörü. Görüntüyü, sesi ve ritmi aynı çizgide buluştur. Arada hiçbir fazlalık olmadan.",
+    hero_download: "triM.'yi indir", hero_explore: "Arayüzü keşfet", hero_note: "Açık kaynak · Rust · Electron yok.",
+    preview_heading: "YAKINDAN BİR BAKIŞ", preview_edit: "Kurgu", preview_start: "Başlangıç", preview_caption: "Gerçek uygulama görüntüsü / triM. v0.3.0",
+    stack_caption: "ALTINDA NE VAR?", features_index: "ARAÇLAR", features_title: "Her karede <em>kontrol sende.</em>",
+    features_intro: "Kurgu masasında ihtiyacın olan şeyler. Birbirini tamamlayan, dikkat dağıtmayan araçlar.",
+    feature_1_title: "Kes. Taşı. Devam et.", feature_1_desc: "Çok kanallı zaman çizgisi, manyetik hizalama, jilet kesimi ve ripple düzenleme. Fikrinin hızına yetişen bir kurgu alanı.",
+    feature_2_title: "Ses, hikâyenin yarısı.", feature_2_desc: "Çok kanallı stereo miksaj, seviye takibi, mute/solo ve videodan sesi ayırma.",
+    feature_3_title: "Hareketi sen belirle.", feature_3_desc: "Anahtar karelerle konum, ölçek, opaklık ve renk ayarlarına hayat ver.",
+    feature_4_title: "Kurgunu dışarı taşı.", feature_4_desc: "FFmpeg tabanlı dışa aktarımla projenin son halini oluştur. 1080p, 4K, WebM ve daha fazlası.",
+    feature_note: "Görsel şemalar temsili; yukarıdaki uygulama ekranları gerçektir.",
+    workflow_index: "YAKLAŞIM", workflow_title: "Daha az katman.<br><em>Daha çok hikâye.</em>",
+    workflow_text: "triM. bir web uygulamasının masaüstüne taşınmış hali değil. Linux için Rust ile yazılmış yerel bir editör. Medyan, proje dosyaların ve yaratıcı sürecin senin elinde.",
+    point_1: "Yerel masaüstü", point_2: "Açık kaynak kod", point_3: "FFmpeg altyapısı",
+    shortcuts_index: "KISAYOLLAR", shortcuts_title: "Fikrin hızlıysa,<br><em>ellerin de olsun.</em>",
+    shortcuts_description: "Fareyi daha az kullan, ritmi daha az böl. triM.’de en sık kullanacağın birkaç kısayol.", shortcuts_link: "Tüm kısayolları gör",
+    key_play: "Oynat / duraklat", key_cut: "Oynatma kafasından kes", key_trim: "Başı / sonu kırp", key_shuttle: "Geri / dur / ileri", key_undo: "Geri al",
+    install_index: "BAŞLANGIÇ", install_title: "Hazırsan,<br><em>kurgu başlasın.</em>",
+    install_description: "triM. ücretsiz ve açık kaynaklı. Yayınlanan sürümü indir veya kaynak kodundan derle. Seçim senin.",
+    install_release: "GitHub sürümlerine git", terminal_title: "Kaynak koddan kurulum",
+    step_deps: "Gerekli paketleri yükle", step_build: "Depoyu klonla ve derle", copy: "Kopyala", copied: "Kopyalandı!", copy_failed: "Kopyalanamadı",
+    terminal_hint: "Rust / Cargo kurulu olmalıdır. Dağıtımınıza göre ek paketler gerekebilir.",
+    footer_tagline: "Kurgunun kendi ritmi var.", footer_releases: "Sürümler ↗", footer_credit: "Linux için özenle geliştirildi.", back_top: "Yukarı ↑",
+    menu_open: "Menüyü aç", menu_close: "Menüyü kapat"
   };
+  const en = {
+    title: "triM. — Native video editing for Linux.",
+    description: "triM. — A lightweight, native video editor for Linux built with Rust. Multi-track editing, stereo audio mixing and FFmpeg export.",
+    skip: "Skip to content", nav_features: "Features", nav_workflow: "Philosophy", nav_shortcuts: "Shortcuts", nav_download: "Download",
+    hero_kicker: "FOR LINUX. ON LINUX.", hero_line1: "Make the cut.", hero_line2: "Stay in", hero_line3: "the flow.",
+    hero_description: "triM. is a native, open-source video editor made for Linux. Bring picture, sound and rhythm together on one timeline. No unnecessary layers in between.",
+    hero_download: "Get triM.", hero_explore: "Explore the editor", hero_note: "Open source · Rust · No Electron.",
+    preview_heading: "INSIDE THE EDITOR", preview_edit: "Editing", preview_start: "Start", preview_caption: "Actual app screenshots / triM. v0.3.0",
+    stack_caption: "UNDER THE HOOD", features_index: "THE TOOLS", features_title: "Every frame, <em>your call.</em>",
+    features_intro: "The essentials for making your cut. Thoughtful tools that work together without getting in your way.",
+    feature_1_title: "Cut. Move. Carry on.", feature_1_desc: "A layered timeline with magnetic snapping, razor splits, and ripple editing. Built to keep up with your ideas.",
+    feature_2_title: "Sound is half the story.", feature_2_desc: "Multi-track stereo mixing, level monitoring, mute/solo controls and detachable audio.",
+    feature_3_title: "Make motion your own.", feature_3_desc: "Animate position, scale, opacity and color adjustments with keyframes.",
+    feature_4_title: "Take your edit further.", feature_4_desc: "Export through FFmpeg and finish your project in 1080p, 4K, WebM and more.",
+    feature_note: "Feature diagrams are illustrative; the editor screenshots above are real.",
+    workflow_index: "THE APPROACH", workflow_title: "Less in between.<br><em>More story to tell.</em>",
+    workflow_text: "triM. isn't a web app wrapped in a desktop window. It's a native Linux editor written in Rust. Your media, project files and creative process stay in your hands.",
+    point_1: "Native desktop", point_2: "Open-source code", point_3: "FFmpeg foundation",
+    shortcuts_index: "SHORTCUTS", shortcuts_title: "Keep the ideas coming.<br><em>Keep your hands moving.</em>",
+    shortcuts_description: "Less reaching for the mouse, more time in the flow. A handful of shortcuts you'll use every day.", shortcuts_link: "See all shortcuts",
+    key_play: "Play / pause", key_cut: "Split at playhead", key_trim: "Trim head / tail", key_shuttle: "Reverse / pause / forward", key_undo: "Undo",
+    install_index: "GET STARTED", install_title: "Ready to<br><em>make the cut?</em>",
+    install_description: "triM. is free and open source. Download a release or build it from source. It's your call.",
+    install_release: "Go to GitHub releases", terminal_title: "Build from source",
+    step_deps: "Install dependencies", step_build: "Clone and build", copy: "Copy", copied: "Copied!", copy_failed: "Could not copy",
+    terminal_hint: "Rust / Cargo must be installed. Additional packages may be needed for your distribution.",
+    footer_tagline: "Every cut has its rhythm.", footer_releases: "Releases ↗", footer_credit: "Built with care for Linux.", back_top: "Back to top ↑",
+    menu_open: "Open menu", menu_close: "Close menu"
+  };
+  const translations = { tr, en };
+  const richKeys = new Set(["features_title", "workflow_title", "shortcuts_title", "install_title"]);
+  let current = "tr";
+  try { const saved = localStorage.getItem("trim_language"); if (saved === "en" || saved === "tr") current = saved; } catch (_) {}
 
-  // ------------------------------------------------------------------------
-  // 2. Language Switcher Engine
-  // ------------------------------------------------------------------------
-  let currentLang = localStorage.getItem("trim_lang") || "tr";
-
-  function applyLanguage(lang) {
-    currentLang = lang;
-    localStorage.setItem("trim_lang", lang);
+  function setLanguage(lang) {
+    if (!translations[lang]) return;
+    current = lang;
+    const dict = translations[lang];
     document.documentElement.lang = lang;
-
-    // Update active button state
-    document.querySelectorAll(".lang-btn").forEach(btn => {
-      btn.classList.toggle("active", btn.dataset.lang === lang);
+    document.title = dict.title;
+    document.querySelector('meta[name="description"]')?.setAttribute("content", dict.description);
+    document.querySelectorAll("[data-i18n]").forEach(element => {
+      const key = element.dataset.i18n;
+      if (!(key in dict)) return;
+      if (richKeys.has(key)) element.innerHTML = dict[key]; // Static trusted copy only.
+      else element.textContent = dict[key];
     });
-
-    const dict = translations[lang] || translations.tr;
-    document.title = dict.site_title;
-
-    document.querySelectorAll("[data-i18n]").forEach(el => {
-      const key = el.dataset.i18n;
-      if (dict[key]) {
-        el.textContent = dict[key];
-      }
+    document.querySelectorAll("[data-lang]").forEach(button => {
+      const active = button.dataset.lang === lang;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", String(active));
     });
+    document.querySelectorAll(".preview-image").forEach(image => {
+      if (image.dataset.image === "edit") image.alt = lang === "en" ? "Actual triM. editor, timeline and preview" : "triM. gerçek kurgu ekranı, zaman çizgisi ve önizleme";
+      else image.alt = lang === "en" ? "triM. empty project startup screen" : "triM. boş proje açılış ekranı";
+    });
+    const menu = document.getElementById("menu-toggle");
+    if (menu) menu.setAttribute("aria-label", dict[menu.getAttribute("aria-expanded") === "true" ? "menu_close" : "menu_open"]);
+    try { localStorage.setItem("trim_language", lang); } catch (_) {}
   }
 
-  document.querySelectorAll(".lang-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      applyLanguage(btn.dataset.lang);
+  document.querySelectorAll("[data-lang]").forEach(button => button.addEventListener("click", () => setLanguage(button.dataset.lang)));
+  setLanguage(current);
+
+  document.querySelectorAll("[data-preview]").forEach(button => {
+    button.addEventListener("click", () => {
+      const name = button.dataset.preview;
+      document.querySelectorAll("[data-preview]").forEach(tab => {
+        const active = tab === button;
+        tab.classList.toggle("is-active", active);
+        tab.setAttribute("aria-pressed", String(active));
+      });
+      document.querySelectorAll("[data-image]").forEach(img => img.classList.toggle("is-active", img.dataset.image === name));
     });
   });
-
-  applyLanguage(currentLang);
-
-  // ------------------------------------------------------------------------
-  // 3. Bento Card Mouse Spotlight Hover Effect
-  // ------------------------------------------------------------------------
-  const bentoCards = document.querySelectorAll(".bento-card");
-  bentoCards.forEach(card => {
-    card.addEventListener("mousemove", e => {
-      const rect = card.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      card.style.setProperty("--mouse-x", `${x}px`);
-      card.style.setProperty("--mouse-y", `${y}px`);
-    });
-  });
-
-  // ------------------------------------------------------------------------
-  // 4. App Showcase Tabs
-  // ------------------------------------------------------------------------
-  const tabBtns = document.querySelectorAll(".tab-btn");
-  const imgTimeline = document.getElementById("img-timeline");
-  const imgEmpty = document.getElementById("img-empty");
-
-  tabBtns.forEach(btn => {
-    btn.addEventListener("click", () => {
-      tabBtns.forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-
-      const tab = btn.dataset.tab;
-      if (tab === "timeline") {
-        imgTimeline.classList.add("active");
-        imgEmpty.classList.remove("active");
-      } else {
-        imgEmpty.classList.add("active");
-        imgTimeline.classList.remove("active");
-      }
-    });
-  });
-
-  // ------------------------------------------------------------------------
-  // 5. Distro Dependencies Tab Switcher
-  // ------------------------------------------------------------------------
-  const distroTabs = document.querySelectorAll(".distro-tab");
-  const depsCode = document.getElementById("deps-code");
 
   const distroCommands = {
-    debian: "sudo apt update && sudo apt install build-essential pkg-config libasound2-dev libx11-dev libgl1-mesa-dev ffmpeg",
+    debian: "sudo apt update\nsudo apt install build-essential pkg-config libasound2-dev libx11-dev libgl1-mesa-dev ffmpeg",
     fedora: "sudo dnf install gcc pkgconf-pkg-config alsa-lib-devel libX11-devel mesa-libGL-devel ffmpeg",
     arch: "sudo pacman -S base-devel alsa-lib libx11 mesa ffmpeg"
   };
-
-  distroTabs.forEach(tab => {
-    tab.addEventListener("click", () => {
-      distroTabs.forEach(t => t.classList.remove("active"));
-      tab.classList.add("active");
-
-      const distro = tab.dataset.distro;
-      if (distroCommands[distro]) {
-        depsCode.textContent = distroCommands[distro];
-      }
+  const deps = document.getElementById("dependencies-command");
+  document.querySelectorAll("[data-distro]").forEach(button => button.addEventListener("click", () => {
+    if (!distroCommands[button.dataset.distro] || !deps) return;
+    deps.textContent = distroCommands[button.dataset.distro];
+    document.querySelectorAll("[data-distro]").forEach(tab => {
+      const active = tab === button;
+      tab.classList.toggle("is-active", active);
+      tab.setAttribute("aria-pressed", String(active));
     });
-  });
+  }));
 
-  // ------------------------------------------------------------------------
-  // 6. Keyboard Shortcuts Category Filter
-  // ------------------------------------------------------------------------
-  const filterBtns = document.querySelectorAll(".filter-btn");
-  const shortcutItems = document.querySelectorAll(".shortcut-item");
+  document.querySelectorAll("[data-copy]").forEach(button => button.addEventListener("click", async () => {
+    const target = document.getElementById(button.dataset.copy);
+    if (!target) return;
+    try { await navigator.clipboard.writeText(target.textContent.trim()); button.textContent = translations[current].copied; }
+    catch (_) { button.textContent = translations[current].copy_failed; }
+    button.disabled = true;
+    setTimeout(() => { button.disabled = false; button.textContent = translations[current].copy; }, 1600);
+  }));
 
-  filterBtns.forEach(btn => {
-    btn.addEventListener("click", () => {
-      filterBtns.forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-
-      const cat = btn.dataset.category;
-      shortcutItems.forEach(item => {
-        if (cat === "all" || item.dataset.cat === cat) {
-          item.style.display = "flex";
-        } else {
-          item.style.display = "none";
-        }
-      });
-    });
-  });
-
-  // ------------------------------------------------------------------------
-  // 7. Generic Copy-to-Clipboard Buttons
-  // ------------------------------------------------------------------------
-  function setupCopyButton(btnId, getTextFn) {
-    const btn = document.getElementById(btnId);
-    if (!btn) return;
-
-    btn.addEventListener("click", async () => {
-      const text = getTextFn();
-      try {
-        await navigator.clipboard.writeText(text);
-        const originalText = btn.textContent;
-        const copiedLabel = currentLang === "en" ? "Copied!" : "Kopyalandı!";
-        btn.textContent = copiedLabel;
-        btn.classList.add("copied");
-
-        setTimeout(() => {
-          btn.textContent = originalText;
-          btn.classList.remove("copied");
-        }, 2000);
-      } catch (err) {
-        console.error("Clipboard copy failed:", err);
-      }
-    });
+  const menu = document.getElementById("menu-toggle");
+  const nav = document.getElementById("primary-nav");
+  if (menu && nav) {
+    const setMenu = open => {
+      menu.setAttribute("aria-expanded", String(open));
+      menu.setAttribute("aria-label", translations[current][open ? "menu_close" : "menu_open"]);
+      nav.classList.toggle("is-open", open);
+    };
+    menu.addEventListener("click", () => setMenu(menu.getAttribute("aria-expanded") !== "true"));
+    nav.querySelectorAll("a").forEach(link => link.addEventListener("click", () => setMenu(false)));
+    document.addEventListener("keydown", e => { if (e.key === "Escape") setMenu(false); });
+    window.addEventListener("resize", () => { if (window.innerWidth > 900) setMenu(false); });
   }
-
-  setupCopyButton("copy-quick-install", () => {
-    return document.getElementById("copy-quick-install").dataset.text;
-  });
-
-  setupCopyButton("copy-deps", () => {
-    return depsCode.textContent.trim();
-  });
-
-  setupCopyButton("copy-build", () => {
-    return `git clone https://github.com/MOzcelik14/triM.git\ncd triM\ncargo build --release\n./target/release/trim`;
-  });
-
-  // ------------------------------------------------------------------------
-  // 8. Sticky Header Scroll Effect
-  // ------------------------------------------------------------------------
   const header = document.getElementById("site-header");
-  window.addEventListener("scroll", () => {
-    if (window.scrollY > 24) {
-      header.classList.add("scrolled");
-    } else {
-      header.classList.remove("scrolled");
-    }
-  }, { passive: true });
+  const updateHeader = () => header?.classList.toggle("is-scrolled", window.scrollY > 12);
+  window.addEventListener("scroll", updateHeader, { passive: true });
+  updateHeader();
 });
