@@ -334,7 +334,8 @@ mod tests {
         media.audio_codec.clear();
         let id = media.id.clone();
         project.add_media(media);
-        project.timeline.get_video_tracks_mut()[0].add_clip(Clip::new(id, 0.0, 5.0));
+        let video_track = project.timeline.get_video_tracks_mut().into_iter().next().unwrap();
+        video_track.add_clip(Clip::new(id, 0.0, 5.0));
 
         let (command, _) = TimelineExporter::build_export_pipeline(
             &project,
