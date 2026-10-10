@@ -42,6 +42,30 @@ Engineered with a modular Cargo workspace architecture, **triM.** delivers preci
 
 ---
 
+### Linux Packages (.deb / .rpm / AppImage)
+
+Prebuilt packages for the **native Rust edition** are published with each new tagged release:
+
+- **Debian / Ubuntu / Linux Mint:** `trim_<version>_amd64.deb`
+- **Fedora / RPM-based distros:** `trim-<version>-1.x86_64.rpm`
+- **Other x86_64 Linux distributions:** `triM-<version>-x86_64.AppImage`
+
+Get the latest builds from [GitHub Releases](https://github.com/MOzcelik14/triM/releases). Install and run the `trim` desktop application. FFmpeg must be available on your system for media processing and exports; the AppImage bundles compatible libraries where possible but does not bundle FFmpeg. Package compatibility should be verified on your particular distribution.
+
+#### Publishing a new version (maintainers)
+
+The source of truth for the Rust version is `[workspace.package].version` in `Cargo.toml`. After updating that value and committing the changes, create and push the matching tag:
+
+```bash
+git tag v0.3.1  # Example only: Cargo.toml must say 0.3.1
+git push origin master
+git push origin v0.3.1
+```
+
+The [Linux release workflow](.github/workflows/release-linux.yml) tests the Rust workspace, builds Debian and AppImage packages on Ubuntu and an RPM on Fedora, then publishes all three files with SHA-256 checksums to the matching GitHub Release. On changes to the packaging script or workflow, the same builds can run on `master` as CI artifacts without publishing a release. No manual packaging or uploading is needed. The earlier Python/PySide6 edition is retained in the repository for compatibility but is **not** the application distributed by these new packages.
+
+---
+
 ### Installation & Build
 
 #### Prerequisites (Debian / Ubuntu / Pop!_OS / Fedora / Arch)
