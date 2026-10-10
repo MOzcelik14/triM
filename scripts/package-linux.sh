@@ -25,6 +25,28 @@ for path in "$BIN" "$DESKTOP" "$METAINFO" "$ICON"; do
 done
 [[ -x "$BIN" ]] || { echo "Not executable: $BIN" >&2; exit 1; }
 
+# Keep AppStream version metadata in sync without hand-editing XML each release.
+METAINFO_SOURCE="$METAINFO"
+METAINFO="$ROOT/build/linux/io.github.mozcelik14.triM.metainfo.xml"
+mkdir -p "$(dirname "$METAINFO")"
+python3 - "$METAINFO_SOURCE" "$METAINFO" "$VERSION" <<'PY'
+import datetime
+import sys
+import xml.etree.ElementTree as ET
+
+source, destination, version = sys.argv[1:]
+tree = ET.parse(source)
+releases = tree.getroot().find("releases")
+if releases is not None and not any(
+    release.get("version") == version for release in releases.findall("release")
+):
+    releases.insert(0, ET.Element(
+        "release",
+        {"version": version, "date": datetime.date.today().isoformat()},
+    ))
+tree.write(destination, encoding="utf-8", xml_declaration=True)
+PY
+
 install_payload() {
   local root="$1"
   install -Dm755 "$BIN" "$root/usr/bin/trim"
