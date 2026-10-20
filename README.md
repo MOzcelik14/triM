@@ -70,6 +70,19 @@ The [Linux release workflow](.github/workflows/release-linux.yml) tests the Rust
 
 ### Installation & Build
 
+#### 🚀 Quick Install (One-Line curl)
+
+Install **triM.** on any Linux desktop with a single command (installs binary to `~/.local/bin/trim`, integrates high-res desktop icons and system application menu):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash
+```
+
+To cleanly uninstall at any time:
+```bash
+curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash -s -- --uninstall
+```
+
 #### Prerequisites (Debian / Ubuntu / Pop!_OS / Fedora / Arch)
 
 Ensure you have Rust and the required development libraries installed:
@@ -127,6 +140,19 @@ Modüler Cargo çalışma alanı mimarisi üzerine kurulan **triM.**; hassas vid
 - **Anahtar Kare & Renk Düzenleme:** Konum, ölçek, opaklık, döndürme, parlaklık, kontrast ve doygunluk üzerinde anahtar kare enterpolasyonu (Doğrusal, Sabit, Ease-In-Out eğrisi).
 - **Hızlı Başlangıç & Karşılama Ekranı:** Çözünürlük şablonları, son kullanılan projeler ve terminalden doğrudan dosya açabilme (`trim video.mp4`).
 - **Geriye Dönük Uyumluluk:** `.trim` ve eski `.cutline` JSON proje dosyalarını otomatik tanıma ve her 2 dakikada bir otomatik kurtarma anlık görüntüsü alma.
+
+### 🚀 Hızlı Kurulum (Tek Satırda curl)
+
+Modern Linux dağıtımlarında **triM.** uygulamasını tek satırla kurmak için:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash
+```
+
+İstediğiniz zaman uygulamayı, simgeleri ve kısayolları temizce kaldırmak için:
+```bash
+curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash -s -- --uninstall
+```
 
 ---
 
