@@ -192,7 +192,7 @@ impl Clip {
 
     pub fn has_keyframes(&self, prop: Option<&str>) -> bool {
         match prop {
-            Some(p) => self.keyframes.get(p).map_or(false, |list| !list.is_empty()),
+            Some(p) => self.keyframes.get(p).is_some_and(|list| !list.is_empty()),
             None => self.keyframes.values().any(|list| !list.is_empty()),
         }
     }

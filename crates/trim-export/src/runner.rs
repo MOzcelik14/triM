@@ -79,9 +79,17 @@ impl ExportRunner {
                 }
             };
 
+            // Concurrently drain stderr to prevent pipe buffer deadlocks if FFmpeg writes excessive logs
+            let stderr_handle = child.stderr.take().map(|mut err_pipe| thread::spawn(move || {
+                    let mut s = String::new();
+                    use std::io::Read;
+                    let _ = err_pipe.read_to_string(&mut s);
+                    s
+                }));
+
             if let Some(stdout) = child.stdout.take() {
                 let reader = BufReader::new(stdout);
-                for line in reader.lines().flatten() {
+                for line in reader.lines().map_while(Result::ok) {
                     if is_cancelled.load(Ordering::SeqCst) {
                         let _ = child.kill();
                         break;
@@ -103,6 +111,7 @@ impl ExportRunner {
             }
 
             let status = child.wait();
+            let stderr_str = stderr_handle.and_then(|h| h.join().ok()).unwrap_or_default();
 
             if is_cancelled.load(Ordering::SeqCst) {
                 let p = Path::new(&output_path);
@@ -120,11 +129,6 @@ impl ExportRunner {
                     let _ = tx.send(ExportMessage::Finished(Ok(output_path)));
                 }
                 Ok(s) => {
-                    let mut stderr_str = String::new();
-                    if let Some(mut err_pipe) = child.stderr.take() {
-                        use std::io::Read;
-                        let _ = err_pipe.read_to_string(&mut stderr_str);
-                    }
                     let _ = tx.send(ExportMessage::Finished(Err(format!(
                         "FFmpeg hatası (kod {:?}): {}",
                         s.code(),

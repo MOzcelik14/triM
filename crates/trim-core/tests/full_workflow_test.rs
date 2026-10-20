@@ -4,7 +4,6 @@ use trim_core::clip::Clip;
 use trim_core::media::{MediaItem, MediaType};
 use trim_core::project::Project;
 use trim_core::time::{seconds_to_timecode, timecode_to_seconds};
-use trim_core::track::{Track, TrackType};
 
 #[test]
 fn test_full_nle_workflow_core() {

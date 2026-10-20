@@ -7,6 +7,26 @@ use trim_ui::TrimApp;
 
 fn main() -> Result<(), eframe::Error> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() > 1 {
+        match args[1].as_str() {
+            "--version" | "-v" => {
+                println!("triM. v{}", env!("CARGO_PKG_VERSION"));
+                return Ok(());
+            }
+            "--help" | "-h" => {
+                println!("triM. v{} - Profesyonel Masaüstü Video Düzenleyici (Rust NLE)", env!("CARGO_PKG_VERSION"));
+                println!("\nKullanım: trim [DOSYA]");
+                println!("\nSeçenekler:");
+                println!("  -v, --version    Sürüm bilgisini göster");
+                println!("  -h, --help       Bu yardım mesajını göster");
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+
     log::info!("Starting triM. v{} (Rust Desktop NLE)...", env!("CARGO_PKG_VERSION"));
 
     let mut viewport = egui::ViewportBuilder::default()
@@ -17,7 +37,7 @@ fn main() -> Result<(), eframe::Error> {
     // Embed the icon: installed builds cannot rely on the current directory.
     let icon_bytes = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../trim/resources/icons/trim_256x256.png"
+        "/../../resources/icons/trim_256x256.png"
     ));
     if let Ok(img) = image::load_from_memory(icon_bytes) {
         let rgba = img.to_rgba8();

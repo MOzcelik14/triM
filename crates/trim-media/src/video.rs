@@ -16,6 +16,9 @@ pub const PREVIEW_WIDTH: u32 = 640;
 pub const PREVIEW_HEIGHT: u32 = 360;
 pub const PREVIEW_FRAME_BYTES: usize = (PREVIEW_WIDTH * PREVIEW_HEIGHT * 4) as usize;
 
+pub type DecodedFrame = (f64, Arc<RgbaImage>);
+pub type FrameCacheMap = Arc<RwLock<HashMap<(String, u64), Arc<RgbaImage>>>>;
+
 /// Fast, single-frame raw RGBA extraction via ffmpeg pipe.
 pub fn decode_frame_raw<P: AsRef<Path>>(file_path: P, source_time: f64) -> Option<RgbaImage> {
     let p = file_path.as_ref();
@@ -97,6 +100,10 @@ impl PlaybackStreamer {
         self.active_clip_id.as_deref()
     }
 
+    pub fn last_pts(&self) -> f64 {
+        self.last_pts
+    }
+
     /// Starts or restarts continuous video streaming for given file from `source_start_time`.
     pub fn start(&mut self, clip_id: &str, file_path: &str, source_start_time: f64, fps: f64) {
         self.stop();
@@ -108,12 +115,15 @@ impl PlaybackStreamer {
         self.pending_future_frame = None;
 
         // Bounded queue of 15 frames (~0.5 second buffer)
-        let (tx, rx): (SyncSender<(f64, Arc<RgbaImage>)>, Receiver<(f64, Arc<RgbaImage>)>) = sync_channel(15);
+        let (tx, rx): (SyncSender<DecodedFrame>, Receiver<DecodedFrame>) = sync_channel(15);
 
         let thread_path = path_str.clone();
         let thread_fps = if fps > 1.0 { fps } else { 30.0 };
 
         let handle = std::thread::spawn(move || {
+            let vf_str = format!(
+                "fps=fps={thread_fps:.3},scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black"
+            );
             let mut child = match Command::new("ffmpeg")
                 .args([
                     "-v",
@@ -123,7 +133,7 @@ impl PlaybackStreamer {
                     "-i",
                     &thread_path,
                     "-vf",
-                    "scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black",
+                    &vf_str,
                     "-f",
                     "rawvideo",
                     "-pix_fmt",
@@ -182,7 +192,7 @@ impl PlaybackStreamer {
     pub fn get_frame_for_time(&mut self, target_source_time: f64) -> Option<Arc<RgbaImage>> {
         // First check if pending future frame is now due
         if let Some((pts, _)) = &self.pending_future_frame {
-            if *pts <= target_source_time + 0.015 {
+            if *pts <= target_source_time + 0.005 {
                 let (p, frame) = self.pending_future_frame.take().unwrap();
                 self.current_frame = Some(frame);
                 self.last_pts = p;
@@ -192,7 +202,7 @@ impl PlaybackStreamer {
         if self.pending_future_frame.is_none() {
             if let Some(rx) = &self.frame_rx {
                 while let Ok((pts, frame)) = rx.try_recv() {
-                    if pts <= target_source_time + 0.015 {
+                    if pts <= target_source_time + 0.005 {
                         self.current_frame = Some(frame);
                         self.last_pts = pts;
                     } else {
@@ -302,8 +312,9 @@ impl AsyncFrameDecoder {
 pub struct VideoEngine {
     pub streamer: PlaybackStreamer,
     pub async_decoder: AsyncFrameDecoder,
-    pub frame_cache: Arc<RwLock<HashMap<(String, u64), Arc<RgbaImage>>>>,
+    pub frame_cache: FrameCacheMap,
     pub image_cache: HashMap<String, RgbaImage>,
+    pub last_raw_source_frame: Option<Arc<RgbaImage>>,
     pub last_rendered_frame: Option<Arc<RgbaImage>>,
     pub is_decoding_seek: bool,
 }
@@ -321,9 +332,21 @@ impl VideoEngine {
             async_decoder: AsyncFrameDecoder::new(),
             frame_cache: Arc::new(RwLock::new(HashMap::new())),
             image_cache: HashMap::new(),
+            last_raw_source_frame: None,
             last_rendered_frame: None,
             is_decoding_seek: false,
         }
+    }
+
+    pub fn clear_cache(&mut self) {
+        self.streamer.stop();
+        if let Ok(mut fc) = self.frame_cache.write() {
+            fc.clear();
+        }
+        self.image_cache.clear();
+        self.last_raw_source_frame = None;
+        self.last_rendered_frame = None;
+        self.is_decoding_seek = false;
     }
 
     pub fn get_image<P: AsRef<Path>>(&mut self, path: P) -> Option<&RgbaImage> {
@@ -352,6 +375,7 @@ impl VideoEngine {
             // repopulate a blank monitor after a timeline gap.
             self.streamer.stop();
             self.last_rendered_frame = None;
+            self.last_raw_source_frame = None;
             if self.is_decoding_seek {
                 self.async_decoder.latest_req_id += 1;
                 self.is_decoding_seek = false;
@@ -373,103 +397,163 @@ impl VideoEngine {
                         }
                         cache.insert(key, frame.clone());
                     }
+                    self.last_raw_source_frame = Some(frame.clone());
                     self.last_rendered_frame = Some(frame);
                 }
             }
         }
 
-        // Fast Path: Single full-screen video/image clip without opacity or complex effects
+        // Fast Path: Single full-screen video/image clip
         if visible_clips.len() == 1 {
             let (_track, clip) = visible_clips[0];
-            let media_item = match project.get_media(&clip.media_id) {
-                Some(m) => m,
-                None => return None,
-            };
+            let media_item = project.get_media(&clip.media_id)?;
+
+            let dt = (timeline_time - clip.timeline_in).max(0.0);
+            let rem = (clip.timeline_out - timeline_time).max(0.0);
+            let in_fade_in = clip.fade_in > 0.0 && dt < clip.fade_in;
+            let in_fade_out = clip.fade_out > 0.0 && rem < clip.fade_out;
 
             let is_standard_transform = clip.opacity >= 0.99
-                && clip.fade_in <= 0.0
-                && clip.fade_out <= 0.0
+                && !in_fade_in
+                && !in_fade_out
                 && clip.brightness == 0.0
                 && clip.contrast == 1.0
                 && clip.saturation == 1.0
                 && clip.scale == 1.0
                 && clip.pos_x == 0.0
-                && clip.pos_y == 0.0;
+                && clip.pos_y == 0.0
+                && !clip.reverse
+                && (clip.speed - 1.0).abs() < 0.01;
 
-            if is_standard_transform {
-                if media_item.media_type == MediaType::Image {
-                    if let Some(img) = self.get_image(&media_item.file_path) {
+            if media_item.media_type == MediaType::Image {
+                if let Some(img) = self.get_image(&media_item.file_path) {
+                    if is_standard_transform {
                         let arc_img = Arc::new(img.clone());
                         self.last_rendered_frame = Some(arc_img.clone());
                         return Some(arc_img);
+                    } else {
+                        let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
+                        draw_clip_onto_canvas(&mut canvas, clip, img, timeline_time);
+                        let arc_canvas = Arc::new(canvas);
+                        self.last_rendered_frame = Some(arc_canvas.clone());
+                        return Some(arc_canvas);
                     }
-                } else {
-                    let src_t = clip.map_timeline_to_source(timeline_time);
+                }
+            } else {
+                let src_t = clip.map_timeline_to_source(timeline_time);
 
-                    if is_playing {
-                        // Playback Mode: Use streaming rawvideo pipe
-                        let needs_restart = match self.streamer.active_clip_id() {
-                            Some(id) => id != clip.id,
-                            None => true,
-                        };
+                if is_playing {
+                    // Playback Mode: Use streaming rawvideo pipe
+                    let needs_restart = match self.streamer.active_clip_id() {
+                        Some(id) => id != clip.id || (src_t - self.streamer.last_pts()).abs() > 0.3,
+                        None => true,
+                    };
 
-                        if needs_restart {
-                            self.streamer.start(
-                                &clip.id,
-                                &media_item.file_path,
-                                src_t,
-                                project.timeline.fps,
-                            );
-                        }
+                    if needs_restart {
+                        self.streamer.start(
+                            &clip.id,
+                            &media_item.file_path,
+                            src_t,
+                            project.timeline.fps,
+                        );
+                    }
 
-                        if let Some(frame) = self.streamer.get_frame_for_time(src_t) {
+                    if let Some(frame) = self.streamer.get_frame_for_time(src_t) {
+                        self.last_raw_source_frame = Some(frame.clone());
+                        if is_standard_transform {
                             self.last_rendered_frame = Some(frame.clone());
                             return Some(frame);
+                        } else {
+                            let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
+                            draw_clip_onto_canvas(&mut canvas, clip, &frame, timeline_time);
+                            let arc_canvas = Arc::new(canvas);
+                            self.last_rendered_frame = Some(arc_canvas.clone());
+                            return Some(arc_canvas);
                         }
-                    } else {
-                        // Scrubbing/Paused Mode: Stop streamer, check cache, or request async seek
-                        if self.streamer.is_active() {
-                            self.streamer.stop();
+                    } else if let Some(last_raw) = &self.last_raw_source_frame {
+                        if is_standard_transform {
+                            return Some(last_raw.clone());
+                        } else {
+                            let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
+                            draw_clip_onto_canvas(&mut canvas, clip, last_raw, timeline_time);
+                            let arc_canvas = Arc::new(canvas);
+                            self.last_rendered_frame = Some(arc_canvas.clone());
+                            return Some(arc_canvas);
                         }
+                    }
+                } else {
+                    // Scrubbing/Paused Mode: Stop streamer, check cache, or request async seek
+                    if self.streamer.is_active() {
+                        self.streamer.stop();
+                    }
 
-                        let ts_key = (src_t * 30.0).round() as u64;
-                        let key = (media_item.file_path.clone(), ts_key);
+                    let ts_key = (src_t * 30.0).round() as u64;
+                    let key = (media_item.file_path.clone(), ts_key);
 
-                        if let Ok(cache) = self.frame_cache.read() {
-                            if let Some(cached) = cache.get(&key) {
+                    if let Ok(cache) = self.frame_cache.read() {
+                        if let Some(cached) = cache.get(&key) {
+                            self.last_raw_source_frame = Some(cached.clone());
+                            self.is_decoding_seek = false;
+                            if is_standard_transform {
                                 self.last_rendered_frame = Some(cached.clone());
-                                self.is_decoding_seek = false;
                                 return Some(cached.clone());
+                            } else {
+                                let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
+                                draw_clip_onto_canvas(&mut canvas, clip, cached, timeline_time);
+                                let arc_canvas = Arc::new(canvas);
+                                self.last_rendered_frame = Some(arc_canvas.clone());
+                                return Some(arc_canvas);
                             }
-                        }
-
-                        if self.last_rendered_frame.is_none() {
-                            // Immediate first frame decode so monitor is never blank on initial clip placement
-                            if let Some(frame) = decode_frame_raw(&media_item.file_path, src_t) {
-                                let arc = Arc::new(frame);
-                                if let Ok(mut cache) = self.frame_cache.write() {
-                                    cache.insert(key, arc.clone());
-                                }
-                                self.last_rendered_frame = Some(arc.clone());
-                                self.is_decoding_seek = false;
-                                return Some(arc);
-                            }
-                        }
-
-                        // Trigger non-blocking async seek if not already in flight
-                        if !self.is_decoding_seek {
-                            self.async_decoder.request_seek(&media_item.file_path, src_t);
-                            self.is_decoding_seek = true;
                         }
                     }
 
-                    return self.last_rendered_frame.clone();
+                    if self.last_raw_source_frame.is_none() {
+                        // Immediate first frame decode so monitor is never blank on initial clip placement
+                        if let Some(frame) = decode_frame_raw(&media_item.file_path, src_t) {
+                            let arc = Arc::new(frame);
+                            if let Ok(mut cache) = self.frame_cache.write() {
+                                cache.insert(key, arc.clone());
+                            }
+                            self.last_raw_source_frame = Some(arc.clone());
+                            self.is_decoding_seek = false;
+                            if is_standard_transform {
+                                self.last_rendered_frame = Some(arc.clone());
+                                return Some(arc);
+                            } else {
+                                let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
+                                draw_clip_onto_canvas(&mut canvas, clip, &arc, timeline_time);
+                                let arc_canvas = Arc::new(canvas);
+                                self.last_rendered_frame = Some(arc_canvas.clone());
+                                return Some(arc_canvas);
+                            }
+                        }
+                    }
+
+                    // Trigger non-blocking async seek if not already in flight
+                    if !self.is_decoding_seek {
+                        self.async_decoder.request_seek(&media_item.file_path, src_t);
+                        self.is_decoding_seek = true;
+                    }
+
+                    if let Some(last_raw) = &self.last_raw_source_frame {
+                        if is_standard_transform {
+                            return Some(last_raw.clone());
+                        } else {
+                            let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
+                            draw_clip_onto_canvas(&mut canvas, clip, last_raw, timeline_time);
+                            let arc_canvas = Arc::new(canvas);
+                            self.last_rendered_frame = Some(arc_canvas.clone());
+                            return Some(arc_canvas);
+                        }
+                    }
                 }
+
+                return self.last_rendered_frame.clone();
             }
         }
 
         // Layered Composite Path: Multiple clips, transitions, opacity, fades, keyframes
-        let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([14, 14, 16, 255]));
+        let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
 
         for (_track, clip) in visible_clips {
             let media_item = match project.get_media(&clip.media_id) {
@@ -484,27 +568,39 @@ impl VideoEngine {
                     let ts_key = (src_t * 30.0).round() as u64;
                     let key = (media_item.file_path.clone(), ts_key);
 
-                    let cached = self.frame_cache.read().ok().and_then(|c| c.get(&key).cloned());
-                    if let Some(c) = cached {
-                        Some((*c).clone())
-                    } else if self.last_rendered_frame.is_none() {
-                        if let Some(frame) = decode_frame_raw(&media_item.file_path, src_t) {
-                            let arc = Arc::new(frame.clone());
-                            if let Ok(mut cache) = self.frame_cache.write() {
-                                cache.insert(key, arc);
-                            }
-                            self.last_rendered_frame = Some(Arc::new(frame.clone()));
-                            self.is_decoding_seek = false;
-                            Some(frame)
-                        } else {
-                            None
-                        }
+                    let streamer_frame = if is_playing && self.streamer.active_clip_id() == Some(&clip.id) {
+                        self.streamer.get_frame_for_time(src_t)
                     } else {
-                        if !self.is_decoding_seek {
-                            self.async_decoder.request_seek(&media_item.file_path, src_t);
-                            self.is_decoding_seek = true;
+                        None
+                    };
+
+                    if let Some(sf) = streamer_frame {
+                        self.last_raw_source_frame = Some(sf.clone());
+                        Some((*sf).clone())
+                    } else {
+                        let cached = self.frame_cache.read().ok().and_then(|c| c.get(&key).cloned());
+                        if let Some(c) = cached {
+                            self.last_raw_source_frame = Some(c.clone());
+                            Some((*c).clone())
+                        } else if self.last_raw_source_frame.is_none() {
+                            if let Some(frame) = decode_frame_raw(&media_item.file_path, src_t) {
+                                let arc = Arc::new(frame.clone());
+                                if let Ok(mut cache) = self.frame_cache.write() {
+                                    cache.insert(key, arc.clone());
+                                }
+                                self.last_raw_source_frame = Some(arc);
+                                self.is_decoding_seek = false;
+                                Some(frame)
+                            } else {
+                                None
+                            }
+                        } else {
+                            if !self.is_decoding_seek {
+                                self.async_decoder.request_seek(&media_item.file_path, src_t);
+                                self.is_decoding_seek = true;
+                            }
+                            self.last_raw_source_frame.as_ref().map(|f| (**f).clone())
                         }
-                        self.last_rendered_frame.as_ref().map(|f| (**f).clone())
                     }
                 }
             };
@@ -521,19 +617,12 @@ impl VideoEngine {
 }
 
 /// Backward compatibility wrapper for existing tests and synchronous tools.
+#[derive(Default)]
 pub struct VideoFrameDecoder {
     image_cache: HashMap<String, RgbaImage>,
     frame_cache: HashMap<(String, u64), RgbaImage>,
 }
 
-impl Default for VideoFrameDecoder {
-    fn default() -> Self {
-        Self {
-            image_cache: HashMap::new(),
-            frame_cache: HashMap::new(),
-        }
-    }
-}
 
 impl VideoFrameDecoder {
     pub fn new() -> Self {
@@ -661,6 +750,33 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
 
     let has_color_adj = clip.brightness != 0.0 || clip.contrast != 1.0 || clip.saturation != 1.0;
 
+    let is_fullscreen_fit = final_w == cw as i64
+        && final_h == ch as i64
+        && final_x == 0
+        && final_y == 0
+        && (fw - cw).abs() < 0.001
+        && (fh - ch).abs() < 0.001;
+
+    if is_fullscreen_fit && !has_color_adj && dip_white_amt == 0.0 {
+        let alpha = eff_opacity as f32;
+        let src_raw = frame.as_raw();
+        let dst_raw: &mut [u8] = canvas.as_mut();
+
+        for i in (0..src_raw.len()).step_by(4) {
+            let sa = (src_raw[i + 3] as f32 / 255.0) * alpha;
+            let inv_sa = 1.0 - sa;
+            let dr = dst_raw[i] as f32;
+            let dg = dst_raw[i + 1] as f32;
+            let db = dst_raw[i + 2] as f32;
+
+            dst_raw[i] = ((src_raw[i] as f32) * sa + dr * inv_sa).round() as u8;
+            dst_raw[i + 1] = ((src_raw[i + 1] as f32) * sa + dg * inv_sa).round() as u8;
+            dst_raw[i + 2] = ((src_raw[i + 2] as f32) * sa + db * inv_sa).round() as u8;
+            dst_raw[i + 3] = 255;
+        }
+        return;
+    }
+
     for y in 0..final_h {
         let cy = final_y + y;
         if cy < 0 || cy >= ch as i64 {
@@ -725,11 +841,14 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
 }
 
 /// Generates a synthetic title image and saves to ~/.local/share/trim/titles/.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_title_image(
     text: &str,
     font_size: u32,
     text_color_rgb: [u8; 3],
     bg_color_rgba: [u8; 4],
+    position: &str,
+    has_shadow: bool,
     width: u32,
     height: u32,
 ) -> Option<PathBuf> {
@@ -741,8 +860,43 @@ pub fn generate_title_image(
     let out_file = titles_dir.join(format!("title_{}.png", id));
 
     let img = ImageBuffer::from_pixel(width, height, Rgba(bg_color_rgba));
-
     let hex_color = format!("{:02x}{:02x}{:02x}", text_color_rgb[0], text_color_rgb[1], text_color_rgb[2]);
+
+    let (x_expr, y_expr) = match position {
+        "lower_third" => ("(w-text_w)/2", "h*0.80-text_h/2"),
+        "subtitle" => ("(w-text_w)/2", "h*0.87-text_h"),
+        "top" => ("(w-text_w)/2", "h*0.12"),
+        _ => ("(w-text_w)/2", "(h-text_h)/2"), // center default
+    };
+
+    let shadow_args = if has_shadow {
+        ":shadowx=3:shadowy=3:shadowcolor=black@0.7:borderw=2:bordercolor=black@0.8"
+    } else {
+        ":borderw=1:bordercolor=black@0.5"
+    };
+
+    let box_args = if bg_color_rgba[3] > 0 {
+        format!(
+            ":box=1:boxcolor=0x{:02x}{:02x}{:02x}@{:.2}:boxborderw=10",
+            bg_color_rgba[0],
+            bg_color_rgba[1],
+            bg_color_rgba[2],
+            bg_color_rgba[3] as f32 / 255.0
+        )
+    } else {
+        String::new()
+    };
+
+    let vf = format!(
+        "drawtext=text='{}':fontcolor=0x{}:fontsize={}:x={}:y={}{}{}",
+        text.replace('\'', "\\'"),
+        hex_color,
+        font_size,
+        x_expr,
+        y_expr,
+        shadow_args,
+        box_args
+    );
 
     let status = Command::new("ffmpeg")
         .args([
@@ -754,14 +908,11 @@ pub fn generate_title_image(
             "-i",
             &format!("color=c=black@0.0:s={}x{}:r=1:d=1", width, height),
             "-vf",
-            &format!(
-                "drawtext=text='{}':fontcolor=0x{}:fontsize={}:x=(w-text_w)/2:y=(h-text_h)/2",
-                text.replace('\'', "\\'"),
-                hex_color,
-                font_size
-            ),
+            &vf,
             "-vframes",
             "1",
+            "-pix_fmt",
+            "rgba",
             out_file.to_str().unwrap_or(""),
         ])
         .status();
@@ -946,4 +1097,27 @@ mod tests {
             assert!(got_streamed, "Playback should produce frames");
         }
     }
+
+    #[test]
+    fn test_render_timeline_with_fade_out() {
+        let mut project = Project::default();
+        let mut media = trim_core::media::MediaItem::new("/nonexistent_test.mp4");
+        media.media_type = trim_core::media::MediaType::Video;
+        let media_id = media.id.clone();
+        project.add_media(media);
+
+        let mut track = trim_core::track::Track::new("V1", trim_core::track::TrackType::Video);
+        let mut clip = trim_core::clip::Clip::new(&media_id, 0.0, 5.0);
+        clip.fade_out = 1.5;
+        track.add_clip(clip);
+        project.timeline.add_track(track);
+
+        let mut engine = VideoEngine::new();
+        // Visible at 4.0s (within fade-out period)
+        let _ = engine.render_timeline_frame(&project, 4.0, false);
+        // Beyond clip at 6.0s (empty, should return None and clean state)
+        let beyond = engine.render_timeline_frame(&project, 6.0, false);
+        assert!(beyond.is_none());
+    }
 }
+

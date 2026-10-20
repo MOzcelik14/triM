@@ -53,7 +53,7 @@ pub fn render_time_ruler(
     while t <= end_sec as f64 {
         let x = rect.left() + (t as f32 * pixels_per_second);
         if x >= rect.left() && x <= rect.right() {
-            let is_major = (t.round() - t).abs() < 1e-4 && (t.round() as u64 % (tick_interval as u64 * 2).max(1) == 0);
+            let is_major = (t.round() - t).abs() < 1e-4 && (t.round() as u64).is_multiple_of((tick_interval as u64 * 2).max(1));
             let tick_h = if is_major { 10.0 } else { 5.0 };
 
             painter.line_segment(
@@ -136,7 +136,7 @@ pub fn render_time_ruler(
 
 fn parse_color(hex: &str) -> Option<Color32> {
     let h = hex.trim().strip_prefix('#').unwrap_or(hex);
-    if h.len() == 6 {
+    if h.is_ascii() && h.len() == 6 {
         let r = u8::from_str_radix(&h[0..2], 16).ok()?;
         let g = u8::from_str_radix(&h[2..4], 16).ok()?;
         let b = u8::from_str_radix(&h[4..6], 16).ok()?;

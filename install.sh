@@ -1,44 +1,37 @@
 #!/usr/bin/env bash
 # triM. — Installation and Desktop Setup Script
-# Created by M. Özçelik
+# Installs native Rust triM desktop editor.
 set -e
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="$PROJECT_DIR/.venv"
+cd "$PROJECT_DIR"
 
 echo "=========================================================="
-echo "  triM. — A Lightweight Non-Linear Video Editor"
+echo "  triM. — Native Rust Video Editor"
 echo "  Kurulum ve Masaüstü Entegrasyonu"
 echo "=========================================================="
 
-echo "[1/4] Python sanal ortamı hazırlanıyor..."
-if [ ! -d "$VENV_DIR" ]; then
-    python3 -m venv "$VENV_DIR"
-    echo "  Sanal ortam oluşturuldu: $VENV_DIR"
-else
-    echo "  Mevcut sanal ortam kullanılıyor: $VENV_DIR"
+echo "[1/4] Rust / Cargo kontrol ediliyor..."
+if ! command -v cargo &>/dev/null; then
+    echo "Hata: 'cargo' bulunamadı. Lütfen Rust araç setini kurun (https://rustup.rs)." >&2
+    exit 1
 fi
 
-echo "[2/4] Bağımlılıklar yükleniyor (PySide6, PyAV, NumPy)..."
-"$VENV_DIR/bin/pip" install --upgrade pip --quiet
-"$VENV_DIR/bin/pip" install -r "$PROJECT_DIR/requirements.txt" --quiet
+echo "[2/4] Release modunda derleniyor (trim-app)..."
+cargo build --release -p trim-app
 
-echo "[3/4] İkonlar ve masaüstü kısayolları yükleniyor..."
-mkdir -p ~/.local/share/applications
-mkdir -p ~/.local/share/icons/hicolor/scalable/apps
+echo "[3/4] İkili dosya, masaüstü girdisi ve ikonlar kuruluyor..."
 mkdir -p ~/.local/bin
+mkdir -p ~/.local/share/applications
+mkdir -p ~/.local/share/metainfo
+mkdir -p ~/.local/share/icons/hicolor/scalable/apps
 
-# 1. Generate icons if missing
-if [ ! -f "$PROJECT_DIR/trim/resources/icons/trim_512x512.png" ]; then
-    "$VENV_DIR/bin/python3" "$PROJECT_DIR/scripts/generate_branding_and_icons.py"
-fi
+install -Dm755 "$PROJECT_DIR/target/release/trim" ~/.local/bin/trim
+install -Dm644 "$PROJECT_DIR/io.github.mozcelik14.triM.svg" ~/.local/share/icons/hicolor/scalable/apps/io.github.mozcelik14.triM.svg
+install -Dm644 "$PROJECT_DIR/io.github.mozcelik14.triM.metainfo.xml" ~/.local/share/metainfo/io.github.mozcelik14.triM.metainfo.xml
 
-# 2. Copy scalable SVG icon
-cp "$PROJECT_DIR/io.github.mozcelik14.triM.svg" ~/.local/share/icons/hicolor/scalable/apps/io.github.mozcelik14.triM.svg
-
-# 3. Copy multi-resolution PNG icons
 for sz in 16 32 48 64 128 256 512; do
-    icon_src="$PROJECT_DIR/trim/resources/icons/trim_${sz}x${sz}.png"
+    icon_src="$PROJECT_DIR/resources/icons/trim_${sz}x${sz}.png"
     if [ -f "$icon_src" ]; then
         target_dir="$HOME/.local/share/icons/hicolor/${sz}x${sz}/apps"
         mkdir -p "$target_dir"
@@ -46,15 +39,6 @@ for sz in 16 32 48 64 128 256 512; do
     fi
 done
 
-# 4. Create ~/.local/bin/trim executable wrapper
-cat << EOF > ~/.local/bin/trim
-#!/usr/bin/env bash
-export PYTHONPATH="$PROJECT_DIR:\$PYTHONPATH"
-exec "$VENV_DIR/bin/python3" -m trim.main "\$@"
-EOF
-chmod +x ~/.local/bin/trim
-
-# 5. Install desktop entry
 cat << EOF > ~/.local/share/applications/io.github.mozcelik14.triM.desktop
 [Desktop Entry]
 Name=triM.

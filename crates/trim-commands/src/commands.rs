@@ -94,20 +94,28 @@ impl Command for RemoveClipCommand {
 }
 
 // -----------------------------------------------------------------------------
-// 3. MoveClipCommand
+// 3. MoveClipCommand (Supports cross-track vertical moves)
 // -----------------------------------------------------------------------------
 #[derive(Debug, Clone)]
 pub struct MoveClipCommand {
-    pub track_id: String,
+    pub old_track_id: String,
+    pub new_track_id: String,
     pub clip_id: String,
     pub old_in: f64,
     pub new_in: f64,
 }
 
 impl MoveClipCommand {
-    pub fn new(track_id: impl Into<String>, clip_id: impl Into<String>, old_in: f64, new_in: f64) -> Self {
+    pub fn new(
+        old_track_id: impl Into<String>,
+        new_track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_in: f64,
+        new_in: f64,
+    ) -> Self {
         Self {
-            track_id: track_id.into(),
+            old_track_id: old_track_id.into(),
+            new_track_id: new_track_id.into(),
             clip_id: clip_id.into(),
             old_in,
             new_in,
@@ -117,31 +125,140 @@ impl MoveClipCommand {
 
 impl Command for MoveClipCommand {
     fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
-        let track = timeline
-            .get_track_by_id_mut(&self.track_id)
-            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
-        let clip = track
-            .get_clip_by_id_mut(&self.clip_id)
-            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
-        clip.move_to(self.new_in);
-        track.sort_clips();
+        if self.old_track_id == self.new_track_id {
+            let track = timeline
+                .get_track_by_id_mut(&self.old_track_id)
+                .ok_or_else(|| CommandError::TrackNotFound(self.old_track_id.clone()))?;
+            let clip = track
+                .get_clip_by_id_mut(&self.clip_id)
+                .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+            clip.move_to(self.new_in);
+            track.sort_clips();
+        } else {
+            let mut clip = {
+                let old_track = timeline
+                    .get_track_by_id_mut(&self.old_track_id)
+                    .ok_or_else(|| CommandError::TrackNotFound(self.old_track_id.clone()))?;
+                old_track
+                    .remove_clip(&self.clip_id)
+                    .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?
+            };
+            clip.move_to(self.new_in);
+            let new_track = timeline
+                .get_track_by_id_mut(&self.new_track_id)
+                .ok_or_else(|| CommandError::TrackNotFound(self.new_track_id.clone()))?;
+            new_track.add_clip(clip);
+        }
         Ok(())
     }
 
     fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
-        let track = timeline
-            .get_track_by_id_mut(&self.track_id)
-            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
-        let clip = track
-            .get_clip_by_id_mut(&self.clip_id)
-            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
-        clip.move_to(self.old_in);
-        track.sort_clips();
+        if self.old_track_id == self.new_track_id {
+            let track = timeline
+                .get_track_by_id_mut(&self.old_track_id)
+                .ok_or_else(|| CommandError::TrackNotFound(self.old_track_id.clone()))?;
+            let clip = track
+                .get_clip_by_id_mut(&self.clip_id)
+                .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+            clip.move_to(self.old_in);
+            track.sort_clips();
+        } else {
+            let mut clip = {
+                let new_track = timeline
+                    .get_track_by_id_mut(&self.new_track_id)
+                    .ok_or_else(|| CommandError::TrackNotFound(self.new_track_id.clone()))?;
+                new_track
+                    .remove_clip(&self.clip_id)
+                    .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?
+            };
+            clip.move_to(self.old_in);
+            let old_track = timeline
+                .get_track_by_id_mut(&self.old_track_id)
+                .ok_or_else(|| CommandError::TrackNotFound(self.old_track_id.clone()))?;
+            old_track.add_clip(clip);
+        }
         Ok(())
     }
 
     fn name(&self) -> &str {
         "Klip Taşı"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 3b. AddTrackCommand & RemoveTrackCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct AddTrackCommand {
+    pub track: Track,
+    pub insert_index: usize,
+}
+
+impl AddTrackCommand {
+    pub fn new(track: Track, insert_index: usize) -> Self {
+        Self { track, insert_index }
+    }
+}
+
+impl Command for AddTrackCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let idx = self.insert_index.min(timeline.tracks.len());
+        timeline.tracks.insert(idx, self.track.clone());
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        timeline.remove_track(&self.track.id);
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Kanal Ekle"
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoveTrackCommand {
+    pub track: Option<Track>,
+    pub track_id: String,
+    pub original_index: usize,
+}
+
+impl RemoveTrackCommand {
+    pub fn new(track_id: impl Into<String>) -> Self {
+        Self {
+            track: None,
+            track_id: track_id.into(),
+            original_index: 0,
+        }
+    }
+}
+
+impl Command for RemoveTrackCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let pos = timeline
+            .tracks
+            .iter()
+            .position(|t| t.id == self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        self.original_index = pos;
+        let removed = timeline
+            .remove_track_safe(&self.track_id)
+            .map_err(|e| CommandError::InvalidOperation(e.to_string()))?;
+        self.track = Some(removed);
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        if let Some(track) = self.track.take() {
+            let idx = self.original_index.min(timeline.tracks.len());
+            timeline.tracks.insert(idx, track);
+        }
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Kanal Sil"
     }
 }
 
@@ -247,17 +364,55 @@ impl Command for SplitClipCommand {
         }
 
         let split_source = orig.map_timeline_to_source(self.split_time);
+        let left_dur = self.split_time - orig.timeline_in;
+
+        // Partition keyframes between left and right parts
+        let mut left_kfs = std::collections::HashMap::new();
+        let mut right_kfs = std::collections::HashMap::new();
+        for (prop, list) in &orig.keyframes {
+            let mut l_list = Vec::new();
+            let mut r_list = Vec::new();
+            for k in list {
+                if k.time <= left_dur {
+                    l_list.push(k.clone());
+                } else {
+                    let mut r_k = k.clone();
+                    r_k.time = (r_k.time - left_dur).max(0.0);
+                    r_list.push(r_k);
+                }
+            }
+            if !l_list.is_empty() {
+                left_kfs.insert(prop.clone(), l_list);
+            }
+            if !r_list.is_empty() {
+                right_kfs.insert(prop.clone(), r_list);
+            }
+        }
 
         // Left clip keeps original clip id
         let mut left_clip = orig.clone();
         left_clip.timeline_out = self.split_time;
-        left_clip.source_out = Some(split_source);
+        if !orig.reverse {
+            left_clip.source_out = Some(split_source);
+        } else {
+            left_clip.source_in = split_source;
+        }
+        left_clip.fade_out = 0.0;
+        left_clip.transition_out = None;
+        left_clip.keyframes = left_kfs;
 
         // Right clip gets new id
         let mut right_clip = orig.clone();
         right_clip.id = uuid::Uuid::new_v4().to_string();
         right_clip.timeline_in = self.split_time;
-        right_clip.source_in = split_source;
+        if !orig.reverse {
+            right_clip.source_in = split_source;
+        } else {
+            right_clip.source_out = Some(split_source);
+        }
+        right_clip.fade_in = 0.0;
+        right_clip.transition_in = None;
+        right_clip.keyframes = right_kfs;
         self.right_clip_id = Some(right_clip.id.clone());
 
         self.original_clip = Some(orig);

@@ -6,16 +6,13 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum TrackType {
+    #[default]
     Video,
     Audio,
 }
 
-impl Default for TrackType {
-    fn default() -> Self {
-        Self::Video
-    }
-}
 
 impl std::fmt::Display for TrackType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

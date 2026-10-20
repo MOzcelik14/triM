@@ -73,7 +73,7 @@ impl WaveformGenerator {
             if let Ok(data) = fs::read(&cache_path) {
                 if data.len() % 8 == 0 && !data.is_empty() {
                     let mut peaks = Vec::with_capacity(data.len() / 8);
-                    for chunk in data.chunks_exact(8) {
+                    for chunk in data.as_chunks::<8>().0 {
                         let min = f32::from_le_bytes(chunk[0..4].try_into().unwrap());
                         let max = f32::from_le_bytes(chunk[4..8].try_into().unwrap());
                         peaks.push([min, max]);
@@ -122,14 +122,14 @@ impl WaveformGenerator {
         // Convert raw bytes to i16 samples
         let num_samples = raw_pcm.len() / 2;
         let mut samples = Vec::with_capacity(num_samples);
-        for chunk in raw_pcm.chunks_exact(2) {
+        for chunk in raw_pcm.as_chunks::<2>().0 {
             samples.push(i16::from_le_bytes([chunk[0], chunk[1]]));
         }
 
         // Group into buckets of 40
         let buckets = samples.len() / 40;
         let mut peaks: Vec<[f32; 2]> = Vec::with_capacity(buckets);
-        for chunk in samples[..buckets * 40].chunks_exact(40) {
+        for chunk in samples[..buckets * 40].as_chunks::<40>().0 {
             let mut min_val = i16::MAX;
             let mut max_val = i16::MIN;
             for &s in chunk {

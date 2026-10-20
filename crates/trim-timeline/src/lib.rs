@@ -20,7 +20,7 @@ pub fn find_prev_edit_point(timeline: &TimelineModel, current_time: f64) -> f64 
     points.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     points.dedup_by(|a, b| (*a - *b).abs() < 1e-4);
 
-    let prev = points.into_iter().filter(|&p| p < current_time - 0.04).last();
+    let prev = points.into_iter().rfind(|&p| p < current_time - 0.04);
     prev.unwrap_or(0.0)
 }
 
@@ -54,9 +54,13 @@ pub fn split_at_playhead(
 ) -> bool {
     let target = if let (Some(tr_id), Some(cl_id)) = (preferred_track_id, preferred_clip_id) {
         if let Some(track) = timeline.get_track_by_id(tr_id) {
-            if let Some(clip) = track.get_clip_by_id(cl_id) {
-                if clip.timeline_in + 0.04 < playhead_time && playhead_time < clip.timeline_out - 0.04 {
-                    Some((tr_id.to_string(), cl_id.to_string()))
+            if !track.locked {
+                if let Some(clip) = track.get_clip_by_id(cl_id) {
+                    if clip.timeline_in + 0.04 < playhead_time && playhead_time < clip.timeline_out - 0.04 {
+                        Some((tr_id.to_string(), cl_id.to_string()))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -72,6 +76,9 @@ pub fn split_at_playhead(
 
     let target = target.or_else(|| {
         for track in &timeline.tracks {
+            if track.locked {
+                continue;
+            }
             if let Some(clip) = track.find_clip_at(playhead_time) {
                 if clip.timeline_in + 0.04 < playhead_time && playhead_time < clip.timeline_out - 0.04 {
                     return Some((track.id.clone(), clip.id.clone()));
@@ -99,9 +106,13 @@ pub fn ripple_trim_head(
 ) -> bool {
     let target = if let (Some(tr_id), Some(cl_id)) = (preferred_track_id, preferred_clip_id) {
         if let Some(track) = timeline.get_track_by_id(tr_id) {
-            if let Some(clip) = track.get_clip_by_id(cl_id) {
-                if clip.timeline_in + 0.04 < playhead_time && playhead_time <= clip.timeline_out {
-                    Some((tr_id.to_string(), cl_id.to_string()))
+            if !track.locked {
+                if let Some(clip) = track.get_clip_by_id(cl_id) {
+                    if clip.timeline_in + 0.04 < playhead_time && playhead_time <= clip.timeline_out {
+                        Some((tr_id.to_string(), cl_id.to_string()))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -117,6 +128,9 @@ pub fn ripple_trim_head(
 
     let target = target.or_else(|| {
         for track in &timeline.tracks {
+            if track.locked {
+                continue;
+            }
             if let Some(clip) = track.find_clip_at(playhead_time) {
                 if clip.timeline_in + 0.04 < playhead_time && playhead_time <= clip.timeline_out {
                     return Some((track.id.clone(), clip.id.clone()));
@@ -144,9 +158,13 @@ pub fn ripple_trim_tail(
 ) -> bool {
     let target = if let (Some(tr_id), Some(cl_id)) = (preferred_track_id, preferred_clip_id) {
         if let Some(track) = timeline.get_track_by_id(tr_id) {
-            if let Some(clip) = track.get_clip_by_id(cl_id) {
-                if clip.timeline_in <= playhead_time && playhead_time < clip.timeline_out - 0.04 {
-                    Some((tr_id.to_string(), cl_id.to_string()))
+            if !track.locked {
+                if let Some(clip) = track.get_clip_by_id(cl_id) {
+                    if clip.timeline_in <= playhead_time && playhead_time < clip.timeline_out - 0.04 {
+                        Some((tr_id.to_string(), cl_id.to_string()))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -162,6 +180,9 @@ pub fn ripple_trim_tail(
 
     let target = target.or_else(|| {
         for track in &timeline.tracks {
+            if track.locked {
+                continue;
+            }
             if let Some(clip) = track.find_clip_at(playhead_time) {
                 if clip.timeline_in <= playhead_time && playhead_time < clip.timeline_out - 0.04 {
                     return Some((track.id.clone(), clip.id.clone()));
@@ -194,5 +215,22 @@ mod tests {
         assert_eq!(find_prev_edit_point(&tl, 6.0), 5.0);
         assert_eq!(find_next_edit_point(&tl, 3.0), 5.0);
         assert_eq!(find_next_edit_point(&tl, 5.0), 8.0);
+    }
+
+    #[test]
+    fn test_split_respects_locked_track() {
+        let mut tl = TimelineModel::default();
+        let mut stack = UndoStack::new();
+        tl.tracks[0].add_clip(Clip::new("m1", 0.0, 10.0));
+        tl.tracks[0].locked = true;
+
+        let res = split_at_playhead(&mut tl, &mut stack, None, None, 5.0);
+        assert!(!res, "Must not split clips on a locked track");
+        assert_eq!(tl.tracks[0].clips.len(), 1);
+
+        tl.tracks[0].locked = false;
+        let res2 = split_at_playhead(&mut tl, &mut stack, None, None, 5.0);
+        assert!(res2);
+        assert_eq!(tl.tracks[0].clips.len(), 2);
     }
 }

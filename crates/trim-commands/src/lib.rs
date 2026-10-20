@@ -90,7 +90,7 @@ impl UndoStack {
 mod tests {
     use super::*;
     use trim_core::clip::Clip;
-    use trim_core::track::{Track, TrackType};
+    
 
     #[test]
     fn test_add_and_remove_clip_command() {
@@ -128,7 +128,11 @@ mod tests {
         let mut stack = UndoStack::new();
 
         let track_id = tl.tracks[0].id.clone();
-        let clip = Clip::new("m1", 0.0, 10.0);
+        let mut clip = Clip::new("m1", 0.0, 10.0);
+        clip.add_keyframe("opacity", 2.0, 0.5, trim_core::keyframe::Interpolation::Linear);
+        clip.add_keyframe("opacity", 7.0, 0.9, trim_core::keyframe::Interpolation::Linear);
+        clip.fade_in = 1.0;
+        clip.fade_out = 1.5;
         let clip_id = clip.id.clone();
         tl.tracks[0].add_clip(clip);
 
@@ -138,10 +142,24 @@ mod tests {
         assert_eq!(tl.tracks[0].clips[0].timeline_out, 4.0);
         assert_eq!(tl.tracks[0].clips[1].timeline_in, 4.0);
 
+        // Verify keyframes partitioning
+        let left = &tl.tracks[0].clips[0];
+        let right = &tl.tracks[0].clips[1];
+        assert_eq!(left.keyframes.get("opacity").unwrap().len(), 1);
+        assert_eq!(left.keyframes.get("opacity").unwrap()[0].time, 2.0);
+        assert_eq!(left.fade_in, 1.0);
+        assert_eq!(left.fade_out, 0.0); // inner cut reset
+
+        assert_eq!(right.keyframes.get("opacity").unwrap().len(), 1);
+        assert_eq!(right.keyframes.get("opacity").unwrap()[0].time, 3.0); // 7.0 - 4.0 = 3.0
+        assert_eq!(right.fade_in, 0.0); // inner cut reset
+        assert_eq!(right.fade_out, 1.5);
+
         // Undo Split
         assert!(stack.undo(&mut tl).unwrap());
         assert_eq!(tl.tracks[0].clips.len(), 1);
         assert_eq!(tl.tracks[0].clips[0].duration(), 10.0);
+        assert_eq!(tl.tracks[0].clips[0].keyframes.get("opacity").unwrap().len(), 2);
     }
 
     #[test]
@@ -193,5 +211,75 @@ mod tests {
         assert_eq!(c.speed, 1.0);
         assert!(!c.reverse);
         assert!((c.duration() - 4.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn test_move_clip_across_tracks() {
+        let mut tl = TimelineModel::default();
+        let mut stack = UndoStack::new();
+
+        // Starts with V1 and A1
+        let v2_id = tl.add_new_video_track(); // index 0 is V2, index 1 is V1
+        let v1_id = tl.tracks[1].id.clone();
+
+        let clip = Clip::new("m1", 2.0, 6.0);
+        let clip_id = clip.id.clone();
+        tl.tracks[1].add_clip(clip); // add to V1
+
+        assert_eq!(tl.tracks[1].clips.len(), 1);
+        assert_eq!(tl.tracks[0].clips.len(), 0);
+
+        // Move clip from V1 to V2 at new_in = 5.0
+        let cmd = Box::new(MoveClipCommand::new(&v1_id, &v2_id, &clip_id, 2.0, 5.0));
+        stack.push(cmd, &mut tl).unwrap();
+
+        // Now V1 has 0 clips, V2 has 1 clip at 5.0
+        assert_eq!(tl.tracks[1].clips.len(), 0);
+        assert_eq!(tl.tracks[0].clips.len(), 1);
+        assert_eq!(tl.tracks[0].clips[0].timeline_in, 5.0);
+
+        // Undo -> clip returns to V1 at 2.0
+        assert!(stack.undo(&mut tl).unwrap());
+        assert_eq!(tl.tracks[1].clips.len(), 1);
+        assert_eq!(tl.tracks[0].clips.len(), 0);
+        assert_eq!(tl.tracks[1].clips[0].timeline_in, 2.0);
+
+        // Redo -> clip moves back to V2 at 5.0
+        assert!(stack.redo(&mut tl).unwrap());
+        assert_eq!(tl.tracks[1].clips.len(), 0);
+        assert_eq!(tl.tracks[0].clips.len(), 1);
+        assert_eq!(tl.tracks[0].clips[0].timeline_in, 5.0);
+    }
+
+    #[test]
+    fn test_add_and_remove_track_command() {
+        let mut tl = TimelineModel::default();
+        let mut stack = UndoStack::new();
+
+        assert_eq!(tl.tracks.len(), 2);
+        let new_track = trim_core::track::Track::new("V2", trim_core::track::TrackType::Video);
+        let tr_id = new_track.id.clone();
+
+        // Add track at index 0
+        stack.push(Box::new(AddTrackCommand::new(new_track, 0)), &mut tl).unwrap();
+        assert_eq!(tl.tracks.len(), 3);
+        assert_eq!(tl.tracks[0].name, "V2");
+
+        // Undo -> back to 2 tracks
+        assert!(stack.undo(&mut tl).unwrap());
+        assert_eq!(tl.tracks.len(), 2);
+
+        // Redo -> 3 tracks
+        assert!(stack.redo(&mut tl).unwrap());
+        assert_eq!(tl.tracks.len(), 3);
+
+        // Remove track
+        stack.push(Box::new(RemoveTrackCommand::new(&tr_id)), &mut tl).unwrap();
+        assert_eq!(tl.tracks.len(), 2);
+
+        // Undo Remove -> restored
+        assert!(stack.undo(&mut tl).unwrap());
+        assert_eq!(tl.tracks.len(), 3);
+        assert_eq!(tl.tracks[0].name, "V2");
     }
 }

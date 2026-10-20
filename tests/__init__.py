@@ -1,1 +1,0 @@
-"""Cutline test suite."""

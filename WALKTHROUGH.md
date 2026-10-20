@@ -136,6 +136,14 @@ VideoEditor/
 ### 8. `trim-app`
 - Pencere ilklendirmesi (`eframe::run_native`), uygulama ikonu yükleme ve komut satırı argümanları ile doğrudan dosya açma desteği (`./target/release/trim [dosya]`).
 
+### 9. Yeni v0.3.0 NLE Özellikleri
+- **Özel NLE Vektörel Araç Çubuğu:** Font bağımlılığı olmayan `ui.painter()` ile çizilen 8 yerel araç (`V` Seçim, `A` İz Seçme, `B` Dalgalanma, `C` Jilet, `Y` Kaydırma, `P` Kalem/Anahtar Kare, `H` El, `T` Metin).
+- **Çok Kanallı Ses Mikseri Konsolu:** Canlı Master ve kanal faderları, dB skalaları, stereo tepe/RMS VU metreler.
+- **Dinamik Kanal Yönetimi:** Kanallar arası serbest dikey klip sürükleme, `[+ Video]` / `[+ Ses]` butonları, dikey kanal yükseklik ayarı ve sağ tıkla kanal silme.
+- **Gelişmiş Dışa Aktarma Stüdyosu:** YouTube 1080p, 4K UHD, Reels/Shorts 9:16 Dikey, HEVC H.265 ve Apple ProRes 422 profilleri, tahmini dosya boyutu hesabı.
+- **Başlangıç & Karşılama Ekranı (WelcomeDialog):** Çözünürlük önayarları ve son projeler geçmişi.
+- **Klavye Kısayolları Kılavuzu (`F1`):** Hızlı erişilebilir kısayol tablosu.
+
 ---
 
 ## 📊 Feature Parity & Test Özeti
@@ -145,12 +153,13 @@ VideoEditor/
 | **Çekirdek** | Zaman çizgisi, kanallar, klipler, işaretçiler, anahtar kareler | ✅ Tam |
 | **Geri Al / Yinele** | 14 atomik geri alınabilir komut, UndoStack | ✅ Tam |
 | **Kurgu** | Razor kesme (`S`), Ripple Trim (`Q`/`W`), Ripple Delete (`Shift+Del`) | ✅ Tam |
+| **Araç Çubuğu** | 8 yerel vektörel NLE aracı (`V`, `A`, `B`, `C`, `Y`, `P`, `H`, `T`) | ✅ Tam |
 | **Gezinme** | J-K-L Shuttle, Kare kare adımlama (`←`/`→`), Edit noktası atlama (`↑`/`↓`) | ✅ Tam |
 | **Oynatma** | `PlaybackStreamer` (235+ FPS pipe), `AsyncFrameDecoder` | ✅ Tam |
-| **Ses** | 48kHz stereo PCM miksaj, cpal akışı, live VU meter, Detach Audio | ✅ Tam |
+| **Ses & Mikser** | 48kHz stereo PCM miksaj, canlı VU metre, Çok Kanallı Ses Mikseri | ✅ Tam |
 | **Görsel** | Gerçek zamanlı parlaklık, kontrast, doygunluk, Dip-to-Black/White | ✅ Tam |
 | **Tipografi** | Sistem fontları ile başlık ve alt yazı kartı oluşturma | ✅ Tam |
-| **Dışa Aktarma** | Çok kanallı FFmpeg filtergraph, önayarlar, ilerleme takibi | ✅ Tam |
+| **Dışa Aktarma** | Çok kanallı FFmpeg filtergraph, Export Studio profilleri | ✅ Tam |
 | **Proje & Kurtarma** | Atomik kaydetme, geriye dönük `.cutline`/`.trim` uyumu, Autosave | ✅ Tam |
-| **Testler** | `cargo test --workspace` (33 / 33 test başarılı) | ✅ Tam |
+| **Testler** | `cargo test --workspace` (52 / 52 test başarılı) | ✅ Tam |
 | **Release Binary** | 19 MB bağımsız native ELF (`./target/release/trim`) | ✅ Tam |

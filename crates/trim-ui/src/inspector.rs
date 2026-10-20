@@ -85,8 +85,10 @@ pub fn render_inspector_panel(
             ui.strong("Zamanlama");
             Grid::new("timing_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
                 ui.label("Başlangıç:");
+                let old_dur = clip.duration();
                 if ui.add(DragValue::new(&mut clip.timeline_in).speed(0.1).range(0.0..=99999.0).suffix(" s")).changed() {
-                    clip.timeline_out = clip.timeline_out.max(clip.timeline_in + 0.04);
+                    clip.timeline_in = clip.timeline_in.max(0.0);
+                    clip.timeline_out = clip.timeline_in + old_dur;
                     action = Some(InspectorAction::ClipModified);
                 }
                 ui.end_row();
@@ -94,6 +96,7 @@ pub fn render_inspector_panel(
                 ui.label("Bitiş:");
                 if ui.add(DragValue::new(&mut clip.timeline_out).speed(0.1).range(0.0..=99999.0).suffix(" s")).changed() {
                     clip.timeline_out = clip.timeline_out.max(clip.timeline_in + 0.04);
+                    clip.source_out = Some(clip.source_in + (clip.timeline_out - clip.timeline_in) * clip.speed);
                     action = Some(InspectorAction::ClipModified);
                 }
                 ui.end_row();
@@ -109,6 +112,7 @@ pub fn render_inspector_panel(
                 // Pos X
                 ui.label("Konum X:");
                 if ui.add(DragValue::new(&mut clip.pos_x).speed(1.0).suffix(" px")).changed() {
+                    sync_kf_value(clip, "pos_x", clip_time, clip.pos_x);
                     action = Some(InspectorAction::ClipModified);
                 }
                 render_kf_btn(ui, clip, "pos_x", clip_time, clip.pos_x, &mut action);
@@ -117,6 +121,7 @@ pub fn render_inspector_panel(
                 // Pos Y
                 ui.label("Konum Y:");
                 if ui.add(DragValue::new(&mut clip.pos_y).speed(1.0).suffix(" px")).changed() {
+                    sync_kf_value(clip, "pos_y", clip_time, clip.pos_y);
                     action = Some(InspectorAction::ClipModified);
                 }
                 render_kf_btn(ui, clip, "pos_y", clip_time, clip.pos_y, &mut action);
@@ -125,6 +130,7 @@ pub fn render_inspector_panel(
                 // Scale
                 ui.label("Ölçek:");
                 if ui.add(DragValue::new(&mut clip.scale).speed(0.05).range(0.05..=10.0).suffix("x")).changed() {
+                    sync_kf_value(clip, "scale", clip_time, clip.scale);
                     action = Some(InspectorAction::ClipModified);
                 }
                 render_kf_btn(ui, clip, "scale", clip_time, clip.scale, &mut action);
@@ -133,6 +139,7 @@ pub fn render_inspector_panel(
                 // Opacity
                 ui.label("Opaklık:");
                 if ui.add(DragValue::new(&mut clip.opacity).speed(0.05).range(0.0..=1.0)).changed() {
+                    sync_kf_value(clip, "opacity", clip_time, clip.opacity);
                     action = Some(InspectorAction::ClipModified);
                 }
                 render_kf_btn(ui, clip, "opacity", clip_time, clip.opacity, &mut action);
@@ -312,20 +319,28 @@ fn render_kf_btn(
     let has_kf = clip
         .keyframes
         .get(prop)
-        .map_or(false, |list| list.iter().any(|k| (k.time - clip_time).abs() <= 0.05));
+        .is_some_and(|list| list.iter().any(|k| (k.time - clip_time).abs() <= 0.05));
 
-    let btn_col = if has_kf {
-        egui::Color32::from_rgb(0xe0, 0x7a, 0x38)
+    let (btn_txt, btn_col) = if has_kf {
+        ("KF*", egui::Color32::from_rgb(0xe0, 0x7a, 0x38))
     } else {
-        egui::Color32::from_rgb(0x70, 0x70, 0x80)
+        ("KF", egui::Color32::from_rgb(0x70, 0x70, 0x80))
     };
 
-    if ui.add(Button::new(RichText::new("◆").size(12.0).color(btn_col))).clicked() {
+    if ui.add(Button::new(RichText::new(btn_txt).size(10.0).strong().color(btn_col)).min_size(egui::vec2(26.0, 18.0))).clicked() {
         if has_kf {
             clip.remove_keyframe(prop, clip_time, 0.05);
         } else {
             clip.add_keyframe(prop, clip_time, val, Interpolation::Linear);
         }
         *action = Some(InspectorAction::ClipModified);
+    }
+}
+
+fn sync_kf_value(clip: &mut Clip, prop: &str, clip_time: f64, val: f64) {
+    if let Some(kfs) = clip.keyframes.get_mut(prop) {
+        if let Some(kf) = kfs.iter_mut().find(|k| (k.time - clip_time).abs() <= 0.05) {
+            kf.value = val;
+        }
     }
 }

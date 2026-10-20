@@ -11,9 +11,12 @@ use std::sync::{Arc, RwLock};
 
 pub const SAMPLE_RATE: u32 = 48000;
 
+pub type PcmAudioBuffer = Option<Arc<Vec<[i16; 2]>>>;
+pub type PcmCache = Arc<RwLock<HashMap<String, PcmAudioBuffer>>>;
+
 #[derive(Default, Debug, Clone)]
 pub struct AudioMixer {
-    pcm_cache: Arc<RwLock<HashMap<String, Option<Vec<[i16; 2]>>>>>,
+    pcm_cache: PcmCache,
 }
 
 impl AudioMixer {
@@ -35,7 +38,7 @@ impl AudioMixer {
                     return;
                 }
             }
-            let pcm = decode_audio_to_pcm(&path);
+            let pcm = decode_audio_to_pcm(&path).map(Arc::new);
             if let Ok(mut c) = cache_clone.write() {
                 c.insert(path_str, pcm);
             }
@@ -43,7 +46,7 @@ impl AudioMixer {
     }
 
     /// Loads and caches 48kHz 16-bit stereo PCM for given media file.
-    pub fn get_audio_pcm<P: AsRef<Path>>(&self, file_path: P) -> Option<Vec<[i16; 2]>> {
+    pub fn get_audio_pcm<P: AsRef<Path>>(&self, file_path: P) -> Option<Arc<Vec<[i16; 2]>>> {
         let path = file_path.as_ref();
         let path_str = path.to_string_lossy().to_string();
 
@@ -53,7 +56,7 @@ impl AudioMixer {
             }
         }
 
-        let pcm = decode_audio_to_pcm(path);
+        let pcm = decode_audio_to_pcm(path).map(Arc::new);
         if let Ok(mut c) = self.pcm_cache.write() {
             c.insert(path_str, pcm.clone());
         }
@@ -284,7 +287,7 @@ fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
 
     let num_pairs = raw_bytes.len() / 4;
     let mut pcm = Vec::with_capacity(num_pairs);
-    for chunk in raw_bytes.chunks_exact(4) {
+    for chunk in raw_bytes.as_chunks::<4>().0 {
         let left = i16::from_le_bytes([chunk[0], chunk[1]]);
         let right = i16::from_le_bytes([chunk[2], chunk[3]]);
         pcm.push([left, right]);
@@ -311,16 +314,16 @@ impl AudioStreamPlayer {
 
     fn ensure_started(&mut self) -> Option<&mut std::process::ChildStdin> {
         if self.child.is_none() {
-            // Attempt PipeWire pw-cat first, fall back to ALSA aplay
+            // Attempt PipeWire pw-cat with 20ms low latency first, fall back to ALSA aplay with 25ms buffer
             let spawned = Command::new("pw-cat")
-                .args(["-p", "--format=s16", "--rate=48000", "--channels=2", "-"])
+                .args(["-p", "--format=s16", "--rate=48000", "--channels=2", "--latency=20ms", "-"])
                 .stdin(Stdio::piped())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn()
                 .or_else(|_| {
                     Command::new("aplay")
-                        .args(["-q", "-t", "raw", "-c", "2", "-f", "S16_LE", "-r", "48000", "-"])
+                        .args(["-q", "-t", "raw", "-c", "2", "-f", "S16_LE", "-r", "48000", "--buffer-time=25000", "--period-time=5000", "-"])
                         .stdin(Stdio::piped())
                         .stdout(Stdio::null())
                         .stderr(Stdio::null())
@@ -333,6 +336,11 @@ impl AudioStreamPlayer {
         }
 
         self.child.as_mut().and_then(|c| c.stdin.as_mut())
+    }
+
+    /// Pre-spawns audio output process to eliminate startup delay upon clicking play.
+    pub fn prepare(&mut self) {
+        let _ = self.ensure_started();
     }
 
     /// Writes raw 16-bit stereo PCM samples to the active audio device.

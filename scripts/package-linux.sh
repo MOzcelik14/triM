@@ -55,7 +55,7 @@ install_payload() {
   install -Dm644 "$ICON" "$root/usr/share/icons/hicolor/scalable/apps/io.github.mozcelik14.triM.svg"
   local size
   for size in 16 32 48 64 128 256 512; do
-    local image="$ROOT/trim/resources/icons/trim_${size}x${size}.png"
+    local image="$ROOT/resources/icons/trim_${size}x${size}.png"
     [[ -f "$image" ]] || continue
     install -Dm644 "$image" "$root/usr/share/icons/hicolor/${size}x${size}/apps/io.github.mozcelik14.triM.png"
   done
@@ -101,7 +101,7 @@ build_rpm() {
   cp "$ICON" "$top/SOURCES/triM.svg"
   local size
   for size in 16 32 48 64 128 256 512; do
-    local image="$ROOT/trim/resources/icons/trim_${size}x${size}.png"
+    local image="$ROOT/resources/icons/trim_${size}x${size}.png"
     if [[ -f "$image" ]]; then cp "$image" "$top/SOURCES/trim_${size}.png"; fi
   done
   cat > "$top/SPECS/trim.spec" <<EOF

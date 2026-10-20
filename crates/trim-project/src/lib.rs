@@ -74,6 +74,13 @@ impl Default for AutosaveManager {
     }
 }
 
+fn hash_path(path_str: &str) -> String {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    path_str.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
 impl AutosaveManager {
     pub fn new<P: Into<PathBuf>>(recovery_dir: P) -> Self {
         Self {
@@ -82,21 +89,39 @@ impl AutosaveManager {
     }
 
     pub fn get_recovery_path(&self, project: &Project) -> PathBuf {
-        let stem = if let Some(fp) = &project.file_path {
-            Path::new(fp)
+        if let Some(fp) = &project.file_path {
+            let stem = Path::new(fp)
                 .file_stem()
                 .and_then(|s| s.to_str())
-                .unwrap_or("project")
+                .unwrap_or("project");
+            let hash = hash_path(fp);
+            self.recovery_dir.join(format!("{}_{}_recovery.trim", stem, hash))
         } else {
-            "unsaved_project"
-        };
-        self.recovery_dir.join(format!("{}_recovery.trim", stem))
+            self.recovery_dir.join("unsaved_project_recovery.trim")
+        }
+    }
+
+    pub fn get_legacy_recovery_path(&self, project: &Project) -> Option<PathBuf> {
+        project.file_path.as_ref().map(|fp| {
+            let stem = Path::new(fp)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("project");
+            self.recovery_dir.join(format!("{}_recovery.trim", stem))
+        })
     }
 
     pub fn check_recovery(&self, project: &Project) -> Option<PathBuf> {
         let rec_path = self.get_recovery_path(project);
         if rec_path.is_file() && rec_path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
             return Some(rec_path);
+        }
+
+        // Check legacy stem-only recovery path
+        if let Some(legacy_path) = self.get_legacy_recovery_path(project) {
+            if legacy_path.is_file() && legacy_path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+                return Some(legacy_path);
+            }
         }
 
         // Also check legacy .config/cutline/recovery
@@ -137,6 +162,11 @@ impl AutosaveManager {
         let rec_path = self.get_recovery_path(project);
         if rec_path.is_file() {
             let _ = fs::remove_file(rec_path);
+        }
+        if let Some(legacy_path) = self.get_legacy_recovery_path(project) {
+            if legacy_path.is_file() {
+                let _ = fs::remove_file(legacy_path);
+            }
         }
     }
 }
@@ -180,5 +210,30 @@ mod tests {
 
         mgr.cleanup(&proj);
         assert!(mgr.check_recovery(&proj).is_none());
+    }
+
+    #[test]
+    fn test_recovery_path_collision_prevention() {
+        let dir = tempdir().unwrap();
+        let mgr = AutosaveManager::new(dir.path().to_path_buf());
+
+        let mut proj1 = Project::new("Same Name");
+        proj1.file_path = Some("/home/user/folder1/project.trim".into());
+
+        let mut proj2 = Project::new("Same Name");
+        proj2.file_path = Some("/home/user/folder2/project.trim".into());
+
+        let path1 = mgr.get_recovery_path(&proj1);
+        let path2 = mgr.get_recovery_path(&proj2);
+
+        assert_ne!(path1, path2, "Recovery paths must not collide for identical stems in different dirs");
+
+        // Test legacy fallback
+        let legacy_file = mgr.get_legacy_recovery_path(&proj1).unwrap();
+        fs::write(&legacy_file, "legacy recovery data").unwrap();
+        assert_eq!(mgr.check_recovery(&proj1), Some(legacy_file.clone()));
+
+        mgr.cleanup(&proj1);
+        assert!(!legacy_file.exists());
     }
 }

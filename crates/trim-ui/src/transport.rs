@@ -23,18 +23,18 @@ pub fn render_transport_bar(
         ui.spacing_mut().item_spacing.x = 8.0;
 
         // Stop button
-        if ui.button(RichText::new("⏹").size(14.0)).clicked() {
+        if ui.button(RichText::new("[]").size(12.0).strong()).clicked() {
             action = Some(TransportAction::Stop);
         }
 
         // Previous frame
-        if ui.button(RichText::new("⏴").size(14.0)).clicked() {
+        if ui.button(RichText::new("<").size(12.0).strong()).clicked() {
             action = Some(TransportAction::StepFrame(-1));
         }
 
         // Play / Pause button
-        let play_icon = if is_playing { "⏸" } else { "▶" };
-        let play_btn = Button::new(RichText::new(play_icon).size(16.0).color(Color32::WHITE))
+        let play_icon = if is_playing { "||" } else { ">" };
+        let play_btn = Button::new(RichText::new(play_icon).size(13.0).strong().color(Color32::WHITE))
             .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
 
         if ui.add(play_btn).clicked() {
@@ -42,7 +42,7 @@ pub fn render_transport_bar(
         }
 
         // Next frame
-        if ui.button(RichText::new("⏵").size(14.0)).clicked() {
+        if ui.button(RichText::new(">").size(12.0).strong()).clicked() {
             action = Some(TransportAction::StepFrame(1));
         }
 

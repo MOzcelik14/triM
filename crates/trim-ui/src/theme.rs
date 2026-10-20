@@ -45,14 +45,31 @@ pub fn setup_theme(ctx: &egui::Context) {
     visuals.widgets.hovered.rounding = Rounding::same(3.0);
 
     // Active
-    visuals.widgets.active.bg_fill = COLOR_AMBER;
-    visuals.widgets.active.bg_stroke = Stroke::new(1.0_f32, COLOR_AMBER);
+    visuals.widgets.active.bg_fill = Color32::from_rgb(0x32, 0x6e, 0xbf);
+    visuals.widgets.active.bg_stroke = Stroke::new(1.0_f32, Color32::from_rgb(0x4a, 0x8a, 0xe8));
     visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, Color32::WHITE);
     visuals.widgets.active.rounding = Rounding::same(3.0);
 
-    // Selection
-    visuals.selection.bg_fill = Color32::from_rgba_premultiplied(0xe0, 0x7a, 0x38, 0x35);
-    visuals.selection.stroke = Stroke::new(1.5_f32, COLOR_AMBER);
+    // Selection - high contrast, pure white text over slate blue
+    visuals.selection.bg_fill = Color32::from_rgb(0x28, 0x5a, 0x9e);
+    visuals.selection.stroke = Stroke::new(1.0_f32, Color32::WHITE);
 
     ctx.set_visuals(visuals);
+
+    // Load system symbol/unicode fonts if available so that glyphs never render as empty squares
+    let mut fonts = egui::FontDefinitions::default();
+    let sys_fonts = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+    ];
+    for (i, path) in sys_fonts.iter().enumerate() {
+        if let Ok(data) = std::fs::read(path) {
+            let font_name = format!("sys_font_{}", i);
+            fonts.font_data.insert(font_name.clone(), egui::FontData::from_owned(data));
+            fonts.families.entry(egui::FontFamily::Proportional).or_default().push(font_name.clone());
+            fonts.families.entry(egui::FontFamily::Monospace).or_default().push(font_name);
+        }
+    }
+    ctx.set_fonts(fonts);
 }

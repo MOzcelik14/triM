@@ -68,6 +68,43 @@ impl TimelineModel {
         self.tracks.push(track);
     }
 
+    pub fn add_new_video_track(&mut self) -> String {
+        let max_idx = self
+            .get_video_tracks()
+            .iter()
+            .filter_map(|t| t.name.strip_prefix('V').and_then(|s| s.parse::<usize>().ok()))
+            .max()
+            .unwrap_or(0);
+        let track = Track::new(format!("V{}", max_idx + 1), TrackType::Video);
+        let id = track.id.clone();
+        // Video tracks stack upwards in timeline display: index 0 is topmost
+        self.tracks.insert(0, track);
+        id
+    }
+
+    pub fn add_new_audio_track(&mut self) -> String {
+        let max_idx = self
+            .get_audio_tracks()
+            .iter()
+            .filter_map(|t| t.name.strip_prefix('A').and_then(|s| s.parse::<usize>().ok()))
+            .max()
+            .unwrap_or(0);
+        let track = Track::new(format!("A{}", max_idx + 1), TrackType::Audio);
+        let id = track.id.clone();
+        // Audio tracks expand downwards
+        self.tracks.push(track);
+        id
+    }
+
+    pub fn remove_track_safe(&mut self, track_id: &str) -> Result<Track, &'static str> {
+        let track_type = self.get_track_by_id(track_id).map(|t| t.track_type).ok_or("Kanal bulunamadı")?;
+        let count = self.tracks.iter().filter(|t| t.track_type == track_type).count();
+        if count <= 1 {
+            return Err("Son kalan kanal silinemez");
+        }
+        self.remove_track(track_id).ok_or("Kanal bulunamadı")
+    }
+
     pub fn remove_track(&mut self, track_id: &str) -> Option<Track> {
         if let Some(pos) = self.tracks.iter().position(|t| t.id == track_id) {
             Some(self.tracks.remove(pos))
@@ -276,5 +313,36 @@ mod tests {
         tl.tracks[1].solo = false;
         let active2 = tl.get_active_audio_clips_at(5.0);
         assert_eq!(active2.len(), 2);
+    }
+
+    #[test]
+    fn test_dynamic_track_addition_and_removal() {
+        let mut tl = TimelineModel::default();
+        // Starts with V1 and A1
+        assert_eq!(tl.tracks.len(), 2);
+        assert_eq!(tl.tracks[0].name, "V1");
+        assert_eq!(tl.tracks[1].name, "A1");
+
+        // Add V2 -> should become index 0
+        let v2_id = tl.add_new_video_track();
+        assert_eq!(tl.tracks[0].name, "V2");
+        assert_eq!(tl.tracks[0].id, v2_id);
+        assert_eq!(tl.tracks[1].name, "V1");
+        assert_eq!(tl.tracks[2].name, "A1");
+
+        // Add A2 -> should become index 3
+        let a2_id = tl.add_new_audio_track();
+        assert_eq!(tl.tracks.len(), 4);
+        assert_eq!(tl.tracks[3].name, "A2");
+        assert_eq!(tl.tracks[3].id, a2_id);
+
+        // Safe removal of V2
+        assert!(tl.remove_track_safe(&v2_id).is_ok());
+        assert_eq!(tl.get_video_tracks().len(), 1);
+
+        // Trying to remove the last video track (V1) should fail safely
+        let v1_id = tl.tracks[0].id.clone();
+        assert!(tl.remove_track_safe(&v1_id).is_err());
+        assert_eq!(tl.get_video_tracks().len(), 1);
     }
 }

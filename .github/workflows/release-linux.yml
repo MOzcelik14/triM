@@ -9,6 +9,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/**"
+      - "resources/**"
       - "scripts/package-linux.sh"
       - ".github/workflows/release-linux.yml"
   workflow_dispatch:

@@ -1,20 +1,25 @@
-//! Main triM. desktop application implementing `eframe::App`.
+//! Main triM. desktop application implementing `eframe::App` with Premiere Pro 4-Quadrant layout.
 
 use crate::canvas::{render_timeline_canvas, CanvasAction, TimelineCanvasState};
 use crate::dialogs::*;
 use crate::inspector::{render_inspector_panel, InspectorAction};
-use crate::media_bin::{render_media_bin, MediaBinAction};
-use crate::monitor::{MonitorAction, MonitorWidget};
+use crate::media_bin::{render_media_bin, LeftPanelTab, MediaBinAction};
+use crate::monitor::{MonitorAction, MonitorMode, MonitorWidget};
 use crate::ruler::{render_time_ruler, RulerAction};
 use crate::theme::*;
+use crate::toolbar::{render_vertical_toolbar, EditTool};
 use crate::track_header::{render_track_header, TrackHeaderAction};
-use crate::transport::{render_transport_bar, TransportAction};
 use crate::vu_meter::{VuMeterState, VuMeterWidget};
 
-use egui::{Color32, ColorImage, Key, RichText, ScrollArea, Stroke, TextureHandle, TextureOptions};
+use egui::{
+    Button, Color32, ColorImage, Key, RichText, ScrollArea, Stroke, TextureHandle,
+    TextureOptions, Vec2,
+};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::mpsc::{channel, Receiver};
 use std::time::Instant;
+
 use trim_commands::commands::*;
 use trim_commands::UndoStack;
 use trim_core::clip::Clip;
@@ -23,9 +28,27 @@ use trim_core::media::MediaType;
 use trim_core::project::Project;
 use trim_core::time::seconds_to_timecode;
 use trim_export::runner::{ExportMessage, ExportRunner};
-use trim_media::{generate_title_image, AudioMixer, AudioStreamPlayer, FFprobeAnalyzer, ThumbnailGenerator, VideoEngine, WaveformGenerator};
+use trim_media::{
+    decode_frame_raw, generate_title_image, AudioMixer, AudioStreamPlayer, FFprobeAnalyzer,
+    ThumbnailGenerator, VideoEngine, WaveformGenerator,
+};
 use trim_project::{load_project, save_project, AutosaveManager};
-use trim_timeline::{find_next_edit_point, find_prev_edit_point, ripple_trim_head, ripple_trim_tail, split_at_playhead};
+use trim_timeline::{
+    find_next_edit_point, find_prev_edit_point, ripple_trim_head, ripple_trim_tail,
+    split_at_playhead,
+};
+
+#[derive(Default)]
+pub struct SourceMonitorState {
+    pub media_id: Option<String>,
+    pub current_time: f64,
+    pub mark_in: Option<f64>,
+    pub mark_out: Option<f64>,
+    pub is_playing: bool,
+    pub texture: Option<TextureHandle>,
+    pub last_decoded_time: Option<f64>,
+    pub last_decoded_id: Option<String>,
+}
 
 pub struct TrimApp {
     pub project: Project,
@@ -46,10 +69,28 @@ pub struct TrimApp {
     pub last_rendered_time: Option<f64>,
     pub last_rendered_dirty: bool,
 
+    // Source Monitor state
+    pub source_state: SourceMonitorState,
+
+    // NLE Track Target Patching & Tools
+    pub target_video_track: String,
+    pub target_audio_track: String,
+    pub current_edit_tool: EditTool,
+    pub snap_enabled: bool,
+
+    // Media Bin state
+    pub media_bin_search: String,
+    pub media_bin_is_grid: bool,
+    pub media_bin_thumb_size: f32,
+    pub media_bin_textures: HashMap<String, TextureHandle>,
+
     pub export_dialog: ExportDialog,
     pub speed_dialog: SpeedDialog,
     pub title_dialog: TitleDialog,
     pub recovery_dialog: RecoveryDialog,
+    pub audio_mixer_dialog: AudioMixerDialog,
+    pub welcome_dialog: WelcomeDialog,
+    pub shortcuts_dialog: ShortcutsDialog,
     pub autosave_mgr: AutosaveManager,
 
     pub export_runner: ExportRunner,
@@ -60,14 +101,35 @@ pub struct TrimApp {
     pub status_message: String,
     pub last_autosave: Instant,
     pub show_about_dialog: bool,
+    pub show_source_monitor: bool,
+    pub active_left_tab: LeftPanelTab,
 }
 
 impl TrimApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         setup_theme(&cc.egui_ctx);
 
+        let project = Project::default();
+        let v_tracks = project.timeline.get_video_tracks();
+        let target_video_track = v_tracks
+            .iter()
+            .find(|t| t.name == "V1")
+            .copied()
+            .or_else(|| v_tracks.last().copied())
+            .map(|t| t.id.clone())
+            .unwrap_or_else(|| "v1".to_string());
+
+        let a_tracks = project.timeline.get_audio_tracks();
+        let target_audio_track = a_tracks
+            .iter()
+            .find(|t| t.name == "A1")
+            .copied()
+            .or_else(|| a_tracks.first().copied())
+            .map(|t| t.id.clone())
+            .unwrap_or_else(|| "a1".to_string());
+
         let mut app = Self {
-            project: Project::default(),
+            project,
             undo_stack: UndoStack::new(),
             current_time: 0.0,
             is_playing: false,
@@ -83,10 +145,22 @@ impl TrimApp {
             audio_player: AudioStreamPlayer::default(),
             last_rendered_time: None,
             last_rendered_dirty: false,
+            source_state: SourceMonitorState::default(),
+            target_video_track,
+            target_audio_track,
+            current_edit_tool: EditTool::Select,
+            snap_enabled: true,
+            media_bin_search: String::new(),
+            media_bin_is_grid: true,
+            media_bin_thumb_size: 105.0,
+            media_bin_textures: HashMap::new(),
             export_dialog: ExportDialog::default(),
             speed_dialog: SpeedDialog::default(),
             title_dialog: TitleDialog::default(),
             recovery_dialog: RecoveryDialog::default(),
+            audio_mixer_dialog: AudioMixerDialog::default(),
+            welcome_dialog: WelcomeDialog::default(),
+            shortcuts_dialog: ShortcutsDialog::default(),
             autosave_mgr: AutosaveManager::default(),
             export_runner: ExportRunner::default(),
             export_rx: None,
@@ -95,6 +169,8 @@ impl TrimApp {
             status_message: "Hazır".to_string(),
             last_autosave: Instant::now(),
             show_about_dialog: false,
+            show_source_monitor: false,
+            active_left_tab: LeftPanelTab::Project,
         };
 
         // Check crash recovery
@@ -118,6 +194,7 @@ impl TrimApp {
             self.current_time = 0.0;
         }
         self.is_playing = true;
+        self.audio_player.prepare();
         self.clock_start = Some(Instant::now());
         self.clock_start_time = self.current_time;
     }
@@ -201,10 +278,17 @@ impl TrimApp {
                 let name = item.name.clone();
                 let file_path = item.file_path.clone();
                 let has_audio = item.media_type == MediaType::Audio || item.audio_channels > 0;
+                let m_id = item.id.clone();
                 self.project.add_media(item);
                 if has_audio {
                     self.audio_mixer.preload_audio_async(&file_path);
                 }
+                // Automatically set as active in Source Monitor
+                self.source_state.media_id = Some(m_id);
+                self.source_state.current_time = 0.0;
+                self.source_state.mark_in = None;
+                self.source_state.mark_out = None;
+                self.source_state.last_decoded_time = None;
                 self.status_message = format!("Medya içe aktarıldı: {}", name);
             }
             Err(e) => {
@@ -214,10 +298,12 @@ impl TrimApp {
     }
 
     pub fn prompt_import_media(&mut self) {
-        // Native file picker using rfd or std::process
         if let Some(path) = rfd::FileDialog::new()
             .set_title("Medya Dosyası Seç")
-            .add_filter("Tüm Medya Dosyaları", &["mp4", "mov", "mkv", "webm", "mp3", "wav", "aac", "png", "jpg", "jpeg"])
+            .add_filter(
+                "Tüm Medya Dosyaları",
+                &["mp4", "mov", "mkv", "webm", "mp3", "wav", "aac", "png", "jpg", "jpeg"],
+            )
             .pick_file()
         {
             self.import_media_file(path);
@@ -234,7 +320,19 @@ impl TrimApp {
                 Ok(proj) => {
                     self.project = proj;
                     self.undo_stack.clear();
+                    self.canvas_state.selected_clip_pairs.clear();
                     self.current_time = 0.0;
+                    self.media_bin_textures.clear();
+                    self.video_engine.clear_cache();
+                    self.audio_mixer.clear_cache();
+                    self.audio_player.stop();
+                    self.is_playing = false;
+                    self.monitor_texture = None;
+                    self.source_state.media_id = None;
+                    self.source_state.texture = None;
+                    self.source_state.is_playing = false;
+                    self.target_video_track = self.project.timeline.get_video_tracks().iter().find(|t| t.name == "V1").map(|t| t.id.clone()).unwrap_or_default();
+                    self.target_audio_track = self.project.timeline.get_audio_tracks().iter().find(|t| t.name == "A1").map(|t| t.id.clone()).unwrap_or_default();
                     self.autosave_mgr.cleanup(&self.project);
                     for item in self.project.media_pool.values() {
                         if item.media_type == MediaType::Audio || item.audio_channels > 0 {
@@ -257,7 +355,19 @@ impl TrimApp {
                 Ok(proj) => {
                     self.project = proj;
                     self.undo_stack.clear();
+                    self.canvas_state.selected_clip_pairs.clear();
                     self.current_time = 0.0;
+                    self.media_bin_textures.clear();
+                    self.video_engine.clear_cache();
+                    self.audio_mixer.clear_cache();
+                    self.audio_player.stop();
+                    self.is_playing = false;
+                    self.monitor_texture = None;
+                    self.source_state.media_id = None;
+                    self.source_state.texture = None;
+                    self.source_state.is_playing = false;
+                    self.target_video_track = self.project.timeline.get_video_tracks().iter().find(|t| t.name == "V1").map(|t| t.id.clone()).unwrap_or_default();
+                    self.target_audio_track = self.project.timeline.get_audio_tracks().iter().find(|t| t.name == "A1").map(|t| t.id.clone()).unwrap_or_default();
                     self.autosave_mgr.cleanup(&self.project);
                     for item in self.project.media_pool.values() {
                         if item.media_type == MediaType::Audio || item.audio_channels > 0 {
@@ -272,44 +382,273 @@ impl TrimApp {
             }
         } else {
             self.import_media_file(path);
-            let has_clips = self.project.timeline.tracks.iter().any(|t| !t.clips.is_empty());
-            if !has_clips {
-                let p_str = path.to_string_lossy().to_string();
-                if let Some((m_id, media)) = self.project.media_pool.iter().find(|(_, m)| m.file_path == p_str) {
-                    let clip_dur = if media.media_type == MediaType::Image {
-                        5.0
-                    } else {
-                        media.duration.max(0.1)
-                    };
-                    let target_track = if media.media_type == MediaType::Audio {
-                        self.project.timeline.get_audio_tracks().first().map(|t| t.id.clone())
-                    } else {
-                        self.project.timeline.get_video_tracks().first().map(|t| t.id.clone())
-                    };
-
-                    if let Some(track_id) = target_track {
-                        let mut clip = Clip::new(m_id.clone(), 0.0, clip_dur);
-                        clip.name = media.name.clone();
-                        let cmd = Box::new(AddClipCommand::new(track_id, clip));
-                        let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                        self.project.mark_dirty();
-                    }
-                }
-            }
         }
     }
 
     pub fn save_project_dialog(&mut self) {
         if let Some(fp) = self.project.file_path.clone() {
-            let _ = save_project(&mut self.project, fp);
-            self.status_message = "Proje kaydedildi".to_string();
+            match save_project(&mut self.project, fp) {
+                Ok(()) => {
+                    self.autosave_mgr.cleanup(&self.project);
+                    self.status_message = "Proje kaydedildi".to_string();
+                }
+                Err(e) => {
+                    self.status_message = format!("Kayıt hatası: {}", e);
+                }
+            }
         } else if let Some(path) = rfd::FileDialog::new()
             .set_title("Projeyi Kaydet")
             .add_filter("triM. Projesi (*.trim)", &["trim"])
             .save_file()
         {
-            let _ = save_project(&mut self.project, path);
-            self.status_message = "Proje kaydedildi".to_string();
+            match save_project(&mut self.project, path) {
+                Ok(()) => {
+                    self.autosave_mgr.cleanup(&self.project);
+                    self.status_message = "Proje kaydedildi".to_string();
+                }
+                Err(e) => {
+                    self.status_message = format!("Kayıt hatası: {}", e);
+                }
+            }
+        }
+    }
+
+    pub fn save_project_as_dialog(&mut self) {
+        if let Some(path) = rfd::FileDialog::new()
+            .set_title("Projeyi Farklı Kaydet")
+            .add_filter("triM. Projesi (*.trim)", &["trim"])
+            .save_file()
+        {
+            match save_project(&mut self.project, path.clone()) {
+                Ok(()) => {
+                    self.autosave_mgr.cleanup(&self.project);
+                    self.status_message = format!("Proje kaydedildi: {:?}", path);
+                }
+                Err(e) => {
+                    self.status_message = format!("Kayıt hatası: {}", e);
+                }
+            }
+        }
+    }
+
+    pub fn add_video_track(&mut self) {
+        let max_idx = self
+            .project
+            .timeline
+            .get_video_tracks()
+            .iter()
+            .filter_map(|t| t.name.strip_prefix('V').and_then(|s| s.parse::<usize>().ok()))
+            .max()
+            .unwrap_or(0);
+        let track = trim_core::track::Track::new(format!("V{}", max_idx + 1), trim_core::track::TrackType::Video);
+        let name = track.name.clone();
+        let cmd = Box::new(AddTrackCommand::new(track, 0));
+        let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+        self.status_message = format!("Video kanalı eklendi: {}", name);
+        self.project.mark_dirty();
+    }
+
+    pub fn add_audio_track(&mut self) {
+        let max_idx = self
+            .project
+            .timeline
+            .get_audio_tracks()
+            .iter()
+            .filter_map(|t| t.name.strip_prefix('A').and_then(|s| s.parse::<usize>().ok()))
+            .max()
+            .unwrap_or(0);
+        let track = trim_core::track::Track::new(format!("A{}", max_idx + 1), trim_core::track::TrackType::Audio);
+        let name = track.name.clone();
+        let len = self.project.timeline.tracks.len();
+        let cmd = Box::new(AddTrackCommand::new(track, len));
+        let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+        self.status_message = format!("Ses kanalı eklendi: {}", name);
+        self.project.mark_dirty();
+    }
+
+    pub fn reset_to_new_project(&mut self) {
+        self.project = Project::default();
+        self.undo_stack.clear();
+        self.canvas_state.selected_clip_pairs.clear();
+        self.current_time = 0.0;
+        self.media_bin_textures.clear();
+        self.video_engine.clear_cache();
+        self.audio_mixer.clear_cache();
+        self.audio_player.stop();
+        self.is_playing = false;
+        self.monitor_texture = None;
+        self.source_state.media_id = None;
+        self.source_state.texture = None;
+        self.source_state.is_playing = false;
+        self.target_video_track = self.project.timeline.get_video_tracks().iter().find(|t| t.name == "V1").map(|t| t.id.clone()).unwrap_or_default();
+        self.target_audio_track = self.project.timeline.get_audio_tracks().iter().find(|t| t.name == "A1").map(|t| t.id.clone()).unwrap_or_default();
+        self.status_message = "Yeni boş proje oluşturuldu".to_string();
+    }
+
+    pub fn delete_selected_clips(&mut self) {
+        if !self.canvas_state.selected_clip_pairs.is_empty() {
+            let unlocked_pairs: Vec<(String, String)> = self.canvas_state.selected_clip_pairs
+                .iter()
+                .filter(|(tr_id, _)| !self.project.timeline.get_track_by_id(tr_id).map(|t| t.locked).unwrap_or(false))
+                .cloned()
+                .collect();
+            if !unlocked_pairs.is_empty() {
+                let cmd = Box::new(RemoveMultipleClipsCommand::new(unlocked_pairs));
+                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                self.canvas_state.selected_clip_pairs.clear();
+                self.project.mark_dirty();
+            } else {
+                self.status_message = "Kilitli kanaldaki klipler silinemez".to_string();
+            }
+        }
+    }
+
+    pub fn ripple_delete_selected_clips(&mut self) {
+        if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first().cloned() {
+            let is_locked = self.project.timeline.get_track_by_id(&tr_id).map(|t| t.locked).unwrap_or(false);
+            if !is_locked {
+                let cmd = Box::new(RippleDeleteCommand::new(tr_id, cl_id));
+                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                self.canvas_state.selected_clip_pairs.clear();
+                self.project.mark_dirty();
+            } else {
+                self.status_message = "Kilitli kanaldaki klip silinemez".to_string();
+            }
+        }
+    }
+
+    pub fn select_all_clips(&mut self) {
+        let mut all = Vec::new();
+        for tr in &self.project.timeline.tracks {
+            for cl in &tr.clips {
+                all.push((tr.id.clone(), cl.id.clone()));
+            }
+        }
+        self.canvas_state.selected_clip_pairs = all;
+    }
+
+    pub fn split_at_playhead_command(&mut self) {
+        let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
+        let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
+        split_at_playhead(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+        self.project.mark_dirty();
+    }
+
+    pub fn add_marker_at_playhead(&mut self) {
+        self.add_or_toggle_marker();
+    }
+
+    pub fn insert_source_to_timeline(&mut self, is_overwrite: bool) {
+        let Some(ref m_id) = self.source_state.media_id.clone() else {
+            self.status_message = "Kaynak monitöründe seçili klip yok".to_string();
+            return;
+        };
+        let (media_duration, media_type, media_name, media_fps, media_w, media_h) = match self.project.get_media(m_id) {
+            Some(m) => (m.duration, m.media_type, m.name.clone(), m.fps, m.width, m.height),
+            None => return,
+        };
+
+        let start_in = self.source_state.mark_in.unwrap_or(0.0).clamp(0.0, media_duration);
+        let end_out = self.source_state.mark_out.unwrap_or(media_duration).clamp(start_in, media_duration);
+        let clip_dur = if media_type == MediaType::Image {
+            5.0
+        } else {
+            (end_out - start_in).max(0.1)
+        };
+
+        let target_track_id = if media_type == MediaType::Audio {
+            if self.project.timeline.get_track_by_id(&self.target_audio_track).is_some() {
+                self.target_audio_track.clone()
+            } else {
+                self.project.timeline.get_audio_tracks().first().map(|t| t.id.clone()).unwrap_or_default()
+            }
+        } else if self.project.timeline.get_track_by_id(&self.target_video_track).is_some() {
+            self.target_video_track.clone()
+        } else {
+            self.project.timeline.get_video_tracks().first().map(|t| t.id.clone()).unwrap_or_default()
+        };
+
+        if target_track_id.is_empty() {
+            self.status_message = "Hedef kanal bulunamadı".to_string();
+            return;
+        }
+
+        if let Some(track) = self.project.timeline.get_track_by_id(&target_track_id) {
+            if track.locked {
+                self.status_message = "Hedef kanal kilitli, ekleme yapılamaz".to_string();
+                return;
+            }
+        }
+
+        let insert_time = self.current_time;
+
+        // Ripple insert: shift downstream clips forward on target track
+        if !is_overwrite {
+            let mut moves = Vec::new();
+            if let Some(track) = self.project.timeline.get_track_by_id(&target_track_id) {
+                for c in &track.clips {
+                    if c.timeline_in >= insert_time {
+                        moves.push((target_track_id.clone(), c.id.clone(), c.timeline_in, c.timeline_in + clip_dur));
+                    }
+                }
+            }
+            if !moves.is_empty() {
+                let cmd = Box::new(MoveMultipleClipsCommand::new(moves));
+                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+            }
+        }
+
+        let mut new_clip = Clip::new(m_id.clone(), insert_time, insert_time + clip_dur);
+        new_clip.name = media_name;
+        new_clip.source_in = start_in;
+        new_clip.source_out = Some(end_out);
+
+        if self.project.timeline.tracks.iter().all(|t| t.clips.is_empty()) {
+            if media_fps > 1.0 {
+                self.project.timeline.fps = media_fps;
+            }
+            if media_w > 0 && media_h > 0 {
+                self.project.timeline.width = media_w;
+                self.project.timeline.height = media_h;
+            }
+        }
+
+        let cmd = Box::new(AddClipCommand::new(target_track_id, new_clip));
+        let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+        self.project.mark_dirty();
+
+        self.seek(insert_time + clip_dur);
+        self.status_message = if is_overwrite {
+            "Klip üzerine yazıldı (Overwrite)".to_string()
+        } else {
+            "Klip eklendi (Insert)".to_string()
+        };
+    }
+
+    pub fn export_current_frame(&mut self) {
+        if let Some(frame) = self.video_engine.last_rendered_frame.as_ref() {
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let filename = format!("kare_{}_{:06}.png", ts, (self.current_time * 1000.0) as u64);
+            let out_path = std::env::current_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                .join(&filename);
+            if frame.save(&out_path).is_ok() {
+                if let Ok(mut item) = FFprobeAnalyzer::analyze(&out_path) {
+                    item.name = filename;
+                    item.duration = 5.0;
+                    self.project.add_media(item);
+                    self.status_message = format!("Kare dışa aktarıldı ve havuza eklendi: {}", out_path.display());
+                } else {
+                    self.status_message = format!("Kare kaydedildi: {}", out_path.display());
+                }
+            } else {
+                self.status_message = "Kare kaydedilemedi".to_string();
+            }
+        } else {
+            self.status_message = "Dışa aktarılacak aktif kare yok".to_string();
         }
     }
 
@@ -357,9 +696,199 @@ impl TrimApp {
                 self.monitor_texture = Some(ctx.load_texture("monitor_preview", color_image, TextureOptions::LINEAR));
             }
         } else {
-            // A timeline gap or the end of the last clip must remove the
-            // previous GPU texture instead of freezing its final frame.
             self.monitor_texture = None;
+        }
+    }
+
+    pub fn update_source_monitor_frame(&mut self, ctx: &egui::Context) {
+        let Some(ref m_id) = self.source_state.media_id else {
+            self.source_state.texture = None;
+            return;
+        };
+        let Some(media) = self.project.get_media(m_id) else {
+            self.source_state.texture = None;
+            return;
+        };
+
+        if self.source_state.is_playing {
+            let dt = 1.0 / 30.0;
+            self.source_state.current_time += dt;
+            if self.source_state.current_time >= media.duration {
+                self.source_state.current_time = self.source_state.mark_in.unwrap_or(0.0);
+                self.source_state.is_playing = false;
+            }
+            ctx.request_repaint();
+        }
+
+        let needs_decode = match (&self.source_state.last_decoded_id, self.source_state.last_decoded_time) {
+            (Some(id), Some(t)) => id != m_id || (t - self.source_state.current_time).abs() > 0.03,
+            _ => true,
+        };
+
+        if needs_decode {
+            let frame_opt = if media.media_type == MediaType::Image {
+                image::open(&media.file_path).ok().map(|img| img.to_rgba8())
+            } else if media.media_type == MediaType::Video {
+                decode_frame_raw(&media.file_path, self.source_state.current_time)
+            } else {
+                None
+            };
+
+            if let Some(frame) = frame_opt {
+                let color_image = ColorImage::from_rgba_unmultiplied(
+                    [frame.width() as usize, frame.height() as usize],
+                    frame.as_raw(),
+                );
+                if let Some(tex) = &mut self.source_state.texture {
+                    tex.set(color_image, TextureOptions::LINEAR);
+                } else {
+                    self.source_state.texture = Some(ctx.load_texture("source_preview", color_image, TextureOptions::LINEAR));
+                }
+                self.source_state.last_decoded_id = Some(m_id.clone());
+                self.source_state.last_decoded_time = Some(self.source_state.current_time);
+            }
+        }
+    }
+
+    pub fn update_media_bin_thumbnails(&mut self, ctx: &egui::Context) {
+        for (m_id, item) in &self.project.media_pool {
+            if !self.media_bin_textures.contains_key(m_id) {
+                if let Some(thumb_path) = self.thumbnail_gen.generate(item) {
+                    if let Ok(dyn_img) = image::open(&thumb_path) {
+                        let rgba = dyn_img.to_rgba8();
+                        let color_img = ColorImage::from_rgba_unmultiplied(
+                            [rgba.width() as usize, rgba.height() as usize],
+                            rgba.as_raw(),
+                        );
+                        let tex = ctx.load_texture(format!("thumb_{}", m_id), color_img, TextureOptions::LINEAR);
+                        self.media_bin_textures.insert(m_id.clone(), tex);
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn render_source_monitor(&mut self, source_ui: &mut egui::Ui) {
+        let source_media = self.source_state.media_id.as_ref().and_then(|id| self.project.get_media(id));
+        let source_title = source_media.map(|m| m.name.as_str()).unwrap_or("Seçili Klip Yok");
+        let source_dur = source_media.map(|m| m.duration).unwrap_or(0.0);
+        let source_fps = source_media.map(|m| m.fps).unwrap_or(self.project.timeline.fps);
+        let source_tc = seconds_to_timecode(self.source_state.current_time, source_fps);
+        let source_dur_tc = seconds_to_timecode(source_dur, source_fps);
+        let source_aspect = source_media
+            .map(|m| (m.width as f32 / m.height.max(1) as f32).max(0.1))
+            .unwrap_or(16.0 / 9.0);
+        let source_label = source_media.map(|m| {
+            format!("{}x{} • {:.0}fps", m.width, m.height, m.fps)
+        });
+
+        let (_s_resp, s_act) = MonitorWidget::new(
+            MonitorMode::Source,
+            source_title,
+            self.source_state.texture.as_ref(),
+            source_media.is_some(),
+            source_aspect,
+            self.source_state.current_time,
+            source_dur,
+            self.source_state.mark_in,
+            self.source_state.mark_out,
+            &source_tc,
+            &source_dur_tc,
+            self.source_state.is_playing,
+            1.0,
+            source_label.as_deref(),
+            false,
+        ).show(source_ui);
+
+        if let Some(act) = s_act {
+            match act {
+                MonitorAction::ImportMedia => self.prompt_import_media(),
+                MonitorAction::TogglePlay => self.source_state.is_playing = !self.source_state.is_playing,
+                MonitorAction::StepFrame(d) => {
+                    self.source_state.is_playing = false;
+                    let new_t = (self.source_state.current_time + (d as f64 / source_fps.max(1.0))).clamp(0.0, source_dur);
+                    self.source_state.current_time = new_t;
+                }
+                MonitorAction::MarkIn => {
+                    self.source_state.mark_in = Some(self.source_state.current_time);
+                    self.status_message = format!("Kaynak Giriş: {:.2}s", self.source_state.current_time);
+                }
+                MonitorAction::MarkOut => {
+                    self.source_state.mark_out = Some(self.source_state.current_time);
+                    self.status_message = format!("Kaynak Çıkış: {:.2}s", self.source_state.current_time);
+                }
+                MonitorAction::GoToIn => {
+                    self.source_state.current_time = self.source_state.mark_in.unwrap_or(0.0);
+                }
+                MonitorAction::GoToOut => {
+                    self.source_state.current_time = self.source_state.mark_out.unwrap_or(source_dur);
+                }
+                MonitorAction::InsertToTimeline => self.insert_source_to_timeline(false),
+                MonitorAction::OverwriteToTimeline => self.insert_source_to_timeline(true),
+                MonitorAction::Seek(t) => {
+                    self.source_state.is_playing = false;
+                    self.source_state.current_time = t.clamp(0.0, source_dur);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn render_program_monitor(&mut self, prog_ui: &mut egui::Ui) {
+        let has_clips = self.project.timeline.tracks.iter().any(|t| !t.clips.is_empty());
+        let prog_dur = self.project.timeline.duration();
+        let prog_fps = self.project.timeline.fps;
+        let prog_tc = seconds_to_timecode(self.current_time, prog_fps);
+        let prog_dur_tc = seconds_to_timecode(prog_dur, prog_fps);
+        let prog_aspect = (self.project.timeline.width as f32 / self.project.timeline.height as f32).max(0.1);
+
+        let top_clip = self.project.timeline.get_top_visible_video_clip_at(self.current_time);
+        let prog_label = top_clip.and_then(|(_, c)| self.project.get_media(&c.media_id)).map(|m| {
+            format!("{}x{} • {:.0}fps", m.width, m.height, m.fps)
+        });
+
+        let (_p_resp, p_act) = MonitorWidget::new(
+            MonitorMode::Program,
+            "Sekans 01",
+            self.monitor_texture.as_ref(),
+            has_clips,
+            prog_aspect,
+            self.current_time,
+            prog_dur,
+            None,
+            None,
+            &prog_tc,
+            &prog_dur_tc,
+            self.is_playing,
+            self.playback_speed,
+            prog_label.as_deref(),
+            self.video_engine.is_decoding_seek,
+        ).show(prog_ui);
+
+        if let Some(act) = p_act {
+            match act {
+                MonitorAction::NewProject => {
+                    self.project = Project::default();
+                    self.undo_stack.clear();
+                    self.target_video_track = self.project.timeline.get_video_tracks().iter().find(|t| t.name == "V1").map(|t| t.id.clone()).unwrap_or_default();
+                    self.target_audio_track = self.project.timeline.get_audio_tracks().iter().find(|t| t.name == "A1").map(|t| t.id.clone()).unwrap_or_default();
+                }
+                MonitorAction::OpenProject => self.open_project_dialog(),
+                MonitorAction::ImportMedia => self.prompt_import_media(),
+                MonitorAction::TogglePlay => self.toggle_play(),
+                MonitorAction::StepFrame(d) => self.step_frame(d),
+                MonitorAction::MarkIn => {
+                    self.status_message = format!("Sekans Giriş: {:.2}s", self.current_time);
+                }
+                MonitorAction::MarkOut => {
+                    self.status_message = format!("Sekans Çıkış: {:.2}s", self.current_time);
+                }
+                MonitorAction::GoToIn => self.seek(0.0),
+                MonitorAction::GoToOut => self.seek(prog_dur),
+                MonitorAction::ExportFrame => self.export_current_frame(),
+                MonitorAction::Seek(t) => self.seek(t),
+                _ => {}
+            }
         }
     }
 }
@@ -368,8 +897,10 @@ impl eframe::App for TrimApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.update_playback_tick();
         self.update_monitor_frame(ctx);
+        self.update_source_monitor_frame(ctx);
+        self.update_media_bin_thumbnails(ctx);
 
-        if self.is_playing || self.video_engine.is_decoding_seek {
+        if self.is_playing || self.source_state.is_playing || self.video_engine.is_decoding_seek {
             ctx.request_repaint();
         }
 
@@ -382,20 +913,28 @@ impl eframe::App for TrimApp {
             }
         });
 
-        // Check periodic autosave (every 2 minutes)
-        if self.last_autosave.elapsed().as_secs() >= 120 {
+        // Autosave check
+        if self.last_autosave.elapsed().as_secs() >= 60 && self.project.is_dirty {
             let _ = self.autosave_mgr.save_snapshot(&self.project);
             self.last_autosave = Instant::now();
         }
 
-        // Check export channel messages
+        // Check background export messages
+        let mut export_finished = false;
         if let Some(rx) = &self.export_rx {
             while let Ok(msg) = rx.try_recv() {
                 match msg {
-                    ExportMessage::Progress(pct) => self.export_dialog.progress = pct,
-                    ExportMessage::Status(s) => self.export_dialog.status_text = s,
+                    ExportMessage::Progress(pct) => {
+                        self.export_dialog.progress = pct;
+                        self.export_dialog.status_text = format!("{:.1}%", pct);
+                    }
+                    ExportMessage::Status(s) => {
+                        self.export_dialog.status_text = s;
+                    }
                     ExportMessage::Finished(res) => {
                         self.export_dialog.is_exporting = false;
+                        self.export_dialog.is_open = false;
+                        export_finished = true;
                         match res {
                             Ok(p) => self.status_message = format!("Dışa aktarma tamamlandı: {}", p),
                             Err(e) => self.status_message = format!("Dışa aktarma hatası: {}", e),
@@ -404,225 +943,434 @@ impl eframe::App for TrimApp {
                 }
             }
         }
+        if export_finished {
+            self.export_rx = None;
+        }
 
         // -------------------------------------------------------------
         // Global Keyboard Shortcuts
         // -------------------------------------------------------------
-        ctx.input(|i| {
-            if i.key_pressed(Key::Space) {
-                self.toggle_play();
-            } else if i.key_pressed(Key::S) && !i.modifiers.ctrl {
-                let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
-                let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
-                split_at_playhead(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
-            } else if i.key_pressed(Key::Q) {
-                let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
-                let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
-                ripple_trim_head(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
-            } else if i.key_pressed(Key::W) {
-                let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
-                let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
-                ripple_trim_tail(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
-            } else if i.key_pressed(Key::M) {
-                self.add_or_toggle_marker();
-            } else if i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace) {
-                if i.modifiers.shift {
-                    if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first().cloned() {
-                        let cmd = Box::new(RippleDeleteCommand::new(tr_id, cl_id));
-                        let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                        self.canvas_state.selected_clip_pairs.clear();
+        if !ctx.wants_keyboard_input() {
+            ctx.input(|i| {
+                if i.key_pressed(Key::Space) {
+                    self.toggle_play();
+                } else if i.key_pressed(Key::Comma) {
+                    self.insert_source_to_timeline(false);
+                } else if i.key_pressed(Key::Period) {
+                    self.insert_source_to_timeline(true);
+                } else if i.key_pressed(Key::I) && !i.modifiers.ctrl {
+                    if self.source_state.media_id.is_some() {
+                        self.source_state.mark_in = Some(self.source_state.current_time);
+                        self.status_message = format!("Kaynak Giriş: {:.2}s", self.source_state.current_time);
                     }
-                } else if !self.canvas_state.selected_clip_pairs.is_empty() {
-                    let cmd = Box::new(RemoveMultipleClipsCommand::new(self.canvas_state.selected_clip_pairs.clone()));
-                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                    self.canvas_state.selected_clip_pairs.clear();
+                } else if i.key_pressed(Key::O) && !i.modifiers.ctrl {
+                    if self.source_state.media_id.is_some() {
+                        self.source_state.mark_out = Some(self.source_state.current_time);
+                        self.status_message = format!("Kaynak Çıkış: {:.2}s", self.source_state.current_time);
+                    }
+                } else if i.key_pressed(Key::V) && !i.modifiers.ctrl {
+                    self.current_edit_tool = EditTool::Select;
+                } else if i.key_pressed(Key::C) && !i.modifiers.ctrl {
+                    self.current_edit_tool = EditTool::Razor;
+                } else if i.key_pressed(Key::B) && !i.modifiers.ctrl {
+                    self.current_edit_tool = EditTool::Ripple;
+                } else if i.key_pressed(Key::A) && !i.modifiers.ctrl {
+                    self.current_edit_tool = EditTool::TrackSelect;
+                } else if i.key_pressed(Key::S) && !i.modifiers.ctrl {
+                    let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
+                    let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
+                    split_at_playhead(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                } else if i.key_pressed(Key::Q) && !i.modifiers.ctrl {
+                    let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
+                    let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
+                    ripple_trim_head(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                } else if i.key_pressed(Key::W) && !i.modifiers.ctrl {
+                    let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
+                    let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
+                    ripple_trim_tail(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                } else if i.key_pressed(Key::M) && !i.modifiers.ctrl {
+                    self.add_or_toggle_marker();
+                } else if i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace) {
+                    if i.modifiers.shift {
+                        if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first().cloned() {
+                            let is_locked = self.project.timeline.get_track_by_id(&tr_id).map(|t| t.locked).unwrap_or(false);
+                            if !is_locked {
+                                let cmd = Box::new(RippleDeleteCommand::new(tr_id, cl_id));
+                                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                self.canvas_state.selected_clip_pairs.clear();
+                            } else {
+                                self.status_message = "Kilitli kanaldaki klip silinemez".to_string();
+                            }
+                        }
+                    } else if !self.canvas_state.selected_clip_pairs.is_empty() {
+                        let unlocked_pairs: Vec<(String, String)> = self.canvas_state.selected_clip_pairs
+                            .iter()
+                            .filter(|(tr_id, _)| !self.project.timeline.get_track_by_id(tr_id).map(|t| t.locked).unwrap_or(false))
+                            .cloned()
+                            .collect();
+                        if !unlocked_pairs.is_empty() {
+                            let cmd = Box::new(RemoveMultipleClipsCommand::new(unlocked_pairs));
+                            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                            self.canvas_state.selected_clip_pairs.clear();
+                        } else {
+                            self.status_message = "Kilitli kanaldaki klipler silinemez".to_string();
+                        }
+                    }
+                } else if i.key_pressed(Key::ArrowLeft) {
+                    if i.modifiers.shift {
+                        self.seek(self.current_time - 1.0);
+                    } else {
+                        self.step_frame(-1);
+                    }
+                } else if i.key_pressed(Key::ArrowRight) {
+                    if i.modifiers.shift {
+                        self.seek(self.current_time + 1.0);
+                    } else {
+                        self.step_frame(1);
+                    }
+                } else if i.key_pressed(Key::ArrowUp) {
+                    let prev_pt = find_prev_edit_point(&self.project.timeline, self.current_time);
+                    self.seek(prev_pt);
+                } else if i.key_pressed(Key::ArrowDown) {
+                    let next_pt = find_next_edit_point(&self.project.timeline, self.current_time);
+                    self.seek(next_pt);
+                } else if i.key_pressed(Key::Home) {
+                    self.seek(0.0);
+                } else if i.key_pressed(Key::End) {
+                    self.seek(self.project.timeline.duration());
+                } else if i.key_pressed(Key::J) && !i.modifiers.ctrl {
+                    self.shuttle_reverse();
+                } else if i.key_pressed(Key::K) && !i.modifiers.ctrl {
+                    self.pause();
+                } else if i.key_pressed(Key::L) && !i.modifiers.ctrl {
+                    self.shuttle_forward();
+                } else if (i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(Key::Z)) || (i.modifiers.ctrl && i.key_pressed(Key::Y)) {
+                    let _ = self.undo_stack.redo(&mut self.project.timeline);
+                    self.canvas_state.selected_clip_pairs.retain(|(tr_id, cl_id)| {
+                        self.project.timeline.get_track_by_id(tr_id).and_then(|t| t.get_clip_by_id(cl_id)).is_some()
+                    });
+                    self.project.mark_dirty();
+                } else if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(Key::Z) {
+                    let _ = self.undo_stack.undo(&mut self.project.timeline);
+                    self.canvas_state.selected_clip_pairs.retain(|(tr_id, cl_id)| {
+                        self.project.timeline.get_track_by_id(tr_id).and_then(|t| t.get_clip_by_id(cl_id)).is_some()
+                    });
+                    self.project.mark_dirty();
+                } else if i.key_pressed(Key::F1) {
+                    self.shortcuts_dialog.toggle();
+                } else if i.modifiers.ctrl && i.key_pressed(Key::S) {
+                    self.save_project_dialog();
+                } else if i.modifiers.ctrl && i.key_pressed(Key::O) {
+                    self.open_project_dialog();
+                } else if i.modifiers.ctrl && i.key_pressed(Key::N) {
+                    self.welcome_dialog.open();
+                } else if i.modifiers.ctrl && i.key_pressed(Key::I) {
+                    self.prompt_import_media();
+                } else if i.modifiers.ctrl && (i.key_pressed(Key::E) || i.key_pressed(Key::M)) {
+                    self.export_dialog.open(&self.project);
+                } else if i.modifiers.ctrl && i.key_pressed(Key::T) {
+                    self.title_dialog.open();
                 }
-            } else if i.key_pressed(Key::ArrowLeft) {
-                if i.modifiers.shift {
-                    self.seek(self.current_time - 1.0);
-                } else {
-                    self.step_frame(-1);
-                }
-            } else if i.key_pressed(Key::ArrowRight) {
-                if i.modifiers.shift {
-                    self.seek(self.current_time + 1.0);
-                } else {
-                    self.step_frame(1);
-                }
-            } else if i.key_pressed(Key::ArrowUp) {
-                let prev_pt = find_prev_edit_point(&self.project.timeline, self.current_time);
-                self.seek(prev_pt);
-            } else if i.key_pressed(Key::ArrowDown) {
-                let next_pt = find_next_edit_point(&self.project.timeline, self.current_time);
-                self.seek(next_pt);
-            } else if i.key_pressed(Key::Home) {
-                self.seek(0.0);
-            } else if i.key_pressed(Key::End) {
-                self.seek(self.project.timeline.duration());
-            } else if i.key_pressed(Key::J) {
-                self.shuttle_reverse();
-            } else if i.key_pressed(Key::K) {
-                self.pause();
-            } else if i.key_pressed(Key::L) {
-                self.shuttle_forward();
-            } else if i.modifiers.ctrl && i.key_pressed(Key::Z) {
-                let _ = self.undo_stack.undo(&mut self.project.timeline);
-            } else if (i.modifiers.ctrl && i.key_pressed(Key::Y)) || (i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(Key::Z)) {
-                let _ = self.undo_stack.redo(&mut self.project.timeline);
-            } else if i.modifiers.ctrl && i.key_pressed(Key::S) {
-                self.save_project_dialog();
-            } else if i.modifiers.ctrl && i.key_pressed(Key::O) {
-                self.open_project_dialog();
-            } else if i.modifiers.ctrl && i.key_pressed(Key::E) {
-                self.export_dialog.is_open = true;
-            } else if i.modifiers.ctrl && i.key_pressed(Key::T) {
-                self.title_dialog.open();
-            }
-        });
+            });
+        }
 
         // -------------------------------------------------------------
-        // Top Menu Bar & Main Toolbar
+        // Top Header: Premiere Pro Navigation Bar & Window Controls
         // -------------------------------------------------------------
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+        egui::TopBottomPanel::top("top_header").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+
+                // triM. Logo Branding
+                ui.label(RichText::new("triM.").size(15.0).strong().color(Color32::from_rgb(0xe0, 0x7a, 0x38)));
+                ui.add_space(4.0);
+
+                // Dosya
                 ui.menu_button("Dosya", |ui| {
-                    if ui.button("Yeni Proje (Ctrl+N)").clicked() {
-                        self.project = Project::default();
-                        self.undo_stack.clear();
-                        self.current_time = 0.0;
+                    if ui.button("Başlangıç Ekranı...").clicked() {
+                        self.welcome_dialog.open();
                         ui.close_menu();
                     }
-                    if ui.button("Proje Aç (Ctrl+O)").clicked() {
+                    if ui.button("Yeni Boş Proje (Ctrl+N)").clicked() {
+                        self.reset_to_new_project();
+                        ui.close_menu();
+                    }
+                    if ui.button("Proje Aç... (Ctrl+O)").clicked() {
                         self.open_project_dialog();
                         ui.close_menu();
                     }
+                    ui.separator();
                     if ui.button("Kaydet (Ctrl+S)").clicked() {
                         self.save_project_dialog();
                         ui.close_menu();
                     }
+                    if ui.button("Farklı Kaydet...").clicked() {
+                        self.save_project_as_dialog();
+                        ui.close_menu();
+                    }
                     ui.separator();
-                    if ui.button("Medya İçe Aktar...").clicked() {
+                    if ui.button("Medya İçe Aktar... (Ctrl+I)").clicked() {
                         self.prompt_import_media();
                         ui.close_menu();
                     }
-                    if ui.button("Başlık / Metin Ekle (Ctrl+T)").clicked() {
-                        self.title_dialog.open();
-                        ui.close_menu();
-                    }
-                    if ui.button("Videoyu Dışa Aktar (Ctrl+E)").clicked() {
-                        self.export_dialog.is_open = true;
-                        ui.close_menu();
-                    }
-                });
-
-                ui.menu_button("Düzen", |ui| {
-                    if ui.button("Geri Al (Ctrl+Z)").clicked() {
-                        let _ = self.undo_stack.undo(&mut self.project.timeline);
-                        ui.close_menu();
-                    }
-                    if ui.button("Yinele (Ctrl+Y)").clicked() {
-                        let _ = self.undo_stack.redo(&mut self.project.timeline);
+                    if ui.button("Dışa Aktarma Stüdyosu... (Ctrl+M)").clicked() {
+                        self.export_dialog.open(&self.project);
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button("Oynatma Çizgisinden Kes / Böl (S)").clicked() {
-                        let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
-                        let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
-                        split_at_playhead(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                    if ui.button("Çıkış").clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                });
+
+                // Düzen
+                ui.menu_button("Düzen", |ui| {
+                    let can_undo = self.undo_stack.can_undo();
+                    if ui.add_enabled(can_undo, Button::new("Geri Al (Ctrl+Z)")).clicked() {
+                        let _ = self.undo_stack.undo(&mut self.project.timeline);
+                        self.canvas_state.selected_clip_pairs.retain(|(tr_id, cl_id)| {
+                            self.project.timeline.get_track_by_id(tr_id).and_then(|t| t.get_clip_by_id(cl_id)).is_some()
+                        });
+                        self.project.mark_dirty();
                         ui.close_menu();
                     }
-                    if ui.button("Başı Çizgiye Kırp ve Kaydır (Q)").clicked() {
-                        let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
-                        let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
-                        ripple_trim_head(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                    let can_redo = self.undo_stack.can_redo();
+                    if ui.add_enabled(can_redo, Button::new("Yinele (Ctrl+Y)")).clicked() {
+                        let _ = self.undo_stack.redo(&mut self.project.timeline);
+                        self.canvas_state.selected_clip_pairs.retain(|(tr_id, cl_id)| {
+                            self.project.timeline.get_track_by_id(tr_id).and_then(|t| t.get_clip_by_id(cl_id)).is_some()
+                        });
+                        self.project.mark_dirty();
                         ui.close_menu();
                     }
-                    if ui.button("Sonu Çizgiye Kırp ve Kaydır (W)").clicked() {
-                        let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
-                        let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
-                        ripple_trim_tail(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                    ui.separator();
+                    if ui.button("Seçilenleri Sil (Delete)").clicked() {
+                        self.delete_selected_clips();
+                        ui.close_menu();
+                    }
+                    if ui.button("Dalgalı Sil (Shift+Delete)").clicked() {
+                        self.ripple_delete_selected_clips();
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("Tüm Klipleri Seç (Ctrl+A)").clicked() {
+                        self.select_all_clips();
+                        ui.close_menu();
+                    }
+                    if ui.button("Seçimi Kaldır (Ctrl+D)").clicked() {
+                        self.canvas_state.selected_clip_pairs.clear();
                         ui.close_menu();
                     }
                 });
 
+                // Sekans
+                ui.menu_button("Sekans", |ui| {
+                    if ui.button("Oynatma Çizgisinde Kes (S / Ctrl+K)").clicked() {
+                        self.split_at_playhead_command();
+                        ui.close_menu();
+                    }
+                    if ui.button("İşaretçi (Marker) Ekle / Kaldır (M)").clicked() {
+                        self.add_marker_at_playhead();
+                        ui.close_menu();
+                    }
+                    if ui.button(format!("Manyetik Yapışma: {}", if self.snap_enabled { "Açık" } else { "Kapalı" })).clicked() {
+                        self.snap_enabled = !self.snap_enabled;
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("Başa Git (Home)").clicked() {
+                        self.seek(0.0);
+                        ui.close_menu();
+                    }
+                    if ui.button("Sona Git (End)").clicked() {
+                        let dur = self.project.timeline.duration();
+                        self.seek(dur);
+                        ui.close_menu();
+                    }
+                });
+
+                // Kanallar
+                ui.menu_button("Kanallar", |ui| {
+                    if ui.button("Video Kanalı Ekle (+ Video)").clicked() {
+                        self.add_video_track();
+                        ui.close_menu();
+                    }
+                    if ui.button("Ses Kanalı Ekle (+ Ses)").clicked() {
+                        self.add_audio_track();
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("Tüm Kanal Yüksekliklerini Sıfırla (56px)").clicked() {
+                        self.canvas_state.track_heights.clear();
+                        ui.close_menu();
+                    }
+                });
+
+                // Pencere
+                ui.menu_button("Pencere", |ui| {
+                    if ui.checkbox(&mut self.show_source_monitor, "Kaynak Monitörü (İkili Görünüm)").clicked() {
+                        ui.close_menu();
+                    }
+                    if ui.button("Çok Kanallı Ses Mikseri").clicked() {
+                        self.audio_mixer_dialog.toggle();
+                        ui.close_menu();
+                    }
+                    if ui.button("Metin / Başlık Editörü").clicked() {
+                        self.title_dialog.open();
+                        ui.close_menu();
+                    }
+                    if ui.button("Dışa Aktarma Stüdyosu").clicked() {
+                        self.export_dialog.open(&self.project);
+                        ui.close_menu();
+                    }
+                });
+
+                // Yardım
                 ui.menu_button("Yardım", |ui| {
+                    if ui.button("Klavye Kısayolları (F1)").clicked() {
+                        self.shortcuts_dialog.open();
+                        ui.close_menu();
+                    }
+                    ui.separator();
                     if ui.button("triM. Hakkında").clicked() {
                         self.show_about_dialog = true;
                         ui.close_menu();
                     }
                 });
-            });
 
-            ui.separator();
+                // Right Side Controls: Quick Export + Mixer + Monitor view + Title
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let quick_exp_btn = Button::new(RichText::new("Dışa Aktar").color(Color32::WHITE).size(11.5).strong())
+                        .fill(Color32::from_rgb(0x28, 0x5a, 0x9e));
+                    if ui.add(quick_exp_btn).on_hover_text("Dışa Aktarma Stüdyosu (Ctrl+M)").clicked() {
+                        self.export_dialog.open(&self.project);
+                    }
 
-            // Toolbar buttons
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
+                    let mixer_btn = Button::new(RichText::new("Mikser").size(11.0))
+                        .fill(if self.audio_mixer_dialog.is_open { Color32::from_rgb(0x2a, 0x54, 0x3d) } else { Color32::from_rgb(0x22, 0x22, 0x2c) });
+                    if ui.add(mixer_btn).on_hover_text("Çok Kanallı Ses Mikserini Aç/Kapat").clicked() {
+                        self.audio_mixer_dialog.toggle();
+                    }
 
-                if ui.button("Yeni Proje").clicked() {
-                    self.project = Project::default();
-                    self.undo_stack.clear();
-                }
-                if ui.button("Proje Aç").clicked() {
-                    self.open_project_dialog();
-                }
-                if ui.button("Kaydet").clicked() {
-                    self.save_project_dialog();
-                }
-                ui.separator();
-                if ui.button("+ Medya Ekle").clicked() {
-                    self.prompt_import_media();
-                }
-                if ui.button("Başlık / Metin").clicked() {
-                    self.title_dialog.open();
-                }
-                ui.separator();
-                if ui.button("Geri Al").clicked() {
-                    let _ = self.undo_stack.undo(&mut self.project.timeline);
-                }
-                if ui.button("Yinele").clicked() {
-                    let _ = self.undo_stack.redo(&mut self.project.timeline);
-                }
-                ui.separator();
-                let exp_btn = egui::Button::new(RichText::new("Videoyu Dışa Aktar").color(Color32::WHITE).strong())
-                    .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
-                if ui.add(exp_btn).clicked() {
-                    self.export_dialog.is_open = true;
-                }
+                    let mon_label = if self.show_source_monitor { "Tek Monitör" } else { "İkili Monitör" };
+                    let mon_btn = Button::new(RichText::new(mon_label).size(11.0))
+                        .fill(if self.show_source_monitor { Color32::from_rgb(0x2a, 0x3d, 0x54) } else { Color32::from_rgb(0x22, 0x22, 0x2c) });
+                    if ui.add(mon_btn).on_hover_text("Monitör Görünümünü Değiştir (İkili Monitör / Tek Sekans Monitörü)").clicked() {
+                        self.show_source_monitor = !self.show_source_monitor;
+                    }
+
+                    let dirty_str = if self.project.is_dirty { " *" } else { "" };
+                    let title_text = format!("{} - triM Proje{}", self.project.settings.name, dirty_str);
+                    ui.label(RichText::new(title_text).size(11.5).color(Color32::from_rgb(0x90, 0x90, 0xa4)));
+                });
             });
         });
 
+        // -------------------------------------------------------------
         // Bottom Status Bar
+        // -------------------------------------------------------------
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 let dirty = if self.project.is_dirty { " *" } else { "" };
                 ui.label(RichText::new(format!(
-                    "Proje: {}{} | {}x{} @ {:.0}fps | {}",
+                    "Proje: {}{} | Sekans: {}x{} @ {:.0}fps | {}",
                     self.project.settings.name,
                     dirty,
                     self.project.timeline.width,
                     self.project.timeline.height,
                     self.project.timeline.fps,
                     self.status_message
-                )).size(11.0).color(Color32::from_rgb(0x90, 0x90, 0xa0)));
+                )).size(10.5).color(Color32::from_rgb(0x85, 0x85, 0x95)));
             });
         });
 
-        // Bottom Timeline Panel
+        // -------------------------------------------------------------
+        // BOTTOM TIMELINE PANEL: Guaranteed permanently anchored at the bottom
+        // -------------------------------------------------------------
         egui::TopBottomPanel::bottom("timeline_panel")
             .resizable(true)
-            .min_height(140.0)
-            .default_height(220.0)
+            .min_height(200.0)
+            .default_height(340.0)
+            .max_height(600.0)
             .show(ctx, |ui| {
+                // Sequence Timeline Header Bar
                 ui.horizontal(|ui| {
-                    // Pinned Left Track Headers column (Fixed width 120px)
-                    ui.allocate_ui(egui::vec2(120.0, ui.available_height()), |ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+
+                    let seq_tab_btn = Button::new(RichText::new("Sekans 01").size(12.0).strong().color(Color32::WHITE))
+                        .fill(Color32::from_rgb(0x24, 0x24, 0x2e))
+                        .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x38, 0x7a, 0xe0)));
+                    let _ = ui.add(seq_tab_btn);
+
+                    ui.add_space(8.0);
+                    let current_tc = seconds_to_timecode(self.current_time, self.project.timeline.fps);
+                    ui.label(
+                        RichText::new(&current_tc)
+                            .monospace()
+                            .size(15.0)
+                            .color(Color32::from_rgb(0x38, 0xa0, 0xf0))
+                            .strong(),
+                    );
+
+                    ui.add_space(10.0);
+                    let snap_btn = Button::new(
+                        RichText::new(if self.snap_enabled { "[Mıknatıs: Açık]" } else { "[Mıknatıs: Kapalı]" })
+                            .size(11.0)
+                            .color(if self.snap_enabled { Color32::from_rgb(0x50, 0xd0, 0x70) } else { Color32::from_rgb(0x70, 0x70, 0x80) })
+                    )
+                    .fill(if self.snap_enabled { Color32::from_rgb(0x1a, 0x2e, 0x20) } else { Color32::from_rgb(0x20, 0x20, 0x26) });
+                    if ui.add(snap_btn).on_hover_text("Mıknatıs / Hizalama (Snapping)").clicked() {
+                        self.snap_enabled = !self.snap_enabled;
+                    }
+
+                    if ui.button(RichText::new("[İşaretçi]").size(11.0)).on_hover_text("İşaretçi Ekle / Sil (M)").clicked() {
+                        self.add_or_toggle_marker();
+                    }
+
+                    if ui.button(RichText::new("[+ Video]").size(11.0)).on_hover_text("Yeni Video Kanalı Ekle (Üste)").clicked() {
+                        self.add_video_track();
+                    }
+
+                    if ui.button(RichText::new("[+ Ses]").size(11.0)).on_hover_text("Yeni Ses Kanalı Ekle (Alta)").clicked() {
+                        self.add_audio_track();
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(8.0);
+                        ui.add_sized(
+                            [70.0, 18.0],
+                            egui::Slider::new(&mut self.canvas_state.pixels_per_second, 15.0..=300.0).show_value(false),
+                        );
+                        ui.label(RichText::new("Zoom:").size(11.0).color(Color32::from_rgb(0x80, 0x80, 0x90)));
+                    });
+                });
+
+                ui.add_space(2.0);
+                ui.separator();
+
+                // Main Timeline Row: [Toolbar] [Track Headers] [Canvas + Ruler] [Master VU Meter]
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::ZERO;
+
+                    // 1. Vertical Toolbar (Fixed width 34px)
+                    ui.allocate_ui(Vec2::new(34.0, ui.available_height()), |ui| {
+                        render_vertical_toolbar(ui, &mut self.current_edit_tool);
+                    });
+
+                    ui.add_space(2.0);
+                    ui.separator();
+
+                    // 2. Pinned Track Headers (Left, Fixed width 125px)
+                    let header_w = 125.0;
+                    ui.allocate_ui(Vec2::new(header_w, ui.available_height()), |ui| {
+                        ui.spacing_mut().item_spacing = Vec2::ZERO;
                         ui.vertical(|ui| {
-                            // Top corner header aligned with time ruler (height 26px)
-                            let (corner_rect, _) = ui.allocate_exact_size(egui::vec2(120.0, 26.0), egui::Sense::hover());
-                            ui.painter().rect_filled(corner_rect, 0.0, Color32::from_rgb(0x18, 0x18, 0x1c));
-                            ui.painter().rect_stroke(corner_rect, 0.0, Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x30)));
-                            ui.painter().text(
+                            ui.spacing_mut().item_spacing = Vec2::ZERO;
+                            let (corner_rect, _) = ui.allocate_exact_size(Vec2::new(header_w, 26.0), egui::Sense::hover());
+                            let cp = ui.painter_at(corner_rect);
+                            cp.rect_filled(corner_rect, 0.0, Color32::from_rgb(0x18, 0x18, 0x1c));
+                            cp.rect_stroke(corner_rect, 0.0, Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x30)));
+                            cp.text(
                                 corner_rect.center(),
                                 egui::Align2::CENTER_CENTER,
                                 "KANALLAR",
@@ -630,12 +1378,11 @@ impl eframe::App for TrimApp {
                                 Color32::from_rgb(0x90, 0x90, 0xa0),
                             );
 
-                            ui.add_space(10.0);
-
-                            // Left Track Headers column
                             let mut pending_header_actions = Vec::new();
                             for track in &self.project.timeline.tracks {
-                                let (_, hdr_act) = render_track_header(ui, track, self.canvas_state.track_height);
+                                let is_patch = self.target_video_track == track.id || self.target_audio_track == track.id;
+                                let tr_h = self.canvas_state.get_track_height(&track.id);
+                                let (_, hdr_act) = render_track_header(ui, track, tr_h, is_patch);
                                 if let Some(act) = hdr_act {
                                     pending_header_actions.push((track.id.clone(), act));
                                 }
@@ -643,160 +1390,380 @@ impl eframe::App for TrimApp {
                             }
 
                             for (t_id, act) in pending_header_actions {
-                                if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
-                                    match act {
-                                        TrackHeaderAction::ToggleMute => t.muted = !t.muted,
-                                        TrackHeaderAction::ToggleSolo => t.solo = !t.solo,
-                                        TrackHeaderAction::VolumeChanged(vol) => t.volume = vol,
-                                    }
-                                }
-                            }
-                        });
-                    });
-
-                    // Right Area: Synchronized horizontal scroll for Time Ruler + Timeline Canvas
-                    ScrollArea::horizontal().show(ui, |ui| {
-                        ui.vertical(|ui| {
-                            // 1. Time Ruler
-                            let markers = self.project.timeline.markers.clone();
-                            let (_ruler_resp, ruler_act) = render_time_ruler(
-                                ui,
-                                self.canvas_state.pixels_per_second,
-                                0.0,
-                                self.project.timeline.duration(),
-                                self.project.timeline.fps,
-                                self.current_time,
-                                &markers,
-                            );
-
-                            if let Some(act) = ruler_act {
                                 match act {
-                                    RulerAction::Seek(t) => self.seek(t),
-                                    RulerAction::MarkerClicked(m_id) => {
-                                        if let Some(m) = self.project.timeline.markers.iter().find(|m| m.id == m_id) {
-                                            self.seek(m.time);
+                                    TrackHeaderAction::ToggleMute => {
+                                        if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
+                                            t.muted = !t.muted;
                                         }
                                     }
-                                }
-                            }
-
-                            // 2. Timeline Canvas
-                            let (_canvas_resp, canvas_act) = render_timeline_canvas(
-                                ui,
-                                &mut self.project,
-                                &mut self.canvas_state,
-                                self.current_time,
-                                &self.waveform_gen,
-                            );
-
-                            if let Some(act) = canvas_act {
-                                match act {
-                                    CanvasAction::Seek(t) => self.seek(t),
-                                    CanvasAction::SelectClip(tr_id, cl_id) => {
-                                        self.canvas_state.selected_clip_pairs = vec![(tr_id, cl_id)];
+                                    TrackHeaderAction::ToggleSolo => {
+                                        if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
+                                            t.solo = !t.solo;
+                                        }
                                     }
-                                    CanvasAction::ClearSelection => {
-                                        self.canvas_state.selected_clip_pairs.clear();
+                                    TrackHeaderAction::ToggleLock => {
+                                        if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
+                                            t.locked = !t.locked;
+                                        }
                                     }
-                                    CanvasAction::ClipMoved { track_id, clip_id, old_in, new_in } => {
-                                        let cmd = Box::new(MoveClipCommand::new(track_id, clip_id, old_in, new_in));
-                                        let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                                        self.project.mark_dirty();
-                                    }
-                                    CanvasAction::BatchClipsMoved(moves) => {
-                                        let cmd = Box::new(MoveMultipleClipsCommand::new(moves));
-                                        let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                                        self.project.mark_dirty();
-                                    }
-                                    CanvasAction::ClipTrimmed { track_id, clip_id, old_bounds, new_bounds } => {
-                                        let cmd = Box::new(TrimClipCommand::new(track_id, clip_id, old_bounds, new_bounds));
-                                        let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                                        self.project.mark_dirty();
-                                    }
-                                    CanvasAction::ClipModified => {
-                                        self.project.mark_dirty();
-                                    }
-                                    CanvasAction::PromptSpeed(tr_id, cl_id) => {
-                                        if let Some(tr) = self.project.timeline.get_track_by_id(&tr_id) {
-                                            if let Some(cl) = tr.get_clip_by_id(&cl_id) {
-                                                self.speed_dialog.open(tr_id, cl_id, cl.speed, cl.reverse, cl.duration());
+                                    TrackHeaderAction::TogglePatchTarget => {
+                                        if let Some(t) = self.project.timeline.get_track_by_id(&t_id) {
+                                            if t.track_type == trim_core::track::TrackType::Video {
+                                                self.target_video_track = t_id.clone();
+                                            } else {
+                                                self.target_audio_track = t_id.clone();
                                             }
                                         }
                                     }
-                                    CanvasAction::DetachAudio(tr_id, cl_id) => {
-                                        let cmd = Box::new(DetachAudioCommand::new(tr_id, cl_id));
-                                        let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                                        self.project.mark_dirty();
-                                    }
-                                    CanvasAction::SplitAtPlayhead => {
-                                        let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
-                                        let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
-                                        split_at_playhead(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
-                                    }
-                                    CanvasAction::DeleteSelected => {
-                                        if !self.canvas_state.selected_clip_pairs.is_empty() {
-                                            let cmd = Box::new(RemoveMultipleClipsCommand::new(self.canvas_state.selected_clip_pairs.clone()));
-                                            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                                            self.canvas_state.selected_clip_pairs.clear();
-                                            self.project.mark_dirty();
+                                    TrackHeaderAction::VolumeChanged(vol) => {
+                                        if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
+                                            t.volume = vol;
                                         }
                                     }
-                                    CanvasAction::RippleDeleteSelected => {
-                                        if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first().cloned() {
-                                            let cmd = Box::new(RippleDeleteCommand::new(tr_id, cl_id));
-                                            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                                            self.canvas_state.selected_clip_pairs.clear();
-                                            self.project.mark_dirty();
-                                        }
+                                    TrackHeaderAction::ResizeTrack(new_h) => {
+                                        self.canvas_state.set_track_height(&t_id, new_h);
                                     }
-                                    CanvasAction::MediaDropped { media_id, track_id, time } => {
-                                        if let Some(media) = self.project.get_media(&media_id) {
-                                            let clip_dur = if media.media_type == MediaType::Image {
-                                                5.0
-                                            } else {
-                                                media.duration.max(0.1)
-                                            };
-                                            let mut clip = Clip::new(media_id, time, time + clip_dur);
-                                            clip.name = media.name.clone();
-                                            let cmd = Box::new(AddClipCommand::new(track_id, clip));
-                                            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                                            self.project.mark_dirty();
+                                    TrackHeaderAction::DeleteTrack => {
+                                        let cmd = Box::new(RemoveTrackCommand::new(t_id.clone()));
+                                        match self.undo_stack.push(cmd, &mut self.project.timeline) {
+                                            Ok(_) => {
+                                                self.canvas_state.selected_clip_pairs.retain(|(tr_id, _)| tr_id != &t_id);
+                                                self.status_message = "Kanal silindi".to_string();
+                                                self.project.mark_dirty();
+                                            }
+                                            Err(e) => {
+                                                self.status_message = format!("Kanal silinemedi: {}", e);
+                                            }
                                         }
                                     }
                                 }
                             }
                         });
                     });
+
+                    // 3. Scrollable Timeline Canvas
+                    let vu_w = 46.0;
+                    let avail_canvas_w = (ui.available_width() - vu_w).max(100.0);
+                    ui.allocate_ui(Vec2::new(avail_canvas_w, ui.available_height()), |ui| {
+                        ScrollArea::horizontal().show(ui, |ui| {
+                            ui.spacing_mut().item_spacing = Vec2::ZERO;
+                            ui.vertical(|ui| {
+                                ui.spacing_mut().item_spacing = Vec2::ZERO;
+                                let markers = self.project.timeline.markers.clone();
+                                let (_ruler_resp, ruler_act) = render_time_ruler(
+                                    ui,
+                                    self.canvas_state.pixels_per_second,
+                                    0.0,
+                                    self.project.timeline.duration(),
+                                    self.project.timeline.fps,
+                                    self.current_time,
+                                    &markers,
+                                );
+
+                                if let Some(act) = ruler_act {
+                                    match act {
+                                        RulerAction::Seek(t) => self.seek(t),
+                                        RulerAction::MarkerClicked(m_id) => {
+                                            if let Some(m) = self.project.timeline.markers.iter().find(|m| m.id == m_id) {
+                                                self.seek(m.time);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                self.canvas_state.active_tool = self.current_edit_tool;
+                                let (_canvas_resp, canvas_act) = render_timeline_canvas(
+                                    ui,
+                                    &mut self.project,
+                                    &mut self.canvas_state,
+                                    self.current_time,
+                                    &self.waveform_gen,
+                                );
+
+                                if let Some(act) = canvas_act {
+                                    match act {
+                                        CanvasAction::Seek(t) => self.seek(t),
+                                        CanvasAction::SelectClip(tr_id, cl_id) => {
+                                            self.canvas_state.selected_clip_pairs = vec![(tr_id, cl_id)];
+                                        }
+                                        CanvasAction::ClearSelection => {
+                                            self.canvas_state.selected_clip_pairs.clear();
+                                        }
+                                        CanvasAction::ClipMoved { old_track_id, new_track_id, clip_id, old_in, new_in } => {
+                                            let cmd = Box::new(MoveClipCommand::new(old_track_id, new_track_id.clone(), clip_id.clone(), old_in, new_in));
+                                            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                            self.canvas_state.selected_clip_pairs = vec![(new_track_id, clip_id)];
+                                            self.project.mark_dirty();
+                                        }
+                                        CanvasAction::BatchClipsMoved(moves) => {
+                                            let cmd = Box::new(MoveMultipleClipsCommand::new(moves));
+                                            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                            self.project.mark_dirty();
+                                        }
+                                        CanvasAction::ClipTrimmed { track_id, clip_id, old_bounds, new_bounds } => {
+                                            let cmd = Box::new(TrimClipCommand::new(track_id, clip_id, old_bounds, new_bounds));
+                                            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                            self.project.mark_dirty();
+                                        }
+                                        CanvasAction::ClipModified => {
+                                            self.project.mark_dirty();
+                                        }
+                                        CanvasAction::PromptSpeed(tr_id, cl_id) => {
+                                            if let Some(tr) = self.project.timeline.get_track_by_id(&tr_id) {
+                                                if let Some(cl) = tr.get_clip_by_id(&cl_id) {
+                                                    self.speed_dialog.open(tr_id, cl_id, cl.speed, cl.reverse, cl.duration());
+                                                }
+                                            }
+                                        }
+                                        CanvasAction::DetachAudio(tr_id, cl_id) => {
+                                            let cmd = Box::new(DetachAudioCommand::new(tr_id, cl_id));
+                                            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                            self.project.mark_dirty();
+                                        }
+                                        CanvasAction::SplitAtPlayhead => {
+                                            let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
+                                            let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
+                                            split_at_playhead(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                                        }
+                                        CanvasAction::RazorCut { track_id, clip_id, cut_time } => {
+                                            let cmd = Box::new(SplitClipCommand::new(track_id, clip_id, cut_time));
+                                            match self.undo_stack.push(cmd, &mut self.project.timeline) {
+                                                Ok(()) => {
+                                                    self.status_message = format!("Klip {:.2}. saniyede kesildi", cut_time);
+                                                    self.project.mark_dirty();
+                                                }
+                                                Err(e) => {
+                                                    self.status_message = format!("Kesme hatası: {}", e);
+                                                }
+                                            }
+                                        }
+                                        CanvasAction::CreateTitleAtTime(t) => {
+                                            self.seek(t);
+                                            self.title_dialog.open();
+                                        }
+                                        CanvasAction::Pan(_) => {}
+                                        CanvasAction::DeleteSelected => {
+                                            let unlocked_pairs: Vec<(String, String)> = self.canvas_state.selected_clip_pairs
+                                                .iter()
+                                                .filter(|(tr_id, _)| !self.project.timeline.get_track_by_id(tr_id).map(|t| t.locked).unwrap_or(false))
+                                                .cloned()
+                                                .collect();
+                                            if !unlocked_pairs.is_empty() {
+                                                let cmd = Box::new(RemoveMultipleClipsCommand::new(unlocked_pairs));
+                                                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                                self.canvas_state.selected_clip_pairs.clear();
+                                                self.project.mark_dirty();
+                                            } else if !self.canvas_state.selected_clip_pairs.is_empty() {
+                                                self.status_message = "Kilitli kanaldaki klipler silinemez".to_string();
+                                            }
+                                        }
+                                        CanvasAction::RippleDeleteSelected => {
+                                            if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first().cloned() {
+                                                let is_locked = self.project.timeline.get_track_by_id(&tr_id).map(|t| t.locked).unwrap_or(false);
+                                                if !is_locked {
+                                                    let cmd = Box::new(RippleDeleteCommand::new(tr_id, cl_id));
+                                                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                                    self.canvas_state.selected_clip_pairs.clear();
+                                                    self.project.mark_dirty();
+                                                } else {
+                                                    self.status_message = "Kilitli kanaldaki klip silinemez".to_string();
+                                                }
+                                            }
+                                        }
+                                        CanvasAction::MediaDropped { media_id, track_id, time } => {
+                                            if let Some(media) = self.project.get_media(&media_id) {
+                                                let clip_dur = if media.media_type == MediaType::Image {
+                                                    5.0
+                                                } else {
+                                                    media.duration.max(0.1)
+                                                };
+                                                let media_fps = media.fps;
+                                                let media_w = media.width;
+                                                let media_h = media.height;
+                                                let media_name = media.name.clone();
+
+                                                if self.project.timeline.tracks.iter().all(|t| t.clips.is_empty()) {
+                                                    if media_fps > 1.0 {
+                                                        self.project.timeline.fps = media_fps;
+                                                    }
+                                                    if media_w > 0 && media_h > 0 {
+                                                        self.project.timeline.width = media_w;
+                                                        self.project.timeline.height = media_h;
+                                                    }
+                                                }
+                                                let mut clip = Clip::new(media_id, time, time + clip_dur);
+                                                clip.name = media_name;
+                                                let cmd = Box::new(AddClipCommand::new(track_id, clip));
+                                                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                                self.project.mark_dirty();
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        });
+                    });
+
+                    // 4. Master VU Meter (Far Right)
+                    ui.allocate_ui(Vec2::new(vu_w, ui.available_height()), |ui| {
+                        ui.add(VuMeterWidget::new(&mut self.vu_state));
+                    });
                 });
             });
 
-        // Central Panels (Left: Media Bin, Center: Monitor, Right: Inspector)
-        egui::SidePanel::left("left_bin_panel")
+        // -------------------------------------------------------------
+        // UPPER WORKSPACE:
+        // Left: Media Bin / Inspector Panel (Resizable SidePanel)
+        // Center: Video Monitors (Source / Program Monitor)
+        // -------------------------------------------------------------
+        egui::SidePanel::left("media_bin_panel")
             .resizable(true)
-            .default_width(260.0)
+            .min_width(240.0)
+            .default_width(320.0)
+            .max_width(480.0)
             .show(ctx, |ui| {
-                if let Some(act) = render_media_bin(ui, &self.project, &mut self.selected_media_id) {
-                    match act {
-                        MediaBinAction::ImportRequested => self.prompt_import_media(),
-                        MediaBinAction::AddToTimeline(m_id) => {
-                            if let Some(media) = self.project.get_media(&m_id) {
-                                let clip_dur = if media.media_type == MediaType::Image {
-                                    5.0
-                                } else {
-                                    media.duration.max(0.1)
-                                };
-                                let target_track = if media.media_type == MediaType::Audio {
-                                    self.project.timeline.get_audio_tracks().first().map(|t| t.id.clone())
-                                } else {
-                                    self.project.timeline.get_video_tracks().first().map(|t| t.id.clone())
-                                };
+                // Header Tabs: Proje | Efektler
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    let is_proj = self.active_left_tab == LeftPanelTab::Project;
+                    let is_eff = self.active_left_tab == LeftPanelTab::Effects;
 
-                                if let Some(track_id) = target_track {
-                                    let mut clip = Clip::new(m_id, self.current_time, self.current_time + clip_dur);
-                                    clip.name = media.name.clone();
-                                    let cmd = Box::new(AddClipCommand::new(track_id, clip));
-                                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                    let proj_btn = Button::new(RichText::new("Proje").size(11.5).strong().color(if is_proj { Color32::WHITE } else { Color32::from_rgb(0x80, 0x80, 0x90) }))
+                        .fill(if is_proj { Color32::from_rgb(0x28, 0x5a, 0x9e) } else { Color32::from_rgb(0x1a, 0x1a, 0x22) })
+                        .stroke(Stroke::new(1.0_f32, if is_proj { Color32::from_rgb(0x4a, 0x8a, 0xe8) } else { Color32::from_rgb(0x2c, 0x2c, 0x38) }));
+                    if ui.add(proj_btn).clicked() {
+                        self.active_left_tab = LeftPanelTab::Project;
+                    }
+
+                    let eff_btn = Button::new(RichText::new("Efektler").size(11.5).strong().color(if is_eff { Color32::WHITE } else { Color32::from_rgb(0x80, 0x80, 0x90) }))
+                        .fill(if is_eff { Color32::from_rgb(0x28, 0x5a, 0x9e) } else { Color32::from_rgb(0x1a, 0x1a, 0x22) })
+                        .stroke(Stroke::new(1.0_f32, if is_eff { Color32::from_rgb(0x4a, 0x8a, 0xe8) } else { Color32::from_rgb(0x2c, 0x2c, 0x38) }));
+                    if ui.add(eff_btn).clicked() {
+                        self.active_left_tab = LeftPanelTab::Effects;
+                    }
+
+                    if is_proj {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let import_btn = Button::new(RichText::new("+ İçe Aktar").color(Color32::WHITE).size(11.0).strong())
+                                .fill(Color32::from_rgb(0x28, 0x5a, 0x9e));
+                            if ui.add(import_btn).on_hover_text("Medyayı içe aktar (Ctrl+I)").clicked() {
+                                self.prompt_import_media();
+                            }
+                        });
+                    }
+                });
+
+                ui.add_space(4.0);
+                ui.separator();
+
+                match self.active_left_tab {
+                    LeftPanelTab::Project => {
+                        if let Some(act) = render_media_bin(
+                            ui,
+                            &self.project,
+                            &mut self.selected_media_id,
+                            &mut self.media_bin_search,
+                            &mut self.media_bin_is_grid,
+                            &mut self.media_bin_thumb_size,
+                            &self.media_bin_textures,
+                        ) {
+                            match act {
+                                MediaBinAction::ImportRequested => self.prompt_import_media(),
+                                MediaBinAction::OpenInSourceMonitor(m_id) => {
+                                    self.source_state.media_id = Some(m_id);
+                                    self.source_state.current_time = 0.0;
+                                    self.source_state.mark_in = None;
+                                    self.source_state.mark_out = None;
+                                    self.source_state.is_playing = false;
+                                    self.source_state.last_decoded_time = None;
+                                    self.status_message = "Klip Kaynak Monitöründe Açıldı".to_string();
+                                }
+                                MediaBinAction::AddToTimeline(m_id) => {
+                                    if let Some(media) = self.project.get_media(&m_id) {
+                                        let clip_dur = if media.media_type == MediaType::Image {
+                                            5.0
+                                        } else {
+                                            media.duration.max(0.1)
+                                        };
+                                        let media_type = media.media_type;
+                                        let media_fps = media.fps;
+                                        let media_w = media.width;
+                                        let media_h = media.height;
+                                        let media_name = media.name.clone();
+
+                                        let target_track = if media_type == MediaType::Audio {
+                                            if self.project.timeline.get_track_by_id(&self.target_audio_track).is_some() {
+                                                Some(self.target_audio_track.clone())
+                                            } else {
+                                                self.project.timeline.get_audio_tracks().first().map(|t| t.id.clone())
+                                            }
+                                        } else if self.project.timeline.get_track_by_id(&self.target_video_track).is_some() {
+                                            Some(self.target_video_track.clone())
+                                        } else {
+                                            self.project.timeline.get_video_tracks().first().map(|t| t.id.clone())
+                                        };
+
+                                        if let Some(track_id) = target_track {
+                                            let is_locked = self.project.timeline.get_track_by_id(&track_id).map(|t| t.locked).unwrap_or(false);
+                                            if is_locked {
+                                                self.status_message = "Hedef kanal kilitli, klip eklenemez".to_string();
+                                            } else {
+                                                if self.project.timeline.tracks.iter().all(|t| t.clips.is_empty()) {
+                                                    if media_fps > 1.0 {
+                                                        self.project.timeline.fps = media_fps;
+                                                    }
+                                                    if media_w > 0 && media_h > 0 {
+                                                        self.project.timeline.width = media_w;
+                                                        self.project.timeline.height = media_h;
+                                                    }
+                                                }
+                                                let mut clip = Clip::new(m_id, self.current_time, self.current_time + clip_dur);
+                                                clip.name = media_name;
+                                                let cmd = Box::new(AddClipCommand::new(track_id, clip));
+                                                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                                self.project.mark_dirty();
+                                            }
+                                        }
+                                    }
+                                }
+                                MediaBinAction::DeleteMedia(m_id) => {
+                                    let is_used = self.project.timeline.tracks.iter().any(|t| t.clips.iter().any(|c| c.media_id == m_id));
+                                    if is_used {
+                                        self.status_message = "Zaman çizgisinde kullanılan bir medya silinemez".to_string();
+                                    } else {
+                                        self.project.media_pool.remove(&m_id);
+                                        self.media_bin_textures.remove(&m_id);
+                                        if self.source_state.media_id.as_deref() == Some(&m_id) {
+                                            self.source_state.media_id = None;
+                                        }
+                                        self.project.mark_dirty();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    LeftPanelTab::Effects => {
+                        let selected_clip_id = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.clone());
+                        if let Some(act) = render_inspector_panel(
+                            ui,
+                            &mut self.project,
+                            selected_clip_id.as_deref(),
+                            self.current_time,
+                        ) {
+                            match act {
+                                InspectorAction::ClipModified => {
                                     self.project.mark_dirty();
+                                }
+                                InspectorAction::ChangeSpeed(spd, rev) => {
+                                    if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first() {
+                                        if let Some(tr) = self.project.timeline.get_track_by_id_mut(tr_id) {
+                                            if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
+                                                cl.speed = spd;
+                                                cl.reverse = rev;
+                                                self.project.mark_dirty();
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -804,85 +1771,17 @@ impl eframe::App for TrimApp {
                 }
             });
 
-        egui::SidePanel::right("right_inspector_panel")
-            .resizable(true)
-            .default_width(280.0)
-            .show(ctx, |ui| {
-                let selected_id = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
-                if let Some(act) = render_inspector_panel(ui, &mut self.project, selected_id, self.current_time) {
-                    match act {
-                        InspectorAction::ClipModified => self.project.mark_dirty(),
-                        InspectorAction::ChangeSpeed(sp, rev) => {
-                            if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first().cloned() {
-                                let cmd = Box::new(ChangeClipSpeedCommand::new(tr_id, cl_id, sp, rev));
-                                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                                self.project.mark_dirty();
-                            }
-                        }
-                    }
-                }
-            });
-
+        // -------------------------------------------------------------
+        // UPPER-CENTER: Monitors (Fills the remaining upper workspace)
+        // -------------------------------------------------------------
         egui::CentralPanel::default().show(ctx, |ui| {
-            let total_w = ui.available_width();
-            let total_h = ui.available_height();
-            let transport_bar_h = 36.0;
-            let monitor_h = (total_h - transport_bar_h - 14.0).max(120.0);
-            let monitor_w = (total_w - 52.0).max(160.0);
-
-            // Monitor & VU Meter row
-            ui.horizontal(|ui| {
-                ui.allocate_ui(egui::vec2(monitor_w, monitor_h), |ui| {
-                    let has_clips = self.project.timeline.tracks.iter().any(|t| !t.clips.is_empty());
-                    let timecode = seconds_to_timecode(self.current_time, self.project.timeline.fps);
-                    let duration_tc = seconds_to_timecode(self.project.timeline.duration(), self.project.timeline.fps);
-                    let aspect = (self.project.timeline.width as f32 / self.project.timeline.height as f32).max(0.1);
-
-                    let top_clip = self.project.timeline.get_top_visible_video_clip_at(self.current_time);
-                    let media_label = top_clip.and_then(|(_, c)| self.project.get_media(&c.media_id)).map(|m| {
-                        format!("{}x{} • {:.0}fps", m.width, m.height, m.fps)
-                    });
-
-                    let (_resp, mon_act) = MonitorWidget::new(
-                        self.monitor_texture.as_ref(),
-                        has_clips,
-                        aspect,
-                        &timecode,
-                        &duration_tc,
-                        self.is_playing,
-                        self.playback_speed,
-                        media_label.as_deref(),
-                        self.video_engine.is_decoding_seek,
-                    ).show(ui);
-
-                    if let Some(act) = mon_act {
-                        match act {
-                            MonitorAction::NewProject => {
-                                self.project = Project::default();
-                                self.undo_stack.clear();
-                            }
-                            MonitorAction::OpenProject => self.open_project_dialog(),
-                            MonitorAction::ImportMedia => self.prompt_import_media(),
-                        }
-                    }
+            if self.show_source_monitor {
+                ui.columns(2, |cols| {
+                    self.render_source_monitor(&mut cols[0]);
+                    self.render_program_monitor(&mut cols[1]);
                 });
-
-                // Vertical VU Meter
-                ui.add(VuMeterWidget::new(&mut self.vu_state));
-            });
-
-            ui.add_space(4.0);
-            ui.separator();
-
-            // Transport bar
-            let dur = self.project.timeline.duration();
-            let fps = self.project.timeline.fps;
-            if let Some(t_act) = render_transport_bar(ui, self.current_time, dur, fps, self.is_playing, self.playback_speed) {
-                match t_act {
-                    TransportAction::TogglePlay => self.toggle_play(),
-                    TransportAction::Stop => self.stop(),
-                    TransportAction::StepFrame(d) => self.step_frame(d),
-                }
+            } else {
+                self.render_program_monitor(ui);
             }
         });
 
@@ -898,6 +1797,18 @@ impl eframe::App for TrimApp {
                 }
                 ExportDialogAction::CancelExport => {
                     self.export_runner.cancel();
+                    self.export_dialog.is_exporting = false;
+                    self.export_rx = None;
+                    self.status_message = "Dışa aktarma iptal edildi".to_string();
+                }
+                ExportDialogAction::OpenOutputFolder(path) => {
+                    let p = std::path::Path::new(&path);
+                    let folder = if p.is_file() {
+                        p.parent().unwrap_or(p)
+                    } else {
+                        p
+                    };
+                    let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
                 }
             }
         }
@@ -914,19 +1825,66 @@ impl eframe::App for TrimApp {
 
         if let Some(act) = self.title_dialog.show(ctx) {
             match act {
-                TitleDialogAction::CreateTitle { text, font_size, text_color, bg_color, duration } => {
-                    if let Some(out_png) = generate_title_image(&text, font_size, text_color, bg_color, self.project.timeline.width, self.project.timeline.height) {
+                TitleDialogAction::CreateTitle { text, font_size, text_color, bg_color, position, has_shadow, duration } => {
+                    if let Some(out_png) = generate_title_image(
+                        &text,
+                        font_size,
+                        text_color,
+                        bg_color,
+                        &position,
+                        has_shadow,
+                        self.project.timeline.width,
+                        self.project.timeline.height,
+                    ) {
                         if let Ok(mut item) = FFprobeAnalyzer::analyze(&out_png) {
                             item.name = text.clone();
                             item.duration = duration;
                             let m_id = item.id.clone();
                             self.project.add_media(item);
 
-                            if let Some(v_track) = self.project.timeline.get_video_tracks().first() {
-                                let clip = Clip::new(m_id, self.current_time, self.current_time + duration);
-                                let cmd = Box::new(AddClipCommand::new(v_track.id.clone(), clip));
-                                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                                self.project.mark_dirty();
+                            let current_video_tracks = self.project.timeline.get_video_tracks();
+                            let target_has_clip = self.project.timeline.get_track_by_id(&self.target_video_track)
+                                .map(|t| t.find_clip_at(self.current_time).is_some())
+                                .unwrap_or(false);
+
+                            let target_track_id = if target_has_clip {
+                                let upper_track = current_video_tracks
+                                    .iter()
+                                    .filter(|t| t.id != self.target_video_track && !t.locked)
+                                    .find(|t| t.find_clip_at(self.current_time).is_none());
+
+                                if let Some(t) = upper_track {
+                                    t.id.clone()
+                                } else {
+                                    let max_v = current_video_tracks
+                                        .iter()
+                                        .filter_map(|t| t.name.strip_prefix('V').and_then(|s| s.parse::<usize>().ok()))
+                                        .max()
+                                        .unwrap_or(1);
+                                    let new_track_name = format!("V{}", max_v + 1);
+                                    let new_track = trim_core::track::Track::new(&new_track_name, trim_core::track::TrackType::Video);
+                                    let new_id = new_track.id.clone();
+                                    let _ = self.undo_stack.push(Box::new(AddTrackCommand::new(new_track, 0)), &mut self.project.timeline);
+                                    self.status_message = format!("Üst video kanalı otomatik oluşturuldu: {}", new_track_name);
+                                    new_id
+                                }
+                            } else if self.project.timeline.get_track_by_id(&self.target_video_track).is_some() {
+                                self.target_video_track.clone()
+                            } else {
+                                current_video_tracks.first().map(|t| t.id.clone()).unwrap_or_default()
+                            };
+
+                            if !target_track_id.is_empty() {
+                                let is_locked = self.project.timeline.get_track_by_id(&target_track_id).map(|t| t.locked).unwrap_or(false);
+                                if is_locked {
+                                    self.status_message = "Hedef video kanalı kilitli, metin klibi eklenemez".to_string();
+                                } else {
+                                    let clip = Clip::new(m_id, self.current_time, self.current_time + duration);
+                                    let cmd = Box::new(AddClipCommand::new(target_track_id, clip));
+                                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                    self.project.mark_dirty();
+                                    self.status_message = format!("Metin klibi eklendi ({}s)", duration);
+                                }
                             }
                         }
                     }
@@ -939,14 +1897,101 @@ impl eframe::App for TrimApp {
                 RecoveryAction::Restore(p) => {
                     if let Ok(proj) = load_project(&p) {
                         self.project = proj;
+                        self.undo_stack.clear();
+                        self.canvas_state.selected_clip_pairs.clear();
+                        self.current_time = 0.0;
+                        self.media_bin_textures.clear();
+                        self.video_engine.clear_cache();
+                        self.audio_mixer.clear_cache();
+                        self.audio_player.stop();
+                        self.is_playing = false;
+                        self.monitor_texture = None;
+                        self.source_state.media_id = None;
+                        self.source_state.texture = None;
+                        self.source_state.is_playing = false;
+                        self.target_video_track = self.project.timeline.get_video_tracks().iter().find(|t| t.name == "V1").map(|t| t.id.clone()).unwrap_or_default();
+                        self.target_audio_track = self.project.timeline.get_audio_tracks().iter().find(|t| t.name == "A1").map(|t| t.id.clone()).unwrap_or_default();
+                        for item in self.project.media_pool.values() {
+                            if item.media_type == MediaType::Audio || item.audio_channels > 0 {
+                                self.audio_mixer.preload_audio_async(&item.file_path);
+                            }
+                        }
+                        let _ = std::fs::remove_file(&p);
                         self.status_message = "Proje otomatik kayıttan kurtarıldı".to_string();
                     }
                 }
                 RecoveryAction::Discard(p) => {
                     let _ = std::fs::remove_file(p);
+                    self.autosave_mgr.cleanup(&self.project);
                 }
             }
         }
+
+        // -------------------------------------------------------------
+        // Audio Mixer Modal
+        // -------------------------------------------------------------
+        let mixer_actions = self.audio_mixer_dialog.show(
+            ctx,
+            &self.project,
+            self.vu_state.current_l,
+            self.vu_state.current_r,
+        );
+        for act in mixer_actions {
+            match act {
+                AudioMixerAction::TrackVolumeChanged(t_id, vol) => {
+                    if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
+                        t.volume = vol;
+                        self.project.mark_dirty();
+                    }
+                }
+                AudioMixerAction::TrackMuteToggled(t_id) => {
+                    if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
+                        t.muted = !t.muted;
+                    }
+                }
+                AudioMixerAction::TrackSoloToggled(t_id) => {
+                    if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
+                        t.solo = !t.solo;
+                    }
+                }
+                AudioMixerAction::MasterVolumeChanged(_vol) => {
+                    // Handled inside dialog
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Welcome Screen / Project Launcher Modal
+        // -------------------------------------------------------------
+        if let Some(act) = self.welcome_dialog.show(ctx) {
+            match act {
+                WelcomeAction::CreateNewProject { name, width, height, fps } => {
+                    self.reset_to_new_project();
+                    self.project.settings.name = name;
+                    self.project.timeline.width = width;
+                    self.project.timeline.height = height;
+                    self.project.timeline.fps = fps;
+                    self.status_message = format!("Yeni proje hazır: {}", self.project.settings.name);
+                    self.welcome_dialog.close();
+                }
+                WelcomeAction::OpenProjectRequested => {
+                    self.open_project_dialog();
+                    self.welcome_dialog.close();
+                }
+                WelcomeAction::OpenRecentProject(path) => {
+                    self.open_path(Path::new(&path));
+                    self.welcome_dialog.close();
+                }
+                WelcomeAction::Close => {
+                    self.welcome_dialog.close();
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Keyboard Shortcuts Modal (F1)
+        // -------------------------------------------------------------
+        self.shortcuts_dialog.show(ctx);
 
         if self.show_about_dialog {
             egui::Window::new("triM. Hakkında")
@@ -965,11 +2010,6 @@ impl eframe::App for TrimApp {
                         }
                     });
                 });
-        }
-
-        // Request continuous repaint if playing for smooth 60 FPS
-        if self.is_playing {
-            ctx.request_repaint();
         }
     }
 }

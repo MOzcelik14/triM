@@ -32,12 +32,14 @@ Engineered with a modular Cargo workspace architecture, **triM.** delivers preci
 
 ### Highlights
 
-- **100% Rust & Native Desktop:** Zero Electron, zero Python runtime dependencies. Instant startup and deterministic memory safety.
+- **100% Rust & Native Desktop:** Zero Electron, zero Python dependencies. Instant startup and deterministic memory safety.
 - **Asynchronous Video Pipeline:** Multi-threaded `PlaybackStreamer` (235+ FPS continuous rawvideo decoding pipe) and non-blocking `AsyncFrameDecoder` for stutter-free timeline scrubbing.
-- **Multi-Track Timeline:** Layered video (`V1..Vn`) and audio (`A1..An`) tracks with razor split (`S`), ripple trim head (`Q`), ripple trim tail (`W`), ripple delete (`Shift+Delete`), and magnetic snapping.
-- **Stereo Audio Engine:** Multi-track 48kHz 16-bit PCM mixing, live RMS/Peak stereo VU meter, track-level volume/mute/solo, and instant audio separation ("Detach Audio").
+- **Multi-Track Timeline:** Dynamic layered video (`V1..Vn`) and audio (`A1..An`) tracks with cross-track dragging, vertical track resizing, razor split (`S`), ripple trim (`Q`/`W`), ripple delete (`Shift+Delete`), and magnetic snapping.
+- **Dedicated NLE Vector Toolbar:** Native subpixel vector-drawn tools (`V` Select, `A` Track Select, `B` Ripple, `C` Razor, `Y` Slip, `P` Pen, `H` Hand, `T` Text).
+- **Multi-Channel Audio Mixer:** Live master fader, per-track dB sliders, stereo RMS/Peak VU meters, Mute/Solo, and instant audio separation ("Detach Audio").
+- **Export Studio:** Multi-threaded FFmpeg rendering with presets for YouTube 1080p, 4K UHD, Reels/Shorts (9:16 Vertical), HEVC/H.265, and Apple ProRes 422.
 - **Keyframing & Color Grading:** Interpolation curves (Linear, Hold, Smoothstep Ease-In-Out) across clip position, scale, opacity, rotation, brightness, contrast, and saturation.
-- **Direct CLI & Drag-and-Drop:** Open files or projects straight from your terminal (`trim path/to/video.mp4`) or drag and drop media into the pool and onto tracks.
+- **Direct CLI & Welcome Launcher:** Launch directly from terminal (`trim video.mp4`) or use the startup launcher with resolution presets and recent project history.
 - **Backward Compatible:** Native support for both `.trim` and legacy `.cutline` project files with automatic crash recovery snapshots.
 
 ---
@@ -62,7 +64,7 @@ git push origin master
 git push origin v0.3.1
 ```
 
-The [Linux release workflow](.github/workflows/release-linux.yml) tests the Rust workspace, builds Debian and AppImage packages on Ubuntu and an RPM on Fedora, then publishes all three files with SHA-256 checksums to the matching GitHub Release. On changes to the packaging script or workflow, the same builds can run on `master` as CI artifacts without publishing a release. No manual packaging or uploading is needed. The earlier Python/PySide6 edition is retained in the repository for compatibility but is **not** the application distributed by these new packages.
+The [Linux release workflow](.github/workflows/release-linux.yml) tests the Rust workspace, builds Debian and AppImage packages on Ubuntu and an RPM on Fedora, then publishes all three files with SHA-256 checksums to the matching GitHub Release. On changes to the packaging script or workflow, the same builds can run on `master` as CI artifacts without publishing a release. No manual packaging or uploading is needed. All packages are 100% native Rust executables.
 
 ---
 
@@ -116,12 +118,14 @@ Modüler Cargo çalışma alanı mimarisi üzerine kurulan **triM.**; hassas vid
 
 ### Öne Çıkan Özellikler
 
-- **%100 Rust ve Yerel Masaüstü:** Sıfır Electron yükü. Anında açılış ve kararlı bellek yönetimi.
-- **Yüksek Hızlı Asenkron Video Motoru:** `PlaybackStreamer` (arka planda 235+ FPS sürekli rawvideo borusu) ve `AsyncFrameDecoder` (sarma sırasında istek birleştirme ile kilitlenmeyen oynatma kafası).
-- **Çok Kanallı Zaman Çizgisi:** Video (`V1..Vn`) ve ses (`A1..An`) kanalları, oynatma kafasından kesme (`S`), başı kırpıp kaydırma (`Q`), sonu kırpıp kaydırma (`W`), boşluğu kapatarak silme (`Shift+Delete`) ve manyetik yapışma.
-- **Stereo Ses Mikseri:** 48kHz 16-bit PCM miksaj, canlı RMS/Tepe çift kanallı VU göstergesi, kanal bazlı ses/mute/solo denetimleri ve tek tıkla ses ayırma ("Sesi Ayır").
+- **%100 Rust ve Yerel Masaüstü:** Sıfır Electron yükü, sıfır Python bağımlılığı. Anında açılış ve kararlı bellek yönetimi.
+- **Yüksek Hızlı Asenkron Video Motoru:** `PlaybackStreamer` (arka planda 235+ FPS sürekli rawvideo borusu) ve `AsyncFrameDecoder` (sarma sırasında kilitlenmeyen oynatma kafası).
+- **Dinamik Çok Kanallı Zaman Çizgisi:** Kanallar arası serbest dikey klip taşıma, dikey kanal boyu ayarlama, `[+ Video]` / `[+ Ses]` ekleme, çizgiden kesme (`S`), başı kırpıp kaydırma (`Q`), sonu kırpıp kaydırma (`W`), boşluğu kapatarak silme (`Shift+Delete`) ve manyetik yapışma.
+- **Özel NLE Vektörel Araç Çubuğu:** Yerel piksel altı vektörlerle çizilen 8 profesyonel kurgu aracı (`V` Seçim, `A` İz Seçme, `B` Dalgalanma, `C` Jilet/Kesme, `Y` Kaydırma, `P` Kalem/Anahtar Kare, `H` El/Gezinme, `T` Metin).
+- **Çok Kanallı Ses Mikseri Konsolu:** Canlı Master fader, kanal bazlı dB sürgüleri, stereo tepe/RMS VU metreler, Mute/Solo ve tek tıkla ses ayırma ("Sesi Ayır").
+- **Gelişmiş Dışa Aktarma Stüdyosu:** YouTube 1080p, 4K UHD, Reels/Shorts 9:16 Dikey, HEVC H.265 ve Apple ProRes 422 hazır profilleri ile anlık tahmini boyut hesabı.
 - **Anahtar Kare & Renk Düzenleme:** Konum, ölçek, opaklık, döndürme, parlaklık, kontrast ve doygunluk üzerinde anahtar kare enterpolasyonu (Doğrusal, Sabit, Ease-In-Out eğrisi).
-- **Komut Satırı & Sürükle-Bırak:** Dosyaları doğrudan terminalden açabilme (`trim video.mp4`) veya medya havuzuna ve kanallara sürükleyip bırakabilme.
+- **Hızlı Başlangıç & Karşılama Ekranı:** Çözünürlük şablonları, son kullanılan projeler ve terminalden doğrudan dosya açabilme (`trim video.mp4`).
 - **Geriye Dönük Uyumluluk:** `.trim` ve eski `.cutline` JSON proje dosyalarını otomatik tanıma ve her 2 dakikada bir otomatik kurtarma anlık görüntüsü alma.
 
 ---
@@ -132,6 +136,14 @@ Modüler Cargo çalışma alanı mimarisi üzerine kurulan **triM.**; hassas vid
 | Kısayol | İngilizce Açıklama | Türkçe Açıklama |
 | :--- | :--- | :--- |
 | <kbd>Space</kbd> | Toggle Playback / Pause | Oynat / Duraklat |
+| <kbd>V</kbd> | Selection Tool | Seçim Aracı |
+| <kbd>A</kbd> | Track Select Forward Tool | İleri İz Seçme Aracı |
+| <kbd>B</kbd> | Ripple Edit Tool | Dalgalanma Düzenleme Aracı |
+| <kbd>C</kbd> | Razor / Cut Tool | Jilet / Kesme Aracı |
+| <kbd>Y</kbd> | Slip Tool | Kaydırma Aracı |
+| <kbd>P</kbd> | Pen / Keyframe Tool | Kalem / Anahtar Kare Aracı |
+| <kbd>H</kbd> | Hand / Pan Tool | El / Gezinme Aracı |
+| <kbd>T</kbd> | Type / Text Tool | Metin / Yazı Aracı |
 | <kbd>S</kbd> | Split / Razor Cut at Playhead | Çizgiden Kes / Böl |
 | <kbd>Q</kbd> | Ripple Trim Head to Playhead | Başı Çizgiye Kırp ve Kaydır |
 | <kbd>W</kbd> | Ripple Trim Tail to Playhead | Sonu Çizgiye Kırp ve Kaydır |
@@ -151,7 +163,8 @@ Modüler Cargo çalışma alanı mimarisi üzerine kurulan **triM.**; hassas vid
 | <kbd>Ctrl</kbd> + <kbd>O</kbd> | Open Project Dialog | Proje Aç |
 | <kbd>Ctrl</kbd> + <kbd>S</kbd> | Save Project | Projeyi Kaydet |
 | <kbd>Ctrl</kbd> + <kbd>T</kbd> | Add Title Card Dialog | Başlık / Metin Ekle |
-| <kbd>Ctrl</kbd> + <kbd>E</kbd> | Open Export Video Dialog | Videoyu Dışa Aktar |
+| <kbd>Ctrl</kbd> + <kbd>M</kbd> / <kbd>E</kbd> | Open Export Studio | Dışa Aktarma Stüdyosu |
+| <kbd>F1</kbd> | Keyboard Shortcuts Guide | Klavye Kısayolları Kılavuzu |
 
 ---
 

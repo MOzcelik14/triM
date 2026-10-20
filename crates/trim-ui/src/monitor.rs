@@ -1,30 +1,60 @@
-//! Program Monitor widget rendering the active video frame, viewport boundary, and playback status.
+//! Dual Monitor widget rendering Source Monitor (raw clips) and Program Monitor (timeline sequence)
+//! with Premiere Pro style transport bars, In/Out range marking, and frame extraction.
 
-use egui::{Color32, Pos2, Rect, Response, Sense, Stroke, TextureHandle, Ui, Vec2};
+use egui::{Button, Color32, Pos2, Rect, Response, RichText, Sense, Stroke, TextureHandle, Ui, Vec2};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MonitorMode {
+    Source,
+    Program,
+}
 
 pub enum MonitorAction {
     NewProject,
     OpenProject,
     ImportMedia,
+    TogglePlay,
+    StepFrame(i32),
+    MarkIn,
+    MarkOut,
+    GoToIn,
+    GoToOut,
+    InsertToTimeline,
+    OverwriteToTimeline,
+    ExportFrame,
+    Seek(f64),
 }
 
 pub struct MonitorWidget<'a> {
-    texture: Option<&'a TextureHandle>,
-    has_clips: bool,
-    aspect_ratio: f32,
-    timecode: &'a str,
-    duration_timecode: &'a str,
-    is_playing: bool,
-    playback_speed: f64,
-    media_label: Option<&'a str>,
-    is_decoding: bool,
+    pub mode: MonitorMode,
+    pub title: &'a str,
+    pub texture: Option<&'a TextureHandle>,
+    pub has_content: bool,
+    pub aspect_ratio: f32,
+    pub current_time: f64,
+    pub duration: f64,
+    pub mark_in: Option<f64>,
+    pub mark_out: Option<f64>,
+    pub timecode: &'a str,
+    pub duration_timecode: &'a str,
+    pub is_playing: bool,
+    pub playback_speed: f64,
+    pub media_label: Option<&'a str>,
+    pub is_decoding: bool,
 }
 
 impl<'a> MonitorWidget<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
+        mode: MonitorMode,
+        title: &'a str,
         texture: Option<&'a TextureHandle>,
-        has_clips: bool,
+        has_content: bool,
         aspect_ratio: f32,
+        current_time: f64,
+        duration: f64,
+        mark_in: Option<f64>,
+        mark_out: Option<f64>,
         timecode: &'a str,
         duration_timecode: &'a str,
         is_playing: bool,
@@ -33,9 +63,15 @@ impl<'a> MonitorWidget<'a> {
         is_decoding: bool,
     ) -> Self {
         Self {
+            mode,
+            title,
             texture,
-            has_clips,
+            has_content,
             aspect_ratio: if aspect_ratio > 0.1 { aspect_ratio } else { 16.0 / 9.0 },
+            current_time,
+            duration: duration.max(0.0),
+            mark_in,
+            mark_out,
             timecode,
             duration_timecode,
             is_playing,
@@ -46,167 +82,348 @@ impl<'a> MonitorWidget<'a> {
     }
 
     pub fn show(self, ui: &mut Ui) -> (Response, Option<MonitorAction>) {
-        let avail_w = ui.available_width().max(160.0);
-        let avail_h = ui.available_height().max(100.0);
-        let (rect, response) = ui.allocate_exact_size(Vec2::new(avail_w, avail_h), Sense::hover());
+        let avail_w = ui.available_width().max(180.0);
+        let avail_h = ui.available_height().max(120.0);
+        let (outer_rect, response) = ui.allocate_exact_size(Vec2::new(avail_w, avail_h), Sense::hover());
         let painter = ui.painter();
 
-        // Theater dark monitor surround
-        painter.rect_filled(rect, 4.0, Color32::from_rgb(0x0a, 0x0a, 0x0d));
-        painter.rect_stroke(rect, 4.0, Stroke::new(1.0_f32, Color32::from_rgb(0x1e, 0x1e, 0x26)));
+        // Dark container background
+        painter.rect_filled(outer_rect, 3.0, Color32::from_rgb(0x12, 0x12, 0x16));
+        painter.rect_stroke(outer_rect, 3.0, Stroke::new(1.0_f32, Color32::from_rgb(0x24, 0x24, 0x2c)));
 
         let mut action = None;
 
-        if !self.has_clips {
-            // Empty state overlay
-            let center = rect.center();
-
-            painter.text(
-                Pos2::new(center.x, center.y - 50.0),
-                egui::Align2::CENTER_CENTER,
-                "triM.",
-                egui::FontId::proportional(32.0),
-                Color32::from_rgb(0xe0, 0x7a, 0x38),
-            );
-
-            painter.text(
-                Pos2::new(center.x, center.y - 15.0),
-                egui::Align2::CENTER_CENTER,
-                "Zaman çizgisinde henüz klip yok",
-                egui::FontId::proportional(14.0),
-                Color32::from_rgb(0x90, 0x90, 0xa0),
-            );
-
-            let btn_y = center.y + 30.0;
-            let btn_w = 120.0;
-            let btn_h = 30.0;
-
-            let r_import = Rect::from_center_size(Pos2::new(center.x, btn_y), Vec2::new(btn_w + 40.0, btn_h));
-            let r_new = Rect::from_center_size(Pos2::new(center.x - btn_w - 30.0, btn_y), Vec2::new(btn_w, btn_h));
-            let r_open = Rect::from_center_size(Pos2::new(center.x + btn_w + 30.0, btn_y), Vec2::new(btn_w, btn_h));
-
-            if let Some(mouse_pos) = response.hover_pos() {
-                if ui.input(|i| i.pointer.primary_clicked()) {
-                    if r_import.contains(mouse_pos) {
-                        action = Some(MonitorAction::ImportMedia);
-                    } else if r_new.contains(mouse_pos) {
-                        action = Some(MonitorAction::NewProject);
-                    } else if r_open.contains(mouse_pos) {
-                        action = Some(MonitorAction::OpenProject);
-                    }
-                }
-            }
-
-            draw_button(&painter, r_new, "Yeni Proje", false);
-            draw_button(&painter, r_import, "+ Medya İçe Aktar", true);
-            draw_button(&painter, r_open, "Proje Aç", false);
-
-            return (response, action);
-        }
-
-        // Active Monitor Viewport
-        let bottom_bar_h = 26.0;
-        let viewport_rect = Rect::from_min_max(
-            Pos2::new(rect.left(), rect.top()),
-            Pos2::new(rect.right(), rect.bottom() - bottom_bar_h),
+        // 1. Header Tab Bar (Height: 28px)
+        let tab_h = 28.0;
+        let tab_rect = Rect::from_min_max(
+            outer_rect.min,
+            Pos2::new(outer_rect.max.x, outer_rect.min.y + tab_h),
         );
+        painter.rect_filled(tab_rect, 3.0, Color32::from_rgb(0x18, 0x18, 0x1e));
+        painter.line_segment([tab_rect.left_bottom(), tab_rect.right_bottom()], Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x32)));
 
-        let max_w = (viewport_rect.width() - 16.0).max(10.0);
-        let max_h = (viewport_rect.height() - 16.0).max(10.0);
-        let (target_w, target_h) = fit_aspect(max_w, max_h, self.aspect_ratio);
-
-        let frame_rect = Rect::from_center_size(viewport_rect.center(), Vec2::new(target_w, target_h));
-
-        // Letterbox viewport deep black background
-        painter.rect_filled(frame_rect, 0.0, Color32::from_rgb(0x02, 0x02, 0x04));
-
-        if let Some(tex) = self.texture {
-            painter.image(
-                tex.id(),
-                frame_rect,
-                Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
-                Color32::WHITE,
-            );
-        } else if self.media_label.is_some() {
-            // An active clip is loading/decoding; show progress messaging.
-            // If the playhead is outside all video clips, leave the viewport black.
-            painter.text(
-                frame_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                if self.is_decoding { "Kare hazırlanıyor..." } else { "🎬 Önizleme Yükleniyor..." },
-                egui::FontId::proportional(14.0),
-                Color32::from_rgb(0xa0, 0xa0, 0xb0),
-            );
-        }
-
-        // High-contrast video edge stroke (ensures frame boundaries are clearly visible even for dark video frames)
-        painter.rect_stroke(
-            frame_rect,
-            0.0,
-            Stroke::new(1.0_f32, Color32::from_rgb(0x4a, 0x4a, 0x5e)),
+        // Tab badge on left
+        let prefix = match self.mode {
+            MonitorMode::Source => "Kaynak: ",
+            MonitorMode::Program => "Program: ",
+        };
+        let tab_title = format!("{}{}", prefix, self.title);
+        let tab_w = (tab_title.len() as f32 * 7.5 + 24.0).clamp(100.0, 260.0);
+        let active_tab_rect = Rect::from_min_max(
+            tab_rect.min,
+            Pos2::new(tab_rect.min.x + tab_w, tab_rect.max.y),
         );
-
-        // Subtle 16:9 safe zone corner cues
-        draw_corner_guides(&painter, frame_rect);
-
-        // -------------------------------------------------------------
-        // Bottom Monitor Status Bar
-        // -------------------------------------------------------------
-        let bar_rect = Rect::from_min_max(
-            Pos2::new(rect.left(), rect.bottom() - bottom_bar_h),
-            Pos2::new(rect.right(), rect.bottom()),
-        );
-
-        painter.rect_filled(bar_rect, 4.0, Color32::from_rgb(0x11, 0x11, 0x16));
+        painter.rect_filled(active_tab_rect, 2.0, Color32::from_rgb(0x22, 0x22, 0x2a));
+        // Blue active top/bottom border
         painter.line_segment(
-            [bar_rect.left_top(), bar_rect.right_top()],
-            Stroke::new(1.0_f32, Color32::from_rgb(0x22, 0x22, 0x2c)),
+            [active_tab_rect.left_bottom(), active_tab_rect.right_bottom()],
+            Stroke::new(2.0_f32, Color32::from_rgb(0x38, 0x7a, 0xe0)),
         );
-
-        // Left: Timecode / Duration
-        let tc_str = format!("{} / {}", self.timecode, self.duration_timecode);
         painter.text(
-            Pos2::new(bar_rect.left() + 10.0, bar_rect.center().y),
+            Pos2::new(active_tab_rect.left() + 10.0, active_tab_rect.center().y),
             egui::Align2::LEFT_CENTER,
-            tc_str,
-            egui::FontId::monospace(11.0),
-            Color32::from_rgb(0xe0, 0x7a, 0x38),
+            &tab_title,
+            egui::FontId::proportional(11.5),
+            Color32::WHITE,
         );
 
-        // Center: Playback Status Badge
-        let status_text = if self.is_playing {
-            if (self.playback_speed - 1.0).abs() < 0.01 {
-                "▶  Oynatılıyor (1.0x)".to_string()
-            } else {
-                format!("▶  Oynatılıyor ({:.1}x)", self.playback_speed)
-            }
-        } else {
-            "⏸  Duraklatıldı".to_string()
-        };
-
-        let status_color = if self.is_playing {
-            Color32::from_rgb(0x50, 0xd0, 0x70)
-        } else {
-            Color32::from_rgb(0x80, 0x80, 0x90)
-        };
-
+        // Right side info / zoom badge
+        let label = self.media_label.unwrap_or(match self.mode {
+            MonitorMode::Source => "Sığdır (Fit)",
+            MonitorMode::Program => "Sığdır • 1/2",
+        });
         painter.text(
-            bar_rect.center(),
-            egui::Align2::CENTER_CENTER,
-            status_text,
-            egui::FontId::proportional(11.0),
-            status_color,
-        );
-
-        // Right: Format badge / Media label
-        let label = self.media_label.unwrap_or("Önizleme • 640x360");
-        painter.text(
-            Pos2::new(bar_rect.right() - 10.0, bar_rect.center().y),
+            Pos2::new(tab_rect.right() - 10.0, tab_rect.center().y),
             egui::Align2::RIGHT_CENTER,
             label,
-            egui::FontId::proportional(10.5),
-            Color32::from_rgb(0x90, 0x90, 0xa0),
+            egui::FontId::proportional(11.0),
+            Color32::from_rgb(0x85, 0x85, 0x95),
         );
+
+        // 2. Transport & Scrubber Bottom Area (Height: 52px total: 14px scrubber + 38px toolbar)
+        let bottom_total_h = 56.0;
+        let scrubber_h = 16.0;
+        let viewport_rect = Rect::from_min_max(
+            Pos2::new(outer_rect.left(), outer_rect.top() + tab_h),
+            Pos2::new(outer_rect.right(), outer_rect.bottom() - bottom_total_h),
+        );
+
+        // Empty state when no clip or media loaded
+        if !self.has_content {
+            let center = viewport_rect.center();
+            painter.text(
+                Pos2::new(center.x, center.y - 30.0),
+                egui::Align2::CENTER_CENTER,
+                if self.mode == MonitorMode::Source { "Klipsiz Kaynak" } else { "Sekans Boş" },
+                egui::FontId::proportional(16.0),
+                Color32::from_rgb(0x80, 0x80, 0x95),
+            );
+
+            let msg = if self.mode == MonitorMode::Source {
+                "Medya havuzundan bir klibe çift tıklayın"
+            } else {
+                "Zaman çizgisine klip ekleyin"
+            };
+            painter.text(
+                Pos2::new(center.x, center.y),
+                egui::Align2::CENTER_CENTER,
+                msg,
+                egui::FontId::proportional(11.5),
+                Color32::from_rgb(0x60, 0x60, 0x70),
+            );
+
+            let btn_y = center.y + 36.0;
+            let btn_w = 110.0;
+            let btn_h = 26.0;
+            let r_import = Rect::from_center_size(Pos2::new(center.x, btn_y), Vec2::new(btn_w + 30.0, btn_h));
+
+            if let Some(mouse_pos) = response.hover_pos() {
+                if ui.input(|i| i.pointer.primary_clicked()) && r_import.contains(mouse_pos) {
+                    action = Some(MonitorAction::ImportMedia);
+                }
+            }
+            draw_button(painter, r_import, "+ Medya İçe Aktar", true);
+        } else {
+            // Viewport video frame
+            let max_w = (viewport_rect.width() - 8.0).max(10.0);
+            let max_h = (viewport_rect.height() - 8.0).max(10.0);
+            let (target_w, target_h) = fit_aspect(max_w, max_h, self.aspect_ratio);
+            let frame_rect = Rect::from_center_size(viewport_rect.center(), Vec2::new(target_w, target_h));
+
+            // Deep black letterbox
+            painter.rect_filled(frame_rect, 0.0, Color32::from_rgb(0x02, 0x02, 0x04));
+
+            if let Some(tex) = self.texture {
+                painter.image(
+                    tex.id(),
+                    frame_rect,
+                    Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+            } else {
+                painter.text(
+                    frame_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    if self.is_decoding { "Kare hazırlanıyor..." } else { "Önizleme Yükleniyor..." },
+                    egui::FontId::proportional(12.0),
+                    Color32::from_rgb(0x80, 0x80, 0x90),
+                );
+            }
+
+            // High contrast frame border
+            painter.rect_stroke(frame_rect, 0.0, Stroke::new(1.0_f32, Color32::from_rgb(0x38, 0x38, 0x46)));
+            draw_corner_guides(painter, frame_rect);
+        }
+
+        // 3. Scrubber Bar
+        let scrub_rect = Rect::from_min_max(
+            Pos2::new(outer_rect.left() + 6.0, outer_rect.bottom() - bottom_total_h),
+            Pos2::new(outer_rect.right() - 6.0, outer_rect.bottom() - bottom_total_h + scrubber_h),
+        );
+        painter.rect_filled(scrub_rect, 2.0, Color32::from_rgb(0x18, 0x18, 0x20));
+        painter.rect_stroke(scrub_rect, 2.0, Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x32)));
+
+        if self.duration > 0.0 {
+            let dur = self.duration;
+            let track_w = scrub_rect.width() - 8.0;
+            let x_start = scrub_rect.left() + 4.0;
+
+            // Mark In / Mark Out shaded range for Source Monitor
+            if let (Some(m_in), Some(m_out)) = (self.mark_in, self.mark_out) {
+                let in_ratio = (m_in / dur).clamp(0.0, 1.0) as f32;
+                let out_ratio = (m_out / dur).clamp(0.0, 1.0) as f32;
+                let r_in_x = x_start + in_ratio * track_w;
+                let r_out_x = x_start + out_ratio * track_w;
+                let in_out_rect = Rect::from_min_max(
+                    Pos2::new(r_in_x.min(r_out_x), scrub_rect.top() + 2.0),
+                    Pos2::new(r_in_x.max(r_out_x), scrub_rect.bottom() - 2.0),
+                );
+                painter.rect_filled(in_out_rect, 1.0, Color32::from_rgba_premultiplied(56, 122, 224, 70));
+
+                // Bracket handles { }
+                painter.line_segment([Pos2::new(r_in_x, scrub_rect.top()), Pos2::new(r_in_x, scrub_rect.bottom())], Stroke::new(2.0_f32, Color32::from_rgb(0x4a, 0x9a, 0xff)));
+                painter.line_segment([Pos2::new(r_out_x, scrub_rect.top()), Pos2::new(r_out_x, scrub_rect.bottom())], Stroke::new(2.0_f32, Color32::from_rgb(0x4a, 0x9a, 0xff)));
+            }
+
+            // Current playhead position
+            let curr_ratio = (self.current_time / dur).clamp(0.0, 1.0) as f32;
+            let playhead_x = x_start + curr_ratio * track_w;
+            painter.line_segment(
+                [Pos2::new(playhead_x, scrub_rect.top()), Pos2::new(playhead_x, scrub_rect.bottom())],
+                Stroke::new(2.0_f32, Color32::from_rgb(0xe0, 0x7a, 0x38)),
+            );
+
+            // Scrubber interaction
+            if let Some(mouse_pos) = response.hover_pos() {
+                if scrub_rect.contains(mouse_pos) && ui.input(|i| i.pointer.primary_down()) {
+                    let click_ratio = ((mouse_pos.x - x_start) / track_w).clamp(0.0, 1.0);
+                    let target_t = (click_ratio as f64) * dur;
+                    action = Some(MonitorAction::Seek(target_t));
+                }
+            }
+        }
+
+        // 4. Bottom Transport Toolbar (Premiere Pro buttons row)
+        let tool_rect = Rect::from_min_max(
+            Pos2::new(outer_rect.left(), outer_rect.bottom() - (bottom_total_h - scrubber_h)),
+            Pos2::new(outer_rect.right(), outer_rect.bottom()),
+        );
+        painter.rect_filled(tool_rect, 3.0, Color32::from_rgb(0x16, 0x16, 0x1b));
+        painter.line_segment([tool_rect.left_top(), tool_rect.right_top()], Stroke::new(1.0_f32, Color32::from_rgb(0x26, 0x26, 0x30)));
+
+        ui.allocate_new_ui(egui::UiBuilder::new().max_rect(tool_rect), |ui| {
+            ui.horizontal_centered(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                ui.add_space(8.0);
+
+                // Timecode
+                ui.label(
+                    RichText::new(self.timecode)
+                        .monospace()
+                        .size(11.5)
+                        .color(Color32::from_rgb(0x38, 0xa0, 0xe8))
+                        .strong(),
+                );
+                ui.label(RichText::new("/").size(10.0).color(Color32::from_rgb(0x60, 0x60, 0x70)));
+                ui.label(
+                    RichText::new(self.duration_timecode)
+                        .monospace()
+                        .size(11.0)
+                        .color(Color32::from_rgb(0x90, 0x90, 0xa0)),
+                );
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                // Mark In button {
+                let btn_in = Button::new(RichText::new("{").strong().size(13.0))
+                    .min_size(Vec2::new(24.0, 24.0))
+                    .fill(Color32::from_rgb(0x22, 0x22, 0x2a));
+                if ui.add(btn_in).on_hover_text("Giriş Noktası Koy (Mark In - I veya {)").clicked() {
+                    action = Some(MonitorAction::MarkIn);
+                }
+
+                // Mark Out button }
+                let btn_out = Button::new(RichText::new("}").strong().size(13.0))
+                    .min_size(Vec2::new(24.0, 24.0))
+                    .fill(Color32::from_rgb(0x22, 0x22, 0x2a));
+                if ui.add(btn_out).on_hover_text("Çıkış Noktası Koy (Mark Out - O veya })").clicked() {
+                    action = Some(MonitorAction::MarkOut);
+                }
+
+                // Go to In
+                let btn_go_in = Button::new(RichText::new("|<").size(11.0).strong())
+                    .min_size(Vec2::new(24.0, 24.0))
+                    .fill(Color32::from_rgb(0x22, 0x22, 0x2a));
+                if ui.add(btn_go_in).on_hover_text("Giriş Noktasına Git (Go to In)").clicked() {
+                    action = Some(MonitorAction::GoToIn);
+                }
+
+                // Step -1 frame
+                let btn_prev = Button::new(RichText::new("<").size(12.0).strong())
+                    .min_size(Vec2::new(24.0, 24.0))
+                    .fill(Color32::from_rgb(0x22, 0x22, 0x2a));
+                if ui.add(btn_prev).on_hover_text("Önceki Kare (Sol Ok)").clicked() {
+                    action = Some(MonitorAction::StepFrame(-1));
+                }
+
+                // Play / Pause button (vector painted triangle / pause bars)
+                let (play_rect, play_resp) = ui.allocate_exact_size(Vec2::new(30.0, 24.0), Sense::click());
+                let pp = ui.painter_at(play_rect);
+                let bg_col = if play_resp.hovered() {
+                    Color32::from_rgb(0x38, 0x38, 0x46)
+                } else {
+                    Color32::from_rgb(0x28, 0x28, 0x34)
+                };
+                pp.rect_filled(play_rect, 3.0, bg_col);
+                pp.rect_stroke(play_rect, 3.0, Stroke::new(1.0_f32, Color32::from_rgb(0x3c, 0x3c, 0x4c)));
+
+                let p_center = play_rect.center();
+                if self.is_playing {
+                    let bar_w = 3.0;
+                    let bar_h = 10.0;
+                    let bar1 = Rect::from_center_size(Pos2::new(p_center.x - 3.5, p_center.y), Vec2::new(bar_w, bar_h));
+                    let bar2 = Rect::from_center_size(Pos2::new(p_center.x + 3.5, p_center.y), Vec2::new(bar_w, bar_h));
+                    pp.rect_filled(bar1, 1.0, Color32::from_rgb(0x50, 0xd0, 0x70));
+                    pp.rect_filled(bar2, 1.0, Color32::from_rgb(0x50, 0xd0, 0x70));
+                } else {
+                    let tri = vec![
+                        Pos2::new(p_center.x - 4.0, p_center.y - 6.0),
+                        Pos2::new(p_center.x + 6.0, p_center.y),
+                        Pos2::new(p_center.x - 4.0, p_center.y + 6.0),
+                    ];
+                    pp.add(egui::Shape::convex_polygon(tri, Color32::WHITE, Stroke::NONE));
+                }
+                if play_resp.on_hover_text("Oynat / Duraklat (Boşluk)").clicked() {
+                    action = Some(MonitorAction::TogglePlay);
+                }
+
+                // Step +1 frame
+                let btn_next = Button::new(RichText::new(">").size(12.0).strong())
+                    .min_size(Vec2::new(24.0, 24.0))
+                    .fill(Color32::from_rgb(0x22, 0x22, 0x2a));
+                if ui.add(btn_next).on_hover_text("Sonraki Kare (Sağ Ok)").clicked() {
+                    action = Some(MonitorAction::StepFrame(1));
+                }
+
+                // Go to Out
+                let btn_go_out = Button::new(RichText::new(">|").size(11.0).strong())
+                    .min_size(Vec2::new(24.0, 24.0))
+                    .fill(Color32::from_rgb(0x22, 0x22, 0x2a));
+                if ui.add(btn_go_out).on_hover_text("Çıkış Noktasına Git (Go to Out)").clicked() {
+                    action = Some(MonitorAction::GoToOut);
+                }
+
+                ui.add_space(4.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                match self.mode {
+                    MonitorMode::Source => {
+                        // Insert button (shortcut ,)
+                        let btn_insert = Button::new(
+                            RichText::new("+ Ekle")
+                                .size(11.0)
+                                .color(Color32::from_rgb(0x80, 0xc0, 0xff))
+                                .strong(),
+                        )
+                        .min_size(Vec2::new(26.0, 24.0))
+                        .fill(Color32::from_rgb(0x20, 0x2a, 0x38));
+                        if ui.add(btn_insert).on_hover_text("Zaman Çizgisine Ekle (Insert - Virgül ',')").clicked() {
+                            action = Some(MonitorAction::InsertToTimeline);
+                        }
+
+                        // Overwrite button (shortcut .)
+                        let btn_overwrite = Button::new(
+                            RichText::new("= Yaz")
+                                .size(11.0)
+                                .color(Color32::from_rgb(0x60, 0xd8, 0xa0))
+                                .strong(),
+                        )
+                        .min_size(Vec2::new(26.0, 24.0))
+                        .fill(Color32::from_rgb(0x1c, 0x30, 0x28));
+                        if ui.add(btn_overwrite).on_hover_text("Üzerine Yaz (Overwrite - Nokta '.')").clicked() {
+                            action = Some(MonitorAction::OverwriteToTimeline);
+                        }
+                    }
+                    MonitorMode::Program => {
+                        // Export Frame camera icon
+                        let btn_frame = Button::new(
+                            RichText::new("Kare Al")
+                                .size(11.0)
+                                .color(Color32::from_rgb(0xe0, 0xaa, 0x50))
+                                .strong(),
+                        )
+                        .min_size(Vec2::new(26.0, 24.0))
+                        .fill(Color32::from_rgb(0x2d, 0x28, 0x20));
+                        if ui.add(btn_frame).on_hover_text("Mevcut Kareyi Dışa Aktar (Export Frame)").clicked() {
+                            action = Some(MonitorAction::ExportFrame);
+                        }
+                    }
+                }
+            });
+        });
 
         (response, action)
     }
@@ -226,7 +443,7 @@ fn fit_aspect(max_w: f32, max_h: f32, aspect: f32) -> (f32, f32) {
 
 fn draw_corner_guides(painter: &egui::Painter, rect: Rect) {
     let guide_len = 10.0;
-    let guide_stroke = Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(255, 255, 255, 50));
+    let guide_stroke = Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(255, 255, 255, 45));
 
     // Top-Left
     painter.line_segment([rect.left_top(), Pos2::new(rect.left() + guide_len, rect.top())], guide_stroke);

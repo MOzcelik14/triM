@@ -1,0 +1,5 @@
+# GitHub Linguist language detection overrides
+# Ensure scripts/ and documentation/resources are not misattributed
+scripts/** linguist-vendored
+docs/** linguist-documentation
+resources/** linguist-vendored

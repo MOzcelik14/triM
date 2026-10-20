@@ -37,8 +37,8 @@ impl FFprobeAnalyzer {
                 "json",
                 "-show_format",
                 "-show_streams",
-                path.to_str().unwrap_or(""),
             ])
+            .arg(path)
             .output()
             .map_err(|e| ProbeError::ProcessFailed(e.to_string()))?;
 
@@ -87,6 +87,21 @@ impl FFprobeAnalyzer {
             .and_then(|d| d.as_str())
             .and_then(|s| s.parse::<f64>().ok())
             .unwrap_or(0.0);
+
+        if duration <= 0.0 {
+            if let Some(vs) = video_stream {
+                if let Some(d) = vs.get("duration").and_then(|d| d.as_str()).and_then(|s| s.parse::<f64>().ok()) {
+                    duration = d;
+                }
+            }
+        }
+        if duration <= 0.0 {
+            if let Some(as_) = audio_stream {
+                if let Some(d) = as_.get("duration").and_then(|d| d.as_str()).and_then(|s| s.parse::<f64>().ok()) {
+                    duration = d;
+                }
+            }
+        }
 
         let file_size_bytes = format
             .and_then(|f| f.get("size"))
