@@ -13,8 +13,8 @@
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-2021%20edition-orange.svg?style=flat-square" alt="Rust 2021"></a>
   <a href="https://github.com/emilk/egui"><img src="https://img.shields.io/badge/GUI-egui%20%2F%20eframe-blueviolet.svg?style=flat-square" alt="GUI: egui / eframe"></a>
   <a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/media-FFmpeg%206.0+-007808.svg?style=flat-square" alt="FFmpeg 6.0+"></a>
-  <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.3.0"><img src="https://img.shields.io/badge/release-v0.3.0-E07A38.svg?style=flat-square" alt="Release v0.3.0"></a>
-  <img src="https://img.shields.io/badge/platform-Linux%20(Wayland%20%7C%20X11)-28282E.svg?style=flat-square" alt="Linux">
+  <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.4.0"><img src="https://img.shields.io/badge/release-v0.4.0-E07A38.svg?style=flat-square" alt="Release v0.4.0"></a>
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows-28282E.svg?style=flat-square" alt="Linux | Windows">
 </p>
 
 <p align="center">

@@ -2005,9 +2005,9 @@ impl eframe::App for TrimApp {
                 .show(ctx, |ui| {
                     ui.vertical_centered(|ui| {
                         ui.heading(RichText::new("triM.").size(24.0).color(Color32::from_rgb(0xe0, 0x7a, 0x38)));
-                        ui.label("v0.3.0 (Rust Native Desktop)");
+                        ui.label(format!("v{} (Rust Native Desktop)", env!("CARGO_PKG_VERSION")));
                         ui.add_space(8.0);
-                        ui.label("Hafif, hızlı, modern Linux video düzenleyici.");
+                        ui.label("Hafif, hızlı, modern masaüstü video düzenleyici.");
                         ui.label("Geliştirici: MOzcelik14");
                         ui.add_space(14.0);
                         if ui.button("Kapat").clicked() {

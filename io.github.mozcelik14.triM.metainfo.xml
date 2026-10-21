@@ -26,6 +26,11 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="0.4.0" date="2026-10-21">
+      <description>
+        <p>triM. v0.4.0 represents a complete transition to 100% native Rust, a redesigned 4-quadrant NLE interface, an 8-tool vector editing toolbar, track audio mixer, Export Studio presets, cross-platform standard paths, and native Windows support with silent process execution and one-line installers.</p>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-09-30">
       <description>
         <p>triM. v0.3.0 introduces timeline markers with magnetic snapping, keyframe animation for transform and opacity properties, and variable clip playback speed and reverse.</p>

@@ -107,7 +107,7 @@ impl WelcomeDialog {
                                         .color(Color32::from_rgb(0xe0, 0x7a, 0x38)),
                                 );
                                 ui.label(
-                                    RichText::new("v0.3.0")
+                                    RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
                                         .size(11.0)
                                         .color(Color32::from_rgb(0x80, 0x80, 0x90)),
                                 );
