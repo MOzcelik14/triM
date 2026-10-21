@@ -254,7 +254,7 @@ impl AudioMixer {
 }
 
 fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
-    let mut child = Command::new("ffmpeg")
+    let mut child = crate::ffmpeg::ffmpeg_cmd()
         .args([
             "-v",
             "quiet",
@@ -314,21 +314,39 @@ impl AudioStreamPlayer {
 
     fn ensure_started(&mut self) -> Option<&mut std::process::ChildStdin> {
         if self.child.is_none() {
-            // Attempt PipeWire pw-cat with 20ms low latency first, fall back to ALSA aplay with 25ms buffer
-            let spawned = Command::new("pw-cat")
-                .args(["-p", "--format=s16", "--rate=48000", "--channels=2", "--latency=20ms", "-"])
-                .stdin(Stdio::piped())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .or_else(|_| {
-                    Command::new("aplay")
-                        .args(["-q", "-t", "raw", "-c", "2", "-f", "S16_LE", "-r", "48000", "--buffer-time=25000", "--period-time=5000", "-"])
-                        .stdin(Stdio::piped())
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn()
-                });
+            let spawned = if cfg!(windows) {
+                // Windows: ffplay with CREATE_NO_WINDOW
+                crate::ffmpeg::ffplay_cmd()
+                    .args(["-nodisp", "-autoexit", "-loglevel", "quiet", "-f", "s16le", "-ar", "48000", "-ac", "2", "-i", "-"])
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+            } else {
+                // Linux: PipeWire pw-cat (20ms) -> ALSA aplay -> ffplay
+                Command::new("pw-cat")
+                    .args(["-p", "--format=s16", "--rate=48000", "--channels=2", "--latency=20ms", "-"])
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn()
+                    .or_else(|_| {
+                        Command::new("aplay")
+                            .args(["-q", "-t", "raw", "-c", "2", "-f", "S16_LE", "-r", "48000", "--buffer-time=25000", "--period-time=5000", "-"])
+                            .stdin(Stdio::piped())
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .spawn()
+                    })
+                    .or_else(|_| {
+                        crate::ffmpeg::ffplay_cmd()
+                            .args(["-nodisp", "-autoexit", "-loglevel", "quiet", "-f", "s16le", "-ar", "48000", "-ac", "2", "-i", "-"])
+                            .stdin(Stdio::piped())
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .spawn()
+                    })
+            };
 
             if let Ok(c) = spawned {
                 self.child = Some(c);

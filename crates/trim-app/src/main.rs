@@ -1,3 +1,4 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 //! triM. Desktop Video Editor main entry point.
 
 use eframe::egui;

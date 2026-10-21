@@ -22,3 +22,6 @@ eframe = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
 image = { workspace = true }
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"

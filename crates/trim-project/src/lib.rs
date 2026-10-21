@@ -68,8 +68,7 @@ pub struct AutosaveManager {
 
 impl Default for AutosaveManager {
     fn default() -> Self {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let rec_dir = PathBuf::from(home).join(".config").join("trim").join("recovery");
+        let rec_dir = trim_core::paths::config_dir().join("recovery");
         Self { recovery_dir: rec_dir }
     }
 }
@@ -125,8 +124,7 @@ impl AutosaveManager {
         }
 
         // Also check legacy .config/cutline/recovery
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let leg_path = PathBuf::from(home)
+        let leg_path = trim_core::paths::home_dir()
             .join(".config")
             .join("cutline")
             .join("recovery")

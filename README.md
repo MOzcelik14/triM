@@ -70,18 +70,28 @@ The [Linux release workflow](.github/workflows/release-linux.yml) tests the Rust
 
 ### Installation & Build
 
-#### 🚀 Quick Install (One-Line curl)
+#### 🚀 Quick Install
 
-Install **triM.** on any Linux desktop with a single command (installs binary to `~/.local/bin/trim`, integrates high-res desktop icons and system application menu):
-
+##### Linux (Bash / curl)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash
 ```
-
-To cleanly uninstall at any time:
+To cleanly uninstall:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash -s -- --uninstall
 ```
+
+##### Windows (PowerShell)
+```powershell
+iwr -useb https://raw.githubusercontent.com/MOzcelik14/triM/master/install.ps1 | iex
+```
+To cleanly uninstall:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall
+```
+
+> **Windows Note:** Ensure FFmpeg is installed (`winget install Gyan.FFmpeg`) or place `ffmpeg.exe`, `ffprobe.exe`, and `ffplay.exe` in the same folder as `trim.exe`.
+
 
 #### Prerequisites (Debian / Ubuntu / Pop!_OS / Fedora / Arch)
 
@@ -141,18 +151,28 @@ Modüler Cargo çalışma alanı mimarisi üzerine kurulan **triM.**; hassas vid
 - **Hızlı Başlangıç & Karşılama Ekranı:** Çözünürlük şablonları, son kullanılan projeler ve terminalden doğrudan dosya açabilme (`trim video.mp4`).
 - **Geriye Dönük Uyumluluk:** `.trim` ve eski `.cutline` JSON proje dosyalarını otomatik tanıma ve her 2 dakikada bir otomatik kurtarma anlık görüntüsü alma.
 
-### 🚀 Hızlı Kurulum (Tek Satırda curl)
+### 🚀 Hızlı Kurulum
 
-Modern Linux dağıtımlarında **triM.** uygulamasını tek satırla kurmak için:
-
+#### Linux (Bash / curl)
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash
 ```
-
-İstediğiniz zaman uygulamayı, simgeleri ve kısayolları temizce kaldırmak için:
+Temizce kaldırmak için:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash -s -- --uninstall
 ```
+
+#### Windows (PowerShell)
+```powershell
+iwr -useb https://raw.githubusercontent.com/MOzcelik14/triM/master/install.ps1 | iex
+```
+Temizce kaldırmak için:
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall
+```
+
+> **Windows Notu:** Sisteminizde FFmpeg kurulu olmalıdır (`winget install Gyan.FFmpeg`) veya `ffmpeg.exe`, `ffprobe.exe` ve `ffplay.exe` dosyalarını `trim.exe` ile aynı klasöre yerleştirebilirsiniz.
+
 
 ---
 

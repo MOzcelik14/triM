@@ -1,7 +1,6 @@
 //! Media metadata extraction using system `ffprobe`.
 
 use std::path::Path;
-use std::process::Command;
 use thiserror::Error;
 use trim_core::media::{MediaItem, MediaType};
 
@@ -29,7 +28,7 @@ impl FFprobeAnalyzer {
             return Err(ProbeError::FileNotFound(path.to_string_lossy().to_string()));
         }
 
-        let output = Command::new("ffprobe")
+        let output = crate::ffmpeg::ffprobe_cmd()
             .args([
                 "-v",
                 "quiet",

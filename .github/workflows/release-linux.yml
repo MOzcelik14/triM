@@ -1,4 +1,4 @@
-name: Build & Release Linux Packages
+name: Build & Release Multiplatform Packages
 
 on:
   push:
@@ -10,6 +10,8 @@ on:
       - "Cargo.lock"
       - "crates/**"
       - "resources/**"
+      - "install.sh"
+      - "install.ps1"
       - "scripts/package-linux.sh"
       - ".github/workflows/release-linux.yml"
   workflow_dispatch:
@@ -129,9 +131,46 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  windows:
+    name: Windows build · zip (MSVC)
+    needs: rust-tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Use current stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Build Windows binary
+        run: cargo build --locked --release -p trim-app
+      - name: Package Windows ZIP
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}"
+          if ([string]::IsNullOrEmpty($ver) -or $ver -notlike "v*") {
+            $ver = "v0.3.0"
+          }
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          $stage = Join-Path $env:TEMP "trim-stage"
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item -Path "target\release\trim.exe" -Destination $stage -Force
+          Copy-Item -Path "resources" -Destination $stage -Recurse -Force
+          Copy-Item -Path "README.md" -Destination $stage -Force
+          Copy-Item -Path "install.ps1" -Destination $stage -Force
+          Compress-Archive -Path "$stage\*" -DestinationPath "dist\triM-$ver-windows-x86_64.zip" -Force
+          Remove-Item -Recurse -Force $stage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trim-windows-package
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
   publish:
     name: Publish GitHub Release
-    needs: [deb-appimage, rpm]
+    needs: [deb-appimage, rpm, windows]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -149,7 +188,8 @@ jobs:
           test "$(find dist -maxdepth 1 -name '*.deb' | wc -l)" -eq 1
           test "$(find dist -maxdepth 1 -name '*.rpm' | wc -l)" -eq 1
           test "$(find dist -maxdepth 1 -name '*.AppImage' | wc -l)" -eq 1
-          (cd dist && sha256sum -- *.deb *.rpm *.AppImage > SHA256SUMS.txt)
+          test "$(find dist -maxdepth 1 -name '*.zip' | wc -l)" -eq 1
+          (cd dist && sha256sum -- *.deb *.rpm *.AppImage *.zip > SHA256SUMS.txt)
           cat dist/SHA256SUMS.txt
       - name: Create or update release with all packages
         uses: softprops/action-gh-release@v3
@@ -158,6 +198,8 @@ jobs:
             dist/*.deb
             dist/*.rpm
             dist/*.AppImage
+            dist/*.zip
             dist/SHA256SUMS.txt
           fail_on_unmatched_files: true
           generate_release_notes: true
+

@@ -144,6 +144,16 @@ VideoEditor/
 - **Başlangıç & Karşılama Ekranı (WelcomeDialog):** Çözünürlük önayarları ve son projeler geçmişi.
 - **Klavye Kısayolları Kılavuzu (`F1`):** Hızlı erişilebilir kısayol tablosu.
 
+### 10. Windows Port & Çoklu Platform Desteği
+- **Çapraz Platform Standart Dizinler (`trim-core::paths`):** Windows için `%APPDATA%\triM` (ayarlar ve kurtarma), `%LOCALAPPDATA%\triM` (dalga formu ve küçük resim önbellekleri), `%USERPROFILE%\Videos` (varsayılan dışa aktarma) dizinleri.
+- **Konsolsuz Arka Plan İşlemleri (`CREATE_NO_WINDOW`):** Windows GUI üzerinde FFmpeg ve FFprobe işlemleri yürütülürken siyah cmd pencerelerinin açılıp kapanmasını engelleyen `trim-media::ffmpeg::create_command` altyapısı.
+- **Pencere Alt Sistemi:** Release derlemelerinde terminal penceresini gizleyen `#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]`.
+- **Ses Oynatma:** Windows üzerinde sessiz ve sıfır gecikmeli `ffplay` PCM borusu (`-nodisp -autoexit -loglevel quiet -f s16le -ar 48000 -ac 2 -i -`).
+- **Taşınabilir (Portable) FFmpeg Desteği:** `trim.exe` ile aynı klasörde bulunan `ffmpeg.exe`, `ffprobe.exe` ve `ffplay.exe` dosyalarının otomatik tespiti.
+- **Gömülü Windows İkonu & PE Metadata:** 6 çözünürlüklü `resources/icons/trim.ico` ikonunun `build.rs` ve `winres` aracılığıyla `trim.exe` içerisine gömülmesi.
+- **Görsel PowerShell Kurucusu (`install.ps1`):** Tek satırda kurulum (`iwr -useb .../install.ps1 | iex`), masaüstü ve Başlat Menüsü kısayollarının oluşturulması, PATH kontrolü ve temiz kaldırma (`-Uninstall`).
+- **Çoklu Platform CI/CD:** GitHub Actions üzerinde Linux (`.deb`, `.rpm`, `.AppImage`) ve Windows (`trim-*-windows-x86_64.zip`) paketlerinin otomatik derlenmesi ve yayınlanması.
+
 ---
 
 ## 📊 Feature Parity & Test Özeti
@@ -161,5 +171,7 @@ VideoEditor/
 | **Tipografi** | Sistem fontları ile başlık ve alt yazı kartı oluşturma | ✅ Tam |
 | **Dışa Aktarma** | Çok kanallı FFmpeg filtergraph, Export Studio profilleri | ✅ Tam |
 | **Proje & Kurtarma** | Atomik kaydetme, geriye dönük `.cutline`/`.trim` uyumu, Autosave | ✅ Tam |
-| **Testler** | `cargo test --workspace` (52 / 52 test başarılı) | ✅ Tam |
-| **Release Binary** | 19 MB bağımsız native ELF (`./target/release/trim`) | ✅ Tam |
+| **Windows Port** | `CREATE_NO_WINDOW`, `paths`, `ffplay` audio, `.ico`, `install.ps1`, MSVC/GNU | ✅ Tam |
+| **Testler** | `cargo test --workspace` (58 / 58 test başarılı) | ✅ Tam |
+| **Release Binary** | 19 MB bağımsız native ELF / Windows PE (`trim.exe`) | ✅ Tam |
+

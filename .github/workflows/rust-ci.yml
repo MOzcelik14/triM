@@ -48,3 +48,18 @@ jobs:
         run: cargo test --workspace --locked
       - name: Shell syntax
         run: bash -n scripts/package-linux.sh
+
+  windows-check:
+    name: Windows cargo check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Check Windows workspace
+        run: cargo check --workspace --locked
+

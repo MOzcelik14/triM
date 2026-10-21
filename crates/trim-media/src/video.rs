@@ -4,7 +4,7 @@ use image::{ImageBuffer, Rgba, RgbaImage};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::{Arc, RwLock};
@@ -24,7 +24,7 @@ pub fn decode_frame_raw<P: AsRef<Path>>(file_path: P, source_time: f64) -> Optio
     let p = file_path.as_ref();
     let p_str = p.to_string_lossy().to_string();
 
-    let mut child = Command::new("ffmpeg")
+    let mut child = crate::ffmpeg::ffmpeg_cmd()
         .args([
             "-v",
             "quiet",
@@ -124,7 +124,7 @@ impl PlaybackStreamer {
             let vf_str = format!(
                 "fps=fps={thread_fps:.3},scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black"
             );
-            let mut child = match Command::new("ffmpeg")
+            let mut child = match crate::ffmpeg::ffmpeg_cmd()
                 .args([
                     "-v",
                     "quiet",
@@ -852,8 +852,7 @@ pub fn generate_title_image(
     width: u32,
     height: u32,
 ) -> Option<PathBuf> {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let titles_dir = PathBuf::from(home).join(".local").join("share").join("trim").join("titles");
+    let titles_dir = trim_core::paths::config_dir().join("titles");
     let _ = std::fs::create_dir_all(&titles_dir);
 
     let id = uuid::Uuid::new_v4().to_string();
@@ -898,7 +897,7 @@ pub fn generate_title_image(
         box_args
     );
 
-    let status = Command::new("ffmpeg")
+    let status = crate::ffmpeg::ffmpeg_cmd()
         .args([
             "-v",
             "quiet",

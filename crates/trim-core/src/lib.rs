@@ -5,6 +5,7 @@ pub mod error;
 pub mod keyframe;
 pub mod marker;
 pub mod media;
+pub mod paths;
 pub mod project;
 pub mod time;
 pub mod timeline;

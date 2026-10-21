@@ -2,7 +2,6 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use trim_core::media::{MediaItem, MediaType};
 
 #[derive(Debug, Clone)]
@@ -12,8 +11,7 @@ pub struct ThumbnailGenerator {
 
 impl Default for ThumbnailGenerator {
     fn default() -> Self {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let c_dir = PathBuf::from(home).join(".cache").join("trim").join("thumbnails");
+        let c_dir = trim_core::paths::cache_dir().join("thumbnails");
         Self { cache_dir: c_dir }
     }
 }
@@ -44,7 +42,7 @@ impl ThumbnailGenerator {
 
         match item.media_type {
             MediaType::Image => {
-                let status = Command::new("ffmpeg")
+                let status = crate::ffmpeg::ffmpeg_cmd()
                     .args([
                         "-v",
                         "quiet",
@@ -67,7 +65,7 @@ impl ThumbnailGenerator {
             }
             MediaType::Video => {
                 let seek_time = (item.duration * 0.1).clamp(0.0, 1.0);
-                let status = Command::new("ffmpeg")
+                let status = crate::ffmpeg::ffmpeg_cmd()
                     .args([
                         "-v",
                         "quiet",

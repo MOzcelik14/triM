@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::{Arc, RwLock};
 
 #[derive(Debug, Clone)]
@@ -16,8 +16,7 @@ pub struct WaveformGenerator {
 
 impl Default for WaveformGenerator {
     fn default() -> Self {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let c_dir = PathBuf::from(home).join(".cache").join("trim").join("waveforms");
+        let c_dir = trim_core::paths::cache_dir().join("waveforms");
         Self {
             cache_dir: c_dir,
             points_per_second: 100,
@@ -88,7 +87,7 @@ impl WaveformGenerator {
 
         // Generate downsampled mono PCM
         let sample_rate = self.points_per_second * 40;
-        let mut child = Command::new("ffmpeg")
+        let mut child = crate::ffmpeg::ffmpeg_cmd()
             .args([
                 "-v",
                 "quiet",

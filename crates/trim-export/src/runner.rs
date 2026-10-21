@@ -66,7 +66,13 @@ impl ExportRunner {
                 return;
             }
 
-            let mut child = match Command::new(&cmd_args[0])
+            let mut cmd = Command::new(&cmd_args[0]);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x0800_0000);
+            }
+            let mut child = match cmd
                 .args(&cmd_args[1..])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())

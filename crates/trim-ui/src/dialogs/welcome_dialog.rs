@@ -32,13 +32,13 @@ pub enum WelcomeAction {
 impl Default for WelcomeDialog {
     fn default() -> Self {
         // Load recent projects or provide standard defaults
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        let home = trim_core::paths::home_dir();
         let mut recents = Vec::new();
-        let default_proj = format!("{}/Masaüstü/Proje 1.trim", home);
-        if std::path::Path::new(&default_proj).exists() {
+        let default_proj = home.join("Videos").join("Proje 1.trim");
+        if default_proj.exists() {
             recents.push(RecentProjectEntry {
                 name: "Proje 1".to_string(),
-                path: default_proj,
+                path: default_proj.to_string_lossy().to_string(),
                 last_modified: "Son kullanılan".to_string(),
             });
         }

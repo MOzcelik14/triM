@@ -22,13 +22,15 @@ pub struct ExportDialog {
 
 impl Default for ExportDialog {
     fn default() -> Self {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let default_out = if std::path::Path::new(&format!("{}/Masaüstü", home)).is_dir() {
-            format!("{}/Masaüstü/cikti.mp4", home)
-        } else if std::path::Path::new(&format!("{}/Desktop", home)).is_dir() {
-            format!("{}/Desktop/cikti.mp4", home)
+        let home = trim_core::paths::home_dir();
+        let default_out = if home.join("Videos").is_dir() {
+            home.join("Videos").join("cikti.mp4").to_string_lossy().to_string()
+        } else if home.join("Masaüstü").is_dir() {
+            home.join("Masaüstü").join("cikti.mp4").to_string_lossy().to_string()
+        } else if home.join("Desktop").is_dir() {
+            home.join("Desktop").join("cikti.mp4").to_string_lossy().to_string()
         } else {
-            format!("{}/cikti.mp4", home)
+            home.join("cikti.mp4").to_string_lossy().to_string()
         };
 
         let presets = get_default_presets();

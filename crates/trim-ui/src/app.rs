@@ -1808,6 +1808,11 @@ impl eframe::App for TrimApp {
                     } else {
                         p
                     };
+                    #[cfg(target_os = "windows")]
+                    let _ = std::process::Command::new("explorer").arg(folder).spawn();
+                    #[cfg(target_os = "macos")]
+                    let _ = std::process::Command::new("open").arg(folder).spawn();
+                    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
                     let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
                 }
             }
