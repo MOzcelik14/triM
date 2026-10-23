@@ -19,9 +19,39 @@
       <li>High-performance FFmpeg rendering pipeline</li>
     </ul>
   </description>
+  <developer id="io.github.mozcelik14">
+    <name>Muhammet Özçelik</name>
+  </developer>
   <launchable type="desktop-id">io.github.mozcelik14.triM.desktop</launchable>
   <url type="homepage">https://github.com/MOzcelik14/triM</url>
   <url type="bugtracker">https://github.com/MOzcelik14/triM/issues</url>
+  <url type="vcs-browser">https://github.com/MOzcelik14/triM</url>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/trim_workspace.png</image>
+      <caption>triM. Multi-track Timeline and Workspace</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/trim_subtitles_smart_cut.png</image>
+      <caption>Subtitle Suite and Smart Scene Cut Detection</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/trim_vertical_safezones.png</image>
+      <caption>9:16 Vertical Shorts/Reels Canvas with Safe Zones</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/trim_audio_eq.png</image>
+      <caption>Multi-channel Audio Mixer and Equalizer Controls</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/trim_shortcuts_profiles.png</image>
+      <caption>Multi-NLE Keyboard Shortcut Profiles</caption>
+    </screenshot>
+    <screenshot>
+      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/trim_export_loudness.png</image>
+      <caption>GPU Hardware-Accelerated Export Studio and Loudness Normalization</caption>
+    </screenshot>
+  </screenshots>
   <provides>
     <binary>trim</binary>
   </provides>
