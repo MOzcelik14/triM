@@ -210,6 +210,7 @@ fn render_speed_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
             ui.label("Hız:");
             let mut s = clip.speed;
             if ui.add(DragValue::new(&mut s).speed(0.05).range(0.1..=10.0).suffix("x")).changed() {
+                clip.change_speed(s);
                 *action = Some(InspectorAction::ChangeSpeed(s, clip.reverse));
             }
             ui.end_row();
@@ -218,15 +219,25 @@ fn render_speed_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
             ui.horizontal(|ui| {
                 for preset in [0.5, 1.0, 2.0] {
                     if ui.button(format!("{:.1}x", preset)).clicked() {
+                        clip.change_speed(preset);
                         *action = Some(InspectorAction::ChangeSpeed(preset, clip.reverse));
                     }
                 }
             });
             ui.end_row();
 
+            ui.label("Süre:");
+            ui.label(
+                RichText::new(format!("{:.2} s", clip.duration()))
+                    .color(egui::Color32::from_rgb(0xa0, 0xa0, 0xb0))
+                    .size(11.0),
+            );
+            ui.end_row();
+
             ui.label("");
             let mut rev = clip.reverse;
             if ui.checkbox(&mut rev, "Geriye Doğru Oynat").changed() {
+                clip.reverse = rev;
                 *action = Some(InspectorAction::ChangeSpeed(clip.speed, rev));
             }
             ui.end_row();

@@ -211,6 +211,15 @@ mod tests {
         assert_eq!(c.speed, 1.0);
         assert!(!c.reverse);
         assert!((c.duration() - 4.0).abs() < 1e-3);
+
+        // Slow down to 0.5x -> duration should stretch to 8.0s
+        stack.push(Box::new(ChangeClipSpeedCommand::new(&track_id, &clip_id, 0.5, false)), &mut tl).unwrap();
+        let c = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(c.speed, 0.5);
+        assert!(!c.reverse);
+        assert!((c.duration() - 8.0).abs() < 1e-3);
+        assert_eq!(c.timeline_in, 2.0);
+        assert_eq!(c.timeline_out, 10.0);
     }
 
     #[test]

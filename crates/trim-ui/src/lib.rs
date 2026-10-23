@@ -152,6 +152,31 @@ mod tests {
         tab = LeftPanelTab::Effects;
         assert_eq!(tab, LeftPanelTab::Effects);
     }
+
+    #[test]
+    fn test_inspector_change_speed_scales_timeline_clip() {
+        use trim_core::clip::Clip;
+        let mut project = Project::default();
+        let track_id = project.timeline.tracks[0].id.clone();
+        let clip = Clip::new("media1", 0.0, 4.0); // 4.0s at 1.0x
+        let clip_id = clip.id.clone();
+        project.timeline.tracks[0].add_clip(clip);
+
+        let tr = project.timeline.get_track_by_id_mut(&track_id).unwrap();
+        let cl = tr.get_clip_by_id_mut(&clip_id).unwrap();
+
+        // 0.5x slowdown
+        cl.change_speed(0.5);
+        assert_eq!(cl.speed, 0.5);
+        assert_eq!(cl.duration(), 8.0);
+        assert_eq!(cl.timeline_out, 8.0);
+
+        // 2.0x speedup
+        cl.change_speed(2.0);
+        assert_eq!(cl.speed, 2.0);
+        assert_eq!(cl.duration(), 2.0);
+        assert_eq!(cl.timeline_out, 2.0);
+    }
 }
 
 

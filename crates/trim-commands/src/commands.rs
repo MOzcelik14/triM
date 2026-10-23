@@ -1085,6 +1085,7 @@ pub struct ChangeClipSpeedCommand {
     pub old_speed: f64,
     pub old_reverse: bool,
     pub old_timeline_out: f64,
+    pub old_source_out: Option<f64>,
 }
 
 impl ChangeClipSpeedCommand {
@@ -1102,6 +1103,7 @@ impl ChangeClipSpeedCommand {
             old_speed: 1.0,
             old_reverse: false,
             old_timeline_out: 0.0,
+            old_source_out: None,
         }
     }
 }
@@ -1118,13 +1120,10 @@ impl Command for ChangeClipSpeedCommand {
         self.old_speed = clip.speed;
         self.old_reverse = clip.reverse;
         self.old_timeline_out = clip.timeline_out;
+        self.old_source_out = clip.source_out;
 
-        clip.speed = self.new_speed;
+        clip.change_speed(self.new_speed);
         clip.reverse = self.new_reverse;
-
-        let src_span = clip.effective_source_out() - clip.source_in;
-        let new_dur = (src_span / self.new_speed).max(0.04);
-        clip.timeline_out = clip.timeline_in + new_dur;
         track.sort_clips();
         Ok(())
     }
@@ -1140,6 +1139,7 @@ impl Command for ChangeClipSpeedCommand {
         clip.speed = self.old_speed;
         clip.reverse = self.old_reverse;
         clip.timeline_out = self.old_timeline_out;
+        clip.source_out = self.old_source_out;
         track.sort_clips();
         Ok(())
     }

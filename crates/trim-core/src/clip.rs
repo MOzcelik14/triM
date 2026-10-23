@@ -297,6 +297,25 @@ impl Clip {
         self.source_out = Some(self.source_in + self.duration() * self.speed);
     }
 
+    /// Changes the playback speed of this clip and proportionally stretches or
+    /// shrinks its duration on the timeline, maintaining the same range of source media.
+    pub fn change_speed(&mut self, new_speed: f64) {
+        let clamped_speed = new_speed.clamp(0.1, 10.0);
+        if (self.speed - clamped_speed).abs() < 1e-6 {
+            return;
+        }
+
+        // Determine source span covered by this clip BEFORE updating speed
+        let old_src_out = self.effective_source_out();
+        let src_span = (old_src_out - self.source_in).max(0.04);
+
+        // Adjust timeline_out based on the new speed
+        let new_dur = (src_span / clamped_speed).max(0.04);
+        self.timeline_out = self.timeline_in + new_dur;
+        self.source_out = Some(self.source_in + src_span);
+        self.speed = clamped_speed;
+    }
+
     pub fn get_property_at_time(&self, prop: &str, clip_time: f64) -> f64 {
         let default_val = match prop {
             "pos_x" => self.pos_x,
@@ -401,5 +420,34 @@ mod tests {
 
         assert!((c.get_property_at_time("opacity", 1.0) - 0.6).abs() < 1e-4);
         assert!((c.get_property_at_time("opacity", 2.0) - 0.2).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_clip_change_speed_scales_timeline_duration() {
+        let mut c = Clip::new("m1", 2.0, 6.0); // duration = 4.0, speed = 1.0
+        assert_eq!(c.duration(), 4.0);
+
+        // Slow down to 0.5x -> duration should double to 8.0s
+        c.change_speed(0.5);
+        assert_eq!(c.speed, 0.5);
+        assert_eq!(c.timeline_in, 2.0);
+        assert_eq!(c.timeline_out, 10.0);
+        assert_eq!(c.duration(), 8.0);
+        assert_eq!(c.source_out, Some(4.0));
+
+        // Speed up to 2.0x -> duration should become 4.0 / 2.0 = 2.0s
+        c.change_speed(2.0);
+        assert_eq!(c.speed, 2.0);
+        assert_eq!(c.timeline_in, 2.0);
+        assert_eq!(c.timeline_out, 4.0);
+        assert_eq!(c.duration(), 2.0);
+        assert_eq!(c.source_out, Some(4.0));
+
+        // Back to 1.0x -> duration back to 4.0s
+        c.change_speed(1.0);
+        assert_eq!(c.speed, 1.0);
+        assert_eq!(c.timeline_in, 2.0);
+        assert_eq!(c.timeline_out, 6.0);
+        assert_eq!(c.duration(), 4.0);
     }
 }

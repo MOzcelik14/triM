@@ -2256,8 +2256,9 @@ impl eframe::App for TrimApp {
                                     if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first() {
                                         if let Some(tr) = self.project.timeline.get_track_by_id_mut(tr_id) {
                                             if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
-                                                cl.speed = spd;
+                                                cl.change_speed(spd);
                                                 cl.reverse = rev;
+                                                tr.sort_clips();
                                                 self.project.mark_dirty();
                                             }
                                         }
