@@ -39,18 +39,18 @@ mod tests {
                 println!("Canvas track_height = {}, track_spacing = {}", canvas_state.track_height, canvas_state.track_spacing);
 
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
-                let header_w = 130.0;
+                let header_w = track_header::TRACK_HEADER_WIDTH;
 
                 ui.allocate_ui(Vec2::new(header_w, 600.0), |ui| {
                     ui.spacing_mut().item_spacing = Vec2::ZERO;
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
                         let (corner_rect, _) = ui.allocate_exact_size(Vec2::new(header_w, 26.0), egui::Sense::hover());
-                        println!("Corner rect: top = {}, bottom = {}, height = {}", corner_rect.top(), corner_rect.bottom(), corner_rect.height());
+                        assert_eq!(corner_rect.width(), track_header::TRACK_HEADER_WIDTH);
 
-                        for (idx, track) in project.timeline.tracks.iter().enumerate() {
+                        for (_idx, track) in project.timeline.tracks.iter().enumerate() {
                             let (resp, _) = track_header::render_track_header(ui, track, canvas_state.track_height, false, false);
-                            println!("Track {} ({}) header rect: top = {}, bottom = {}, height = {}", idx, track.name, resp.rect.top(), resp.rect.bottom(), resp.rect.height());
+                            assert_eq!(resp.rect.width(), track_header::TRACK_HEADER_WIDTH);
                             ui.add_space(canvas_state.track_spacing);
                         }
                     });

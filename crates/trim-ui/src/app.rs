@@ -9,7 +9,7 @@ use crate::ruler::{render_time_ruler, RulerAction};
 use crate::shortcuts::ShortcutProfile;
 use crate::theme::*;
 use crate::toolbar::{render_vertical_toolbar, EditTool};
-use crate::track_header::{render_track_header, TrackHeaderAction};
+use crate::track_header::{render_track_header, TrackHeaderAction, TRACK_HEADER_WIDTH};
 use crate::vu_meter::{VuMeterState, VuMeterWidget};
 
 use egui::{
@@ -2210,23 +2210,64 @@ impl eframe::App for TrimApp {
                     ui.add_space(2.0);
                     ui.separator();
 
-                    // 2. Pinned Track Headers (Left, Fixed width 142px)
-                    let header_w = 142.0;
+                    // 2. Pinned Track Headers (Left, Fixed comfortable width 216px)
+                    let header_w = TRACK_HEADER_WIDTH;
+                    let mut add_video_requested = false;
+                    let mut add_audio_requested = false;
+                    let mut reset_heights_requested = false;
+
                     ui.allocate_ui(Vec2::new(header_w, ui.available_height()), |ui| {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
                         ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing = Vec2::ZERO;
                             let (corner_rect, _) = ui.allocate_exact_size(Vec2::new(header_w, 26.0), egui::Sense::hover());
                             let cp = ui.painter_at(corner_rect);
-                            cp.rect_filled(corner_rect, 0.0, Color32::from_rgb(0x18, 0x18, 0x1c));
-                            cp.rect_stroke(corner_rect, 0.0, Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x30)));
-                            cp.text(
-                                corner_rect.center(),
-                                egui::Align2::CENTER_CENTER,
-                                "KANALLAR",
-                                egui::FontId::proportional(11.0),
-                                Color32::from_rgb(0x90, 0x90, 0xa0),
+                            cp.rect_filled(corner_rect, 0.0, Color32::from_rgb(0x18, 0x19, 0x22));
+                            cp.line_segment(
+                                [corner_rect.left_bottom(), corner_rect.right_bottom()],
+                                Stroke::new(1.0_f32, Color32::from_rgb(0x2a, 0x2c, 0x38)),
                             );
+                            cp.line_segment(
+                                [corner_rect.right_top(), corner_rect.right_bottom()],
+                                Stroke::new(1.0_f32, Color32::from_rgb(0x2a, 0x2c, 0x38)),
+                            );
+
+                            let mut corner_ui = ui.new_child(egui::UiBuilder::new().max_rect(corner_rect));
+                            corner_ui.spacing_mut().item_spacing = Vec2::ZERO;
+                            corner_ui.horizontal_centered(|cui| {
+                                cui.add_space(8.0);
+                                cui.label(
+                                    RichText::new("🎛 KANALLAR")
+                                        .size(10.5)
+                                        .strong()
+                                        .color(Color32::from_rgb(0x94, 0x98, 0xa8)),
+                                );
+
+                                cui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |cui| {
+                                    cui.add_space(6.0);
+                                    cui.menu_button(
+                                        RichText::new("+ Kanal")
+                                            .size(10.0)
+                                            .color(Color32::from_rgb(0x81, 0x8c, 0xf8))
+                                            .strong(),
+                                        |menu_ui| {
+                                            if menu_ui.button("📹 Video Kanalı Ekle").clicked() {
+                                                add_video_requested = true;
+                                                menu_ui.close_menu();
+                                            }
+                                            if menu_ui.button("🎵 Ses Kanalı Ekle").clicked() {
+                                                add_audio_requested = true;
+                                                menu_ui.close_menu();
+                                            }
+                                            menu_ui.separator();
+                                            if menu_ui.button("↕ Yükseklikleri Sıfırla").clicked() {
+                                                reset_heights_requested = true;
+                                                menu_ui.close_menu();
+                                            }
+                                        },
+                                    );
+                                });
+                            });
 
                             let mut pending_header_actions = Vec::new();
                             for track in &self.project.timeline.tracks {
@@ -2306,6 +2347,16 @@ impl eframe::App for TrimApp {
                             }
                         });
                     });
+
+                    if add_video_requested {
+                        self.add_video_track();
+                    }
+                    if add_audio_requested {
+                        self.add_audio_track();
+                    }
+                    if reset_heights_requested {
+                        self.canvas_state.track_heights.clear();
+                    }
 
                     // 3. Scrollable Timeline Canvas
                     let vu_w = 46.0;
