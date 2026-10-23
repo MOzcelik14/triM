@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License: MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue.svg?style=flat-square" alt="License: GPLv3"></a>
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-2021%20edition-orange.svg?style=flat-square" alt="Rust 2021"></a>
   <a href="https://github.com/emilk/egui"><img src="https://img.shields.io/badge/GUI-egui%20%2F%20eframe-blueviolet.svg?style=flat-square" alt="GUI: egui / eframe"></a>
   <a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/media-FFmpeg%206.0+-007808.svg?style=flat-square" alt="FFmpeg 6.0+"></a>
@@ -297,4 +297,4 @@ Birim ve entegrasyon testleri; geri alma yığını, ses mikseri, manyetik yapı
 
 ### License / Lisans
 
-Bu proje **MIT Lisansı** ile lisanslanmıştır. Detaylar için [LICENSE](LICENSE) dosyasına bakabilirsiniz.
+Bu proje **GNU Genel Kamu Lisansı v3.0 (GPLv3)** ile lisanslanmıştır. Detaylar için [LICENSE](LICENSE) dosyasına bakabilirsiniz.

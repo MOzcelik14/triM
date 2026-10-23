@@ -109,7 +109,7 @@ Name: trim
 Version: $VERSION
 Release: 1
 Summary: Native video editor for Linux
-License: MIT
+License: GPL-3.0-or-later
 URL: https://github.com/MOzcelik14/triM
 BuildArch: x86_64
 Requires: /usr/bin/ffmpeg

@@ -84,6 +84,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     footer_tagline: "Masaüstü video düzenleyici. Hafif, hızlı ve bağımsız.",
     footer_releases: "Sürümler ↗",
+    footer_license: "GPL-3.0 Lisansı ↗",
     footer_credit: "Linux & Windows için özenle geliştirildi.",
     back_top: "Yukarı ↑",
     menu_open: "Menüyü aç",
@@ -174,6 +175,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     footer_tagline: "Desktop video editor. Lightweight, fast, and native.",
     footer_releases: "Releases ↗",
+    footer_license: "GPL-3.0 License ↗",
     footer_credit: "Built with care for Linux & Windows.",
     back_top: "Back to top ↑",
     menu_open: "Open menu",
