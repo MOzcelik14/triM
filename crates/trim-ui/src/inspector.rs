@@ -1,6 +1,6 @@
 //! Clip Properties and Inspector panel in Turkish.
 
-use egui::{Button, DragValue, Grid, RichText, ScrollArea, Ui};
+use egui::{Button, Color32, DragValue, RichText, ScrollArea, Ui};
 use trim_core::clip::{
     AudioEqPreset, AudioVisualizerConfig, CaptionStyle, ChromaKeyConfig, Clip, ColorWheelsConfig,
     LutPreset, PanZoomPreset, TextOverlay, VisualizerStyle,
@@ -121,23 +121,33 @@ pub fn render_inspector_panel(
     action
 }
 
+/// Renders a responsive property row where the label is wrap-content on the left
+/// and the interactive control / widget is hooked to the right side of the panel.
+fn property_row<R>(ui: &mut Ui, label: &str, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.label(RichText::new(label).size(11.5).color(Color32::from_rgb(0xc0, 0xc4, 0xd4)));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add_contents).inner
+    }).inner
+}
+
 fn render_info_group(ui: &mut Ui, clip: &mut Clip, track_name: &str, action: &mut Option<InspectorAction>) {
     ui.group(|ui| {
         ui.strong("Klip Bilgisi");
-        Grid::new("info_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-            ui.label("İsim:");
-            if ui.text_edit_singleline(&mut clip.name).changed() {
+        ui.add_space(3.0);
+
+        property_row(ui, "İsim:", |ui| {
+            if ui.add(egui::TextEdit::singleline(&mut clip.name).desired_width(140.0)).changed() {
                 *action = Some(InspectorAction::ClipModified);
             }
-            ui.end_row();
+        });
 
-            ui.label("Kanal:");
-            ui.label(track_name);
-            ui.end_row();
+        property_row(ui, "Kanal:", |ui| {
+            ui.label(RichText::new(track_name).strong().color(Color32::from_rgb(0x81, 0x8c, 0xf8)));
+        });
 
-            ui.label("Süre:");
-            ui.label(format!("{:.2} s", clip.duration()));
-            ui.end_row();
+        property_row(ui, "Süre:", |ui| {
+            ui.label(RichText::new(format!("{:.2} s", clip.duration())).strong().color(Color32::WHITE));
         });
     });
 }
@@ -145,23 +155,23 @@ fn render_info_group(ui: &mut Ui, clip: &mut Clip, track_name: &str, action: &mu
 fn render_timing_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<InspectorAction>) {
     ui.group(|ui| {
         ui.strong("Zamanlama");
-        Grid::new("timing_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-            ui.label("Başlangıç:");
+        ui.add_space(3.0);
+
+        property_row(ui, "Başlangıç:", |ui| {
             let old_dur = clip.duration();
             if ui.add(DragValue::new(&mut clip.timeline_in).speed(0.1).range(0.0..=99999.0).suffix(" s")).changed() {
                 clip.timeline_in = clip.timeline_in.max(0.0);
                 clip.timeline_out = clip.timeline_in + old_dur;
                 *action = Some(InspectorAction::ClipModified);
             }
-            ui.end_row();
+        });
 
-            ui.label("Bitiş:");
+        property_row(ui, "Bitiş:", |ui| {
             if ui.add(DragValue::new(&mut clip.timeline_out).speed(0.1).range(0.0..=99999.0).suffix(" s")).changed() {
                 clip.timeline_out = clip.timeline_out.max(clip.timeline_in + 0.04);
                 clip.source_out = Some(clip.source_in + (clip.timeline_out - clip.timeline_in) * clip.speed);
                 *action = Some(InspectorAction::ClipModified);
             }
-            ui.end_row();
         });
     });
 }
@@ -169,47 +179,42 @@ fn render_timing_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspect
 fn render_transform_group(ui: &mut Ui, clip: &mut Clip, clip_time: f64, action: &mut Option<InspectorAction>) {
     ui.group(|ui| {
         ui.strong("Video Dönüşümü & Anahtar Kareler");
-        Grid::new("trans_grid").num_columns(3).spacing([6.0, 6.0]).show(ui, |ui| {
-            // Pos X
-            ui.label("Konum X:");
+        ui.add_space(3.0);
+
+        property_row(ui, "Konum X:", |ui| {
+            render_kf_btn(ui, clip, "pos_x", clip_time, clip.pos_x, action);
             if ui.add(DragValue::new(&mut clip.pos_x).speed(1.0).suffix(" px")).changed() {
                 sync_kf_value(clip, "pos_x", clip_time, clip.pos_x);
                 *action = Some(InspectorAction::ClipModified);
             }
-            render_kf_btn(ui, clip, "pos_x", clip_time, clip.pos_x, action);
-            ui.end_row();
+        });
 
-            // Pos Y
-            ui.label("Konum Y:");
+        property_row(ui, "Konum Y:", |ui| {
+            render_kf_btn(ui, clip, "pos_y", clip_time, clip.pos_y, action);
             if ui.add(DragValue::new(&mut clip.pos_y).speed(1.0).suffix(" px")).changed() {
                 sync_kf_value(clip, "pos_y", clip_time, clip.pos_y);
                 *action = Some(InspectorAction::ClipModified);
             }
-            render_kf_btn(ui, clip, "pos_y", clip_time, clip.pos_y, action);
-            ui.end_row();
+        });
 
-            // Scale
-            ui.label("Ölçek:");
+        property_row(ui, "Ölçek:", |ui| {
+            render_kf_btn(ui, clip, "scale", clip_time, clip.scale, action);
             if ui.add(DragValue::new(&mut clip.scale).speed(0.01).range(0.05..=10.0)).changed() {
                 sync_kf_value(clip, "scale", clip_time, clip.scale);
                 *action = Some(InspectorAction::ClipModified);
             }
-            render_kf_btn(ui, clip, "scale", clip_time, clip.scale, action);
-            ui.end_row();
+        });
 
-            // Opacity
-            ui.label("Opaklık:");
+        property_row(ui, "Opaklık:", |ui| {
+            render_kf_btn(ui, clip, "opacity", clip_time, clip.opacity, action);
             if ui.add(DragValue::new(&mut clip.opacity).speed(0.01).range(0.0..=1.0)).changed() {
                 sync_kf_value(clip, "opacity", clip_time, clip.opacity);
                 *action = Some(InspectorAction::ClipModified);
             }
-            render_kf_btn(ui, clip, "opacity", clip_time, clip.opacity, action);
-            ui.end_row();
         });
 
         ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Ken Burns Şablonu:").size(11.0).strong());
+        property_row(ui, "Ken Burns Şablonu:", |ui| {
             egui::ComboBox::from_id_salt("ken_burns_preset")
                 .selected_text("Seç / Uygula...")
                 .show_ui(ui, |ui| {
@@ -227,51 +232,51 @@ fn render_transform_group(ui: &mut Ui, clip: &mut Clip, clip_time: f64, action: 
 fn render_speed_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<InspectorAction>) {
     ui.group(|ui| {
         ui.strong("Hız ve Yön");
-        Grid::new("speed_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-            ui.label("Hız:");
+        ui.add_space(3.0);
+
+        property_row(ui, "Hız:", |ui| {
             let mut s = clip.speed;
             if ui.add(DragValue::new(&mut s).speed(0.05).range(0.1..=10.0).suffix("x")).changed() {
                 clip.change_speed(s);
                 *action = Some(InspectorAction::ChangeSpeed(s, clip.reverse));
             }
-            ui.end_row();
+        });
 
-            ui.label("Hazır:");
-            ui.horizontal(|ui| {
-                for preset in [0.5, 1.0, 2.0] {
-                    if ui.button(format!("{:.1}x", preset)).clicked() {
-                        clip.change_speed(preset);
-                        *action = Some(InspectorAction::ChangeSpeed(preset, clip.reverse));
-                    }
+        property_row(ui, "Hazır Hızlar:", |ui| {
+            for preset in [2.0, 1.0, 0.5] {
+                if ui.button(format!("{:.1}x", preset)).clicked() {
+                    clip.change_speed(preset);
+                    *action = Some(InspectorAction::ChangeSpeed(preset, clip.reverse));
                 }
-            });
-            ui.end_row();
+            }
+        });
 
-            ui.label("Süre:");
+        property_row(ui, "Klip Süresi:", |ui| {
             ui.label(
                 RichText::new(format!("{:.2} s", clip.duration()))
                     .color(egui::Color32::from_rgb(0xa0, 0xa0, 0xb0))
                     .size(11.0),
             );
-            ui.end_row();
+        });
 
-            ui.label("");
+        property_row(ui, "Geriye Doğru (Reverse):", |ui| {
             let mut rev = clip.reverse;
-            if ui.checkbox(&mut rev, "Geriye Doğru Oynat").changed() {
+            if ui.checkbox(&mut rev, "Ters Oynat").changed() {
                 clip.reverse = rev;
                 *action = Some(InspectorAction::ChangeSpeed(clip.speed, rev));
             }
-            ui.end_row();
         });
 
         if !clip.media_id.is_empty() {
-            ui.add_space(4.0);
-            if ui.button(RichText::new("🎬 Sahneleri Algıla ve Böl (Smart Cut)").size(11.0).color(egui::Color32::from_rgb(0xe0, 0x7a, 0x38))).clicked() {
-                *action = Some(InspectorAction::TriggerSceneDetect);
-            }
-            if ui.button(RichText::new("⚡ Sessizlikleri Otomatik Kes (Jump-Cut)").size(11.0).color(egui::Color32::from_rgb(0x50, 0xc8, 0x78))).clicked() {
-                *action = Some(InspectorAction::TriggerSilenceDetect);
-            }
+            ui.add_space(6.0);
+            ui.vertical_centered_justified(|ui| {
+                if ui.button(RichText::new("🎬 Sahneleri Algıla ve Böl (Smart Cut)").size(11.0).color(egui::Color32::from_rgb(0xe0, 0x7a, 0x38))).clicked() {
+                    *action = Some(InspectorAction::TriggerSceneDetect);
+                }
+                if ui.button(RichText::new("⚡ Sessizlikleri Otomatik Kes (Jump-Cut)").size(11.0).color(egui::Color32::from_rgb(0x50, 0xc8, 0x78))).clicked() {
+                    *action = Some(InspectorAction::TriggerSilenceDetect);
+                }
+            });
         }
     });
 }
@@ -279,8 +284,9 @@ fn render_speed_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
 fn render_color_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<InspectorAction>) {
     ui.group(|ui| {
         ui.strong("Renk ve Filtreler");
-        Grid::new("color_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-            ui.label("Sinematik LUT:");
+        ui.add_space(3.0);
+
+        property_row(ui, "Sinematik LUT:", |ui| {
             let mut curr_lut = clip.lut_preset;
             egui::ComboBox::from_id_salt("lut_preset_combo")
                 .selected_text(curr_lut.label())
@@ -292,53 +298,52 @@ fn render_color_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
                         }
                     }
                 });
-            ui.end_row();
+        });
 
-            ui.label("Özel .cube LUT:");
-            ui.horizontal(|ui| {
-                if let Some(p) = &clip.custom_lut_path {
-                    let fname = std::path::Path::new(p)
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| p.clone());
-                    ui.label(RichText::new(format!("📁 {}", fname)).size(11.0).color(egui::Color32::from_rgb(0x38, 0xa0, 0xf0)));
-                    if ui.button("✕").on_hover_text("Özel LUT'u Kaldır").clicked() {
-                        clip.custom_lut_path = None;
-                        *action = Some(InspectorAction::ClipModified);
-                    }
-                } else if ui.button(RichText::new("Dosya Seç (.cube)...").size(11.0)).clicked() {
-                    if let Some(path) = rfd::FileDialog::new()
-                        .set_title("3D LUT Dosyası Seç (.cube)")
-                        .add_filter("3D LUT (.cube)", &["cube"])
-                        .pick_file()
-                    {
-                        clip.custom_lut_path = Some(path.to_string_lossy().to_string());
-                        *action = Some(InspectorAction::ClipModified);
-                    }
+        property_row(ui, "Özel .cube LUT:", |ui| {
+            if let Some(p) = &clip.custom_lut_path {
+                let fname = std::path::Path::new(p)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| p.clone());
+                if ui.button("✕").on_hover_text("Özel LUT'u Kaldır").clicked() {
+                    clip.custom_lut_path = None;
+                    *action = Some(InspectorAction::ClipModified);
                 }
-            });
-            ui.end_row();
+                ui.label(RichText::new(format!("📁 {}", fname)).size(11.0).color(egui::Color32::from_rgb(0x38, 0xa0, 0xf0)));
+            } else if ui.button(RichText::new("Dosya Seç (.cube)...").size(11.0)).clicked() {
+                if let Some(path) = rfd::FileDialog::new()
+                    .set_title("3D LUT Dosyası Seç (.cube)")
+                    .add_filter("3D LUT (.cube)", &["cube"])
+                    .pick_file()
+                {
+                    clip.custom_lut_path = Some(path.to_string_lossy().to_string());
+                    *action = Some(InspectorAction::ClipModified);
+                }
+            }
+        });
 
-            ui.label("Parlaklık:");
+        property_row(ui, "Parlaklık:", |ui| {
             if ui.add(DragValue::new(&mut clip.brightness).speed(0.05).range(-1.0..=1.0)).changed() {
                 *action = Some(InspectorAction::ClipModified);
             }
-            ui.end_row();
+        });
 
-            ui.label("Kontrast:");
+        property_row(ui, "Kontrast:", |ui| {
             if ui.add(DragValue::new(&mut clip.contrast).speed(0.05).range(0.0..=3.0)).changed() {
                 *action = Some(InspectorAction::ClipModified);
             }
-            ui.end_row();
+        });
 
-            ui.label("Doygunluk:");
+        property_row(ui, "Doygunluk:", |ui| {
             if ui.add(DragValue::new(&mut clip.saturation).speed(0.05).range(0.0..=3.0)).changed() {
                 *action = Some(InspectorAction::ClipModified);
             }
-            ui.end_row();
+        });
 
-            ui.label("");
-            if ui.button("Renkleri Sıfırla").clicked() {
+        ui.add_space(2.0);
+        property_row(ui, "Renkleri Sıfırla:", |ui| {
+            if ui.button("Varsayılana Döndür").clicked() {
                 clip.brightness = 0.0;
                 clip.contrast = 1.0;
                 clip.saturation = 1.0;
@@ -347,7 +352,6 @@ fn render_color_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
                 clip.color_wheels = None;
                 *action = Some(InspectorAction::ClipModified);
             }
-            ui.end_row();
         });
 
         // 3-Point Color Wheels (Lift, Gamma, Gain)
@@ -370,12 +374,12 @@ fn render_color_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
             }
         }
 
-        // Chroma Key (Green Screen)
+        // Chroma Key (Green & Blue Screen Removal)
         ui.add_space(4.0);
         ui.separator();
-        ui.strong("Kroma Anahtarı (Yeşil Ekran)");
+        ui.strong("Yeşil / Mavi Ekran Kaldırma (Chroma Key)");
         let mut has_ck = clip.chromakey.is_some();
-        if ui.checkbox(&mut has_ck, "Kroma Anahtarını Etkinleştir").changed() {
+        if ui.checkbox(&mut has_ck, "Chroma Key Etkinleştir").changed() {
             if has_ck {
                 clip.chromakey = Some(ChromaKeyConfig::default());
             } else {
@@ -385,36 +389,24 @@ fn render_color_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
         }
 
         if let Some(ck) = &mut clip.chromakey {
-            Grid::new("chromakey_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-                ui.label("Anahtar Rengi:");
-                ui.horizontal(|ui| {
-                    let mut col = egui::Color32::from_rgb(ck.key_color[0], ck.key_color[1], ck.key_color[2]);
-                    if ui.color_edit_button_srgba(&mut col).changed() {
-                        ck.key_color = [col.r(), col.g(), col.b()];
-                        *action = Some(InspectorAction::ClipModified);
-                    }
-                    if ui.button("Yeşil").clicked() {
-                        ck.key_color = [0, 255, 0];
-                        *action = Some(InspectorAction::ClipModified);
-                    }
-                    if ui.button("Mavi").clicked() {
-                        ck.key_color = [0, 0, 255];
-                        *action = Some(InspectorAction::ClipModified);
-                    }
-                });
-                ui.end_row();
+            property_row(ui, "Anahtar Rengi:", |ui| {
+                let mut c = egui::Color32::from_rgb(ck.key_color[0], ck.key_color[1], ck.key_color[2]);
+                if ui.color_edit_button_srgba(&mut c).changed() {
+                    ck.key_color = [c.r(), c.g(), c.b()];
+                    *action = Some(InspectorAction::ClipModified);
+                }
+            });
 
-                ui.label("Benzerlik (Eşik):");
+            property_row(ui, "Benzerlik:", |ui| {
                 if ui.add(DragValue::new(&mut ck.similarity).speed(0.01).range(0.01..=1.0)).changed() {
                     *action = Some(InspectorAction::ClipModified);
                 }
-                ui.end_row();
+            });
 
-                ui.label("Yumuşatma:");
+            property_row(ui, "Yumuşaklık:", |ui| {
                 if ui.add(DragValue::new(&mut ck.smoothness).speed(0.005).range(0.001..=0.5)).changed() {
                     *action = Some(InspectorAction::ClipModified);
                 }
-                ui.end_row();
             });
         }
     });
@@ -423,14 +415,15 @@ fn render_color_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
 fn render_transitions_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<InspectorAction>) {
     ui.group(|ui| {
         ui.strong("Giriş / Çıkış ve Geçişler");
-        Grid::new("fade_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-            ui.label("Giriş Kararması:");
+        ui.add_space(3.0);
+
+        property_row(ui, "Giriş Kararması:", |ui| {
             if ui.add(DragValue::new(&mut clip.fade_in).speed(0.1).range(0.0..=60.0).suffix(" s")).changed() {
                 *action = Some(InspectorAction::ClipModified);
             }
-            ui.end_row();
+        });
 
-            ui.label("Giriş Geçişi:");
+        property_row(ui, "Giriş Geçişi:", |ui| {
             egui::ComboBox::from_id_salt("trans_in")
                 .selected_text(Clip::transition_label(clip.transition_in.as_deref()))
                 .show_ui(ui, |ui| {
@@ -446,15 +439,15 @@ fn render_transitions_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<In
                         }
                     }
                 });
-            ui.end_row();
+        });
 
-            ui.label("Çıkış Kararması:");
+        property_row(ui, "Çıkış Kararması:", |ui| {
             if ui.add(DragValue::new(&mut clip.fade_out).speed(0.1).range(0.0..=60.0).suffix(" s")).changed() {
                 *action = Some(InspectorAction::ClipModified);
             }
-            ui.end_row();
+        });
 
-            ui.label("Çıkış Geçişi:");
+        property_row(ui, "Çıkış Geçişi:", |ui| {
             egui::ComboBox::from_id_salt("trans_out")
                 .selected_text(Clip::transition_label(clip.transition_out.as_deref()))
                 .show_ui(ui, |ui| {
@@ -470,7 +463,6 @@ fn render_transitions_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<In
                         }
                     }
                 });
-            ui.end_row();
         });
     });
 }
@@ -478,14 +470,15 @@ fn render_transitions_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<In
 fn render_audio_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<InspectorAction>) {
     ui.group(|ui| {
         ui.strong("Ses & EQ Profili");
-        Grid::new("audio_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-            ui.label("Ses Düzeyi:");
+        ui.add_space(3.0);
+
+        property_row(ui, "Ses Düzeyi:", |ui| {
             if ui.add(DragValue::new(&mut clip.volume).speed(0.05).range(0.0..=3.0)).changed() {
                 *action = Some(InspectorAction::ClipModified);
             }
-            ui.end_row();
+        });
 
-            ui.label("EQ Profili:");
+        property_row(ui, "EQ Profili:", |ui| {
             egui::ComboBox::from_id_salt("clip_eq_preset")
                 .selected_text(clip.eq_preset.label())
                 .show_ui(ui, |ui| {
@@ -496,21 +489,21 @@ fn render_audio_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
                         }
                     }
                 });
-            ui.end_row();
-
-            ui.label("Gürültü:");
-            if ui.checkbox(&mut clip.noise_gate, "Gürültü Kapısı (Noise Gate)").changed() {
-                *action = Some(InspectorAction::ClipModified);
-            }
-            ui.end_row();
-
-            ui.label("");
-            if ui.checkbox(&mut clip.muted, "Klibi Sessize Al").changed() {
-                *action = Some(InspectorAction::ClipModified);
-            }
-            ui.end_row();
         });
 
+        property_row(ui, "Gürültü Kapısı:", |ui| {
+            if ui.checkbox(&mut clip.noise_gate, "Etkin").changed() {
+                *action = Some(InspectorAction::ClipModified);
+            }
+        });
+
+        property_row(ui, "Sesi Kapat:", |ui| {
+            if ui.checkbox(&mut clip.muted, "Sessiz (Mute)").changed() {
+                *action = Some(InspectorAction::ClipModified);
+            }
+        });
+
+        // Audio Visualizer
         ui.add_space(4.0);
         ui.separator();
         ui.strong("Görsel Ses Dalgası (Audio Visualizer)");
@@ -525,8 +518,7 @@ fn render_audio_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
         }
 
         if let Some(vis) = &mut clip.audio_visualizer {
-            Grid::new("vis_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-                ui.label("Stil:");
+            property_row(ui, "Dalga Stili:", |ui| {
                 egui::ComboBox::from_id_salt("vis_style_combo")
                     .selected_text(vis.style.label())
                     .show_ui(ui, |ui| {
@@ -536,21 +528,20 @@ fn render_audio_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
                             }
                         }
                     });
-                ui.end_row();
+            });
 
-                ui.label("Dikey Konum:");
+            property_row(ui, "Dikey Konum:", |ui| {
                 if ui.add(egui::Slider::new(&mut vis.pos_y, 0.0..=1.0).show_value(false)).changed() {
                     *action = Some(InspectorAction::ClipModified);
                 }
-                ui.end_row();
+            });
 
-                ui.label("Dalga Rengi:");
+            property_row(ui, "Dalga Rengi:", |ui| {
                 let mut col = egui::Color32::from_rgba_unmultiplied(vis.color[0], vis.color[1], vis.color[2], vis.color[3]);
                 if ui.color_edit_button_srgba(&mut col).changed() {
                     vis.color = [col.r(), col.g(), col.b(), col.a()];
                     *action = Some(InspectorAction::ClipModified);
                 }
-                ui.end_row();
             });
         }
     });
@@ -577,75 +568,70 @@ fn render_titler_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspect
             }
 
             ui.add_space(4.0);
-            Grid::new("titler_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-                ui.label("Yazı Boyutu:");
+            property_row(ui, "Yazı Boyutu:", |ui| {
                 if ui.add(DragValue::new(&mut txt.font_size).speed(1.0).range(12.0..=140.0).suffix(" pt")).changed() {
                     *action = Some(InspectorAction::ClipModified);
                 }
-                ui.end_row();
+            });
 
-                ui.label("Konum Şablonu:");
-                ui.horizontal(|ui| {
-                    if ui.button("Alt Yazı").clicked() {
-                        txt.pos_x = 0.5;
-                        txt.pos_y = 0.85;
-                        txt.bg_color = Some([0, 0, 0, 180]);
-                        *action = Some(InspectorAction::ClipModified);
-                    }
-                    if ui.button("Orta").clicked() {
-                        txt.pos_x = 0.5;
-                        txt.pos_y = 0.50;
-                        txt.bg_color = None;
-                        *action = Some(InspectorAction::ClipModified);
-                    }
-                    if ui.button("Üst").clicked() {
-                        txt.pos_x = 0.5;
-                        txt.pos_y = 0.15;
-                        txt.bg_color = None;
-                        *action = Some(InspectorAction::ClipModified);
-                    }
-                });
-                ui.end_row();
+            property_row(ui, "Konum Şablonu:", |ui| {
+                if ui.button("Üst").clicked() {
+                    txt.pos_x = 0.5;
+                    txt.pos_y = 0.15;
+                    txt.bg_color = None;
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                if ui.button("Orta").clicked() {
+                    txt.pos_x = 0.5;
+                    txt.pos_y = 0.50;
+                    txt.bg_color = None;
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                if ui.button("Alt Yazı").clicked() {
+                    txt.pos_x = 0.5;
+                    txt.pos_y = 0.85;
+                    txt.bg_color = Some([0, 0, 0, 180]);
+                    *action = Some(InspectorAction::ClipModified);
+                }
+            });
 
-                ui.label("Yatay Konum (X):");
+            property_row(ui, "Yatay Konum (X):", |ui| {
                 if ui.add(egui::Slider::new(&mut txt.pos_x, 0.0..=1.0).show_value(false)).changed() {
                     *action = Some(InspectorAction::ClipModified);
                 }
-                ui.end_row();
+            });
 
-                ui.label("Dikey Konum (Y):");
+            property_row(ui, "Dikey Konum (Y):", |ui| {
                 if ui.add(egui::Slider::new(&mut txt.pos_y, 0.0..=1.0).show_value(false)).changed() {
                     *action = Some(InspectorAction::ClipModified);
                 }
-                ui.end_row();
+            });
 
-                ui.label("Yazı Rengi:");
-                ui.horizontal(|ui| {
-                    let colors = [
-                        ("Beyaz", [255, 255, 255, 255]),
-                        ("Sarı", [245, 166, 35, 255]),
-                        ("Turkuaz", [60, 210, 230, 255]),
-                        ("Kırmızı", [235, 75, 75, 255]),
-                    ];
-                    for (c_name, c_val) in colors {
-                        let is_c = txt.text_color == c_val;
-                        if ui.selectable_label(is_c, c_name).clicked() {
-                            txt.text_color = c_val;
-                            *action = Some(InspectorAction::ClipModified);
-                        }
+            property_row(ui, "Yazı Rengi:", |ui| {
+                let colors = [
+                    ("Kırmızı", [235, 75, 75, 255]),
+                    ("Turkuaz", [60, 210, 230, 255]),
+                    ("Sarı", [245, 166, 35, 255]),
+                    ("Beyaz", [255, 255, 255, 255]),
+                ];
+                for (c_name, c_val) in colors {
+                    let is_c = txt.text_color == c_val;
+                    if ui.selectable_label(is_c, c_name).clicked() {
+                        txt.text_color = c_val;
+                        *action = Some(InspectorAction::ClipModified);
                     }
-                });
-                ui.end_row();
+                }
+            });
 
-                ui.label("Gölge / Kontur:");
+            property_row(ui, "Gölge / Kontur:", |ui| {
                 if ui.checkbox(&mut txt.has_shadow, "Açık").changed() {
                     *action = Some(InspectorAction::ClipModified);
                 }
-                ui.end_row();
+            });
 
-                ui.label("Altyazı Kutusu:");
+            property_row(ui, "Altyazı Kutusu:", |ui| {
                 let mut has_box = txt.bg_color.is_some();
-                if ui.checkbox(&mut has_box, "Yarı Saydam Kutu").changed() {
+                if ui.checkbox(&mut has_box, "Yarı Saydam").changed() {
                     if has_box {
                         txt.bg_color = Some([0, 0, 0, 180]);
                     } else {
@@ -653,7 +639,9 @@ fn render_titler_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspect
                     }
                     *action = Some(InspectorAction::ClipModified);
                 }
-                ui.label("Altyazı Stili:");
+            });
+
+            property_row(ui, "Altyazı Stili:", |ui| {
                 egui::ComboBox::from_id_salt("caption_style_combo")
                     .selected_text(txt.caption_style.label())
                     .show_ui(ui, |ui| {
@@ -663,7 +651,6 @@ fn render_titler_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspect
                             }
                         }
                     });
-                ui.end_row();
             });
         }
 

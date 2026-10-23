@@ -85,6 +85,7 @@ pub struct PlaybackStreamer {
     current_frame: Option<Arc<RgbaImage>>,
     last_pts: f64,
     pending_future_frame: Option<(f64, Arc<RgbaImage>)>,
+    is_reversed: bool,
 }
 
 impl Default for PlaybackStreamer {
@@ -98,6 +99,7 @@ impl Default for PlaybackStreamer {
             current_frame: None,
             last_pts: 0.0,
             pending_future_frame: None,
+            is_reversed: false,
         }
     }
 }
@@ -111,6 +113,10 @@ impl PlaybackStreamer {
         self.frame_rx.is_some()
     }
 
+    pub fn is_reversed(&self) -> bool {
+        self.is_reversed
+    }
+
     pub fn active_clip_id(&self) -> Option<&str> {
         self.active_clip_id.as_deref()
     }
@@ -120,7 +126,8 @@ impl PlaybackStreamer {
     }
 
     /// Starts or restarts continuous video streaming for given file from `source_start_time`.
-    pub fn start(&mut self, clip_id: &str, file_path: &str, source_start_time: f64, fps: f64) {
+    /// When `reverse` is true, video decodes backwards from `source_start_time` down to `source_in`.
+    pub fn start(&mut self, clip_id: &str, file_path: &str, source_start_time: f64, fps: f64, reverse: bool, source_in: f64) {
         self.stop();
 
         let path_str = file_path.to_string();
@@ -128,6 +135,7 @@ impl PlaybackStreamer {
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_clone = stop_flag.clone();
         self.pending_future_frame = None;
+        self.is_reversed = reverse;
 
         // Bounded queue of 15 frames (~0.5 second buffer)
         let (tx, rx): (SyncSender<DecodedFrame>, Receiver<DecodedFrame>) = sync_channel(15);
@@ -136,29 +144,41 @@ impl PlaybackStreamer {
         let thread_fps = if fps > 1.0 { fps } else { 30.0 };
 
         let handle = std::thread::spawn(move || {
-            let vf_str = format!(
-                "fps=fps={thread_fps:.3},scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black"
-            );
-            let mut child = match crate::ffmpeg::ffmpeg_cmd()
-                .args([
-                    "-v",
-                    "quiet",
-                    "-ss",
-                    &format!("{:.3}", source_start_time.max(0.0)),
-                    "-i",
-                    &thread_path,
-                    "-vf",
-                    &vf_str,
-                    "-f",
-                    "rawvideo",
-                    "-pix_fmt",
-                    "rgba",
-                    "-",
-                ])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn()
-            {
+            let vf_str = if reverse {
+                format!(
+                    "reverse,fps=fps={thread_fps:.3},scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black"
+                )
+            } else {
+                format!(
+                    "fps=fps={thread_fps:.3},scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black"
+                )
+            };
+
+            let mut cmd = crate::ffmpeg::ffmpeg_cmd();
+            cmd.arg("-v").arg("quiet");
+
+            if reverse {
+                let start = source_in.max(0.0);
+                let dur = (source_start_time - start).max(0.05);
+                cmd.args(["-ss", &format!("{:.3}", start), "-t", &format!("{:.3}", dur)]);
+            } else {
+                cmd.args(["-ss", &format!("{:.3}", source_start_time.max(0.0))]);
+            }
+
+            cmd.args([
+                "-i",
+                &thread_path,
+                "-vf",
+                &vf_str,
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "rgba",
+                "-",
+            ]);
+            cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+
+            let mut child = match cmd.spawn() {
                 Ok(c) => c,
                 Err(_) => return,
             };
@@ -179,7 +199,11 @@ impl PlaybackStreamer {
                     break;
                 }
 
-                let pts = source_start_time + (frame_idx as f64 / thread_fps);
+                let pts = if reverse {
+                    source_start_time - (frame_idx as f64 / thread_fps)
+                } else {
+                    source_start_time + (frame_idx as f64 / thread_fps)
+                };
                 frame_idx += 1;
 
                 if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(PREVIEW_WIDTH, PREVIEW_HEIGHT, buf) {
@@ -205,9 +229,15 @@ impl PlaybackStreamer {
 
     /// Fetches the frame matching target time from the stream receiver with accurate PTS pacing.
     pub fn get_frame_for_time(&mut self, target_source_time: f64) -> Option<Arc<RgbaImage>> {
+        let is_rev = self.is_reversed;
         // First check if pending future frame is now due
         if let Some((pts, _)) = &self.pending_future_frame {
-            if *pts <= target_source_time + 0.005 {
+            let is_due = if is_rev {
+                *pts >= target_source_time - 0.005
+            } else {
+                *pts <= target_source_time + 0.005
+            };
+            if is_due {
                 let (p, frame) = self.pending_future_frame.take().unwrap();
                 self.current_frame = Some(frame);
                 self.last_pts = p;
@@ -217,7 +247,12 @@ impl PlaybackStreamer {
         if self.pending_future_frame.is_none() {
             if let Some(rx) = &self.frame_rx {
                 while let Ok((pts, frame)) = rx.try_recv() {
-                    if pts <= target_source_time + 0.005 {
+                    let is_due = if is_rev {
+                        pts >= target_source_time - 0.005
+                    } else {
+                        pts <= target_source_time + 0.005
+                    };
+                    if is_due {
                         self.current_frame = Some(frame);
                         self.last_pts = pts;
                     } else {
@@ -482,7 +517,7 @@ impl VideoEngine {
                 if is_playing {
                     // Playback Mode: Use streaming rawvideo pipe
                     let needs_restart = match self.streamer.active_clip_id() {
-                        Some(id) => id != clip.id || (src_t - self.streamer.last_pts()).abs() > 0.3,
+                        Some(id) => id != clip.id || (src_t - self.streamer.last_pts()).abs() > 0.3 || self.streamer.is_reversed() != clip.reverse,
                         None => true,
                     };
 
@@ -492,6 +527,8 @@ impl VideoEngine {
                             eff_path,
                             src_t,
                             project.timeline.fps,
+                            clip.reverse,
+                            clip.source_in,
                         );
                     }
 
@@ -1137,7 +1174,7 @@ mod tests {
         if std::path::Path::new(dummy).is_file() {
             // Test PlaybackStreamer
             let mut streamer = PlaybackStreamer::new();
-            streamer.start("test_clip", dummy, 1.0, 30.0);
+            streamer.start("test_clip", dummy, 1.0, 30.0, false, 0.0);
             assert!(streamer.is_active());
             let start = std::time::Instant::now();
             let mut frame = None;
@@ -1246,6 +1283,17 @@ mod tests {
         // Beyond clip at 6.0s (empty, should return None and clean state)
         let beyond = engine.render_timeline_frame(&project, 6.0, false);
         assert!(beyond.is_none());
+    }
+
+    #[test]
+    fn test_reverse_playback_streamer_flags() {
+        let mut streamer = PlaybackStreamer::new();
+        assert!(!streamer.is_reversed());
+        streamer.start("clip_rev", "/nonexistent.mp4", 5.0, 30.0, true, 1.0);
+        assert!(streamer.is_reversed());
+        assert_eq!(streamer.last_pts(), 5.0);
+        streamer.stop();
+        assert!(!streamer.is_active());
     }
 }
 

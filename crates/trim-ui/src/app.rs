@@ -1531,10 +1531,12 @@ impl eframe::App for TrimApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Intercept window close request if there are unsaved changes
         if ctx.input(|i| i.viewport().close_requested()) && !self.confirmed_exit {
-            if self.has_unsaved_changes() {
+            if self.has_unsaved_changes() || self.close_confirm_dialog.is_open {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                let name = self.project.settings.name.clone();
-                self.close_confirm_dialog.prompt(PendingCloseAction::ExitApp, name);
+                if !self.close_confirm_dialog.is_open {
+                    let name = self.project.settings.name.clone();
+                    self.close_confirm_dialog.prompt(PendingCloseAction::ExitApp, name);
+                }
             } else {
                 self.confirmed_exit = true;
             }
