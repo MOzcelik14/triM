@@ -1,68 +1,194 @@
-// triM. — static GitHub Pages interactions; no framework required.
+// triM. — Interactive Landing Page Script (No external framework dependencies)
 document.addEventListener("DOMContentLoaded", () => {
   const tr = {
-    title: "triM. — Linux için video kurgusu, kendi ritminde.",
-    description: "triM. — Linux için Rust ile geliştirilmiş, hafif ve yerel video düzenleyici. Çok kanallı kurgu, ses miksajı ve FFmpeg ile dışa aktarım.",
-    skip: "İçeriğe geç", nav_features: "Özellikler", nav_workflow: "Yaklaşım", nav_shortcuts: "Kısayollar", nav_download: "İndir",
-    hero_kicker: "LINUX İÇİN, LINUX'TA.", hero_line1: "İyi bir kurgu", hero_line2: "akışını", hero_line3: "bozmaz.",
-    hero_description: "triM. Linux için geliştirilen açık kaynaklı, yerel bir video editörü. Görüntüyü, sesi ve ritmi aynı çizgide buluştur. Arada hiçbir fazlalık olmadan.",
-    hero_download: "triM.'yi indir", hero_explore: "Arayüzü keşfet", hero_note: "Açık kaynak · Rust · Electron yok.",
-    preview_heading: "YAKINDAN BİR BAKIŞ", preview_edit: "Kurgu", preview_start: "Başlangıç", preview_caption: "Gerçek uygulama görüntüsü / triM. v0.6.0",
-    stack_caption: "ALTINDA NE VAR?", features_index: "ARAÇLAR", features_title: "Her karede <em>kontrol sende.</em>",
-    features_intro: "Kurgu masasında ihtiyacın olan şeyler. Birbirini tamamlayan, dikkat dağıtmayan araçlar.",
-    feature_1_title: "Kes. Taşı. Devam et.", feature_1_desc: "Çok kanallı zaman çizgisi, manyetik hizalama, jilet kesimi ve ripple düzenleme. Fikrinin hızına yetişen bir kurgu alanı.",
-    feature_2_title: "Ses, hikâyenin yarısı.", feature_2_desc: "Çok kanallı stereo miksaj, seviye takibi, mute/solo ve videodan sesi ayırma.",
-    feature_3_title: "Hareketi sen belirle.", feature_3_desc: "Anahtar karelerle konum, ölçek, opaklık ve renk ayarlarına hayat ver.",
-    feature_4_title: "Kurgunu dışarı taşı.", feature_4_desc: "FFmpeg tabanlı dışa aktarımla projenin son halini oluştur. 1080p, 4K, WebM ve daha fazlası.",
-    feature_note: "Görsel şemalar temsili; yukarıdaki uygulama ekranları gerçektir.",
-    workflow_index: "YAKLAŞIM", workflow_title: "Daha az katman.<br><em>Daha çok hikâye.</em>",
-    workflow_text: "triM. bir web uygulamasının masaüstüne taşınmış hali değil. Linux için Rust ile yazılmış yerel bir editör. Medyan, proje dosyaların ve yaratıcı sürecin senin elinde.",
-    point_1: "Yerel masaüstü", point_2: "Açık kaynak kod", point_3: "FFmpeg altyapısı",
-    shortcuts_index: "KISAYOLLAR", shortcuts_title: "Fikrin hızlıysa,<br><em>ellerin de olsun.</em>",
-    shortcuts_description: "Fareyi daha az kullan, ritmi daha az böl. triM.’de en sık kullanacağın birkaç kısayol.", shortcuts_link: "Tüm kısayolları gör",
-    key_play: "Oynat / duraklat", key_cut: "Oynatma kafasından kes", key_trim: "Başı / sonu kırp", key_shuttle: "Geri / dur / ileri", key_undo: "Geri al",
-    install_index: "BAŞLANGIÇ", install_title: "Hazırsan,<br><em>kurgu başlasın.</em>",
-    install_description: "triM. ücretsiz ve açık kaynaklı. Yayınlanan sürümü indir veya kaynak kodundan derle. Seçim senin.",
-    install_release: "GitHub sürümlerine git", terminal_title: "Kaynak koddan kurulum",
-    step_deps: "Gerekli paketleri yükle", step_build: "Depoyu klonla ve derle", copy: "Kopyala", copied: "Kopyalandı!", copy_failed: "Kopyalanamadı",
-    terminal_hint: "Rust / Cargo kurulu olmalıdır. Dağıtımınıza göre ek paketler gerekebilir.",
-    footer_tagline: "Kurgunun kendi ritmi var.", footer_releases: "Sürümler ↗", footer_credit: "Linux için özenle geliştirildi.", back_top: "Yukarı ↑",
-    menu_open: "Menüyü aç", menu_close: "Menüyü kapat"
-  };
-  const en = {
-    title: "triM. — Native video editing for Linux.",
-    description: "triM. — A lightweight, native video editor for Linux built with Rust. Multi-track editing, stereo audio mixing and FFmpeg export.",
-    skip: "Skip to content", nav_features: "Features", nav_workflow: "Philosophy", nav_shortcuts: "Shortcuts", nav_download: "Download",
-    hero_kicker: "FOR LINUX. ON LINUX.", hero_line1: "Make the cut.", hero_line2: "Stay in", hero_line3: "the flow.",
-    hero_description: "triM. is a native, open-source video editor made for Linux. Bring picture, sound and rhythm together on one timeline. No unnecessary layers in between.",
-    hero_download: "Get triM.", hero_explore: "Explore the editor", hero_note: "Open source · Rust · No Electron.",
-    preview_heading: "INSIDE THE EDITOR", preview_edit: "Editing", preview_start: "Start", preview_caption: "Actual app screenshots / triM. v0.6.0",
-    stack_caption: "UNDER THE HOOD", features_index: "THE TOOLS", features_title: "Every frame, <em>your call.</em>",
-    features_intro: "The essentials for making your cut. Thoughtful tools that work together without getting in your way.",
-    feature_1_title: "Cut. Move. Carry on.", feature_1_desc: "A layered timeline with magnetic snapping, razor splits, and ripple editing. Built to keep up with your ideas.",
-    feature_2_title: "Sound is half the story.", feature_2_desc: "Multi-track stereo mixing, level monitoring, mute/solo controls and detachable audio.",
-    feature_3_title: "Make motion your own.", feature_3_desc: "Animate position, scale, opacity and color adjustments with keyframes.",
-    feature_4_title: "Take your edit further.", feature_4_desc: "Export through FFmpeg and finish your project in 1080p, 4K, WebM and more.",
-    feature_note: "Feature diagrams are illustrative; the editor screenshots above are real.",
-    workflow_index: "THE APPROACH", workflow_title: "Less in between.<br><em>More story to tell.</em>",
-    workflow_text: "triM. isn't a web app wrapped in a desktop window. It's a native Linux editor written in Rust. Your media, project files and creative process stay in your hands.",
-    point_1: "Native desktop", point_2: "Open-source code", point_3: "FFmpeg foundation",
-    shortcuts_index: "SHORTCUTS", shortcuts_title: "Keep the ideas coming.<br><em>Keep your hands moving.</em>",
-    shortcuts_description: "Less reaching for the mouse, more time in the flow. A handful of shortcuts you'll use every day.", shortcuts_link: "See all shortcuts",
-    key_play: "Play / pause", key_cut: "Split at playhead", key_trim: "Trim head / tail", key_shuttle: "Reverse / pause / forward", key_undo: "Undo",
-    install_index: "GET STARTED", install_title: "Ready to<br><em>make the cut?</em>",
-    install_description: "triM. is free and open source. Download a release or build it from source. It's your call.",
-    install_release: "Go to GitHub releases", terminal_title: "Build from source",
-    step_deps: "Install dependencies", step_build: "Clone and build", copy: "Copy", copied: "Copied!", copy_failed: "Could not copy",
-    terminal_hint: "Rust / Cargo must be installed. Additional packages may be needed for your distribution.",
-    footer_tagline: "Every cut has its rhythm.", footer_releases: "Releases ↗", footer_credit: "Built with care for Linux.", back_top: "Back to top ↑",
-    menu_open: "Open menu", menu_close: "Close menu"
-  };
-  const translations = { tr, en };
-  const richKeys = new Set(["features_title", "workflow_title", "shortcuts_title", "install_title"]);
-  let current = "tr";
-  try { const saved = localStorage.getItem("trim_language"); if (saved === "en" || saved === "tr") current = saved; } catch (_) {}
+    title: "triM. — Masaüstü Video Düzenleyici",
+    description: "triM. — Hızlı, hafif ve bağımsız masaüstü video düzenleyici. 4K akıllı proxy, çok kanallı zaman çizgisi, SRT/VTT altyazı motoru, canlı ses kaydı ve GPU hızlandırmalı render desteği.",
+    skip: "İçeriğe geç",
+    nav_features: "Özellikler",
+    nav_proxy: "Akıllı Proxy",
+    nav_audio: "Ses & Renk",
+    nav_shortcuts: "Kısayollar",
+    nav_download: "İndir",
 
+    hero_kicker: "MASAÜSTÜ VİDEO DÜZENLEYİCİ · v0.6.0",
+    hero_line1: "Kurgunun ritmini",
+    hero_line2: "hissedin.",
+    hero_description: "Büyük kurulum dosyaları, ağır tarayıcı motorları ve karmaşık abonelikler olmadan video kurgulayın. triM., 4K akıllı proxy iş akışı, zaman çizgisi ses kaydı, SRT altyazı motoru ve GPU hızlandırmalı render desteğiyle ihtiyacınız olan her şeyi yaklaşık 19 MB boyutta sunar.",
+    hero_download: "Hemen İndir",
+    hero_explore: "Özellikleri Keşfet",
+    hero_note: "Linux ve Windows için bağımsız yerel masaüstü uygulaması · ~19 MB",
+
+    preview_heading: "UYGULAMADAN CANLI GÖRÜNTÜLER",
+    tab_workspace: "Kurgu Masası",
+    tab_subtitles: "Altyazı & Smart Cut",
+    tab_vertical: "Dikey Reels (9:16)",
+    tab_audio: "Ses & EQ",
+    tab_shortcuts: "Kısayol Profilleri",
+    tab_export: "GPU Dışa Aktarım",
+    preview_caption: "Gerçek uygulama görüntüsü / triM. v0.6.0",
+
+    features_index: "KURGU ARAÇLARI",
+    features_title: "İhtiyacınız olan her şey <em>tek ekranda.</em>",
+    features_intro: "Gereksiz katmanlar ve dikkat dağıtan menüler olmadan; videonuzu ekleyin, düzenleyin ve tamamlayın.",
+
+    feat_proxy_title: "4K Çekimlerde Akıcı Önizleme",
+    feat_proxy_desc: "Büyük 4K ve UHD ham videolarla çalışırken önizlemenin takılmaması için tek tıkla arka planda 720p H.264 proxy üretin. Zaman çizgisindeki [⚡ Proxy] düğmesiyle hafif önizlemeye geçin; kurgunuz 60 FPS akarken, dışa aktarım sırasında triM. doğrudan orijinal tam çözünürlüklü dosyanızı render eder.",
+
+    feat_timeline_title: "Hassas Kesim & Akıllı Sahne Algılama",
+    feat_timeline_desc: "Çok kanallı video ve ses izleri üzerinde serbestçe çalışın. Manyetik yapışma, çizgiden kesme (S), dalgalanma kırpması (Q/W) ve boşluk kapatma (Shift+Delete) hız kazandırır. Akıllı Sahne Algılama (Smart Cut) özelliğiyle uzun çekimlerdeki kamera açı değişimleri otomatik algılanır ve tek tıkla jiletle ayrılır.",
+
+    feat_audio_title: "Canlı Seslendirme & EBU R128",
+    feat_audio_desc: "Harici bir kayıt programı açmanıza gerek kalmadan, ses izinin başındaki [🎤] butonuna basarak doğrudan mikrofonunuzdan konuşma kaydedin. Çok kanallı mikser konsolu, konuşma netliği EQ hazır ayarları, dip gürültü filtresi (Noise Gate) ve YouTube, Spotify standartlarında (-14 LUFS / -23 LUFS) EBU R128 ses normalizasyonu elinizin altında.",
+
+    feat_text_color_title: "Altyazı Süiti, Canlı Titler & 3D LUT",
+    feat_text_color_desc: ".SRT ve .VTT altyazı dosyalarını doğrudan projenize aktarın ya da dışa verin. Canlı Titler ile alt yazı kutularını, boyutları ve renkleri Inspector üzerinden anında düzenleyin. Dahili Teal & Orange, Vintage Film ve Monochrome gibi sinematik profilleri kullanın veya harici .cube 3D LUT dosyalarınızı projeye dahil edin.",
+
+    feature_note: "Yukarıdaki tüm ekran görüntüleri doğrudan triM. masaüstü uygulamasından alınmıştır.",
+
+    workflow_index: "YAKLAŞIM",
+    workflow_title: "Gereksiz yük yok.<br><em>Doğrudan masaüstünüzde.</em>",
+    workflow_text: "triM., bir web tarayıcısı penceresi içine hapsedilmiş ağır uygulamalardan biri değildir. Bilgisayarınızın kaynaklarını boşa harcamayan, açılışı birkaç saniye süren ve internet bağlantısına ihtiyaç duymayan yerel bir masaüstü yazılımıdır. Tüm medyalarınız, proje dosyalarınız ve yaratıcı süreciniz tamamen sizin kontrolünüzdedir.",
+    point_1: "~19 MB Bağımsız Masaüstü",
+    point_2: "GPU Donanım Render Desteği",
+    point_3: "Taşınabilir Kayıpsız Proje Paketleme",
+
+    shortcuts_index: "KISAYOLLAR",
+    shortcuts_title: "Alıştığınız kısayolları <em>bırakmayın.</em>",
+    shortcuts_description: "Kurgu yaparken parmak hafızası her şeydir. triM., kendi seri tuş düzeninin yanı sıra tek tıkla Adobe Premiere Pro veya DaVinci Resolve kısayol profillerine geçmenizi sağlar.",
+    shortcuts_link: "Tüm kısayolları gör",
+    key_split: "Klip Bölme (Split / Razor)",
+    key_trim: "Başı / Sonu Kırp (Ripple Trim)",
+    key_select: "Seçim Aracı (Selection)",
+    key_ripple: "Dalgalanma Düzenleme (Ripple)",
+    key_play: "Oynat / Duraklat",
+    key_shuttle: "Geri / Dur / İleri (Shuttle)",
+    key_undo: "Geri Al",
+
+    install_index: "BAŞLANGIÇ",
+    install_title: "Saniyeler içinde <em>başlayın.</em>",
+    install_description: "triM. tamamen ücretsiz ve açık kaynaklıdır. Tek satırlık komutla kurabilir, hazır paketleri indirebilir veya kaynak kodundan derleyebilirsiniz.",
+    install_release: "GitHub Sürümlerine Git",
+    terminal_title: "Hızlı Kurulum ve İndirme",
+
+    step_linux_curl: "Terminalinizi açın ve tek satırda kurun:",
+    hint_linux_curl: "Uygulama simgesi ve masaüstü kısayolu otomatik oluşturulur. Kaldırmak için: install.sh --uninstall",
+    step_win_ps: "PowerShell'i açın ve tek komutla kurun:",
+    hint_win_ps: "Windows Başlat menüsü kısayolu oluşturulur. FFmpeg otomatik kontrol edilir.",
+    step_direct_download: "İşletim sisteminize uygun paketi doğrudan indirin:",
+    step_build: "Depoyu klonlayıp kaynak kodundan derleyin:",
+    hint_source_build: "Sisteminizde derleme araçlarının ve FFmpeg'in kurulu olması yeterlidir.",
+
+    copy: "Kopyala",
+    copied: "Kopyalandı!",
+    copy_failed: "Kopyalanamadı",
+
+    footer_tagline: "Masaüstü video düzenleyici. Hafif, hızlı ve bağımsız.",
+    footer_releases: "Sürümler ↗",
+    footer_credit: "Linux & Windows için özenle geliştirildi.",
+    back_top: "Yukarı ↑",
+    menu_open: "Menüyü aç",
+    menu_close: "Menüyü kapat"
+  };
+
+  const en = {
+    title: "triM. — Desktop Video Editor",
+    description: "triM. — Fast, lightweight, and native desktop video editor with 4K smart proxies, multi-track timeline, SRT/VTT subtitles, live voiceover, and GPU hardware export.",
+    skip: "Skip to content",
+    nav_features: "Features",
+    nav_proxy: "Smart Proxy",
+    nav_audio: "Audio & Color",
+    nav_shortcuts: "Shortcuts",
+    nav_download: "Download",
+
+    hero_kicker: "DESKTOP VIDEO EDITOR · v0.6.0",
+    hero_line1: "Edit video with",
+    hero_line2: "clarity and speed.",
+    hero_description: "Edit video without massive downloads, sluggish web wrappers, or complicated cloud subscriptions. triM. delivers 4K smart proxy workflows, timeline voiceover recording, an SRT subtitle suite, and GPU-accelerated export in a compact ~19 MB native application.",
+    hero_download: "Get triM.",
+    hero_explore: "Explore Features",
+    hero_note: "Standalone native desktop app for Linux & Windows · ~19 MB",
+
+    preview_heading: "REAL APPLICATION SCREENSHOTS",
+    tab_workspace: "Workspace",
+    tab_subtitles: "Subtitles & Smart Cut",
+    tab_vertical: "Vertical 9:16",
+    tab_audio: "Audio & EQ",
+    tab_shortcuts: "Shortcut Profiles",
+    tab_export: "GPU Render",
+    preview_caption: "Actual app screenshots / triM. v0.6.0",
+
+    features_index: "THE TOOLS",
+    features_title: "Everything you need <em>on one screen.</em>",
+    features_intro: "No bloat, no distracting menus. Add your media, edit your timeline, and export your master cut.",
+
+    feat_proxy_title: "Silky-Smooth 4K & UHD Playback",
+    feat_proxy_desc: "Keep playback smooth when working with heavy 4K and UHD raw footage. Generate lightweight 720p H.264 proxies in the background with one click. Switch to proxy mode on the timeline for instant 60 FPS scrubbing, while triM. preserves your original full-resolution master files during export.",
+
+    feat_timeline_title: "Precision Cutting & Smart Scene Detection",
+    feat_timeline_desc: "Work across layered video and audio tracks with complete precision. Magnetic snapping, razor cutting (S), ripple trims (Q/W), and ripple delete (Shift+Delete) keep you in flow. Smart Scene Detection automatically detects camera cut points in long source takes and slices them instantly.",
+
+    feat_audio_title: "Live Voiceover & EBU R128 Loudness",
+    feat_audio_desc: "Record high-quality voiceovers straight into your timeline by clicking the microphone button [🎤] on any audio track. Polish your audio with a multi-channel mixer, Voice Clarity EQ, Noise Gate, and master EBU R128 loudness normalization for YouTube and Spotify (-14 LUFS / -23 LUFS).",
+
+    feat_text_color_title: "Subtitle Suite, Live Titler & 3D LUTs",
+    feat_text_color_desc: "Import and export .SRT and .VTT subtitle files seamlessly with automatic lower-third track generation. Use the Live Titler to format text, boxes, and drop shadows in real time. Apply cinematic 3D LUTs (Teal & Orange, Vintage Film, Monochrome Noir) or load your own .cube files.",
+
+    feature_note: "All screenshots displayed above were captured directly from the running triM. desktop application.",
+
+    workflow_index: "THE APPROACH",
+    workflow_title: "Zero unnecessary bloat.<br><em>Direct on your desktop.</em>",
+    workflow_text: "triM. is not a heavy web application trapped inside a browser window. It is a native desktop editor that respects your hardware, launches in seconds, and never requires an internet connection. Your media, project files, and creative choices remain entirely in your control.",
+    point_1: "~19 MB Standalone App",
+    point_2: "Hardware GPU Export",
+    point_3: "Portable Bundled Projects",
+
+    shortcuts_index: "SHORTCUTS",
+    shortcuts_title: "Keep your existing <em>muscle memory.</em>",
+    shortcuts_description: "Muscle memory matters when editing. In addition to triM.'s fast default hotkeys, switch on the fly to Adobe Premiere Pro or DaVinci Resolve shortcut profiles.",
+    shortcuts_link: "See all keyboard shortcuts",
+    key_split: "Split / Razor Tool",
+    key_trim: "Ripple Trim (Head / Tail)",
+    key_select: "Selection Tool",
+    key_ripple: "Ripple Edit Tool",
+    key_play: "Play / Pause",
+    key_shuttle: "Shuttle (Reverse / Stop / Forward)",
+    key_undo: "Undo",
+
+    install_index: "GET STARTED",
+    install_title: "Get started in <em>seconds.</em>",
+    install_description: "triM. is completely free and open source. Install it with a single terminal command, download standalone packages, or build directly from source.",
+    install_release: "Visit GitHub Releases",
+    terminal_title: "Quick Install & Download",
+
+    step_linux_curl: "Open your terminal and install with a single command:",
+    hint_linux_curl: "Creates desktop shortcut and app icon automatically. To uninstall: install.sh --uninstall",
+    step_win_ps: "Open PowerShell and run the one-line installer:",
+    hint_win_ps: "Creates Start Menu shortcuts and sets up the portable folder. FFmpeg is automatically checked.",
+    step_direct_download: "Download ready-to-run packages directly for your system:",
+    step_build: "Clone repository and build with Cargo:",
+    hint_source_build: "Requires standard build tools and system FFmpeg.",
+
+    copy: "Copy",
+    copied: "Copied!",
+    copy_failed: "Failed to copy",
+
+    footer_tagline: "Desktop video editor. Lightweight, fast, and native.",
+    footer_releases: "Releases ↗",
+    footer_credit: "Built with care for Linux & Windows.",
+    back_top: "Back to top ↑",
+    menu_open: "Open menu",
+    menu_close: "Close menu"
+  };
+
+  const translations = { tr, en };
+  const richKeys = new Set(["hero_line2", "features_title", "workflow_title", "shortcuts_title", "install_title"]);
+  let current = "tr";
+  try {
+    const saved = localStorage.getItem("trim_language");
+    if (saved === "en" || saved === "tr") current = saved;
+  } catch (_) {}
+
+  // 1. Language Handler
   function setLanguage(lang) {
     if (!translations[lang]) return;
     current = lang;
@@ -70,29 +196,36 @@ document.addEventListener("DOMContentLoaded", () => {
     document.documentElement.lang = lang;
     document.title = dict.title;
     document.querySelector('meta[name="description"]')?.setAttribute("content", dict.description);
+
     document.querySelectorAll("[data-i18n]").forEach(element => {
       const key = element.dataset.i18n;
       if (!(key in dict)) return;
-      if (richKeys.has(key)) element.innerHTML = dict[key]; // Static trusted copy only.
-      else element.textContent = dict[key];
+      if (richKeys.has(key)) {
+        element.innerHTML = dict[key];
+      } else {
+        element.textContent = dict[key];
+      }
     });
+
     document.querySelectorAll("[data-lang]").forEach(button => {
       const active = button.dataset.lang === lang;
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-pressed", String(active));
     });
-    document.querySelectorAll(".preview-image").forEach(image => {
-      if (image.dataset.image === "edit") image.alt = lang === "en" ? "Actual triM. editor, timeline and preview" : "triM. gerçek kurgu ekranı, zaman çizgisi ve önizleme";
-      else image.alt = lang === "en" ? "triM. empty project startup screen" : "triM. boş proje açılış ekranı";
-    });
+
     const menu = document.getElementById("menu-toggle");
-    if (menu) menu.setAttribute("aria-label", dict[menu.getAttribute("aria-expanded") === "true" ? "menu_close" : "menu_open"]);
+    if (menu) {
+      menu.setAttribute("aria-label", dict[menu.getAttribute("aria-expanded") === "true" ? "menu_close" : "menu_open"]);
+    }
     try { localStorage.setItem("trim_language", lang); } catch (_) {}
   }
 
-  document.querySelectorAll("[data-lang]").forEach(button => button.addEventListener("click", () => setLanguage(button.dataset.lang)));
+  document.querySelectorAll("[data-lang]").forEach(button => {
+    button.addEventListener("click", () => setLanguage(button.dataset.lang));
+  });
   setLanguage(current);
 
+  // 2. Interactive Showcase (Screenshot Stage)
   document.querySelectorAll("[data-preview]").forEach(button => {
     button.addEventListener("click", () => {
       const name = button.dataset.preview;
@@ -101,35 +234,91 @@ document.addEventListener("DOMContentLoaded", () => {
         tab.classList.toggle("is-active", active);
         tab.setAttribute("aria-pressed", String(active));
       });
-      document.querySelectorAll("[data-image]").forEach(img => img.classList.toggle("is-active", img.dataset.image === name));
+      document.querySelectorAll("[data-image]").forEach(img => {
+        img.classList.toggle("is-active", img.dataset.image === name);
+      });
     });
   });
 
-  const distroCommands = {
-    debian: "sudo apt update\nsudo apt install build-essential pkg-config libasound2-dev libx11-dev libgl1-mesa-dev ffmpeg",
-    fedora: "sudo dnf install gcc pkgconf-pkg-config alsa-lib-devel libX11-devel mesa-libGL-devel ffmpeg",
-    arch: "sudo pacman -S base-devel alsa-lib libx11 mesa ffmpeg"
+  // 3. Shortcuts Profile Switcher (triM. / Premiere / Resolve)
+  const shortcutProfiles = {
+    trim: {
+      split: "<kbd>S</kbd> <kbd>C</kbd>",
+      trim: "<kbd>Q</kbd> <kbd>W</kbd>",
+      select: "<kbd>V</kbd>",
+      ripple: "<kbd>B</kbd>",
+      play: "<kbd>Space</kbd>",
+      shuttle: "<kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd>",
+      undo: "<kbd>Ctrl</kbd> <kbd>Z</kbd>"
+    },
+    premiere: {
+      split: "<kbd>Ctrl</kbd> <kbd>K</kbd> / <kbd>C</kbd>",
+      trim: "<kbd>Q</kbd> <kbd>W</kbd>",
+      select: "<kbd>V</kbd>",
+      ripple: "<kbd>B</kbd>",
+      play: "<kbd>Space</kbd>",
+      shuttle: "<kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd>",
+      undo: "<kbd>Ctrl</kbd> <kbd>Z</kbd>"
+    },
+    resolve: {
+      split: "<kbd>Ctrl</kbd> <kbd>\\</kbd> / <kbd>B</kbd>",
+      trim: "<kbd>Shift</kbd> <kbd>[</kbd> <kbd>]</kbd>",
+      select: "<kbd>A</kbd>",
+      ripple: "<kbd>T</kbd>",
+      play: "<kbd>Space</kbd>",
+      shuttle: "<kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd>",
+      undo: "<kbd>Ctrl</kbd> <kbd>Z</kbd>"
+    }
   };
-  const deps = document.getElementById("dependencies-command");
-  document.querySelectorAll("[data-distro]").forEach(button => button.addEventListener("click", () => {
-    if (!distroCommands[button.dataset.distro] || !deps) return;
-    deps.textContent = distroCommands[button.dataset.distro];
-    document.querySelectorAll("[data-distro]").forEach(tab => {
-      const active = tab === button;
-      tab.classList.toggle("is-active", active);
-      tab.setAttribute("aria-pressed", String(active));
+
+  document.querySelectorAll("[data-profile]").forEach(button => {
+    button.addEventListener("click", () => {
+      const prof = button.dataset.profile;
+      if (!shortcutProfiles[prof]) return;
+      document.querySelectorAll("[data-profile]").forEach(b => b.classList.toggle("is-active", b === button));
+
+      const mapping = shortcutProfiles[prof];
+      document.getElementById("sc-split").innerHTML = mapping.split;
+      document.getElementById("sc-trim").innerHTML = mapping.trim;
+      document.getElementById("sc-select").innerHTML = mapping.select;
+      document.getElementById("sc-ripple").innerHTML = mapping.ripple;
+      document.getElementById("sc-play").innerHTML = mapping.play;
+      document.getElementById("sc-shuttle").innerHTML = mapping.shuttle;
+      document.getElementById("sc-undo").innerHTML = mapping.undo;
     });
-  }));
+  });
 
-  document.querySelectorAll("[data-copy]").forEach(button => button.addEventListener("click", async () => {
-    const target = document.getElementById(button.dataset.copy);
-    if (!target) return;
-    try { await navigator.clipboard.writeText(target.textContent.trim()); button.textContent = translations[current].copied; }
-    catch (_) { button.textContent = translations[current].copy_failed; }
-    button.disabled = true;
-    setTimeout(() => { button.disabled = false; button.textContent = translations[current].copy; }, 1600);
-  }));
+  // 4. Install Panes Tabs (Linux, Windows, Packages, Source)
+  document.querySelectorAll("[data-install]").forEach(button => {
+    button.addEventListener("click", () => {
+      const target = button.dataset.install;
+      document.querySelectorAll("[data-install]").forEach(b => b.classList.toggle("is-active", b === button));
+      document.querySelectorAll(".install-pane").forEach(p => {
+        p.classList.toggle("is-active", p.id === `pane-${target}`);
+      });
+    });
+  });
 
+  // 5. Copy to Clipboard Button
+  document.querySelectorAll("[data-copy]").forEach(button => {
+    button.addEventListener("click", async () => {
+      const target = document.getElementById(button.dataset.copy);
+      if (!target) return;
+      try {
+        await navigator.clipboard.writeText(target.textContent.trim());
+        button.textContent = translations[current].copied;
+      } catch (_) {
+        button.textContent = translations[current].copy_failed;
+      }
+      button.disabled = true;
+      setTimeout(() => {
+        button.disabled = false;
+        button.textContent = translations[current].copy;
+      }, 1600);
+    });
+  });
+
+  // 6. Mobile Navigation Menu Toggle
   const menu = document.getElementById("menu-toggle");
   const nav = document.getElementById("primary-nav");
   if (menu && nav) {
@@ -143,6 +332,8 @@ document.addEventListener("DOMContentLoaded", () => {
     document.addEventListener("keydown", e => { if (e.key === "Escape") setMenu(false); });
     window.addEventListener("resize", () => { if (window.innerWidth > 900) setMenu(false); });
   }
+
+  // 7. Scrolled Header Border
   const header = document.getElementById("site-header");
   const updateHeader = () => header?.classList.toggle("is-scrolled", window.scrollY > 12);
   window.addEventListener("scroll", updateHeader, { passive: true });
