@@ -26,6 +26,11 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="0.5.0" date="2026-10-23">
+      <description>
+        <p>triM. v0.5.0 adds GPU hardware-accelerated exports (NVIDIA NVENC, Intel QSV, AMD AMF, Linux VAAPI), 9:16 vertical Shorts/Reels canvas mode with interactive Safe Zones guides, EBU R128 loudness normalization, Voice Clarity and Podcast EQ presets with Noise Gate, real-time Live Titler and subtitle generator, and standalone portable project archiving.</p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-10-21">
       <description>
         <p>triM. v0.4.0 represents a complete transition to 100% native Rust, a redesigned 4-quadrant NLE interface, an 8-tool vector editing toolbar, track audio mixer, Export Studio presets, cross-platform standard paths, and native Windows support with silent process execution and one-line installers.</p>

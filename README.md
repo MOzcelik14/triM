@@ -13,7 +13,7 @@
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-2021%20edition-orange.svg?style=flat-square" alt="Rust 2021"></a>
   <a href="https://github.com/emilk/egui"><img src="https://img.shields.io/badge/GUI-egui%20%2F%20eframe-blueviolet.svg?style=flat-square" alt="GUI: egui / eframe"></a>
   <a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/media-FFmpeg%206.0+-007808.svg?style=flat-square" alt="FFmpeg 6.0+"></a>
-  <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.4.0"><img src="https://img.shields.io/badge/release-v0.4.0-E07A38.svg?style=flat-square" alt="Release v0.4.0"></a>
+  <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.5.0"><img src="https://img.shields.io/badge/release-v0.5.0-E07A38.svg?style=flat-square" alt="Release v0.5.0"></a>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows-28282E.svg?style=flat-square" alt="Linux | Windows">
 </p>
 
@@ -26,21 +26,24 @@
 <a name="english"></a>
 ## English
 
-**triM.** is a modern, blazing-fast, and native non-linear video editor (NLE) built from the ground up in **Rust** specifically for Linux desktop environments.
+**triM.** is a modern, blazing-fast, and native non-linear video editor (NLE) built from the ground up in **Rust** specifically for Linux and Windows desktop environments.
 
-Engineered with a modular Cargo workspace architecture, **triM.** delivers precision video cutting, multi-track audio mixing, real-time color grading, and FFmpeg filtergraph exporting — completely free of Electron bloat or web runtime overhead. The compiled release binary is a self-contained, lightning-fast native Linux application (~19 MB).
+Engineered with a modular Cargo workspace architecture, **triM.** delivers precision video cutting, multi-track audio mixing, real-time color grading, and FFmpeg filtergraph exporting — completely free of Electron bloat or web runtime overhead. The compiled release binary is a self-contained, lightning-fast native application (~19 MB).
 
 ### Highlights
 
 - **100% Rust & Native Desktop:** Zero Electron, zero Python dependencies. Instant startup and deterministic memory safety.
+- **GPU Hardware Acceleration:** Automated hardware encoder detection and pipeline export using NVIDIA NVENC (`h264_nvenc`/`hevc_nvenc`), Intel QuickSync (QSV), AMD AMF, and Linux VAAPI with graceful CPU fallback.
+- **Vertical Canvas & Safe Zones:** Native 9:16 Shorts/Reels/TikTok workspace, 90% Action Safe, 80% Title Safe, and interactive social media UI overlay boundaries.
+- **Pro Audio Engineering Suite:** Master audio loudness normalization (EBU R128 -23 LUFS, YouTube/Spotify -14 LUFS, Podcast -16 LUFS), Voice Clarity & Podcast EQ presets, and Noise Gate (`agate`).
+- **Live Titler & Real-Time Compositing:** In-inspector live text editing with font sizing, position templates, custom X/Y sliders, drop shadows, subtitle bounding boxes, and FFmpeg `drawtext` export.
+- **Portable Project Packager:** Zero-asset-loss `.trim` project bundling into standalone folders with relative media path rebasing.
 - **Asynchronous Video Pipeline:** Multi-threaded `PlaybackStreamer` (235+ FPS continuous rawvideo decoding pipe) and non-blocking `AsyncFrameDecoder` for stutter-free timeline scrubbing.
 - **Multi-Track Timeline:** Dynamic layered video (`V1..Vn`) and audio (`A1..An`) tracks with cross-track dragging, vertical track resizing, razor split (`S`), ripple trim (`Q`/`W`), ripple delete (`Shift+Delete`), and magnetic snapping.
 - **Dedicated NLE Vector Toolbar:** Native subpixel vector-drawn tools (`V` Select, `A` Track Select, `B` Ripple, `C` Razor, `Y` Slip, `P` Pen, `H` Hand, `T` Text).
 - **Multi-Channel Audio Mixer:** Live master fader, per-track dB sliders, stereo RMS/Peak VU meters, Mute/Solo, and instant audio separation ("Detach Audio").
-- **Export Studio:** Multi-threaded FFmpeg rendering with presets for YouTube 1080p, 4K UHD, Reels/Shorts (9:16 Vertical), HEVC/H.265, and Apple ProRes 422.
 - **Keyframing & Color Grading:** Interpolation curves (Linear, Hold, Smoothstep Ease-In-Out) across clip position, scale, opacity, rotation, brightness, contrast, and saturation.
 - **Direct CLI & Welcome Launcher:** Launch directly from terminal (`trim video.mp4`) or use the startup launcher with resolution presets and recent project history.
-- **Backward Compatible:** Native support for both `.trim` and legacy `.cutline` project files with automatic crash recovery snapshots.
 
 ---
 
@@ -141,7 +144,12 @@ Modüler Cargo çalışma alanı mimarisi üzerine kurulan **triM.**; hassas vid
 
 ### Öne Çıkan Özellikler
 
-- **%100 Rust ve Yerel Masaüstü:** Sıfır Electron yükü, sıfır Python bağımlılığı. Anında açılış ve kararlı bellek yönetimi.
+- **%100 Rust ve Yerel Masaüstü:** Sıfır Electron yükü, sıfır Python bağımlılığı. Anında açılış ve kararlı bellek yönetimi (Linux & Windows desteği).
+- **GPU Donanım Hızlandırma:** NVIDIA NVENC, Intel QuickSync (QSV), AMD AMF ve Linux VAAPI ile ultra hızlı donanım destekli dışa aktarım ve otomatik CPU yedeği.
+- **Dikey Tuval & Güvenli Alan Kılavuzları (Safe Zones):** 9:16 Shorts/Reels çalışma alanı, 90% Action Safe, 80% Title Safe ve TikTok/Instagram Reels arayüz sınırları.
+- **Profesyonel Ses Mühendisliği & EBU R128:** Master miksajda YouTube/Spotify (-14 LUFS), Podcast (-16 LUFS) ve Yayın (-23 LUFS) ses normalizasyonu; klip bazlı Ses Netliği, Bas Güçlendirme ve Gürültü Kapısı (Noise Gate - `agate`).
+- **Canlı Titler & Altyazı Editörü:** Inspector üzerinde font boyutu, hızlı şablonlar (Alt Yazı, Orta, Üst), X/Y sürgüleri, renk paleti, gölge ve altyazı kutusu ile canlı metin düzenleme ve FFmpeg `drawtext` export desteği.
+- **Taşınabilir Proje Paketleyici (Project Archiver):** Projede kullanılan tüm medyaları klasör altında toplayıp dosya yollarını göreceli hale getirerek (`media/...`) kayıpsız proje taşıma.
 - **Yüksek Hızlı Asenkron Video Motoru:** `PlaybackStreamer` (arka planda 235+ FPS sürekli rawvideo borusu) ve `AsyncFrameDecoder` (sarma sırasında kilitlenmeyen oynatma kafası).
 - **Dinamik Çok Kanallı Zaman Çizgisi:** Kanallar arası serbest dikey klip taşıma, dikey kanal boyu ayarlama, `[+ Video]` / `[+ Ses]` ekleme, çizgiden kesme (`S`), başı kırpıp kaydırma (`Q`), sonu kırpıp kaydırma (`W`), boşluğu kapatarak silme (`Shift+Delete`) ve manyetik yapışma.
 - **Özel NLE Vektörel Araç Çubuğu:** Yerel piksel altı vektörlerle çizilen 8 profesyonel kurgu aracı (`V` Seçim, `A` İz Seçme, `B` Dalgalanma, `C` Jilet/Kesme, `Y` Kaydırma, `P` Kalem/Anahtar Kare, `H` El/Gezinme, `T` Metin).

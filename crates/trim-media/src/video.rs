@@ -16,6 +16,21 @@ pub const PREVIEW_WIDTH: u32 = 640;
 pub const PREVIEW_HEIGHT: u32 = 360;
 pub const PREVIEW_FRAME_BYTES: usize = (PREVIEW_WIDTH * PREVIEW_HEIGHT * 4) as usize;
 
+/// Calculates canvas preview dimensions scaled to fit the monitor while preserving aspect ratio.
+pub fn calculate_preview_size(width: u32, height: u32) -> (u32, u32) {
+    let w = width.max(16);
+    let h = height.max(16);
+    if w >= h {
+        let cw = 640;
+        let ch = ((640.0 * h as f64 / w as f64).round() as u32).max(180) & !1;
+        (cw, ch)
+    } else {
+        let ch = 640;
+        let cw = ((640.0 * w as f64 / h as f64).round() as u32).max(180) & !1;
+        (cw, ch)
+    }
+}
+
 pub type DecodedFrame = (f64, Arc<RgbaImage>);
 pub type FrameCacheMap = Arc<RwLock<HashMap<(String, u64), Arc<RgbaImage>>>>;
 
@@ -368,6 +383,8 @@ impl VideoEngine {
         timeline_time: f64,
         is_playing: bool,
     ) -> Option<Arc<RgbaImage>> {
+        let (canvas_w, canvas_h) = calculate_preview_size(project.timeline.width, project.timeline.height);
+
         let visible_clips = project.timeline.get_visible_video_clips_at(timeline_time);
         if visible_clips.is_empty() {
             // Never retain the final frame when the playhead leaves a clip.
@@ -413,9 +430,13 @@ impl VideoEngine {
             let in_fade_in = clip.fade_in > 0.0 && dt < clip.fade_in;
             let in_fade_out = clip.fade_out > 0.0 && rem < clip.fade_out;
 
-            let is_standard_transform = clip.opacity >= 0.99
+            let is_standard_transform = canvas_w == PREVIEW_WIDTH
+                && canvas_h == PREVIEW_HEIGHT
+                && clip.opacity >= 0.99
                 && !in_fade_in
                 && !in_fade_out
+                && clip.transition_in.is_none()
+                && clip.transition_out.is_none()
                 && clip.brightness == 0.0
                 && clip.contrast == 1.0
                 && clip.saturation == 1.0
@@ -432,7 +453,7 @@ impl VideoEngine {
                         self.last_rendered_frame = Some(arc_img.clone());
                         return Some(arc_img);
                     } else {
-                        let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
+                        let mut canvas = ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
                         draw_clip_onto_canvas(&mut canvas, clip, img, timeline_time);
                         let arc_canvas = Arc::new(canvas);
                         self.last_rendered_frame = Some(arc_canvas.clone());
@@ -498,7 +519,7 @@ impl VideoEngine {
                                 self.last_rendered_frame = Some(cached.clone());
                                 return Some(cached.clone());
                             } else {
-                                let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
+                                let mut canvas = ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
                                 draw_clip_onto_canvas(&mut canvas, clip, cached, timeline_time);
                                 let arc_canvas = Arc::new(canvas);
                                 self.last_rendered_frame = Some(arc_canvas.clone());
@@ -520,7 +541,7 @@ impl VideoEngine {
                                 self.last_rendered_frame = Some(arc.clone());
                                 return Some(arc);
                             } else {
-                                let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
+                                let mut canvas = ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
                                 draw_clip_onto_canvas(&mut canvas, clip, &arc, timeline_time);
                                 let arc_canvas = Arc::new(canvas);
                                 self.last_rendered_frame = Some(arc_canvas.clone());
@@ -539,7 +560,7 @@ impl VideoEngine {
                         if is_standard_transform {
                             return Some(last_raw.clone());
                         } else {
-                            let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
+                            let mut canvas = ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
                             draw_clip_onto_canvas(&mut canvas, clip, last_raw, timeline_time);
                             let arc_canvas = Arc::new(canvas);
                             self.last_rendered_frame = Some(arc_canvas.clone());
@@ -553,7 +574,7 @@ impl VideoEngine {
         }
 
         // Layered Composite Path: Multiple clips, transitions, opacity, fades, keyframes
-        let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
+        let mut canvas = ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
 
         for (_track, clip) in visible_clips {
             let media_item = match project.get_media(&clip.media_id) {
@@ -706,21 +727,29 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
     let animated_pos_x = clip.get_property_at_time("pos_x", clip_time);
     let animated_pos_y = clip.get_property_at_time("pos_y", clip_time);
 
-    let mut eff_opacity = animated_opacity.clamp(0.0, 1.0);
     let dt = current_time - clip.timeline_in;
     let rem = clip.timeline_out - current_time;
 
-    let mut fade_factor = 1.0;
-    if clip.fade_in > 0.0 && dt < clip.fade_in {
-        let f = (dt / clip.fade_in).clamp(0.0, 1.0);
-        eff_opacity *= f;
-        fade_factor = f;
-    }
-    if clip.fade_out > 0.0 && rem < clip.fade_out {
-        let f = (rem / clip.fade_out).clamp(0.0, 1.0);
-        eff_opacity *= f;
-        fade_factor = f;
-    }
+    let in_progress = if clip.fade_in > 0.0 && dt < clip.fade_in {
+        (dt / clip.fade_in).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let out_progress = if clip.fade_out > 0.0 && rem < clip.fade_out {
+        (rem / clip.fade_out).clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let fade_factor = in_progress.min(out_progress);
+
+    let is_wipe_or_slide = clip.transition_in.as_deref().is_some_and(|t| t.starts_with("wipe") || t.starts_with("slide"))
+        || clip.transition_out.as_deref().is_some_and(|t| t.starts_with("wipe") || t.starts_with("slide"));
+
+    let eff_opacity = if is_wipe_or_slide {
+        animated_opacity.clamp(0.0, 1.0)
+    } else {
+        (animated_opacity * fade_factor).clamp(0.0, 1.0)
+    };
 
     if eff_opacity <= 0.001 {
         return;
@@ -736,19 +765,46 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
     }
 
     let scale_fit = (cw / fw).min(ch / fh);
-    let eff_scale = scale_fit * animated_scale.max(0.05);
+    let mut eff_scale = scale_fit * animated_scale.max(0.05);
+
+    // Zoom-in transition
+    if clip.transition_in.as_deref() == Some("zoom_in") && in_progress < 1.0 {
+        eff_scale *= 0.3 + 0.7 * in_progress;
+    }
 
     let final_w = (fw * eff_scale).round() as i64;
     let final_h = (fh * eff_scale).round() as i64;
 
-    let final_x = ((cw - final_w as f64) / 2.0 + animated_pos_x).round() as i64;
+    let mut slide_x_offset = 0.0;
+    if in_progress < 1.0 {
+        if clip.transition_in.as_deref() == Some("slide_left") {
+            slide_x_offset += (1.0 - in_progress) * cw;
+        } else if clip.transition_in.as_deref() == Some("slide_right") {
+            slide_x_offset -= (1.0 - in_progress) * cw;
+        }
+    }
+    if out_progress < 1.0 {
+        if clip.transition_out.as_deref() == Some("slide_left") {
+            slide_x_offset -= (1.0 - out_progress) * cw;
+        } else if clip.transition_out.as_deref() == Some("slide_right") {
+            slide_x_offset += (1.0 - out_progress) * cw;
+        }
+    }
+
+    let final_x = ((cw - final_w as f64) / 2.0 + animated_pos_x + slide_x_offset).round() as i64;
     let final_y = ((ch - final_h as f64) / 2.0 + animated_pos_y).round() as i64;
 
     let has_dip_white = (clip.transition_in.as_deref() == Some("dip_white") && fade_factor < 1.0)
         || (clip.transition_out.as_deref() == Some("dip_white") && fade_factor < 1.0);
     let dip_white_amt = if has_dip_white { (1.0 - fade_factor) as f32 } else { 0.0 };
 
+    let wipe_left_active = (clip.transition_in.as_deref() == Some("wipe_left") && in_progress < 1.0)
+        || (clip.transition_out.as_deref() == Some("wipe_left") && out_progress < 1.0);
+    let wipe_right_active = (clip.transition_in.as_deref() == Some("wipe_right") && in_progress < 1.0)
+        || (clip.transition_out.as_deref() == Some("wipe_right") && out_progress < 1.0);
+
     let has_color_adj = clip.brightness != 0.0 || clip.contrast != 1.0 || clip.saturation != 1.0;
+    let has_special_trans = has_dip_white || wipe_left_active || wipe_right_active || slide_x_offset.abs() > 0.1;
 
     let is_fullscreen_fit = final_w == cw as i64
         && final_h == ch as i64
@@ -757,7 +813,7 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
         && (fw - cw).abs() < 0.001
         && (fh - ch).abs() < 0.001;
 
-    if is_fullscreen_fit && !has_color_adj && dip_white_amt == 0.0 {
+    if is_fullscreen_fit && !has_color_adj && !has_special_trans {
         let alpha = eff_opacity as f32;
         let src_raw = frame.as_raw();
         let dst_raw: &mut [u8] = canvas.as_mut();
@@ -790,6 +846,19 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
             let cx = final_x + x;
             if cx < 0 || cx >= cw as i64 {
                 continue;
+            }
+
+            if wipe_left_active {
+                let norm_x = x as f64 / final_w.max(1) as f64;
+                if norm_x > fade_factor {
+                    continue;
+                }
+            }
+            if wipe_right_active {
+                let norm_x = x as f64 / final_w.max(1) as f64;
+                if norm_x < (1.0 - fade_factor) {
+                    continue;
+                }
             }
 
             let sx = ((x as f64 / final_w as f64) * fw) as u32;

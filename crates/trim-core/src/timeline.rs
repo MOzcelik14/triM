@@ -5,6 +5,79 @@ use crate::marker::Marker;
 use crate::track::{Track, TrackType};
 use serde::{Deserialize, Serialize};
 
+/// Common video aspect ratios for YouTube, Reels/TikTok, Cinema and social media.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum AspectRatio {
+    #[default]
+    Wide16x9,
+    Vertical9x16,
+    Square1x1,
+    Portrait4x5,
+    Classic4x3,
+    Cinema21x9,
+    Custom,
+}
+
+impl AspectRatio {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Wide16x9 => "16:9 Yatay (YouTube / TV)",
+            Self::Vertical9x16 => "9:16 Dikey (Shorts / Reels / TikTok)",
+            Self::Square1x1 => "1:1 Kare (Instagram)",
+            Self::Portrait4x5 => "4:5 Portre (Sosyal Medya)",
+            Self::Classic4x3 => "4:3 Klasik",
+            Self::Cinema21x9 => "21:9 Sinematik",
+            Self::Custom => "Özel Oran",
+        }
+    }
+
+    pub fn short_label(&self) -> &'static str {
+        match self {
+            Self::Wide16x9 => "16:9",
+            Self::Vertical9x16 => "9:16",
+            Self::Square1x1 => "1:1",
+            Self::Portrait4x5 => "4:5",
+            Self::Classic4x3 => "4:3",
+            Self::Cinema21x9 => "21:9",
+            Self::Custom => "Özel",
+        }
+    }
+
+    pub fn default_resolution(&self) -> (u32, u32) {
+        match self {
+            Self::Wide16x9 => (1920, 1080),
+            Self::Vertical9x16 => (1080, 1920),
+            Self::Square1x1 => (1080, 1080),
+            Self::Portrait4x5 => (1080, 1350),
+            Self::Classic4x3 => (1440, 1080),
+            Self::Cinema21x9 => (2560, 1080),
+            Self::Custom => (1920, 1080),
+        }
+    }
+
+    pub fn from_dimensions(width: u32, height: u32) -> Self {
+        if width == 0 || height == 0 {
+            return Self::Wide16x9;
+        }
+        let ratio = width as f64 / height as f64;
+        if (ratio - 16.0 / 9.0).abs() < 0.05 {
+            Self::Wide16x9
+        } else if (ratio - 9.0 / 16.0).abs() < 0.05 {
+            Self::Vertical9x16
+        } else if (ratio - 1.0).abs() < 0.05 {
+            Self::Square1x1
+        } else if (ratio - 4.0 / 5.0).abs() < 0.05 {
+            Self::Portrait4x5
+        } else if (ratio - 4.0 / 3.0).abs() < 0.05 {
+            Self::Classic4x3
+        } else if (ratio - 21.0 / 9.0).abs() < 0.08 {
+            Self::Cinema21x9
+        } else {
+            Self::Custom
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TimelineModel {
     #[serde(default)]
@@ -57,6 +130,18 @@ impl Default for TimelineModel {
 }
 
 impl TimelineModel {
+    pub fn aspect_ratio(&self) -> AspectRatio {
+        AspectRatio::from_dimensions(self.width, self.height)
+    }
+
+    pub fn set_aspect_ratio(&mut self, ratio: AspectRatio) {
+        if ratio != AspectRatio::Custom {
+            let (w, h) = ratio.default_resolution();
+            self.width = w;
+            self.height = h;
+        }
+    }
+
     pub fn duration(&self) -> f64 {
         self.tracks
             .iter()
@@ -344,5 +429,21 @@ mod tests {
         let v1_id = tl.tracks[0].id.clone();
         assert!(tl.remove_track_safe(&v1_id).is_err());
         assert_eq!(tl.get_video_tracks().len(), 1);
+    }
+
+    #[test]
+    fn test_aspect_ratio_detection_and_switch() {
+        let mut tl = TimelineModel::default();
+        assert_eq!(tl.aspect_ratio(), AspectRatio::Wide16x9);
+
+        tl.set_aspect_ratio(AspectRatio::Vertical9x16);
+        assert_eq!(tl.width, 1080);
+        assert_eq!(tl.height, 1920);
+        assert_eq!(tl.aspect_ratio(), AspectRatio::Vertical9x16);
+
+        tl.set_aspect_ratio(AspectRatio::Square1x1);
+        assert_eq!(tl.width, 1080);
+        assert_eq!(tl.height, 1080);
+        assert_eq!(tl.aspect_ratio(), AspectRatio::Square1x1);
     }
 }

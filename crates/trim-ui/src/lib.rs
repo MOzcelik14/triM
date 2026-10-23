@@ -15,6 +15,7 @@ pub mod vu_meter;
 
 pub use app::TrimApp;
 pub use canvas::TimelineCanvasState;
+pub use media_bin::LeftPanelTab;
 pub use theme::setup_theme;
 pub use vu_meter::VuMeterState;
 

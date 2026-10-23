@@ -69,6 +69,24 @@ fn main() -> Result<(), eframe::Error> {
                     app.open_path(p);
                 }
             }
+            if std::env::args().any(|arg| arg == "--open-export") {
+                app.export_dialog.open(&app.project);
+            }
+            if std::env::args().any(|arg| arg == "--enable-safe-zones") {
+                app.show_safe_zones = true;
+            }
+            if std::env::args().any(|arg| arg == "--tab-effects") {
+                app.active_left_tab = trim_ui::LeftPanelTab::Effects;
+            }
+            if std::env::args().any(|arg| arg == "--select-first") {
+                app.active_left_tab = trim_ui::LeftPanelTab::Effects;
+                if let Some((t_id, c_id)) = app.project.timeline.tracks.iter().find_map(|t| {
+                    t.clips.first().map(|c| (t.id.clone(), c.id.clone()))
+                }) {
+                    app.canvas_state.selected_clip_pairs = vec![(t_id, c_id)];
+                    app.current_time = 1.0;
+                }
+            }
             Ok(Box::new(app))
         }),
     )

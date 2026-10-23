@@ -2,7 +2,8 @@
 
 use egui::{Button, Color32, ProgressBar, RichText, Slider, Vec2, Window};
 use trim_core::project::Project;
-use trim_export::presets::{get_default_presets, ExportPreset};
+use trim_export::presets::{get_default_presets, ExportPreset, HardwareAccel, LoudnessNorm};
+use trim_media::detect_available_encoders;
 
 #[derive(Debug, Clone)]
 pub struct ExportDialog {
@@ -17,6 +18,8 @@ pub struct ExportDialog {
     pub custom_height: u32,
     pub custom_fps: f64,
     pub custom_crf: u32,
+    pub hw_accel: HardwareAccel,
+    pub loudness_norm: LoudnessNorm,
     pub timeline_duration: f64,
 }
 
@@ -38,6 +41,7 @@ impl Default for ExportDialog {
         let first_h = presets[0].height.unwrap_or(1080);
         let first_fps = presets[0].fps.unwrap_or(30.0);
         let first_crf = presets[0].crf;
+        let first_norm = presets[0].loudness_norm;
 
         Self {
             is_open: false,
@@ -51,6 +55,8 @@ impl Default for ExportDialog {
             custom_height: first_h,
             custom_fps: first_fps,
             custom_crf: first_crf,
+            hw_accel: HardwareAccel::Auto,
+            loudness_norm: first_norm,
             timeline_duration: 10.0,
         }
     }
@@ -64,6 +70,9 @@ pub enum ExportDialogAction {
 
 impl ExportDialog {
     pub fn open(&mut self, project: &Project) {
+        self.custom_width = project.timeline.width;
+        self.custom_height = project.timeline.height;
+        self.custom_fps = project.timeline.fps;
         self.open_with_duration(project.timeline.duration());
     }
 
@@ -122,6 +131,7 @@ impl ExportDialog {
                                                 self.custom_fps = f;
                                             }
                                             self.custom_crf = p.crf;
+                                            self.loudness_norm = p.loudness_norm;
                                         }
                                         ui.add_space(2.0);
                                     }
@@ -140,6 +150,22 @@ impl ExportDialog {
                                     ui.set_width(310.0);
                                     ui.strong("Video Parametreleri");
                                     ui.add_space(4.0);
+
+                                    ui.horizontal(|ui| {
+                                        ui.label("Format:");
+                                        if ui.selectable_label(self.custom_width == 1920 && self.custom_height == 1080, "16:9").clicked() {
+                                            self.custom_width = 1920;
+                                            self.custom_height = 1080;
+                                        }
+                                        if ui.selectable_label(self.custom_width == 1080 && self.custom_height == 1920, "9:16 Dikey").clicked() {
+                                            self.custom_width = 1080;
+                                            self.custom_height = 1920;
+                                        }
+                                        if ui.selectable_label(self.custom_width == 1080 && self.custom_height == 1080, "1:1 Kare").clicked() {
+                                            self.custom_width = 1080;
+                                            self.custom_height = 1080;
+                                        }
+                                    });
 
                                     ui.horizontal(|ui| {
                                         ui.label("Çözünürlük:");
@@ -166,6 +192,42 @@ impl ExportDialog {
                                         ui.label(RichText::new(qual_label).size(10.5).color(Color32::from_rgb(0x38, 0xa0, 0xf0)));
                                     });
 
+                                    let detected_enc = detect_available_encoders();
+                                    ui.horizontal(|ui| {
+                                        ui.label("Hızlandırıcı (GPU):");
+                                        egui::ComboBox::from_id_salt("hw_accel_combo")
+                                            .selected_text(self.hw_accel.short_label())
+                                            .show_ui(ui, |ui| {
+                                                ui.selectable_value(&mut self.hw_accel, HardwareAccel::Auto, "Otomatik (En Hızlı GPU)");
+                                                if detected_enc.has_nvidia_nvenc() {
+                                                    ui.selectable_value(&mut self.hw_accel, HardwareAccel::Nvenc, "NVIDIA NVENC (GPU)");
+                                                }
+                                                if detected_enc.has_intel_qsv() {
+                                                    ui.selectable_value(&mut self.hw_accel, HardwareAccel::Qsv, "Intel QuickSync (QSV)");
+                                                }
+                                                if detected_enc.has_vaapi() {
+                                                    ui.selectable_value(&mut self.hw_accel, HardwareAccel::Vaapi, "Linux VAAPI");
+                                                }
+                                                if detected_enc.has_amd_amf() {
+                                                    ui.selectable_value(&mut self.hw_accel, HardwareAccel::Amf, "AMD AMF (GPU)");
+                                                }
+                                                ui.selectable_value(&mut self.hw_accel, HardwareAccel::Cpu, "İşlemci (CPU x264/x265)");
+                                            });
+                                    });
+
+                                    let badge_text = if detected_enc.has_nvidia_nvenc() {
+                                        "⚡ NVIDIA NVENC Donanım Hızlandırma Algılandı"
+                                    } else if detected_enc.has_intel_qsv() {
+                                        "⚡ Intel QuickSync Donanım Hızlandırma Algılandı"
+                                    } else if detected_enc.has_vaapi() {
+                                        "⚡ Linux VAAPI Donanım Hızlandırma Algılandı"
+                                    } else if detected_enc.has_amd_amf() {
+                                        "⚡ AMD AMF Donanım Hızlandırma Algılandı"
+                                    } else {
+                                        "ℹ️ Donanım hızlandırma bulunamadı, CPU kullanılacak"
+                                    };
+                                    ui.label(RichText::new(badge_text).size(10.0).color(if detected_enc.any_hardware() { Color32::from_rgb(0x3d, 0xdc, 0x84) } else { Color32::from_rgb(0x90, 0x90, 0xa0) }));
+
                                     ui.horizontal(|ui| {
                                         ui.label("Video Kodeki:");
                                         ui.label(RichText::new(&curr_preset.video_codec).strong().color(Color32::from_rgb(0xe0, 0x7a, 0x38)));
@@ -182,6 +244,17 @@ impl ExportDialog {
                                     ui.horizontal(|ui| {
                                         ui.label("Ses Kodeki:");
                                         ui.label(RichText::new(format!("{} @ {}", curr_preset.audio_codec, curr_preset.audio_bitrate)).color(Color32::from_rgb(0x3d, 0xdc, 0x84)));
+                                    });
+
+                                    ui.horizontal(|ui| {
+                                        ui.label("Normalizasyon:");
+                                        egui::ComboBox::from_id_salt("loudness_norm_select")
+                                            .selected_text(self.loudness_norm.label())
+                                            .show_ui(ui, |ui| {
+                                                for norm in LoudnessNorm::ALL {
+                                                    ui.selectable_value(&mut self.loudness_norm, *norm, norm.label());
+                                                }
+                                            });
                                     });
 
                                     // Approximate size calculation: (crf-dependent bitrate + audio bitrate) * duration
@@ -235,6 +308,8 @@ impl ExportDialog {
                             preset.height = Some(self.custom_height);
                             preset.fps = Some(self.custom_fps);
                             preset.crf = self.custom_crf;
+                            preset.hw_accel = self.hw_accel;
+                            preset.loudness_norm = self.loudness_norm;
 
                             self.is_exporting = true;
                             self.progress = 0.0;

@@ -23,6 +23,20 @@ pub enum MonitorAction {
     OverwriteToTimeline,
     ExportFrame,
     Seek(f64),
+    ToggleSafeZones,
+    SetAspectRatio(trim_core::AspectRatio),
+}
+
+#[derive(Debug, Clone)]
+pub struct ActiveTextOverlay {
+    pub text: String,
+    pub font_size: f32,
+    pub text_color: Color32,
+    pub bg_color: Option<Color32>,
+    pub pos_x: f32,
+    pub pos_y: f32,
+    pub has_shadow: bool,
+    pub alpha: f32,
 }
 
 pub struct MonitorWidget<'a> {
@@ -41,6 +55,9 @@ pub struct MonitorWidget<'a> {
     pub playback_speed: f64,
     pub media_label: Option<&'a str>,
     pub is_decoding: bool,
+    pub safe_zones: bool,
+    pub current_aspect_ratio: Option<trim_core::AspectRatio>,
+    pub text_overlays: Vec<ActiveTextOverlay>,
 }
 
 impl<'a> MonitorWidget<'a> {
@@ -78,7 +95,25 @@ impl<'a> MonitorWidget<'a> {
             playback_speed,
             media_label,
             is_decoding,
+            safe_zones: false,
+            current_aspect_ratio: None,
+            text_overlays: Vec::new(),
         }
+    }
+
+    pub fn safe_zones(mut self, enabled: bool) -> Self {
+        self.safe_zones = enabled;
+        self
+    }
+
+    pub fn aspect_ratio_preset(mut self, ratio: Option<trim_core::AspectRatio>) -> Self {
+        self.current_aspect_ratio = ratio;
+        self
+    }
+
+    pub fn text_overlays(mut self, overlays: Vec<ActiveTextOverlay>) -> Self {
+        self.text_overlays = overlays;
+        self
     }
 
     pub fn show(self, ui: &mut Ui) -> (Response, Option<MonitorAction>) {
@@ -148,9 +183,17 @@ impl<'a> MonitorWidget<'a> {
             Pos2::new(outer_rect.right(), outer_rect.bottom() - bottom_total_h),
         );
 
-        // Empty state when no clip or media loaded
+        // Viewport video frame calculated with respect to project aspect ratio
+        let max_w = (viewport_rect.width() - 8.0).max(10.0);
+        let max_h = (viewport_rect.height() - 8.0).max(10.0);
+        let (target_w, target_h) = fit_aspect(max_w, max_h, self.aspect_ratio);
+        let frame_rect = Rect::from_center_size(viewport_rect.center(), Vec2::new(target_w, target_h));
+
+        // Deep black canvas background
+        painter.rect_filled(frame_rect, 0.0, Color32::from_rgb(0x02, 0x02, 0x04));
+
         if !self.has_content {
-            let center = viewport_rect.center();
+            let center = frame_rect.center();
             painter.text(
                 Pos2::new(center.x, center.y - 30.0),
                 egui::Align2::CENTER_CENTER,
@@ -183,36 +226,77 @@ impl<'a> MonitorWidget<'a> {
                 }
             }
             draw_button(painter, r_import, "+ Medya İçe Aktar", true);
+        } else if let Some(tex) = self.texture {
+            painter.image(
+                tex.id(),
+                frame_rect,
+                Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
+                Color32::WHITE,
+            );
         } else {
-            // Viewport video frame
-            let max_w = (viewport_rect.width() - 8.0).max(10.0);
-            let max_h = (viewport_rect.height() - 8.0).max(10.0);
-            let (target_w, target_h) = fit_aspect(max_w, max_h, self.aspect_ratio);
-            let frame_rect = Rect::from_center_size(viewport_rect.center(), Vec2::new(target_w, target_h));
+            painter.text(
+                frame_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                if self.is_decoding { "Kare hazırlanıyor..." } else { "Önizleme Yükleniyor..." },
+                egui::FontId::proportional(12.0),
+                Color32::from_rgb(0x80, 0x80, 0x90),
+            );
+        }
 
-            // Deep black letterbox
-            painter.rect_filled(frame_rect, 0.0, Color32::from_rgb(0x02, 0x02, 0x04));
+        // Real-time Titler and Text Overlay rendering
+        for ov in &self.text_overlays {
+            if ov.alpha <= 0.001 || ov.text.is_empty() {
+                continue;
+            }
+            let scaled_font_size = (ov.font_size * (frame_rect.height() / 1080.0)).clamp(10.0, 160.0);
+            let font = egui::FontId::proportional(scaled_font_size);
+            let target_x = frame_rect.left() + frame_rect.width() * ov.pos_x.clamp(0.0, 1.0);
+            let target_y = frame_rect.top() + frame_rect.height() * ov.pos_y.clamp(0.0, 1.0);
 
-            if let Some(tex) = self.texture {
-                painter.image(
-                    tex.id(),
-                    frame_rect,
-                    Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
-                    Color32::WHITE,
-                );
-            } else {
-                painter.text(
-                    frame_rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    if self.is_decoding { "Kare hazırlanıyor..." } else { "Önizleme Yükleniyor..." },
-                    egui::FontId::proportional(12.0),
-                    Color32::from_rgb(0x80, 0x80, 0x90),
+            let mut final_col = ov.text_color;
+            if ov.alpha < 0.999 {
+                final_col = Color32::from_rgba_premultiplied(
+                    (final_col.r() as f32 * ov.alpha) as u8,
+                    (final_col.g() as f32 * ov.alpha) as u8,
+                    (final_col.b() as f32 * ov.alpha) as u8,
+                    (final_col.a() as f32 * ov.alpha) as u8,
                 );
             }
 
-            // High contrast frame border
-            painter.rect_stroke(frame_rect, 0.0, Stroke::new(1.0_f32, Color32::from_rgb(0x38, 0x38, 0x46)));
-            draw_corner_guides(painter, frame_rect);
+            let galley = painter.layout_no_wrap(ov.text.clone(), font, final_col);
+            let text_rect = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
+
+            // Optional background box
+            if let Some(bg_col) = ov.bg_color {
+                let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
+                let box_rect = text_rect.expand(pad);
+                let mut box_col = bg_col;
+                if ov.alpha < 0.999 {
+                    box_col = Color32::from_rgba_premultiplied(
+                        (box_col.r() as f32 * ov.alpha) as u8,
+                        (box_col.g() as f32 * ov.alpha) as u8,
+                        (box_col.b() as f32 * ov.alpha) as u8,
+                        (box_col.a() as f32 * ov.alpha) as u8,
+                    );
+                }
+                painter.rect_filled(box_rect, 4.0, box_col);
+            }
+
+            // Drop shadow
+            if ov.has_shadow {
+                let shadow_offset = Vec2::new(2.0, 2.0);
+                painter.galley(text_rect.min + shadow_offset, galley.clone(), Color32::from_black_alpha((160.0 * ov.alpha) as u8));
+            }
+
+            // Main text
+            painter.galley(text_rect.min, galley, final_col);
+        }
+
+        // High contrast frame border
+        painter.rect_stroke(frame_rect, 0.0, Stroke::new(1.0_f32, Color32::from_rgb(0x38, 0x38, 0x46)));
+        draw_corner_guides(painter, frame_rect);
+        if self.safe_zones {
+            draw_safe_zones(painter, frame_rect, self.aspect_ratio < 1.0);
         }
 
         // 3. Scrubber Bar
@@ -420,6 +504,43 @@ impl<'a> MonitorWidget<'a> {
                         if ui.add(btn_frame).on_hover_text("Mevcut Kareyi Dışa Aktar (Export Frame)").clicked() {
                             action = Some(MonitorAction::ExportFrame);
                         }
+
+                        let safe_color = if self.safe_zones {
+                            Color32::from_rgb(0x38, 0xa0, 0xe8)
+                        } else {
+                            Color32::from_rgb(0xa0, 0xa0, 0xb0)
+                        };
+                        let btn_safe = Button::new(
+                            RichText::new("Rehber")
+                                .size(11.0)
+                                .color(safe_color)
+                                .strong(),
+                        )
+                        .min_size(Vec2::new(26.0, 24.0))
+                        .fill(if self.safe_zones { Color32::from_rgb(0x18, 0x30, 0x48) } else { Color32::from_rgb(0x22, 0x22, 0x2a) });
+                        if ui.add(btn_safe).on_hover_text("Güvenli Alan & Sosyal Medya Rehber Çizgileri").clicked() {
+                            action = Some(MonitorAction::ToggleSafeZones);
+                        }
+
+                        if let Some(curr_ar) = self.current_aspect_ratio {
+                            ui.add_space(2.0);
+                            egui::ComboBox::from_id_salt("monitor_aspect_combo")
+                                .selected_text(curr_ar.short_label())
+                                .show_ui(ui, |ui| {
+                                    for r in [
+                                        trim_core::AspectRatio::Wide16x9,
+                                        trim_core::AspectRatio::Vertical9x16,
+                                        trim_core::AspectRatio::Square1x1,
+                                        trim_core::AspectRatio::Portrait4x5,
+                                        trim_core::AspectRatio::Classic4x3,
+                                        trim_core::AspectRatio::Cinema21x9,
+                                    ] {
+                                        if ui.selectable_label(curr_ar == r, r.label()).clicked() {
+                                            action = Some(MonitorAction::SetAspectRatio(r));
+                                        }
+                                    }
+                                });
+                        }
                     }
                 }
             });
@@ -484,4 +605,49 @@ fn draw_button(painter: &egui::Painter, rect: Rect, text: &str, is_primary: bool
         egui::FontId::proportional(12.0),
         text_col,
     );
+}
+
+fn draw_safe_zones(painter: &egui::Painter, rect: Rect, is_vertical: bool) {
+    let action_safe = rect.shrink2(Vec2::new(rect.width() * 0.05, rect.height() * 0.05));
+    let title_safe = rect.shrink2(Vec2::new(rect.width() * 0.10, rect.height() * 0.10));
+
+    let stroke_action = Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(0x38, 0xa0, 0xe8, 60));
+    let stroke_title = Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(0xe0, 0xaa, 0x50, 70));
+
+    painter.rect_stroke(action_safe, 0.0, stroke_action);
+    painter.rect_stroke(title_safe, 0.0, stroke_title);
+
+    // Center crosshair
+    let c = rect.center();
+    let cross_len = 8.0;
+    let cross_stroke = Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(255, 255, 255, 60));
+    painter.line_segment([Pos2::new(c.x - cross_len, c.y), Pos2::new(c.x + cross_len, c.y)], cross_stroke);
+    painter.line_segment([Pos2::new(c.x, c.y - cross_len), Pos2::new(c.x, c.y + cross_len)], cross_stroke);
+
+    if is_vertical {
+        // Vertical Shorts / Reels / TikTok UI zones overlay
+        // Right side buttons zone (likes, comments, share)
+        let right_ui = Rect::from_min_max(
+            Pos2::new(rect.right() - rect.width() * 0.18, rect.top() + rect.height() * 0.40),
+            Pos2::new(rect.right(), rect.top() + rect.height() * 0.85),
+        );
+        painter.rect_filled(right_ui, 2.0, Color32::from_rgba_premultiplied(240, 60, 60, 25));
+        painter.rect_stroke(right_ui, 2.0, Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(240, 60, 60, 60)));
+
+        // Bottom captions zone
+        let bottom_ui = Rect::from_min_max(
+            Pos2::new(rect.left(), rect.bottom() - rect.height() * 0.20),
+            Pos2::new(rect.right(), rect.bottom()),
+        );
+        painter.rect_filled(bottom_ui, 2.0, Color32::from_rgba_premultiplied(240, 60, 60, 20));
+        painter.rect_stroke(bottom_ui, 2.0, Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(240, 60, 60, 50)));
+
+        painter.text(
+            Pos2::new(rect.left() + 6.0, rect.bottom() - 14.0),
+            egui::Align2::LEFT_BOTTOM,
+            "Reels/TikTok UI Alanı",
+            egui::FontId::proportional(9.5),
+            Color32::from_rgba_premultiplied(240, 180, 180, 140),
+        );
+    }
 }

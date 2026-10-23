@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 trim-core = { path = "../trim-core" }
+trim-media = { path = "../trim-media" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -69,6 +69,63 @@ pub fn ffplay_cmd() -> Command {
     create_command("ffplay")
 }
 
+/// Hardware video encoders detected on the system's FFmpeg installation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct AvailableEncoders {
+    pub h264_nvenc: bool,
+    pub hevc_nvenc: bool,
+    pub h264_qsv: bool,
+    pub hevc_qsv: bool,
+    pub h264_vaapi: bool,
+    pub hevc_vaapi: bool,
+    pub h264_amf: bool,
+    pub hevc_amf: bool,
+}
+
+impl AvailableEncoders {
+    pub fn has_nvidia_nvenc(&self) -> bool {
+        self.h264_nvenc || self.hevc_nvenc
+    }
+
+    pub fn has_intel_qsv(&self) -> bool {
+        self.h264_qsv || self.hevc_qsv
+    }
+
+    pub fn has_vaapi(&self) -> bool {
+        self.h264_vaapi || self.hevc_vaapi
+    }
+
+    pub fn has_amd_amf(&self) -> bool {
+        self.h264_amf || self.hevc_amf
+    }
+
+    pub fn any_hardware(&self) -> bool {
+        self.has_nvidia_nvenc() || self.has_intel_qsv() || self.has_vaapi() || self.has_amd_amf()
+    }
+}
+
+static ENCODERS_CACHE: std::sync::OnceLock<AvailableEncoders> = std::sync::OnceLock::new();
+
+/// Queries FFmpeg for supported hardware encoders, caching the result for subsequent calls.
+pub fn detect_available_encoders() -> AvailableEncoders {
+    *ENCODERS_CACHE.get_or_init(|| {
+        let mut encoders = AvailableEncoders::default();
+        let output = ffmpeg_cmd().args(["-v", "quiet", "-encoders"]).output();
+        if let Ok(out) = output {
+            let text = String::from_utf8_lossy(&out.stdout);
+            encoders.h264_nvenc = text.contains("h264_nvenc");
+            encoders.hevc_nvenc = text.contains("hevc_nvenc");
+            encoders.h264_qsv = text.contains("h264_qsv");
+            encoders.hevc_qsv = text.contains("hevc_qsv");
+            encoders.h264_vaapi = text.contains("h264_vaapi");
+            encoders.hevc_vaapi = text.contains("hevc_vaapi");
+            encoders.h264_amf = text.contains("h264_amf");
+            encoders.hevc_amf = text.contains("hevc_amf");
+        }
+        encoders
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -56,8 +56,69 @@ pub fn load_project<P: AsRef<Path>>(path: P) -> Result<Project, ProjectError> {
     let mut project = Project::from_json(&contents)?;
     project.file_path = Some(p.to_string_lossy().to_string());
     project.is_dirty = false;
+
+    // Resolve relative media paths relative to the project file directory
+    if let Some(parent) = p.parent() {
+        for item in project.media_pool.values_mut() {
+            let p_item = Path::new(&item.file_path);
+            if p_item.is_relative() {
+                let abs_path = parent.join(p_item);
+                if abs_path.exists() {
+                    item.file_path = abs_path.to_string_lossy().to_string();
+                }
+            }
+        }
+    }
+
     log::info!("Loaded project: {:?} (format: {})", p, project.format);
     Ok(project)
+}
+
+/// Bundles a project and all its referenced media files into a self-contained portable directory.
+/// Copies media files into `<target_dir>/media/` and rewrites paths in `<target_dir>/<name>.trim` to relative paths.
+/// Returns `(media_count, total_bytes)`.
+pub fn bundle_project<P: AsRef<Path>>(
+    project: &Project,
+    target_dir: P,
+) -> Result<(usize, u64), ProjectError> {
+    let dest_dir = target_dir.as_ref();
+    fs::create_dir_all(dest_dir)?;
+    let media_dir = dest_dir.join("media");
+    fs::create_dir_all(&media_dir)?;
+
+    let mut bundled_project = project.clone();
+    let mut count = 0;
+    let mut total_bytes = 0u64;
+
+    for (id, item) in &mut bundled_project.media_pool {
+        let src_path = Path::new(&item.file_path);
+        if src_path.exists() {
+            let file_name = src_path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| format!("media_{}", id));
+            let dest_file = media_dir.join(&file_name);
+            let bytes = fs::copy(src_path, &dest_file)?;
+            total_bytes += bytes;
+            count += 1;
+            // Relative path for standalone portability
+            item.file_path = format!("media/{}", file_name);
+        }
+    }
+
+    let proj_file = dest_dir.join(format!("{}.trim", project.settings.name));
+    bundled_project.file_path = Some(proj_file.to_string_lossy().to_string());
+    bundled_project.is_dirty = false;
+    let json = bundled_project.to_json()?;
+    fs::write(&proj_file, json)?;
+
+    log::info!(
+        "Project successfully bundled to {:?}: {} media files, {} bytes",
+        dest_dir,
+        count,
+        total_bytes
+    );
+    Ok((count, total_bytes))
 }
 
 /// Autosave and recovery snapshot manager.
@@ -233,5 +294,45 @@ mod tests {
 
         mgr.cleanup(&proj1);
         assert!(!legacy_file.exists());
+    }
+
+    #[test]
+    fn test_bundle_project_portable_roundtrip() {
+        use trim_core::media::MediaItem;
+
+        let src_dir = tempdir().unwrap();
+        let fake_video = src_dir.path().join("sample_clip.mp4");
+        fs::write(&fake_video, b"fake video bytes").unwrap();
+
+        let mut proj = Project::new("MyAwesomeMovie");
+        let item = MediaItem::new(&fake_video);
+        let m_id = item.id.clone();
+        proj.add_media(item);
+        proj.timeline.tracks[0].add_clip(Clip::new(&m_id, 0.0, 5.0));
+
+        let dest_bundle_dir = tempdir().unwrap();
+        let target_bundle = dest_bundle_dir.path().join("BundleOutput");
+
+        let (count, bytes) = bundle_project(&proj, &target_bundle).unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(bytes, 16);
+
+        let bundled_trim_file = target_bundle.join("MyAwesomeMovie.trim");
+        assert!(bundled_trim_file.is_file());
+        assert!(target_bundle.join("media").join("sample_clip.mp4").is_file());
+
+        // Now move bundle to a different directory to test portability
+        let new_location = tempdir().unwrap();
+        let final_dest = new_location.path().join("MovedBundle");
+        fs::create_dir_all(&final_dest).unwrap();
+        fs::rename(&target_bundle, &final_dest).unwrap();
+
+        let moved_trim_file = final_dest.join("MyAwesomeMovie.trim");
+        let loaded = load_project(&moved_trim_file).unwrap();
+
+        let loaded_media = loaded.get_media(&m_id).unwrap();
+        let loaded_media_path = Path::new(&loaded_media.file_path);
+        assert!(loaded_media_path.is_file(), "Bundled media should exist at resolved path: {:?}", loaded_media_path);
+        assert_eq!(fs::read(loaded_media_path).unwrap(), b"fake video bytes");
     }
 }

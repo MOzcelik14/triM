@@ -9,7 +9,9 @@ use uuid::Uuid;
 #[derive(Default)]
 pub enum TrackType {
     #[default]
+    #[serde(alias = "Video")]
     Video,
+    #[serde(alias = "Audio")]
     Audio,
 }
 
@@ -27,7 +29,7 @@ impl std::fmt::Display for TrackType {
 pub struct Track {
     pub id: String,
     pub name: String,
-    #[serde(default)]
+    #[serde(default, alias = "kind")]
     pub track_type: TrackType,
     #[serde(default)]
     pub muted: bool,

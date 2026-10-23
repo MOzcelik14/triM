@@ -5,6 +5,84 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioEqPreset {
+    #[default]
+    Flat,
+    VoiceClarity,
+    BassBoost,
+    Podcast,
+    DenoiseGate,
+}
+
+impl AudioEqPreset {
+    pub const ALL: &'static [Self] = &[
+        Self::Flat,
+        Self::VoiceClarity,
+        Self::BassBoost,
+        Self::Podcast,
+        Self::DenoiseGate,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Flat => "Düz (Doğal)",
+            Self::VoiceClarity => "Konuşma / Vokal Netliği",
+            Self::BassBoost => "Derin Bas (Bass Boost)",
+            Self::Podcast => "Podcast Yayını",
+            Self::DenoiseGate => "Dip Ses / Gürültü Filtresi",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextOverlay {
+    pub content: String,
+    #[serde(default = "default_font_size")]
+    pub font_size: f32,
+    #[serde(default = "default_white_color")]
+    pub text_color: [u8; 4],
+    #[serde(default)]
+    pub bg_color: Option<[u8; 4]>,
+    #[serde(default = "default_half_f32")]
+    pub pos_x: f32,
+    #[serde(default = "default_subtitle_pos_y")]
+    pub pos_y: f32,
+    #[serde(default = "default_true")]
+    pub has_shadow: bool,
+}
+
+fn default_font_size() -> f32 {
+    42.0
+}
+fn default_white_color() -> [u8; 4] {
+    [255, 255, 255, 255]
+}
+fn default_half_f32() -> f32 {
+    0.5
+}
+fn default_subtitle_pos_y() -> f32 {
+    0.82
+}
+fn default_true() -> bool {
+    true
+}
+
+impl Default for TextOverlay {
+    fn default() -> Self {
+        Self {
+            content: "Yeni Başlık".to_string(),
+            font_size: 42.0,
+            text_color: [255, 255, 255, 255],
+            bg_color: None,
+            pos_x: 0.5,
+            pos_y: 0.82,
+            has_shadow: true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Clip {
     pub id: String,
@@ -39,6 +117,12 @@ pub struct Clip {
     pub volume: f64,
     #[serde(default)]
     pub muted: bool,
+    #[serde(default)]
+    pub eq_preset: AudioEqPreset,
+    #[serde(default)]
+    pub noise_gate: bool,
+    #[serde(default)]
+    pub text_overlay: Option<TextOverlay>,
     #[serde(default)]
     pub pos_x: f64,
     #[serde(default)]
@@ -81,6 +165,9 @@ impl Default for Clip {
             saturation: 1.0,
             volume: 1.0,
             muted: false,
+            eq_preset: AudioEqPreset::default(),
+            noise_gate: false,
+            text_overlay: None,
             pos_x: 0.0,
             pos_y: 0.0,
             scale: 1.0,
@@ -123,6 +210,28 @@ impl Clip {
         } else {
             let src_out = self.effective_source_out();
             src_out - offset * self.speed
+        }
+    }
+
+    pub const SUPPORTED_TRANSITIONS: &'static [(&'static str, &'static str)] = &[
+        ("dip_black", "Siyaha Geçiş (Dip to Black)"),
+        ("dip_white", "Beyaza Geçiş (Dip to White)"),
+        ("cross_dissolve", "Çapraz Erime (Cross Dissolve)"),
+        ("wipe_left", "Sola Süpürme (Wipe Left)"),
+        ("wipe_right", "Sağa Süpürme (Wipe Right)"),
+        ("slide_left", "Sola Kayma (Slide Left)"),
+        ("slide_right", "Sağa Kayma (Slide Right)"),
+        ("zoom_in", "Yakınlaşma (Zoom In)"),
+    ];
+
+    pub fn transition_label(trans: Option<&str>) -> &'static str {
+        match trans {
+            Some(key) => Self::SUPPORTED_TRANSITIONS
+                .iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, l)| *l)
+                .unwrap_or("Özel"),
+            None => "Yok (Düz)",
         }
     }
 

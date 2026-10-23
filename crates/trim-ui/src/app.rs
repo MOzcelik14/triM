@@ -4,7 +4,7 @@ use crate::canvas::{render_timeline_canvas, CanvasAction, TimelineCanvasState};
 use crate::dialogs::*;
 use crate::inspector::{render_inspector_panel, InspectorAction};
 use crate::media_bin::{render_media_bin, LeftPanelTab, MediaBinAction};
-use crate::monitor::{MonitorAction, MonitorMode, MonitorWidget};
+use crate::monitor::{ActiveTextOverlay, MonitorAction, MonitorMode, MonitorWidget};
 use crate::ruler::{render_time_ruler, RulerAction};
 use crate::theme::*;
 use crate::toolbar::{render_vertical_toolbar, EditTool};
@@ -22,7 +22,7 @@ use std::time::Instant;
 
 use trim_commands::commands::*;
 use trim_commands::UndoStack;
-use trim_core::clip::Clip;
+use trim_core::clip::{Clip, TextOverlay};
 use trim_core::marker::Marker;
 use trim_core::media::MediaType;
 use trim_core::project::Project;
@@ -32,7 +32,7 @@ use trim_media::{
     decode_frame_raw, generate_title_image, AudioMixer, AudioStreamPlayer, FFprobeAnalyzer,
     ThumbnailGenerator, VideoEngine, WaveformGenerator,
 };
-use trim_project::{load_project, save_project, AutosaveManager};
+use trim_project::{bundle_project, load_project, save_project, AutosaveManager};
 use trim_timeline::{
     find_next_edit_point, find_prev_edit_point, ripple_trim_head, ripple_trim_tail,
     split_at_playhead,
@@ -102,6 +102,7 @@ pub struct TrimApp {
     pub last_autosave: Instant,
     pub show_about_dialog: bool,
     pub show_source_monitor: bool,
+    pub show_safe_zones: bool,
     pub active_left_tab: LeftPanelTab,
 }
 
@@ -170,6 +171,7 @@ impl TrimApp {
             last_autosave: Instant::now(),
             show_about_dialog: false,
             show_source_monitor: false,
+            show_safe_zones: false,
             active_left_tab: LeftPanelTab::Project,
         };
 
@@ -374,6 +376,7 @@ impl TrimApp {
                             self.audio_mixer.preload_audio_async(&item.file_path);
                         }
                     }
+                    self.welcome_dialog.close();
                     self.status_message = format!("Proje yüklendi: {:?}", path);
                 }
                 Err(e) => {
@@ -426,6 +429,28 @@ impl TrimApp {
                 }
                 Err(e) => {
                     self.status_message = format!("Kayıt hatası: {}", e);
+                }
+            }
+        }
+    }
+
+    pub fn bundle_project_dialog(&mut self) {
+        let default_name = format!("{}_Paket", self.project.settings.name);
+        if let Some(folder) = rfd::FileDialog::new()
+            .set_title("Projeyi ve Medyaları Paketleyeceğiniz Klasörü Seçin")
+            .pick_folder()
+        {
+            let target_dir = folder.join(&default_name);
+            match bundle_project(&self.project, &target_dir) {
+                Ok((count, bytes)) => {
+                    let mb = bytes as f64 / (1024.0 * 1024.0);
+                    self.status_message = format!(
+                        "Proje başarıyla paketlendi: {} dosya ({:.1} MB) -> {:?}",
+                        count, mb, target_dir
+                    );
+                }
+                Err(e) => {
+                    self.status_message = format!("Paketleme hatası: {}", e);
                 }
             }
         }
@@ -847,6 +872,42 @@ impl TrimApp {
             format!("{}x{} • {:.0}fps", m.width, m.height, m.fps)
         });
 
+        let mut active_text_overlays = Vec::new();
+        for track in self.project.timeline.get_video_tracks().iter().rev() {
+            if !track.visible {
+                continue;
+            }
+            if let Some(c) = track.find_clip_at(self.current_time) {
+                if let Some(txt) = &c.text_overlay {
+                    let dt = self.current_time - c.timeline_in;
+                    let rem = c.timeline_out - self.current_time;
+                    let mut a = c.opacity as f32;
+                    if c.fade_in > 0.0 && dt < c.fade_in {
+                        a *= (dt / c.fade_in) as f32;
+                    }
+                    if c.fade_out > 0.0 && rem < c.fade_out {
+                        a *= (rem / c.fade_out) as f32;
+                    }
+                    let text_color = Color32::from_rgba_unmultiplied(
+                        txt.text_color[0], txt.text_color[1], txt.text_color[2], txt.text_color[3]
+                    );
+                    let bg_color = txt.bg_color.map(|b| {
+                        Color32::from_rgba_unmultiplied(b[0], b[1], b[2], (b[3] as f32 * a) as u8)
+                    });
+                    active_text_overlays.push(ActiveTextOverlay {
+                        text: txt.content.clone(),
+                        font_size: txt.font_size,
+                        text_color,
+                        bg_color,
+                        pos_x: txt.pos_x,
+                        pos_y: txt.pos_y,
+                        has_shadow: txt.has_shadow,
+                        alpha: a.clamp(0.0, 1.0),
+                    });
+                }
+            }
+        }
+
         let (_p_resp, p_act) = MonitorWidget::new(
             MonitorMode::Program,
             "Sekans 01",
@@ -863,7 +924,11 @@ impl TrimApp {
             self.playback_speed,
             prog_label.as_deref(),
             self.video_engine.is_decoding_seek,
-        ).show(prog_ui);
+        )
+        .safe_zones(self.show_safe_zones)
+        .aspect_ratio_preset(Some(self.project.timeline.aspect_ratio()))
+        .text_overlays(active_text_overlays)
+        .show(prog_ui);
 
         if let Some(act) = p_act {
             match act {
@@ -887,6 +952,13 @@ impl TrimApp {
                 MonitorAction::GoToOut => self.seek(prog_dur),
                 MonitorAction::ExportFrame => self.export_current_frame(),
                 MonitorAction::Seek(t) => self.seek(t),
+                MonitorAction::ToggleSafeZones => {
+                    self.show_safe_zones = !self.show_safe_zones;
+                }
+                MonitorAction::SetAspectRatio(r) => {
+                    self.project.timeline.set_aspect_ratio(r);
+                    self.status_message = format!("Format Değiştirildi: {}", r.label());
+                }
                 _ => {}
             }
         }
@@ -1108,6 +1180,10 @@ impl eframe::App for TrimApp {
                         self.save_project_as_dialog();
                         ui.close_menu();
                     }
+                    if ui.button("Projeyi Paketle / Arşivle... (Taşınabilir)").clicked() {
+                        self.bundle_project_dialog();
+                        ui.close_menu();
+                    }
                     ui.separator();
                     if ui.button("Medya İçe Aktar... (Ctrl+I)").clicked() {
                         self.prompt_import_media();
@@ -1175,6 +1251,27 @@ impl eframe::App for TrimApp {
                     }
                     if ui.button(format!("Manyetik Yapışma: {}", if self.snap_enabled { "Açık" } else { "Kapalı" })).clicked() {
                         self.snap_enabled = !self.snap_enabled;
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    ui.menu_button("En-Boy Oranı / Format", |ui| {
+                        let curr = self.project.timeline.aspect_ratio();
+                        for r in [
+                            trim_core::AspectRatio::Wide16x9,
+                            trim_core::AspectRatio::Vertical9x16,
+                            trim_core::AspectRatio::Square1x1,
+                            trim_core::AspectRatio::Portrait4x5,
+                            trim_core::AspectRatio::Classic4x3,
+                            trim_core::AspectRatio::Cinema21x9,
+                        ] {
+                            if ui.selectable_label(curr == r, r.label()).clicked() {
+                                self.project.timeline.set_aspect_ratio(r);
+                                self.status_message = format!("Format Değiştirildi: {}", r.label());
+                                ui.close_menu();
+                            }
+                        }
+                    });
+                    if ui.checkbox(&mut self.show_safe_zones, "Güvenli Alan Rehber Çizgileri").clicked() {
                         ui.close_menu();
                     }
                     ui.separator();
@@ -1884,7 +1981,22 @@ impl eframe::App for TrimApp {
                                 if is_locked {
                                     self.status_message = "Hedef video kanalı kilitli, metin klibi eklenemez".to_string();
                                 } else {
-                                    let clip = Clip::new(m_id, self.current_time, self.current_time + duration);
+                                    let mut clip = Clip::new(m_id, self.current_time, self.current_time + duration);
+                                    clip.name = format!("Başlık: {}", text);
+                                    clip.text_overlay = Some(TextOverlay {
+                                        content: text.clone(),
+                                        font_size: font_size as f32,
+                                        text_color: [text_color[0], text_color[1], text_color[2], 255],
+                                        bg_color: if bg_color[3] > 0 { Some(bg_color) } else { None },
+                                        pos_x: 0.5,
+                                        pos_y: match position.as_str() {
+                                            "lower_third" => 0.80,
+                                            "subtitle" => 0.87,
+                                            "top" => 0.12,
+                                            _ => 0.50,
+                                        },
+                                        has_shadow,
+                                    });
                                     let cmd = Box::new(AddClipCommand::new(target_track_id, clip));
                                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                     self.project.mark_dirty();

@@ -5,5 +5,5 @@ pub mod presets;
 pub mod runner;
 
 pub use filtergraph::TimelineExporter;
-pub use presets::{get_default_presets, ExportPreset};
+pub use presets::{get_default_presets, ExportPreset, HardwareAccel, LoudnessNorm};
 pub use runner::{ExportMessage, ExportRunner};
