@@ -444,6 +444,100 @@ impl TrimApp {
         }
     }
 
+    pub fn handle_monitor_text_click(&mut self, pos_x: f32, pos_y: f32) {
+        let top_clip = self.project.timeline.get_top_visible_video_clip_at(self.current_time);
+        if let Some((track, clip)) = top_clip {
+            let tr_id = track.id.clone();
+            let cl_id = clip.id.clone();
+            if let Some(tr) = self.project.timeline.get_track_by_id_mut(&tr_id) {
+                if let Some(cl) = tr.get_clip_by_id_mut(&cl_id) {
+                    if let Some(txt) = &mut cl.text_overlay {
+                        txt.pos_x = pos_x;
+                        txt.pos_y = pos_y;
+                    } else {
+                        cl.text_overlay = Some(trim_core::clip::TextOverlay {
+                            content: "Başlık Metni".to_string(),
+                            pos_x,
+                            pos_y,
+                            font_size: 48.0,
+                            ..Default::default()
+                        });
+                    }
+                    self.project.mark_dirty();
+                    self.last_rendered_monitor_frame = None;
+                    self.video_engine.last_rendered_frame = None;
+                }
+            }
+            self.canvas_state.selected_clip_pairs = vec![(tr_id, cl_id)];
+            self.status_message = format!("Metin Konumu Ayarlandı: X: {:.0}%, Y: {:.0}%", pos_x * 100.0, pos_y * 100.0);
+        } else {
+            // No video clip at playhead: create a transparent Title Clip on top video track
+            let top_tr_id = self.project.timeline.get_video_tracks().first().map(|t| t.id.clone()).unwrap_or_else(|| {
+                self.project.timeline.add_new_video_track()
+            });
+
+            if let Some(p) = trim_media::video::generate_title_image("", 48, [255, 255, 255], [0, 0, 0, 0], "center", false, 1920, 1080) {
+                let mut media = trim_core::media::MediaItem::new(p.to_str().unwrap());
+                media.name = "Başlık Katmanı".to_string();
+                media.media_type = trim_core::media::MediaType::Image;
+                media.duration = 5.0;
+                let m_id = media.id.clone();
+                self.project.add_media(media);
+
+                let mut new_clip = trim_core::clip::Clip::new(&m_id, self.current_time, self.current_time + 5.0);
+                new_clip.name = "Metin".to_string();
+                new_clip.text_overlay = Some(trim_core::clip::TextOverlay {
+                    content: "Başlık Metni".to_string(),
+                    pos_x,
+                    pos_y,
+                    font_size: 48.0,
+                    ..Default::default()
+                });
+                let cl_id = new_clip.id.clone();
+                if let Some(tr) = self.project.timeline.get_track_by_id_mut(&top_tr_id) {
+                    tr.add_clip(new_clip);
+                    tr.sort_clips();
+                }
+                self.canvas_state.selected_clip_pairs = vec![(top_tr_id, cl_id)];
+                self.project.mark_dirty();
+                self.last_rendered_monitor_frame = None;
+                self.video_engine.last_rendered_frame = None;
+                self.status_message = format!("Yeni Başlık Eklendi: X: {:.0}%, Y: {:.0}%", pos_x * 100.0, pos_y * 100.0);
+            }
+        }
+    }
+
+    pub fn handle_monitor_text_drag(&mut self, pos_x: f32, pos_y: f32) {
+        if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first().cloned() {
+            if let Some(tr) = self.project.timeline.get_track_by_id_mut(&tr_id) {
+                if let Some(cl) = tr.get_clip_by_id_mut(&cl_id) {
+                    if let Some(txt) = &mut cl.text_overlay {
+                        txt.pos_x = pos_x;
+                        txt.pos_y = pos_y;
+                        self.project.mark_dirty();
+                        self.last_rendered_monitor_frame = None;
+                        self.video_engine.last_rendered_frame = None;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn handle_monitor_text_content_changed(&mut self, content: String) {
+        if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first().cloned() {
+            if let Some(tr) = self.project.timeline.get_track_by_id_mut(&tr_id) {
+                if let Some(cl) = tr.get_clip_by_id_mut(&cl_id) {
+                    if let Some(txt) = &mut cl.text_overlay {
+                        txt.content = content;
+                        self.project.mark_dirty();
+                        self.last_rendered_monitor_frame = None;
+                        self.video_engine.last_rendered_frame = None;
+                    }
+                }
+            }
+        }
+    }
+
     pub fn prompt_import_media(&mut self) {
         if let Some(path) = rfd::FileDialog::new()
             .set_title("Medya Dosyası Seç")
@@ -1460,6 +1554,15 @@ impl TrimApp {
             }
         }
 
+        let selected_text_content = if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first() {
+            self.project.timeline.get_track_by_id(tr_id)
+                .and_then(|t| t.get_clip_by_id(cl_id))
+                .and_then(|c| c.text_overlay.as_ref())
+                .map(|txt| txt.content.clone())
+        } else {
+            top_clip.and_then(|(_, c)| c.text_overlay.as_ref()).map(|txt| txt.content.clone())
+        };
+
         let (_p_resp, p_act) = MonitorWidget::new(
             MonitorMode::Program,
             "Sekans 01",
@@ -1480,6 +1583,8 @@ impl TrimApp {
         .safe_zones(self.show_safe_zones)
         .aspect_ratio_preset(Some(self.project.timeline.aspect_ratio()))
         .text_overlays(active_text_overlays)
+        .active_tool(self.current_edit_tool)
+        .inline_text_edit(selected_text_content)
         .show(prog_ui);
 
         if let Some(act) = p_act {
@@ -1520,6 +1625,15 @@ impl TrimApp {
                     self.project.timeline.set_aspect_ratio(r);
                     self.project.mark_dirty();
                     self.status_message = format!("Format Değiştirildi: {}", r.label());
+                }
+                MonitorAction::TextToolClick { pos_x, pos_y } => {
+                    self.handle_monitor_text_click(pos_x, pos_y);
+                }
+                MonitorAction::TextPositionDrag { pos_x, pos_y } => {
+                    self.handle_monitor_text_drag(pos_x, pos_y);
+                }
+                MonitorAction::TextContentEdited(content) => {
+                    self.handle_monitor_text_content_changed(content);
                 }
                 _ => {}
             }
@@ -1651,22 +1765,45 @@ impl eframe::App for TrimApp {
                     self.project.mark_dirty();
                 } else if i.key_pressed(Key::V) && !i.modifiers.ctrl && self.shortcut_profile != ShortcutProfile::DaVinciResolve {
                     self.current_edit_tool = EditTool::Select;
+                    self.canvas_state.active_tool = EditTool::Select;
+                    self.status_message = "Seçim Aracı (V) etkin".to_string();
                 } else if i.key_pressed(Key::A) && !i.modifiers.ctrl {
                     if self.shortcut_profile == ShortcutProfile::DaVinciResolve {
                         self.current_edit_tool = EditTool::Select;
                     } else {
                         self.current_edit_tool = EditTool::TrackSelect;
                     }
+                    self.canvas_state.active_tool = self.current_edit_tool;
+                    self.status_message = "İz Seçme Aracı (A) etkin".to_string();
                 } else if i.key_pressed(Key::B) && !i.modifiers.ctrl {
                     if self.shortcut_profile == ShortcutProfile::DaVinciResolve {
                         self.current_edit_tool = EditTool::Razor;
+                        self.status_message = "Jilet / Kesme Aracı (Blade - B) etkin".to_string();
                     } else {
                         self.current_edit_tool = EditTool::Ripple;
+                        self.status_message = "Dalgalanma Düzenleme (Ripple - B) etkin".to_string();
                     }
-                } else if i.key_pressed(Key::T) && !i.modifiers.ctrl && self.shortcut_profile == ShortcutProfile::DaVinciResolve {
-                    self.current_edit_tool = EditTool::Ripple;
+                    self.canvas_state.active_tool = self.current_edit_tool;
                 } else if i.key_pressed(Key::C) && !i.modifiers.ctrl {
                     self.current_edit_tool = EditTool::Razor;
+                    self.canvas_state.active_tool = EditTool::Razor;
+                    self.status_message = "Jilet / Kesme Aracı (Razor - C) etkin".to_string();
+                } else if i.key_pressed(Key::Y) && !i.modifiers.ctrl {
+                    self.current_edit_tool = EditTool::Slip;
+                    self.canvas_state.active_tool = EditTool::Slip;
+                    self.status_message = "Kaydırma Aracı (Slip - Y) etkin".to_string();
+                } else if i.key_pressed(Key::P) && !i.modifiers.ctrl {
+                    self.current_edit_tool = EditTool::Pen;
+                    self.canvas_state.active_tool = EditTool::Pen;
+                    self.status_message = "Kalem / Anahtar Kare Aracı (Pen - P) etkin".to_string();
+                } else if i.key_pressed(Key::H) && !i.modifiers.ctrl {
+                    self.current_edit_tool = EditTool::Hand;
+                    self.canvas_state.active_tool = EditTool::Hand;
+                    self.status_message = "El Aracı (Hand - H) etkin".to_string();
+                } else if i.key_pressed(Key::T) && !i.modifiers.ctrl {
+                    self.current_edit_tool = EditTool::Type;
+                    self.canvas_state.active_tool = EditTool::Type;
+                    self.status_message = "Metin Aracı (Type - T) etkin: Video ekranına tıklayarak yazı ekleyin".to_string();
                 } else if i.key_pressed(Key::S) && !i.modifiers.ctrl && self.shortcut_profile == ShortcutProfile::TrimDefault {
                     let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
                     let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
@@ -2149,6 +2286,10 @@ impl eframe::App for TrimApp {
 
                     if ui.button(RichText::new("[+ Ses]").size(11.0)).on_hover_text("Yeni Ses Kanalı Ekle (Alta)").clicked() {
                         self.add_audio_track();
+                    }
+
+                    if ui.button(RichText::new("[+ Başlık Klibi]").size(11.0).color(Color32::from_rgb(0x81, 0x8c, 0xf8))).on_hover_text("Zaman Çizgisine Yeni Başlık Klibi Ekle (Title Clip Modal)").clicked() {
+                        self.title_dialog.open();
                     }
 
                     ui.add_space(6.0);

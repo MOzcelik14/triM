@@ -121,13 +121,13 @@ pub fn render_inspector_panel(
     action
 }
 
-/// Renders a responsive property row where the label is wrap-content on the left
-/// and the interactive control / widget is hooked to the right side of the panel.
+/// Renders a property row where the label is displayed on the left
+/// and the interactive control is placed cleanly beside it without overlapping.
 fn property_row<R>(ui: &mut Ui, label: &str, add_contents: impl FnOnce(&mut Ui) -> R) -> R {
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
+        ui.spacing_mut().item_spacing.x = 8.0;
         ui.label(RichText::new(label).size(11.5).color(Color32::from_rgb(0xc0, 0xc4, 0xd4)));
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add_contents).inner
+        add_contents(ui)
     }).inner
 }
 

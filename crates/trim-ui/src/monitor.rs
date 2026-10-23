@@ -25,6 +25,9 @@ pub enum MonitorAction {
     Seek(f64),
     ToggleSafeZones,
     SetAspectRatio(trim_core::AspectRatio),
+    TextToolClick { pos_x: f32, pos_y: f32 },
+    TextPositionDrag { pos_x: f32, pos_y: f32 },
+    TextContentEdited(String),
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +82,8 @@ pub struct MonitorWidget<'a> {
     pub safe_zones: bool,
     pub current_aspect_ratio: Option<trim_core::AspectRatio>,
     pub text_overlays: Vec<ActiveTextOverlay>,
+    pub active_tool: Option<crate::toolbar::EditTool>,
+    pub inline_text_edit: Option<String>,
 }
 
 impl<'a> MonitorWidget<'a> {
@@ -119,6 +124,8 @@ impl<'a> MonitorWidget<'a> {
             safe_zones: false,
             current_aspect_ratio: None,
             text_overlays: Vec::new(),
+            active_tool: None,
+            inline_text_edit: None,
         }
     }
 
@@ -137,11 +144,21 @@ impl<'a> MonitorWidget<'a> {
         self
     }
 
+    pub fn active_tool(mut self, tool: crate::toolbar::EditTool) -> Self {
+        self.active_tool = Some(tool);
+        self
+    }
+
+    pub fn inline_text_edit(mut self, text: Option<String>) -> Self {
+        self.inline_text_edit = text;
+        self
+    }
+
     pub fn show(self, ui: &mut Ui) -> (Response, Option<MonitorAction>) {
         let avail_w = ui.available_width().max(180.0);
         let avail_h = ui.available_height().max(120.0);
-        let (outer_rect, response) = ui.allocate_exact_size(Vec2::new(avail_w, avail_h), Sense::hover());
-        let painter = ui.painter();
+        let (outer_rect, response) = ui.allocate_exact_size(Vec2::new(avail_w, avail_h), Sense::click_and_drag());
+        let painter = ui.painter().clone();
 
         // Dark container background
         painter.rect_filled(outer_rect, 3.0, Color32::from_rgb(0x12, 0x12, 0x16));
@@ -246,7 +263,7 @@ impl<'a> MonitorWidget<'a> {
                     action = Some(MonitorAction::ImportMedia);
                 }
             }
-            draw_button(painter, r_import, "+ Medya İçe Aktar", true);
+            draw_button(&painter, r_import, "+ Medya İçe Aktar", true);
         } else if let Some(tex) = self.texture {
             painter.image(
                 tex.id(),
@@ -265,6 +282,30 @@ impl<'a> MonitorWidget<'a> {
         }
 
         // Real-time Titler and Text Overlay rendering
+        let is_type_tool = self.active_tool == Some(crate::toolbar::EditTool::Type);
+
+        if self.mode == MonitorMode::Program && is_type_tool {
+            if let Some(hover_pos) = response.hover_pos() {
+                if frame_rect.contains(hover_pos) {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+                }
+            }
+
+            // Click or drag on monitor frame with Type Tool to place or reposition text
+            if let Some(interact_pos) = response.interact_pointer_pos() {
+                if frame_rect.contains(interact_pos) {
+                    let norm_x = ((interact_pos.x - frame_rect.left()) / frame_rect.width()).clamp(0.05, 0.95);
+                    let norm_y = ((interact_pos.y - frame_rect.top()) / frame_rect.height()).clamp(0.05, 0.95);
+
+                    if response.clicked() {
+                        action = Some(MonitorAction::TextToolClick { pos_x: norm_x, pos_y: norm_y });
+                    } else if response.dragged() {
+                        action = Some(MonitorAction::TextPositionDrag { pos_x: norm_x, pos_y: norm_y });
+                    }
+                }
+            }
+        }
+
         for ov in &self.text_overlays {
             if ov.alpha <= 0.001 || ov.text.is_empty() {
                 continue;
@@ -292,21 +333,22 @@ impl<'a> MonitorWidget<'a> {
                 );
             }
 
-            match ov.caption_style {
+            let text_rect = match ov.caption_style {
                 trim_core::clip::CaptionStyle::PopUpBouncy => {
                     let bounce = 1.0 + 0.18 * (1.0 - (ov.progress * 2.0 - 1.0).abs()).max(0.0);
                     let pop_font = egui::FontId::proportional(scaled_font_size * bounce);
                     let galley = painter.layout_no_wrap(ov.text.clone(), pop_font, ov.highlight_color);
-                    let text_rect = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
+                    let tr = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
 
                     if let Some(bg_col) = ov.bg_color {
                         let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
-                        painter.rect_filled(text_rect.expand(pad), 6.0, bg_col);
+                        painter.rect_filled(tr.expand(pad), 6.0, bg_col);
                     }
                     if ov.has_shadow {
-                        painter.galley(text_rect.min + Vec2::new(2.0, 2.0), galley.clone(), Color32::from_black_alpha((180.0 * ov.alpha) as u8));
+                        painter.galley(tr.min + Vec2::new(2.0, 2.0), galley.clone(), Color32::from_black_alpha((180.0 * ov.alpha) as u8));
                     }
-                    painter.galley(text_rect.min, galley, ov.highlight_color);
+                    painter.galley(tr.min, galley, ov.highlight_color);
+                    tr
                 }
                 trim_core::clip::CaptionStyle::WordHighlightYellow | trim_core::clip::CaptionStyle::WordHighlightNeon => {
                     let hl_col = if ov.caption_style == trim_core::clip::CaptionStyle::WordHighlightYellow {
@@ -345,20 +387,21 @@ impl<'a> MonitorWidget<'a> {
                         }
                     }
                     let galley = painter.layout_job(job);
-                    let text_rect = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
+                    let tr = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
 
                     if let Some(bg_col) = ov.bg_color {
                         let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
-                        painter.rect_filled(text_rect.expand(pad), 4.0, bg_col);
+                        painter.rect_filled(tr.expand(pad), 4.0, bg_col);
                     }
                     if ov.has_shadow {
-                        painter.galley(text_rect.min + Vec2::new(2.0, 2.0), galley.clone(), Color32::from_black_alpha((180.0 * ov.alpha) as u8));
+                        painter.galley(tr.min + Vec2::new(2.0, 2.0), galley.clone(), Color32::from_black_alpha((180.0 * ov.alpha) as u8));
                     }
-                    painter.galley(text_rect.min, galley, final_col);
+                    painter.galley(tr.min, galley, final_col);
+                    tr
                 }
                 trim_core::clip::CaptionStyle::BoxBackground | trim_core::clip::CaptionStyle::Standard => {
                     let galley = painter.layout_no_wrap(ov.text.clone(), font, final_col);
-                    let text_rect = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
+                    let tr = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
 
                     if let Some(bg_col) = ov.bg_color {
                         let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
@@ -371,26 +414,80 @@ impl<'a> MonitorWidget<'a> {
                                 (box_col.a() as f32 * ov.alpha) as u8,
                             );
                         }
-                        painter.rect_filled(text_rect.expand(pad), 4.0, box_col);
+                        painter.rect_filled(tr.expand(pad), 4.0, box_col);
                     } else if ov.caption_style == trim_core::clip::CaptionStyle::BoxBackground {
                         let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
-                        painter.rect_filled(text_rect.expand(pad), 4.0, Color32::from_rgba_unmultiplied(0, 0, 0, 180));
+                        painter.rect_filled(tr.expand(pad), 4.0, Color32::from_rgba_unmultiplied(0, 0, 0, 180));
                     }
 
                     if ov.has_shadow {
                         let shadow_offset = Vec2::new(2.0, 2.0);
-                        painter.galley(text_rect.min + shadow_offset, galley.clone(), Color32::from_black_alpha((160.0 * ov.alpha) as u8));
+                        painter.galley(tr.min + shadow_offset, galley.clone(), Color32::from_black_alpha((160.0 * ov.alpha) as u8));
                     }
-                    painter.galley(text_rect.min, galley, final_col);
+                    painter.galley(tr.min, galley, final_col);
+                    tr
+                }
+            };
+
+            if is_type_tool && self.mode == MonitorMode::Program {
+                let pad = 6.0;
+                let bbox = text_rect.expand(pad);
+                painter.rect_stroke(
+                    bbox,
+                    2.0,
+                    Stroke::new(1.5_f32, Color32::from_rgb(0x38, 0xa0, 0xf0)),
+                );
+                let dot_r = 3.5;
+                let dot_col = Color32::from_rgb(0x81, 0x8c, 0xf8);
+                painter.circle_filled(bbox.left_top(), dot_r, dot_col);
+                painter.circle_filled(bbox.right_top(), dot_r, dot_col);
+                painter.circle_filled(bbox.left_bottom(), dot_r, dot_col);
+                painter.circle_filled(bbox.right_bottom(), dot_r, dot_col);
+            }
+        }
+
+        // Floating inline on-screen text editor
+        if is_type_tool && self.mode == MonitorMode::Program {
+            if let Some(mut edit_txt) = self.inline_text_edit {
+                let (target_x, target_y) = if let Some(first_ov) = self.text_overlays.first() {
+                    (
+                        frame_rect.left() + frame_rect.width() * first_ov.pos_x.clamp(0.0, 1.0),
+                        frame_rect.top() + frame_rect.height() * first_ov.pos_y.clamp(0.0, 1.0),
+                    )
+                } else {
+                    (frame_rect.center().x, frame_rect.center().y)
+                };
+
+                let input_w = 260.0;
+                let input_h = 28.0;
+                let input_y = if target_y - 36.0 > frame_rect.top() + 10.0 {
+                    target_y - 36.0
+                } else {
+                    target_y + 36.0
+                };
+                let input_rect = Rect::from_center_size(Pos2::new(target_x, input_y), Vec2::new(input_w, input_h));
+
+                painter.rect_filled(input_rect, 4.0, Color32::from_black_alpha(220));
+                painter.rect_stroke(input_rect, 4.0, Stroke::new(1.5_f32, Color32::from_rgb(0x38, 0xa0, 0xf0)));
+
+                let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(input_rect.shrink(2.0)).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                let resp = child_ui.add(
+                    egui::TextEdit::singleline(&mut edit_txt)
+                        .desired_width(input_w - 12.0)
+                        .hint_text("Metin girin...")
+                        .text_color(Color32::WHITE),
+                );
+                if resp.changed() {
+                    action = Some(MonitorAction::TextContentEdited(edit_txt));
                 }
             }
         }
 
         // High contrast frame border
         painter.rect_stroke(frame_rect, 0.0, Stroke::new(1.0_f32, Color32::from_rgb(0x38, 0x38, 0x46)));
-        draw_corner_guides(painter, frame_rect);
+        draw_corner_guides(&painter, frame_rect);
         if self.safe_zones {
-            draw_safe_zones(painter, frame_rect, self.aspect_ratio < 1.0);
+            draw_safe_zones(&painter, frame_rect, self.aspect_ratio < 1.0);
         }
 
         // 3. Scrubber Bar

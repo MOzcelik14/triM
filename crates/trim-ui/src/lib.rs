@@ -324,6 +324,70 @@ mod tests {
         srd.close();
         assert!(!srd.is_open);
     }
+
+    #[test]
+    fn test_monitor_text_tool_click_drag_content() {
+        use trim_core::clip::Clip;
+        use trim_core::track::{Track, TrackType};
+
+        let mut app = TrimApp::default();
+        let mut track = Track::new("V1", TrackType::Video);
+        let clip = Clip::new("m_test", 0.0, 5.0);
+        let cl_id = clip.id.clone();
+        let tr_id = track.id.clone();
+        track.add_clip(clip);
+        app.project.timeline.add_track(track);
+        app.current_time = 2.0;
+
+        // Test click: sets text overlay and pos
+        app.handle_monitor_text_click(0.35, 0.45);
+        let tr = app.project.timeline.get_track_by_id(&tr_id).unwrap();
+        let cl = tr.get_clip_by_id(&cl_id).unwrap();
+        let ov = cl.text_overlay.as_ref().expect("text_overlay should be present");
+        assert_eq!(ov.pos_x, 0.35);
+        assert_eq!(ov.pos_y, 0.45);
+        assert_eq!(app.canvas_state.selected_clip_pairs, vec![(tr_id.clone(), cl_id.clone())]);
+        assert!(app.project.is_dirty);
+
+        // Test drag: updates pos
+        app.handle_monitor_text_drag(0.55, 0.75);
+        let tr = app.project.timeline.get_track_by_id(&tr_id).unwrap();
+        let cl = tr.get_clip_by_id(&cl_id).unwrap();
+        let ov = cl.text_overlay.as_ref().unwrap();
+        assert_eq!(ov.pos_x, 0.55);
+        assert_eq!(ov.pos_y, 0.75);
+
+        // Test content change: updates text inline
+        app.handle_monitor_text_content_changed("Alt Başlık Testi".to_string());
+        let tr = app.project.timeline.get_track_by_id(&tr_id).unwrap();
+        let cl = tr.get_clip_by_id(&cl_id).unwrap();
+        let ov = cl.text_overlay.as_ref().unwrap();
+        assert_eq!(ov.content, "Alt Başlık Testi");
+    }
+
+    #[test]
+    fn test_edit_tools_and_shortcuts_mapping() {
+        use crate::toolbar::EditTool;
+        let mut app = TrimApp::default();
+        assert_eq!(app.current_edit_tool, EditTool::Select);
+
+        app.current_edit_tool = EditTool::Type;
+        app.canvas_state.active_tool = EditTool::Type;
+        assert_eq!(app.current_edit_tool, EditTool::Type);
+        assert_eq!(app.canvas_state.active_tool, EditTool::Type);
+
+        app.current_edit_tool = EditTool::Slip;
+        app.canvas_state.active_tool = EditTool::Slip;
+        assert_eq!(app.current_edit_tool, EditTool::Slip);
+
+        app.current_edit_tool = EditTool::Pen;
+        app.canvas_state.active_tool = EditTool::Pen;
+        assert_eq!(app.current_edit_tool, EditTool::Pen);
+
+        app.current_edit_tool = EditTool::Hand;
+        app.canvas_state.active_tool = EditTool::Hand;
+        assert_eq!(app.current_edit_tool, EditTool::Hand);
+    }
 }
 
 

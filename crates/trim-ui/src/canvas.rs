@@ -609,7 +609,10 @@ pub fn render_timeline_canvas(
                 EditTool::Type => {
                     let clicked_t = ((pos.x - rect.left()) / state.pixels_per_second).max(0.0) as f64;
                     let snapped_t = project.timeline.snap_time(clicked_t, Some(0.1), None);
-                    action = Some(CanvasAction::CreateTitleAtTime(snapped_t));
+                    if let Some((tr_id, cl_id, _)) = find_clip_at_pos(project, state, rect, pos) {
+                        state.selected_clip_pairs = vec![(tr_id, cl_id)];
+                    }
+                    action = Some(CanvasAction::Seek(snapped_t));
                     return (response, action);
                 }
                 EditTool::Hand => {
