@@ -106,6 +106,27 @@ impl AvailableEncoders {
 
 static ENCODERS_CACHE: std::sync::OnceLock<AvailableEncoders> = std::sync::OnceLock::new();
 
+fn is_encoder_functional(codec: &str) -> bool {
+    let output = ffmpeg_cmd()
+        .args([
+            "-v",
+            "quiet",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=s=256x256:d=0.04",
+            "-frames:v",
+            "1",
+            "-c:v",
+            codec,
+            "-f",
+            "null",
+            "-",
+        ])
+        .output();
+    matches!(output, Ok(o) if o.status.success())
+}
+
 /// Queries FFmpeg for supported hardware encoders, caching the result for subsequent calls.
 pub fn detect_available_encoders() -> AvailableEncoders {
     *ENCODERS_CACHE.get_or_init(|| {
@@ -113,14 +134,23 @@ pub fn detect_available_encoders() -> AvailableEncoders {
         let output = ffmpeg_cmd().args(["-v", "quiet", "-encoders"]).output();
         if let Ok(out) = output {
             let text = String::from_utf8_lossy(&out.stdout);
-            encoders.h264_nvenc = text.contains("h264_nvenc");
-            encoders.hevc_nvenc = text.contains("hevc_nvenc");
-            encoders.h264_qsv = text.contains("h264_qsv");
-            encoders.hevc_qsv = text.contains("hevc_qsv");
-            encoders.h264_vaapi = text.contains("h264_vaapi");
-            encoders.hevc_vaapi = text.contains("hevc_vaapi");
-            encoders.h264_amf = text.contains("h264_amf");
-            encoders.hevc_amf = text.contains("hevc_amf");
+
+            if text.contains("h264_nvenc") && is_encoder_functional("h264_nvenc") {
+                encoders.h264_nvenc = true;
+                encoders.hevc_nvenc = text.contains("hevc_nvenc") && is_encoder_functional("hevc_nvenc");
+            }
+            if text.contains("h264_qsv") && is_encoder_functional("h264_qsv") {
+                encoders.h264_qsv = true;
+                encoders.hevc_qsv = text.contains("hevc_qsv") && is_encoder_functional("hevc_qsv");
+            }
+            if text.contains("h264_vaapi") && is_encoder_functional("h264_vaapi") {
+                encoders.h264_vaapi = true;
+                encoders.hevc_vaapi = text.contains("hevc_vaapi") && is_encoder_functional("hevc_vaapi");
+            }
+            if text.contains("h264_amf") && is_encoder_functional("h264_amf") {
+                encoders.h264_amf = true;
+                encoders.hevc_amf = text.contains("hevc_amf") && is_encoder_functional("hevc_amf");
+            }
         }
         encoders
     })

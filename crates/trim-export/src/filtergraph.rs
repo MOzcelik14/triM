@@ -832,6 +832,7 @@ mod tests {
             width: None,
             height: None,
             preset: "ultrafast".into(),
+            hw_accel: HardwareAccel::Cpu,
             ..Default::default()
         };
         let (cmd, dur) = TimelineExporter::build_export_pipeline(&proj, &preset, out.to_str().unwrap()).unwrap();
