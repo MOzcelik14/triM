@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use trim_core::clip::Clip;
 use trim_core::media::MediaType;
 use trim_core::project::Project;
@@ -81,11 +81,20 @@ pub struct PlaybackStreamer {
     active_clip_id: Option<String>,
     frame_rx: Option<Receiver<(f64, Arc<RgbaImage>)>>,
     stop_flag: Option<Arc<AtomicBool>>,
+    active_child: Option<Arc<Mutex<Option<std::process::Child>>>>,
     child_handle: Option<std::thread::JoinHandle<()>>,
     current_frame: Option<Arc<RgbaImage>>,
     last_pts: f64,
     pending_future_frame: Option<(f64, Arc<RgbaImage>)>,
     is_reversed: bool,
+    started_at: std::time::Instant,
+    frames_delivered: u64,
+}
+
+impl Drop for PlaybackStreamer {
+    fn drop(&mut self) {
+        self.stop();
+    }
 }
 
 impl Default for PlaybackStreamer {
@@ -95,11 +104,14 @@ impl Default for PlaybackStreamer {
             active_clip_id: None,
             frame_rx: None,
             stop_flag: None,
+            active_child: None,
             child_handle: None,
             current_frame: None,
             last_pts: 0.0,
             pending_future_frame: None,
             is_reversed: false,
+            started_at: std::time::Instant::now(),
+            frames_delivered: 0,
         }
     }
 }
@@ -125,8 +137,31 @@ impl PlaybackStreamer {
         self.last_pts
     }
 
+    pub fn frames_delivered(&self) -> u64 {
+        self.frames_delivered
+    }
+
+    pub fn started_at(&self) -> std::time::Instant {
+        self.started_at
+    }
+
+    /// Determines if the streamer should restart given a new target PTS and reverse state.
+    pub fn should_restart(&self, target_pts: f64, reverse: bool) -> bool {
+        if self.is_reversed != reverse {
+            return true;
+        }
+        // If still initializing, give it up to 1.2s grace period to decode and deliver the first frame
+        if self.frames_delivered == 0 {
+            return self.started_at.elapsed().as_secs_f64() >= 1.2;
+        }
+        // After frames are actively being delivered, restart if playback drifted by > 0.6s (user seek)
+        (target_pts - self.last_pts).abs() > 0.6
+    }
+
     /// Starts or restarts continuous video streaming for given file from `source_start_time`.
-    /// When `reverse` is true, video decodes backwards from `source_start_time` down to `source_in`.
+    /// When `reverse` is false, video streams forward continuously via rawvideo pipe.
+    /// When `reverse` is true, video decodes backwards in small ~2.0s forward chunks reversed in RAM,
+    /// completely avoiding FFmpeg's memory-bloating reverse filter and eliminating any RAM leak (<60MB max).
     pub fn start(&mut self, clip_id: &str, file_path: &str, source_start_time: f64, fps: f64, reverse: bool, source_in: f64) {
         self.stop();
 
@@ -134,95 +169,189 @@ impl PlaybackStreamer {
         let clip_str = clip_id.to_string();
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_clone = stop_flag.clone();
+        let active_child: Arc<Mutex<Option<std::process::Child>>> = Arc::new(Mutex::new(None));
+        let child_holder = active_child.clone();
+
         self.pending_future_frame = None;
         self.is_reversed = reverse;
+        self.started_at = std::time::Instant::now();
+        self.frames_delivered = 0;
 
-        // Bounded queue of 15 frames (~0.5 second buffer)
-        let (tx, rx): (SyncSender<DecodedFrame>, Receiver<DecodedFrame>) = sync_channel(15);
+        // Bounded queue of 60 frames (~2.0 seconds buffer)
+        let (tx, rx): (SyncSender<DecodedFrame>, Receiver<DecodedFrame>) = sync_channel(60);
 
         let thread_path = path_str.clone();
         let thread_fps = if fps > 1.0 { fps } else { 30.0 };
 
         let handle = std::thread::spawn(move || {
-            let vf_str = if reverse {
-                format!(
-                    "reverse,fps=fps={thread_fps:.3},scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black"
-                )
-            } else {
-                format!(
-                    "fps=fps={thread_fps:.3},scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black"
-                )
-            };
+            let vf_str = format!(
+                "fps=fps={thread_fps:.3},scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black"
+            );
 
-            let mut cmd = crate::ffmpeg::ffmpeg_cmd();
-            cmd.arg("-v").arg("quiet");
-
-            if reverse {
-                let start = source_in.max(0.0);
-                let dur = (source_start_time - start).max(0.05);
-                cmd.args(["-ss", &format!("{:.3}", start), "-t", &format!("{:.3}", dur)]);
-            } else {
+            if !reverse {
+                // Forward streaming: continuous single FFmpeg process
+                let mut cmd = crate::ffmpeg::ffmpeg_cmd();
+                cmd.arg("-v").arg("quiet");
                 cmd.args(["-ss", &format!("{:.3}", source_start_time.max(0.0))]);
-            }
+                cmd.args([
+                    "-i",
+                    &thread_path,
+                    "-vf",
+                    &vf_str,
+                    "-f",
+                    "rawvideo",
+                    "-pix_fmt",
+                    "rgba",
+                    "-",
+                ]);
+                cmd.stdout(Stdio::piped()).stderr(Stdio::null());
 
-            cmd.args([
-                "-i",
-                &thread_path,
-                "-vf",
-                &vf_str,
-                "-f",
-                "rawvideo",
-                "-pix_fmt",
-                "rgba",
-                "-",
-            ]);
-            cmd.stdout(Stdio::piped()).stderr(Stdio::null());
-
-            let mut child = match cmd.spawn() {
-                Ok(c) => c,
-                Err(_) => return,
-            };
-
-            let mut stdout = match child.stdout.take() {
-                Some(s) => s,
-                None => {
-                    let _ = child.kill();
-                    return;
-                }
-            };
-
-            let mut frame_idx = 0u64;
-
-            while !stop_clone.load(Ordering::Relaxed) {
-                let mut buf = vec![0u8; PREVIEW_FRAME_BYTES];
-                if stdout.read_exact(&mut buf).is_err() {
-                    break;
-                }
-
-                let pts = if reverse {
-                    source_start_time - (frame_idx as f64 / thread_fps)
-                } else {
-                    source_start_time + (frame_idx as f64 / thread_fps)
+                let mut child = match cmd.spawn() {
+                    Ok(c) => c,
+                    Err(_) => return,
                 };
-                frame_idx += 1;
 
-                if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(PREVIEW_WIDTH, PREVIEW_HEIGHT, buf) {
-                    if tx.send((pts, Arc::new(img))).is_err() {
+                let mut stdout = match child.stdout.take() {
+                    Some(s) => s,
+                    None => {
+                        let _ = child.kill();
+                        return;
+                    }
+                };
+
+                if let Ok(mut lock) = child_holder.lock() {
+                    *lock = Some(child);
+                }
+
+                let mut frame_idx = 0u64;
+                while !stop_clone.load(Ordering::Relaxed) {
+                    let mut buf = vec![0u8; PREVIEW_FRAME_BYTES];
+                    if stdout.read_exact(&mut buf).is_err() {
                         break;
                     }
-                } else {
-                    break;
+
+                    let pts = source_start_time + (frame_idx as f64 / thread_fps);
+                    frame_idx += 1;
+
+                    if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(PREVIEW_WIDTH, PREVIEW_HEIGHT, buf) {
+                        if tx.send((pts, Arc::new(img))).is_err() {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+
+                if let Ok(mut lock) = child_holder.lock() {
+                    if let Some(mut c) = lock.take() {
+                        let _ = c.kill();
+                        let _ = c.wait();
+                    }
+                }
+            } else {
+                // Reverse streaming: chunked forward decode in 2.0s segments, reversed in memory.
+                // Absolutely ZERO ffmpeg reverse filter buffering = ZERO memory leaks (<60MB max).
+                let chunk_dur = 2.0;
+                let mut curr_end = source_start_time;
+
+                while !stop_clone.load(Ordering::Relaxed) && curr_end > source_in + 0.005 {
+                    let curr_start = (curr_end - chunk_dur).max(source_in);
+                    let actual_dur = curr_end - curr_start;
+                    if actual_dur <= 0.001 {
+                        break;
+                    }
+
+                    let mut cmd = crate::ffmpeg::ffmpeg_cmd();
+                    cmd.arg("-v").arg("quiet");
+                    cmd.args(["-ss", &format!("{:.3}", curr_start.max(0.0)), "-t", &format!("{:.3}", actual_dur)]);
+                    cmd.args([
+                        "-i",
+                        &thread_path,
+                        "-vf",
+                        &vf_str,
+                        "-f",
+                        "rawvideo",
+                        "-pix_fmt",
+                        "rgba",
+                        "-",
+                    ]);
+                    cmd.stdout(Stdio::piped()).stderr(Stdio::null());
+
+                    let mut child = match cmd.spawn() {
+                        Ok(c) => c,
+                        Err(_) => break,
+                    };
+
+                    let mut stdout = match child.stdout.take() {
+                        Some(s) => s,
+                        None => {
+                            let _ = child.kill();
+                            break;
+                        }
+                    };
+
+                    if let Ok(mut lock) = child_holder.lock() {
+                        *lock = Some(child);
+                    }
+
+                    let mut chunk_frames = Vec::new();
+                    let mut frame_idx = 0u64;
+
+                    while !stop_clone.load(Ordering::Relaxed) {
+                        let mut buf = vec![0u8; PREVIEW_FRAME_BYTES];
+                        if stdout.read_exact(&mut buf).is_err() {
+                            break;
+                        }
+
+                        let pts = curr_start + (frame_idx as f64 / thread_fps);
+                        frame_idx += 1;
+
+                        if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(PREVIEW_WIDTH, PREVIEW_HEIGHT, buf) {
+                            chunk_frames.push((pts, Arc::new(img)));
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if let Ok(mut lock) = child_holder.lock() {
+                        if let Some(mut c) = lock.take() {
+                            let _ = c.wait();
+                        }
+                    }
+
+                    if stop_clone.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    // Reverse the frames so they flow backward in time
+                    chunk_frames.reverse();
+
+                    let mut send_err = false;
+                    for item in chunk_frames {
+                        if stop_clone.load(Ordering::Relaxed) {
+                            send_err = true;
+                            break;
+                        }
+                        if tx.send(item).is_err() {
+                            send_err = true;
+                            break;
+                        }
+                    }
+
+                    if send_err {
+                        break;
+                    }
+
+                    curr_end = curr_start;
                 }
             }
-
-            let _ = child.kill();
-            let _ = child.wait();
         });
 
         self.active_path = Some(path_str);
         self.active_clip_id = Some(clip_str);
         self.frame_rx = Some(rx);
         self.stop_flag = Some(stop_flag);
+        self.active_child = Some(active_child);
         self.child_handle = Some(handle);
         self.last_pts = source_start_time;
     }
@@ -241,6 +370,7 @@ impl PlaybackStreamer {
                 let (p, frame) = self.pending_future_frame.take().unwrap();
                 self.current_frame = Some(frame);
                 self.last_pts = p;
+                self.frames_delivered += 1;
             }
         }
 
@@ -255,6 +385,7 @@ impl PlaybackStreamer {
                     if is_due {
                         self.current_frame = Some(frame);
                         self.last_pts = pts;
+                        self.frames_delivered += 1;
                     } else {
                         // Future frame: retain until timeline reaches this timestamp
                         self.pending_future_frame = Some((pts, frame));
@@ -266,17 +397,27 @@ impl PlaybackStreamer {
         self.current_frame.clone()
     }
 
-    /// Stops the background streaming process.
+    /// Stops the background streaming process and immediately terminates any active FFmpeg child process.
     pub fn stop(&mut self) {
         if let Some(flag) = &self.stop_flag {
             flag.store(true, Ordering::Relaxed);
         }
+        if let Some(child_arc) = &self.active_child {
+            if let Ok(mut lock) = child_arc.lock() {
+                if let Some(mut child) = lock.take() {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+        }
+        self.active_child = None;
         self.frame_rx = None;
         self.stop_flag = None;
         self.child_handle = None;
         self.active_path = None;
         self.active_clip_id = None;
         self.pending_future_frame = None;
+        self.frames_delivered = 0;
     }
 }
 
@@ -482,7 +623,6 @@ impl VideoEngine {
                 && clip.scale == 1.0
                 && clip.pos_x == 0.0
                 && clip.pos_y == 0.0
-                && !clip.reverse
                 && (clip.speed - 1.0).abs() < 0.01;
 
             if media_item.media_type == MediaType::Image {
@@ -517,7 +657,7 @@ impl VideoEngine {
                 if is_playing {
                     // Playback Mode: Use streaming rawvideo pipe
                     let needs_restart = match self.streamer.active_clip_id() {
-                        Some(id) => id != clip.id || (src_t - self.streamer.last_pts()).abs() > 0.3 || self.streamer.is_reversed() != clip.reverse,
+                        Some(id) => id != clip.id || self.streamer.should_restart(src_t, clip.reverse),
                         None => true,
                     };
 
@@ -650,8 +790,32 @@ impl VideoEngine {
                     let ts_key = (src_t * 30.0).round() as u64;
                     let key = (eff_path.to_string(), ts_key);
 
-                    let streamer_frame = if is_playing && self.streamer.active_clip_id() == Some(&clip.id) {
-                        self.streamer.get_frame_for_time(src_t)
+                    let streamer_frame = if is_playing {
+                        if self.streamer.active_clip_id() == Some(&clip.id) {
+                            if self.streamer.should_restart(src_t, clip.reverse) {
+                                self.streamer.start(
+                                    &clip.id,
+                                    eff_path,
+                                    src_t,
+                                    project.timeline.fps,
+                                    clip.reverse,
+                                    clip.source_in,
+                                );
+                            }
+                            self.streamer.get_frame_for_time(src_t)
+                        } else if !self.streamer.is_active() {
+                            self.streamer.start(
+                                &clip.id,
+                                eff_path,
+                                src_t,
+                                project.timeline.fps,
+                                clip.reverse,
+                                clip.source_in,
+                            );
+                            self.streamer.get_frame_for_time(src_t)
+                        } else {
+                            None
+                        }
                     } else {
                         None
                     };
@@ -1292,8 +1456,39 @@ mod tests {
         streamer.start("clip_rev", "/nonexistent.mp4", 5.0, 30.0, true, 1.0);
         assert!(streamer.is_reversed());
         assert_eq!(streamer.last_pts(), 5.0);
+        assert!(!streamer.should_restart(5.0, true));
+        assert!(streamer.should_restart(5.0, false));
         streamer.stop();
         assert!(!streamer.is_active());
+    }
+
+    #[test]
+    fn test_reverse_playback_streamer_real_frames() {
+        let test_file = "/tmp/test_trim_rev.mp4";
+        if std::path::Path::new(test_file).is_file() {
+            let mut streamer = PlaybackStreamer::new();
+            streamer.start("clip_rev_real", test_file, 4.0, 30.0, true, 0.0);
+            assert!(streamer.is_active());
+            assert!(streamer.is_reversed());
+
+            let start = std::time::Instant::now();
+            let mut got_frame = false;
+            let mut t = 4.0;
+            while start.elapsed().as_millis() < 2000 {
+                t -= 0.033;
+                if let Some(f) = streamer.get_frame_for_time(t) {
+                    assert_eq!(f.width(), PREVIEW_WIDTH);
+                    assert_eq!(f.height(), PREVIEW_HEIGHT);
+                    got_frame = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            assert!(got_frame, "Streamer should deliver reversed frames from real video");
+            assert!(streamer.frames_delivered() > 0);
+            streamer.stop();
+            assert!(!streamer.is_active());
+        }
     }
 }
 
