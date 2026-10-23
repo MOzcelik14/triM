@@ -190,15 +190,15 @@ impl TimelineExporter {
         }
 
         if let Some(cw) = &clip.color_wheels {
-            let rs = cw.lift[0].clamp(-1.0, 1.0);
-            let gs = cw.lift[1].clamp(-1.0, 1.0);
-            let bs = cw.lift[2].clamp(-1.0, 1.0);
-            let rm = (cw.gamma[0] - 1.0).clamp(-1.0, 1.0);
-            let gm = (cw.gamma[1] - 1.0).clamp(-1.0, 1.0);
-            let bm = (cw.gamma[2] - 1.0).clamp(-1.0, 1.0);
-            let rh = (cw.gain[0] - 1.0).clamp(-1.0, 1.0);
-            let gh = (cw.gain[1] - 1.0).clamp(-1.0, 1.0);
-            let bh = (cw.gain[2] - 1.0).clamp(-1.0, 1.0);
+            let rs = (cw.lift[0] + cw.luminance[0]).clamp(-1.0, 1.0);
+            let gs = (cw.lift[1] + cw.luminance[0]).clamp(-1.0, 1.0);
+            let bs = (cw.lift[2] + cw.luminance[0]).clamp(-1.0, 1.0);
+            let rm = (cw.gamma[0] + cw.luminance[1] - 1.0).clamp(-1.0, 1.0);
+            let gm = (cw.gamma[1] + cw.luminance[1] - 1.0).clamp(-1.0, 1.0);
+            let bm = (cw.gamma[2] + cw.luminance[1] - 1.0).clamp(-1.0, 1.0);
+            let rh = (cw.gain[0] + cw.luminance[2] - 1.0).clamp(-1.0, 1.0);
+            let gh = (cw.gain[1] + cw.luminance[2] - 1.0).clamp(-1.0, 1.0);
+            let bh = (cw.gain[2] + cw.luminance[2] - 1.0).clamp(-1.0, 1.0);
             if rs.abs() > 1e-4
                 || gs.abs() > 1e-4
                 || bs.abs() > 1e-4

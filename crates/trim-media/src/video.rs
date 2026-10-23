@@ -620,6 +620,10 @@ impl VideoEngine {
                 && clip.saturation == 1.0
                 && clip.lut_preset == trim_core::clip::LutPreset::None
                 && clip.custom_lut_path.is_none()
+                && !clip.chromakey.as_ref().is_some_and(|ck| ck.enabled)
+                && clip.color_wheels.is_none()
+                && clip.keyframes.is_empty()
+                && clip.text_overlay.is_none()
                 && clip.scale == 1.0
                 && clip.pos_x == 0.0
                 && clip.pos_y == 0.0
@@ -1034,6 +1038,7 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
         || clip.contrast != 1.0
         || clip.saturation != 1.0
         || clip.lut_preset != trim_core::clip::LutPreset::None
+        || clip.custom_lut_path.is_some()
         || has_chromakey
         || has_color_wheels;
     let has_special_trans = has_dip_white || wipe_left_active || wipe_right_active || slide_x_offset.abs() > 0.1;
@@ -1128,17 +1133,25 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
                 let hi_w = ((luma - 0.5) * 2.0).clamp(0.0, 1.0);
                 let mid_w = (1.0 - shadow_w - hi_w).clamp(0.0, 1.0);
 
-                r += cw.lift[0] * 128.0 * shadow_w;
-                g += cw.lift[1] * 128.0 * shadow_w;
-                b += cw.lift[2] * 128.0 * shadow_w;
+                let gamma_r = (cw.gamma[0] + cw.luminance[1]).max(0.0);
+                let gamma_g = (cw.gamma[1] + cw.luminance[1]).max(0.0);
+                let gamma_b = (cw.gamma[2] + cw.luminance[1]).max(0.0);
 
-                r *= 1.0 + (cw.gamma[0] - 1.0) * mid_w;
-                g *= 1.0 + (cw.gamma[1] - 1.0) * mid_w;
-                b *= 1.0 + (cw.gamma[2] - 1.0) * mid_w;
+                let gain_r = (cw.gain[0] + cw.luminance[2]).max(0.0);
+                let gain_g = (cw.gain[1] + cw.luminance[2]).max(0.0);
+                let gain_b = (cw.gain[2] + cw.luminance[2]).max(0.0);
 
-                r *= 1.0 + (cw.gain[0] - 1.0) * hi_w;
-                g *= 1.0 + (cw.gain[1] - 1.0) * hi_w;
-                b *= 1.0 + (cw.gain[2] - 1.0) * hi_w;
+                r += (cw.lift[0] + cw.luminance[0]) * 128.0 * shadow_w;
+                g += (cw.lift[1] + cw.luminance[0]) * 128.0 * shadow_w;
+                b += (cw.lift[2] + cw.luminance[0]) * 128.0 * shadow_w;
+
+                r *= 1.0 + (gamma_r - 1.0) * mid_w;
+                g *= 1.0 + (gamma_g - 1.0) * mid_w;
+                b *= 1.0 + (gamma_b - 1.0) * mid_w;
+
+                r *= 1.0 + (gain_r - 1.0) * hi_w;
+                g *= 1.0 + (gain_g - 1.0) * hi_w;
+                b *= 1.0 + (gain_b - 1.0) * hi_w;
 
                 r = r.clamp(0.0, 255.0);
                 g = g.clamp(0.0, 255.0);
@@ -1489,6 +1502,106 @@ mod tests {
             streamer.stop();
             assert!(!streamer.is_active());
         }
+    }
+
+    #[test]
+    fn test_chromakey_rendering_removes_key_color() {
+        use trim_core::clip::{ChromaKeyConfig, Clip};
+
+        let mut canvas = ImageBuffer::from_pixel(10, 10, Rgba([0, 0, 255, 255])); // Blue canvas background
+
+        // Frame with pure green on left half (x < 5) and bright red on right half (x >= 5)
+        let mut frame = ImageBuffer::from_pixel(10, 10, Rgba([0, 255, 0, 255]));
+        for y in 0..10 {
+            for x in 5..10 {
+                frame.put_pixel(x, y, Rgba([255, 0, 0, 255]));
+            }
+        }
+
+        let mut clip = Clip::new("m1", 0.0, 5.0);
+        clip.chromakey = Some(ChromaKeyConfig {
+            enabled: true,
+            key_color: [0, 255, 0],
+            similarity: 0.25,
+            smoothness: 0.05,
+        });
+
+        draw_clip_onto_canvas(&mut canvas, &clip, &frame, 1.0);
+
+        // Keyed out area (left half) should retain the background canvas color (Blue)
+        let keyed_px = canvas.get_pixel(2, 2);
+        assert_eq!(keyed_px[0], 0, "Red channel should be 0 on keyed area");
+        assert_eq!(keyed_px[1], 0, "Green channel should be keyed out (not green!)");
+        assert_eq!(keyed_px[2], 255, "Blue background should show through");
+
+        // Non-keyed area (right half) should show the red foreground from the clip
+        let red_px = canvas.get_pixel(7, 2);
+        assert_eq!(red_px[0], 255, "Red foreground should be rendered");
+        assert_eq!(red_px[1], 0);
+        assert_eq!(red_px[2], 0);
+    }
+
+    #[test]
+    fn test_color_wheels_rendering_modifies_pixels() {
+        use trim_core::clip::{ColorWheelsConfig, Clip};
+
+        let mut canvas = ImageBuffer::from_pixel(10, 10, Rgba([0, 0, 0, 255]));
+        let frame = ImageBuffer::from_pixel(10, 10, Rgba([128, 128, 128, 255]));
+
+        let mut clip = Clip::new("m1", 0.0, 5.0);
+        clip.color_wheels = Some(ColorWheelsConfig {
+            lift: [0.2, 0.0, -0.2],
+            gamma: [1.2, 1.0, 0.8],
+            gain: [1.2, 1.0, 0.8],
+            luminance: [0.0, 0.1, 0.0],
+        });
+
+        draw_clip_onto_canvas(&mut canvas, &clip, &frame, 1.0);
+
+        let modified_px = canvas.get_pixel(5, 5);
+        assert!(modified_px[0] > modified_px[1], "Red should be boosted over Green");
+        assert!(modified_px[1] > modified_px[2], "Green should be higher than Blue");
+    }
+
+    #[test]
+    fn test_image_chromakey_bypasses_fast_path() {
+        use trim_core::clip::{ChromaKeyConfig, Clip};
+        use trim_core::media::{MediaItem, MediaType};
+
+        let temp_dir = std::env::temp_dir();
+        let img_path = temp_dir.join("test_trim_ck_bypass.png");
+
+        // Create 640x360 green image
+        let green_img: RgbaImage = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0u8, 255u8, 0u8, 255u8]));
+        green_img.save(&img_path).expect("Failed to save temp test image");
+
+        let mut project = Project::default();
+        let mut media = MediaItem::new(img_path.to_str().unwrap());
+        media.media_type = MediaType::Image;
+        let m_id = media.id.clone();
+        project.add_media(media);
+
+        let mut track = trim_core::track::Track::new("V1", trim_core::track::TrackType::Video);
+        let mut clip = Clip::new(&m_id, 0.0, 5.0);
+        clip.chromakey = Some(ChromaKeyConfig {
+            enabled: true,
+            key_color: [0, 255, 0],
+            similarity: 0.3,
+            smoothness: 0.05,
+        });
+        track.add_clip(clip);
+        project.timeline.add_track(track);
+
+        let mut engine = VideoEngine::new();
+        let rendered = engine.render_timeline_frame(&project, 1.0, false);
+        assert!(rendered.is_some(), "Should render a frame");
+
+        let frame = rendered.unwrap();
+        // Since green was keyed out on single clip, canvas background is black [0, 0, 0, 255]
+        let px = frame.get_pixel(100, 100);
+        assert_eq!(px[1], 0, "Green should be removed by Chroma Key instead of returning raw green frame");
+
+        let _ = std::fs::remove_file(img_path);
     }
 }
 
