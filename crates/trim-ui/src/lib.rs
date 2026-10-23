@@ -177,6 +177,55 @@ mod tests {
         assert_eq!(cl.duration(), 2.0);
         assert_eq!(cl.timeline_out, 2.0);
     }
+
+    #[test]
+    fn test_close_confirm_dialog_lifecycle() {
+        use dialogs::{CloseConfirmDialog, PendingCloseAction};
+        use std::path::PathBuf;
+
+        let mut dialog = CloseConfirmDialog::default();
+        assert!(!dialog.is_open);
+        assert!(dialog.pending_action.is_none());
+
+        dialog.prompt(PendingCloseAction::ExitApp, "My Video Project");
+        assert!(dialog.is_open);
+        assert_eq!(dialog.pending_action, Some(PendingCloseAction::ExitApp));
+        assert_eq!(dialog.project_name, "My Video Project");
+
+        dialog.close();
+        assert!(!dialog.is_open);
+        assert!(dialog.pending_action.is_none());
+
+        // Test with OpenPath
+        let test_path = PathBuf::from("/tmp/test_project.trim");
+        dialog.prompt(PendingCloseAction::OpenPath(test_path.clone()), "Another Project");
+        assert!(dialog.is_open);
+        assert_eq!(dialog.pending_action, Some(PendingCloseAction::OpenPath(test_path)));
+    }
+
+    #[test]
+    fn test_close_confirm_dialog_egui_render() {
+        use dialogs::{CloseConfirmDialog, PendingCloseAction};
+        let ctx = Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            let mut dialog = CloseConfirmDialog::default();
+            dialog.prompt(PendingCloseAction::ExitApp, "Test Unsaved");
+            let action = dialog.show(ctx);
+            // In initial render without click, action is None
+            assert!(action.is_none());
+            assert!(dialog.is_open);
+        });
+    }
+
+    #[test]
+    fn test_project_dirty_flag_tracking() {
+        let mut proj = Project::default();
+        assert!(!proj.is_dirty);
+
+        proj.mark_dirty();
+        assert!(proj.is_dirty);
+    }
 }
+
 
 

@@ -17,7 +17,7 @@ use egui::{
     TextureOptions, Vec2,
 };
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
 use std::time::Instant;
 
@@ -117,6 +117,8 @@ pub struct TrimApp {
     pub shortcut_profile: ShortcutProfile,
     pub proxy_rx: Option<Receiver<(String, Result<String, String>)>>,
     pub proxy_generating_ids: Vec<String>,
+    pub close_confirm_dialog: CloseConfirmDialog,
+    pub confirmed_exit: bool,
 }
 
 impl TrimApp {
@@ -192,6 +194,8 @@ impl TrimApp {
             shortcut_profile: ShortcutProfile::TrimDefault,
             proxy_rx: None,
             proxy_generating_ids: Vec::new(),
+            close_confirm_dialog: CloseConfirmDialog::default(),
+            confirmed_exit: false,
         };
 
         // Check crash recovery
@@ -515,15 +519,17 @@ impl TrimApp {
         }
     }
 
-    pub fn save_project_dialog(&mut self) {
+    pub fn save_project_dialog(&mut self) -> bool {
         if let Some(fp) = self.project.file_path.clone() {
             match save_project(&mut self.project, fp) {
                 Ok(()) => {
                     self.autosave_mgr.cleanup(&self.project);
                     self.status_message = "Proje kaydedildi".to_string();
+                    true
                 }
                 Err(e) => {
                     self.status_message = format!("Kayıt hatası: {}", e);
+                    false
                 }
             }
         } else if let Some(path) = rfd::FileDialog::new()
@@ -535,15 +541,19 @@ impl TrimApp {
                 Ok(()) => {
                     self.autosave_mgr.cleanup(&self.project);
                     self.status_message = "Proje kaydedildi".to_string();
+                    true
                 }
                 Err(e) => {
                     self.status_message = format!("Kayıt hatası: {}", e);
+                    false
                 }
             }
+        } else {
+            false
         }
     }
 
-    pub fn save_project_as_dialog(&mut self) {
+    pub fn save_project_as_dialog(&mut self) -> bool {
         if let Some(path) = rfd::FileDialog::new()
             .set_title("Projeyi Farklı Kaydet")
             .add_filter("triM. Projesi (*.trim)", &["trim"])
@@ -553,11 +563,15 @@ impl TrimApp {
                 Ok(()) => {
                     self.autosave_mgr.cleanup(&self.project);
                     self.status_message = format!("Proje kaydedildi: {:?}", path);
+                    true
                 }
                 Err(e) => {
                     self.status_message = format!("Kayıt hatası: {}", e);
+                    false
                 }
             }
+        } else {
+            false
         }
     }
 
@@ -1230,12 +1244,21 @@ impl TrimApp {
         if let Some(act) = p_act {
             match act {
                 MonitorAction::NewProject => {
-                    self.project = Project::default();
-                    self.undo_stack.clear();
-                    self.target_video_track = self.project.timeline.get_video_tracks().iter().find(|t| t.name == "V1").map(|t| t.id.clone()).unwrap_or_default();
-                    self.target_audio_track = self.project.timeline.get_audio_tracks().iter().find(|t| t.name == "A1").map(|t| t.id.clone()).unwrap_or_default();
+                    if self.project.is_dirty {
+                        let name = self.project.settings.name.clone();
+                        self.close_confirm_dialog.prompt(PendingCloseAction::NewProject, name);
+                    } else {
+                        self.reset_to_new_project();
+                    }
                 }
-                MonitorAction::OpenProject => self.open_project_dialog(),
+                MonitorAction::OpenProject => {
+                    if self.project.is_dirty {
+                        let name = self.project.settings.name.clone();
+                        self.close_confirm_dialog.prompt(PendingCloseAction::OpenProject, name);
+                    } else {
+                        self.open_project_dialog();
+                    }
+                }
                 MonitorAction::ImportMedia => self.prompt_import_media(),
                 MonitorAction::TogglePlay => self.toggle_play(),
                 MonitorAction::StepFrame(d) => self.step_frame(d),
@@ -1264,6 +1287,13 @@ impl TrimApp {
 
 impl eframe::App for TrimApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Intercept window close request if there are unsaved changes
+        if ctx.input(|i| i.viewport().close_requested()) && !self.confirmed_exit && self.project.is_dirty {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            let name = self.project.settings.name.clone();
+            self.close_confirm_dialog.prompt(PendingCloseAction::ExitApp, name);
+        }
+
         self.update_playback_tick();
         self.update_monitor_frame(ctx);
         self.update_source_monitor_frame(ctx);
@@ -1474,9 +1504,27 @@ impl eframe::App for TrimApp {
                 } else if i.modifiers.ctrl && i.key_pressed(Key::S) {
                     self.save_project_dialog();
                 } else if i.modifiers.ctrl && i.key_pressed(Key::O) {
-                    self.open_project_dialog();
+                    if self.project.is_dirty {
+                        let name = self.project.settings.name.clone();
+                        self.close_confirm_dialog.prompt(PendingCloseAction::OpenProject, name);
+                    } else {
+                        self.open_project_dialog();
+                    }
                 } else if i.modifiers.ctrl && i.key_pressed(Key::N) {
-                    self.welcome_dialog.open();
+                    if self.project.is_dirty {
+                        let name = self.project.settings.name.clone();
+                        self.close_confirm_dialog.prompt(PendingCloseAction::NewProject, name);
+                    } else {
+                        self.reset_to_new_project();
+                    }
+                } else if i.modifiers.ctrl && i.key_pressed(Key::Q) {
+                    if self.project.is_dirty && !self.confirmed_exit {
+                        let name = self.project.settings.name.clone();
+                        self.close_confirm_dialog.prompt(PendingCloseAction::ExitApp, name);
+                    } else {
+                        self.confirmed_exit = true;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
                 } else if i.modifiers.ctrl && i.key_pressed(Key::I) {
                     self.prompt_import_media();
                 } else if i.modifiers.ctrl && (i.key_pressed(Key::E) || i.key_pressed(Key::M)) {
@@ -1505,11 +1553,21 @@ impl eframe::App for TrimApp {
                         ui.close_menu();
                     }
                     if ui.button("Yeni Boş Proje (Ctrl+N)").clicked() {
-                        self.reset_to_new_project();
+                        if self.project.is_dirty {
+                            let name = self.project.settings.name.clone();
+                            self.close_confirm_dialog.prompt(PendingCloseAction::NewProject, name);
+                        } else {
+                            self.reset_to_new_project();
+                        }
                         ui.close_menu();
                     }
                     if ui.button("Proje Aç... (Ctrl+O)").clicked() {
-                        self.open_project_dialog();
+                        if self.project.is_dirty {
+                            let name = self.project.settings.name.clone();
+                            self.close_confirm_dialog.prompt(PendingCloseAction::OpenProject, name);
+                        } else {
+                            self.open_project_dialog();
+                        }
                         ui.close_menu();
                     }
                     ui.separator();
@@ -1543,8 +1601,15 @@ impl eframe::App for TrimApp {
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button("Çıkış").clicked() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    if ui.button("Çıkış (Ctrl+Q)").clicked() {
+                        if self.project.is_dirty && !self.confirmed_exit {
+                            let name = self.project.settings.name.clone();
+                            self.close_confirm_dialog.prompt(PendingCloseAction::ExitApp, name);
+                        } else {
+                            self.confirmed_exit = true;
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                        ui.close_menu();
                     }
                 });
 
@@ -2505,25 +2570,77 @@ impl eframe::App for TrimApp {
         if let Some(act) = self.welcome_dialog.show(ctx) {
             match act {
                 WelcomeAction::CreateNewProject { name, width, height, fps } => {
-                    self.reset_to_new_project();
-                    self.project.settings.name = name;
-                    self.project.timeline.width = width;
-                    self.project.timeline.height = height;
-                    self.project.timeline.fps = fps;
-                    self.status_message = format!("Yeni proje hazır: {}", self.project.settings.name);
-                    self.welcome_dialog.close();
+                    if self.project.is_dirty {
+                        let current_name = self.project.settings.name.clone();
+                        self.close_confirm_dialog.prompt(PendingCloseAction::NewProject, current_name);
+                        self.welcome_dialog.close();
+                    } else {
+                        self.reset_to_new_project();
+                        self.project.settings.name = name;
+                        self.project.timeline.width = width;
+                        self.project.timeline.height = height;
+                        self.project.timeline.fps = fps;
+                        self.status_message = format!("Yeni proje hazır: {}", self.project.settings.name);
+                        self.welcome_dialog.close();
+                    }
                 }
                 WelcomeAction::OpenProjectRequested => {
-                    self.open_project_dialog();
-                    self.welcome_dialog.close();
+                    if self.project.is_dirty {
+                        let name = self.project.settings.name.clone();
+                        self.close_confirm_dialog.prompt(PendingCloseAction::OpenProject, name);
+                        self.welcome_dialog.close();
+                    } else {
+                        self.open_project_dialog();
+                        self.welcome_dialog.close();
+                    }
                 }
                 WelcomeAction::OpenRecentProject(path) => {
-                    self.open_path(Path::new(&path));
-                    self.welcome_dialog.close();
+                    if self.project.is_dirty {
+                        let name = self.project.settings.name.clone();
+                        self.close_confirm_dialog.prompt(PendingCloseAction::OpenPath(PathBuf::from(path)), name);
+                        self.welcome_dialog.close();
+                    } else {
+                        self.open_path(Path::new(&path));
+                        self.welcome_dialog.close();
+                    }
                 }
                 WelcomeAction::Close => {
                     self.welcome_dialog.close();
                 }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Unsaved Changes Confirmation Modal
+        // -------------------------------------------------------------
+        if let Some(act) = self.close_confirm_dialog.show(ctx) {
+            match act {
+                CloseConfirmAction::SaveAndProceed(pending) => {
+                    if self.save_project_dialog() {
+                        match pending {
+                            PendingCloseAction::ExitApp => {
+                                self.confirmed_exit = true;
+                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            }
+                            PendingCloseAction::NewProject => self.reset_to_new_project(),
+                            PendingCloseAction::OpenProject => self.open_project_dialog(),
+                            PendingCloseAction::OpenPath(path) => self.open_path(&path),
+                        }
+                    }
+                }
+                CloseConfirmAction::DiscardAndProceed(pending) => {
+                    self.project.is_dirty = false;
+                    match pending {
+                        PendingCloseAction::ExitApp => {
+                            self.confirmed_exit = true;
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                        PendingCloseAction::NewProject => self.reset_to_new_project(),
+                        PendingCloseAction::OpenProject => self.open_project_dialog(),
+                        PendingCloseAction::OpenPath(path) => self.open_path(&path),
+                    }
+                }
+                CloseConfirmAction::Cancel => {}
             }
         }
 
