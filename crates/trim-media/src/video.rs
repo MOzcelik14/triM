@@ -328,7 +328,7 @@ pub struct VideoEngine {
     pub streamer: PlaybackStreamer,
     pub async_decoder: AsyncFrameDecoder,
     pub frame_cache: FrameCacheMap,
-    pub image_cache: HashMap<String, RgbaImage>,
+    pub image_cache: HashMap<String, Arc<RgbaImage>>,
     pub last_raw_source_frame: Option<Arc<RgbaImage>>,
     pub last_rendered_frame: Option<Arc<RgbaImage>>,
     pub is_decoding_seek: bool,
@@ -366,16 +366,16 @@ impl VideoEngine {
         self.is_decoding_seek = false;
     }
 
-    pub fn get_image<P: AsRef<Path>>(&mut self, path: P) -> Option<&RgbaImage> {
+    pub fn get_image<P: AsRef<Path>>(&mut self, path: P) -> Option<Arc<RgbaImage>> {
         let p_str = path.as_ref().to_string_lossy().to_string();
         if !self.image_cache.contains_key(&p_str) {
             if let Ok(dyn_img) = image::open(&p_str) {
-                self.image_cache.insert(p_str.clone(), dyn_img.to_rgba8());
+                self.image_cache.insert(p_str.clone(), Arc::new(dyn_img.to_rgba8()));
             } else {
                 return None;
             }
         }
-        self.image_cache.get(&p_str)
+        self.image_cache.get(&p_str).cloned()
     }
 
     /// Primary timeline rendering entry point with zero UI lag.
@@ -451,14 +451,25 @@ impl VideoEngine {
                 && (clip.speed - 1.0).abs() < 0.01;
 
             if media_item.media_type == MediaType::Image {
-                if let Some(img) = self.get_image(&media_item.file_path) {
+                if self.is_decoding_seek {
+                    self.async_decoder.latest_req_id += 1;
+                    self.is_decoding_seek = false;
+                }
+
+                let is_title_card = media_item.file_path.contains("titles");
+                let img_opt = if clip.text_overlay.is_some() && is_title_card {
+                    Some(Arc::new(ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 0]))))
+                } else {
+                    self.get_image(&media_item.file_path)
+                };
+
+                if let Some(img) = img_opt {
                     if is_standard_transform {
-                        let arc_img = Arc::new(img.clone());
-                        self.last_rendered_frame = Some(arc_img.clone());
-                        return Some(arc_img);
+                        self.last_rendered_frame = Some(img.clone());
+                        return Some(img);
                     } else {
                         let mut canvas = ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
-                        draw_clip_onto_canvas(&mut canvas, clip, img, timeline_time);
+                        draw_clip_onto_canvas(&mut canvas, clip, &img, timeline_time);
                         let arc_canvas = Arc::new(canvas);
                         self.last_rendered_frame = Some(arc_canvas.clone());
                         return Some(arc_canvas);
@@ -588,7 +599,14 @@ impl VideoEngine {
             };
 
             let frame_img = match media_item.media_type {
-                MediaType::Image => self.get_image(&media_item.file_path).cloned(),
+                MediaType::Image => {
+                    let is_title_card = media_item.file_path.contains("titles");
+                    if clip.text_overlay.is_some() && is_title_card {
+                        Some(Arc::new(ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 0]))))
+                    } else {
+                        self.get_image(&media_item.file_path)
+                    }
+                }
                 _ => {
                     let eff_path = media_item.resolved_playback_path(self.use_proxies);
                     let src_t = clip.map_timeline_to_source(timeline_time);
@@ -603,21 +621,21 @@ impl VideoEngine {
 
                     if let Some(sf) = streamer_frame {
                         self.last_raw_source_frame = Some(sf.clone());
-                        Some((*sf).clone())
+                        Some(sf)
                     } else {
                         let cached = self.frame_cache.read().ok().and_then(|c| c.get(&key).cloned());
                         if let Some(c) = cached {
                             self.last_raw_source_frame = Some(c.clone());
-                            Some((*c).clone())
+                            Some(c)
                         } else if self.last_raw_source_frame.is_none() {
                             if let Some(frame) = decode_frame_raw(eff_path, src_t) {
-                                let arc = Arc::new(frame.clone());
+                                let arc = Arc::new(frame);
                                 if let Ok(mut cache) = self.frame_cache.write() {
                                     cache.insert(key, arc.clone());
                                 }
-                                self.last_raw_source_frame = Some(arc);
+                                self.last_raw_source_frame = Some(arc.clone());
                                 self.is_decoding_seek = false;
-                                Some(frame)
+                                Some(arc)
                             } else {
                                 None
                             }
@@ -626,7 +644,7 @@ impl VideoEngine {
                                 self.async_decoder.request_seek(eff_path, src_t);
                                 self.is_decoding_seek = true;
                             }
-                            self.last_raw_source_frame.as_ref().map(|f| (**f).clone())
+                            self.last_raw_source_frame.clone()
                         }
                     }
                 }
@@ -963,15 +981,17 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
     }
 }
 
-/// Generates a synthetic title image and saves to ~/.local/share/trim/titles/.
+/// Generates a synthetic title canvas image and saves to ~/.config/trim/titles/.
+/// The text overlay itself is rendered dynamically in vectors by the monitor widget
+/// and export filtergraph, so the background file stays clean without duplicated text.
 #[allow(clippy::too_many_arguments)]
 pub fn generate_title_image(
-    text: &str,
-    font_size: u32,
-    text_color_rgb: [u8; 3],
+    _text: &str,
+    _font_size: u32,
+    _text_color_rgb: [u8; 3],
     bg_color_rgba: [u8; 4],
-    position: &str,
-    has_shadow: bool,
+    _position: &str,
+    _has_shadow: bool,
     width: u32,
     height: u32,
 ) -> Option<PathBuf> {
@@ -981,70 +1001,9 @@ pub fn generate_title_image(
     let id = uuid::Uuid::new_v4().to_string();
     let out_file = titles_dir.join(format!("title_{}.png", id));
 
-    let img = ImageBuffer::from_pixel(width, height, Rgba(bg_color_rgba));
-    let hex_color = format!("{:02x}{:02x}{:02x}", text_color_rgb[0], text_color_rgb[1], text_color_rgb[2]);
-
-    let (x_expr, y_expr) = match position {
-        "lower_third" => ("(w-text_w)/2", "h*0.80-text_h/2"),
-        "subtitle" => ("(w-text_w)/2", "h*0.87-text_h"),
-        "top" => ("(w-text_w)/2", "h*0.12"),
-        _ => ("(w-text_w)/2", "(h-text_h)/2"), // center default
-    };
-
-    let shadow_args = if has_shadow {
-        ":shadowx=3:shadowy=3:shadowcolor=black@0.7:borderw=2:bordercolor=black@0.8"
-    } else {
-        ":borderw=1:bordercolor=black@0.5"
-    };
-
-    let box_args = if bg_color_rgba[3] > 0 {
-        format!(
-            ":box=1:boxcolor=0x{:02x}{:02x}{:02x}@{:.2}:boxborderw=10",
-            bg_color_rgba[0],
-            bg_color_rgba[1],
-            bg_color_rgba[2],
-            bg_color_rgba[3] as f32 / 255.0
-        )
-    } else {
-        String::new()
-    };
-
-    let vf = format!(
-        "drawtext=text='{}':fontcolor=0x{}:fontsize={}:x={}:y={}{}{}",
-        text.replace('\'', "\\'"),
-        hex_color,
-        font_size,
-        x_expr,
-        y_expr,
-        shadow_args,
-        box_args
-    );
-
-    let status = crate::ffmpeg::ffmpeg_cmd()
-        .args([
-            "-v",
-            "quiet",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            &format!("color=c=black@0.0:s={}x{}:r=1:d=1", width, height),
-            "-vf",
-            &vf,
-            "-vframes",
-            "1",
-            "-pix_fmt",
-            "rgba",
-            out_file.to_str().unwrap_or(""),
-        ])
-        .status();
-
-    if status.map(|s| s.success()).unwrap_or(false) && out_file.is_file() {
-        Some(out_file)
-    } else {
-        let _ = img.save(&out_file);
-        Some(out_file)
-    }
+    let img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_pixel(width, height, Rgba(bg_color_rgba));
+    img.save(&out_file).ok()?;
+    Some(out_file)
 }
 
 #[cfg(test)]

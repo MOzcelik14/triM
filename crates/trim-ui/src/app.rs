@@ -104,6 +104,7 @@ pub struct TrimApp {
     pub export_rx: Option<Receiver<ExportMessage>>,
 
     pub monitor_texture: Option<TextureHandle>,
+    pub last_rendered_monitor_frame: Option<std::sync::Arc<image::RgbaImage>>,
     pub selected_media_id: Option<String>,
     pub status_message: String,
     pub last_autosave: Instant,
@@ -178,6 +179,7 @@ impl TrimApp {
             export_runner: ExportRunner::default(),
             export_rx: None,
             monitor_texture: None,
+            last_rendered_monitor_frame: None,
             selected_media_id: None,
             status_message: "Hazır".to_string(),
             last_autosave: Instant::now(),
@@ -999,6 +1001,12 @@ impl TrimApp {
         );
 
         if let Some(frame) = frame_opt {
+            if let Some(last) = &self.last_rendered_monitor_frame {
+                if std::sync::Arc::ptr_eq(last, &frame) {
+                    return;
+                }
+            }
+            self.last_rendered_monitor_frame = Some(frame.clone());
             let color_image = ColorImage::from_rgba_unmultiplied(
                 [frame.width() as usize, frame.height() as usize],
                 frame.as_raw(),
@@ -1009,6 +1017,7 @@ impl TrimApp {
                 self.monitor_texture = Some(ctx.load_texture("monitor_preview", color_image, TextureOptions::LINEAR));
             }
         } else {
+            self.last_rendered_monitor_frame = None;
             self.monitor_texture = None;
         }
     }
@@ -1260,8 +1269,10 @@ impl eframe::App for TrimApp {
         self.update_source_monitor_frame(ctx);
         self.update_media_bin_thumbnails(ctx);
 
-        if self.is_playing || self.source_state.is_playing || self.video_engine.is_decoding_seek {
+        if self.is_playing || self.source_state.is_playing {
             ctx.request_repaint();
+        } else if self.video_engine.is_decoding_seek {
+            ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
 
         // Window drag & drop files from OS file manager
@@ -1326,7 +1337,7 @@ impl eframe::App for TrimApp {
         }
 
         if self.active_voiceover.is_some() {
-            ctx.request_repaint();
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
 
         // -------------------------------------------------------------
