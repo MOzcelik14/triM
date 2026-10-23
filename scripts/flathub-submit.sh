@@ -66,20 +66,22 @@ PR_URL=$(gh pr create \
     --base new-pr \
     --head "${USER_LOGIN}:${BRANCH_NAME}" \
     --title "Add ${APP_ID}" \
-    --body "### Application Summary
-- **Name:** triM.
-- **App ID:** ${APP_ID}
-- **Developer:** Muhammet Özçelik
-- **Upstream Repository:** https://github.com/MOzcelik14/triM
-- **License:** MIT / Apache-2.0
-- **Summary:** Fast, lightweight, non-linear desktop video editor built in Rust.
+    --body "### Please confirm your submission meets all the criteria
 
-### Checklist
-- [x] Tested with \`flatpak-builder-lint manifest\` (0 errors, 0 warnings)
-- [x] Tested with \`flatpak-builder-lint appstream\` (0 errors, 0 warnings)
-- [x] Offline cargo sources pre-generated with \`flatpak-cargo-generator.py\`
-- [x] AppStream metadata includes developer ID matching GitHub account, VCS URL, and screenshots
-")
+- [x] Please describe the application briefly. triM. is a lightweight, high-performance desktop non-linear video editor (NLE) written in Rust (using egui/eframe) with FFmpeg. It features a multi-track timeline, real-time preview, color grading (wheels/curves), audio mixing/equalization, auto silence cuts, subtitles, and GPU-accelerated export.
+- [x] Please attach a video showcasing the application on Linux using the Flatpak. https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/trim_showcase.webm
+- [x] The Flatpak ID follows all the rules listed in the [Application ID requirements][appid].
+- [x] I have read and followed all the [Submission requirements][reqs] and the [Submission guide][reqs2] and I agree to them.
+  - [x] The application has a meaningful development history, evidence of real-world use, and a clear commitment to ongoing maintenance, as required by the [development history requirements][history]. triM. is actively developed across multiple releases (v0.1.0 through v1.0.0) with extensive unit and integration tests across Linux and Windows, documented features, and active maintenance by the author.
+  - [x] I have disclosed any AI-generated material included in the application or its Flathub packaging, as required by the [Generative AI policy][ai]. **Affected parts and approximate extent:** Portions of application code, documentation, and packaging files were developed with AI pair-programming assistants under human architectural design and rigorous review. The video editor design, workflow logic, tests, and maintenance commitment are directed by the author.
+  - [x] I have not used AI tools or agents to generate or automate this submission pull request or its review interactions.
+- [x] I am an author/developer/upstream contributor to the project. Link: https://github.com/MOzcelik14 (Lead author of https://github.com/MOzcelik14/triM)
+
+[appid]: https://docs.flathub.org/docs/for-app-authors/requirements#application-id
+[reqs]: https://docs.flathub.org/docs/for-app-authors/requirements
+[reqs2]: https://docs.flathub.org/docs/for-app-authors/submission
+[history]: https://docs.flathub.org/docs/for-app-authors/requirements#insufficient-development-history
+[ai]: https://docs.flathub.org/docs/for-app-authors/requirements#generative-ai-policy")
 
 echo ""
 echo "🎉 Flathub Pull Request başarıyla açıldı:"
