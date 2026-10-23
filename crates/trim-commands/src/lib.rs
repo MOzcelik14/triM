@@ -68,6 +68,14 @@ impl UndoStack {
         !self.undo_stack.is_empty()
     }
 
+    pub fn len(&self) -> usize {
+        self.undo_stack.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.undo_stack.is_empty()
+    }
+
     pub fn can_redo(&self) -> bool {
         !self.redo_stack.is_empty()
     }

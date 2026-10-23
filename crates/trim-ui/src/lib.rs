@@ -228,6 +228,40 @@ mod tests {
     }
 
     #[test]
+    fn test_has_unsaved_changes_lifecycle() {
+        use trim_core::clip::Clip;
+        use trim_commands::AddClipCommand;
+
+        let mut app = TrimApp::default();
+        // Initially empty, clean project
+        assert!(!app.has_unsaved_changes());
+
+        // 1. Mark dirty directly
+        app.project.mark_dirty();
+        assert!(app.has_unsaved_changes());
+        app.project.is_dirty = false;
+        assert!(!app.has_unsaved_changes());
+
+        // 2. Add clip to timeline via command
+        let track_id = app.project.timeline.tracks[0].id.clone();
+        let clip = Clip::new("m1", 0.0, 5.0);
+        let cmd = Box::new(AddClipCommand::new(&track_id, clip));
+        let _ = app.undo_stack.push(cmd, &mut app.project.timeline);
+        // Since undo_stack len changed and project has clips without saved file_path
+        assert!(app.has_unsaved_changes());
+
+        // 3. Simulate save
+        app.project.is_dirty = false;
+        app.project.file_path = Some("/tmp/saved_proj.trim".to_string());
+        app.last_saved_undo_len = app.undo_stack.len();
+        assert!(!app.has_unsaved_changes());
+
+        // 4. Slight change (e.g., track volume / mute / split)
+        app.project.mark_dirty();
+        assert!(app.has_unsaved_changes());
+    }
+
+    #[test]
     fn test_silence_dialog_lifecycle() {
         use dialogs::SilenceDialog;
         let mut dlg = SilenceDialog::default();

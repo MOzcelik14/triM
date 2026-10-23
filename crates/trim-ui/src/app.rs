@@ -122,12 +122,11 @@ pub struct TrimApp {
     pub proxy_generating_ids: Vec<String>,
     pub close_confirm_dialog: CloseConfirmDialog,
     pub confirmed_exit: bool,
+    pub last_saved_undo_len: usize,
 }
 
-impl TrimApp {
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        setup_theme(&cc.egui_ctx);
-
+impl Default for TrimApp {
+    fn default() -> Self {
         let project = Project::default();
         let v_tracks = project.timeline.get_video_tracks();
         let target_video_track = v_tracks
@@ -147,7 +146,7 @@ impl TrimApp {
             .map(|t| t.id.clone())
             .unwrap_or_else(|| "a1".to_string());
 
-        let mut app = Self {
+        Self {
             project,
             undo_stack: UndoStack::new(),
             current_time: 0.0,
@@ -202,7 +201,15 @@ impl TrimApp {
             proxy_generating_ids: Vec::new(),
             close_confirm_dialog: CloseConfirmDialog::default(),
             confirmed_exit: false,
-        };
+            last_saved_undo_len: 0,
+        }
+    }
+}
+
+impl TrimApp {
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        setup_theme(&cc.egui_ctx);
+        let mut app = Self::default();
 
         // Check crash recovery
         if let Some(rec_path) = app.autosave_mgr.check_recovery(&app.project) {
@@ -339,6 +346,7 @@ impl TrimApp {
 
                 let cmd = Box::new(AddClipCommand::new(vo.track_id.clone(), clip));
                 let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                self.project.mark_dirty();
                 self.status_message = format!("🎤 Seslendirme başarıyla kaydedildi ({:.1}s) ve kanala eklendi!", dur);
             }
             Err(e) => {
@@ -494,6 +502,7 @@ impl TrimApp {
                 Ok(proj) => {
                     self.project = proj;
                     self.undo_stack.clear();
+                    self.last_saved_undo_len = 0;
                     self.canvas_state.selected_clip_pairs.clear();
                     self.current_time = 0.0;
                     self.media_bin_textures.clear();
@@ -529,6 +538,8 @@ impl TrimApp {
         if let Some(fp) = self.project.file_path.clone() {
             match save_project(&mut self.project, fp) {
                 Ok(()) => {
+                    self.last_saved_undo_len = self.undo_stack.len();
+                    self.project.is_dirty = false;
                     self.autosave_mgr.cleanup(&self.project);
                     self.status_message = "Proje kaydedildi".to_string();
                     true
@@ -545,6 +556,8 @@ impl TrimApp {
         {
             match save_project(&mut self.project, path) {
                 Ok(()) => {
+                    self.last_saved_undo_len = self.undo_stack.len();
+                    self.project.is_dirty = false;
                     self.autosave_mgr.cleanup(&self.project);
                     self.status_message = "Proje kaydedildi".to_string();
                     true
@@ -567,6 +580,8 @@ impl TrimApp {
         {
             match save_project(&mut self.project, path.clone()) {
                 Ok(()) => {
+                    self.last_saved_undo_len = self.undo_stack.len();
+                    self.project.is_dirty = false;
                     self.autosave_mgr.cleanup(&self.project);
                     self.status_message = format!("Proje kaydedildi: {:?}", path);
                     true
@@ -993,6 +1008,7 @@ impl TrimApp {
     pub fn reset_to_new_project(&mut self) {
         self.project = Project::default();
         self.undo_stack.clear();
+        self.last_saved_undo_len = 0;
         self.canvas_state.selected_clip_pairs.clear();
         self.current_time = 0.0;
         self.media_bin_textures.clear();
@@ -1007,6 +1023,25 @@ impl TrimApp {
         self.target_video_track = self.project.timeline.get_video_tracks().iter().find(|t| t.name == "V1").map(|t| t.id.clone()).unwrap_or_default();
         self.target_audio_track = self.project.timeline.get_audio_tracks().iter().find(|t| t.name == "A1").map(|t| t.id.clone()).unwrap_or_default();
         self.status_message = "Yeni boş proje oluşturuldu".to_string();
+    }
+
+    /// Determines whether the project has any unsaved modifications, clips, media, or undo steps.
+    pub fn has_unsaved_changes(&self) -> bool {
+        if self.project.is_dirty {
+            return true;
+        }
+        if self.undo_stack.len() != self.last_saved_undo_len {
+            return true;
+        }
+        if self.project.file_path.is_none() {
+            let has_media = !self.project.media_pool.is_empty();
+            let has_clips = self.project.timeline.tracks.iter().any(|t| !t.clips.is_empty());
+            let has_markers = !self.project.timeline.markers.is_empty();
+            if has_media || has_clips || has_markers {
+                return true;
+            }
+        }
+        false
     }
 
     pub fn delete_selected_clips(&mut self) {
@@ -1450,7 +1485,7 @@ impl TrimApp {
         if let Some(act) = p_act {
             match act {
                 MonitorAction::NewProject => {
-                    if self.project.is_dirty {
+                    if self.has_unsaved_changes() {
                         let name = self.project.settings.name.clone();
                         self.close_confirm_dialog.prompt(PendingCloseAction::NewProject, name);
                     } else {
@@ -1458,7 +1493,7 @@ impl TrimApp {
                     }
                 }
                 MonitorAction::OpenProject => {
-                    if self.project.is_dirty {
+                    if self.has_unsaved_changes() {
                         let name = self.project.settings.name.clone();
                         self.close_confirm_dialog.prompt(PendingCloseAction::OpenProject, name);
                     } else {
@@ -1483,6 +1518,7 @@ impl TrimApp {
                 }
                 MonitorAction::SetAspectRatio(r) => {
                     self.project.timeline.set_aspect_ratio(r);
+                    self.project.mark_dirty();
                     self.status_message = format!("Format Değiştirildi: {}", r.label());
                 }
                 _ => {}
@@ -1494,10 +1530,14 @@ impl TrimApp {
 impl eframe::App for TrimApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Intercept window close request if there are unsaved changes
-        if ctx.input(|i| i.viewport().close_requested()) && !self.confirmed_exit && self.project.is_dirty {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            let name = self.project.settings.name.clone();
-            self.close_confirm_dialog.prompt(PendingCloseAction::ExitApp, name);
+        if ctx.input(|i| i.viewport().close_requested()) && !self.confirmed_exit {
+            if self.has_unsaved_changes() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                let name = self.project.settings.name.clone();
+                self.close_confirm_dialog.prompt(PendingCloseAction::ExitApp, name);
+            } else {
+                self.confirmed_exit = true;
+            }
         }
 
         self.update_playback_tick();
@@ -1601,10 +1641,12 @@ impl eframe::App for TrimApp {
                     let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
                     let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
                     split_at_playhead(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                    self.project.mark_dirty();
                 } else if i.modifiers.ctrl && (i.key_pressed(Key::Backslash) || i.key_pressed(Key::B)) && self.shortcut_profile == ShortcutProfile::DaVinciResolve {
                     let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
                     let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
                     split_at_playhead(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                    self.project.mark_dirty();
                 } else if i.key_pressed(Key::V) && !i.modifiers.ctrl && self.shortcut_profile != ShortcutProfile::DaVinciResolve {
                     self.current_edit_tool = EditTool::Select;
                 } else if i.key_pressed(Key::A) && !i.modifiers.ctrl {
@@ -1627,14 +1669,17 @@ impl eframe::App for TrimApp {
                     let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
                     let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
                     split_at_playhead(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                    self.project.mark_dirty();
                 } else if i.key_pressed(Key::Q) && !i.modifiers.ctrl {
                     let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
                     let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
                     ripple_trim_head(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                    self.project.mark_dirty();
                 } else if i.key_pressed(Key::W) && !i.modifiers.ctrl {
                     let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
                     let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
                     ripple_trim_tail(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                    self.project.mark_dirty();
                 } else if i.key_pressed(Key::M) && !i.modifiers.ctrl {
                     self.add_or_toggle_marker();
                 } else if i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace) {
@@ -1647,6 +1692,7 @@ impl eframe::App for TrimApp {
                                 let cmd = Box::new(RippleDeleteCommand::new(tr_id, cl_id));
                                 let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                 self.canvas_state.selected_clip_pairs.clear();
+                                self.project.mark_dirty();
                             } else {
                                 self.status_message = "Kilitli kanaldaki klip silinemez".to_string();
                             }
@@ -1661,6 +1707,7 @@ impl eframe::App for TrimApp {
                             let cmd = Box::new(RemoveMultipleClipsCommand::new(unlocked_pairs));
                             let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                             self.canvas_state.selected_clip_pairs.clear();
+                            self.project.mark_dirty();
                         } else {
                             self.status_message = "Kilitli kanaldaki klipler silinemez".to_string();
                         }
@@ -1710,21 +1757,21 @@ impl eframe::App for TrimApp {
                 } else if i.modifiers.ctrl && i.key_pressed(Key::S) {
                     self.save_project_dialog();
                 } else if i.modifiers.ctrl && i.key_pressed(Key::O) {
-                    if self.project.is_dirty {
+                    if self.has_unsaved_changes() {
                         let name = self.project.settings.name.clone();
                         self.close_confirm_dialog.prompt(PendingCloseAction::OpenProject, name);
                     } else {
                         self.open_project_dialog();
                     }
                 } else if i.modifiers.ctrl && i.key_pressed(Key::N) {
-                    if self.project.is_dirty {
+                    if self.has_unsaved_changes() {
                         let name = self.project.settings.name.clone();
                         self.close_confirm_dialog.prompt(PendingCloseAction::NewProject, name);
                     } else {
                         self.reset_to_new_project();
                     }
                 } else if i.modifiers.ctrl && i.key_pressed(Key::Q) {
-                    if self.project.is_dirty && !self.confirmed_exit {
+                    if self.has_unsaved_changes() && !self.confirmed_exit {
                         let name = self.project.settings.name.clone();
                         self.close_confirm_dialog.prompt(PendingCloseAction::ExitApp, name);
                     } else {
@@ -1761,7 +1808,7 @@ impl eframe::App for TrimApp {
                         ui.close_menu();
                     }
                     if ui.button("Yeni Boş Proje (Ctrl+N)").clicked() {
-                        if self.project.is_dirty {
+                        if self.has_unsaved_changes() {
                             let name = self.project.settings.name.clone();
                             self.close_confirm_dialog.prompt(PendingCloseAction::NewProject, name);
                         } else {
@@ -1770,7 +1817,7 @@ impl eframe::App for TrimApp {
                         ui.close_menu();
                     }
                     if ui.button("Proje Aç... (Ctrl+O)").clicked() {
-                        if self.project.is_dirty {
+                        if self.has_unsaved_changes() {
                             let name = self.project.settings.name.clone();
                             self.close_confirm_dialog.prompt(PendingCloseAction::OpenProject, name);
                         } else {
@@ -1818,7 +1865,7 @@ impl eframe::App for TrimApp {
                     }
                     ui.separator();
                     if ui.button("Çıkış (Ctrl+Q)").clicked() {
-                        if self.project.is_dirty && !self.confirmed_exit {
+                        if self.has_unsaved_changes() && !self.confirmed_exit {
                             let name = self.project.settings.name.clone();
                             self.close_confirm_dialog.prompt(PendingCloseAction::ExitApp, name);
                         } else {
@@ -2026,7 +2073,7 @@ impl eframe::App for TrimApp {
                         self.show_source_monitor = !self.show_source_monitor;
                     }
 
-                    let dirty_str = if self.project.is_dirty { " *" } else { "" };
+                    let dirty_str = if self.has_unsaved_changes() { " *" } else { "" };
                     let title_text = format!("{} - triM Proje{}", self.project.settings.name, dirty_str);
                     ui.label(RichText::new(title_text).size(11.5).color(Color32::from_rgb(0x90, 0x90, 0xa4)));
                 });
@@ -2038,7 +2085,7 @@ impl eframe::App for TrimApp {
         // -------------------------------------------------------------
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let dirty = if self.project.is_dirty { " *" } else { "" };
+                let dirty = if self.has_unsaved_changes() { " *" } else { "" };
                 ui.label(RichText::new(format!(
                     "Proje: {}{} | Sekans: {}x{} @ {:.0}fps | {}",
                     self.project.settings.name,
@@ -2198,16 +2245,19 @@ impl eframe::App for TrimApp {
                                     TrackHeaderAction::ToggleMute => {
                                         if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
                                             t.muted = !t.muted;
+                                            self.project.mark_dirty();
                                         }
                                     }
                                     TrackHeaderAction::ToggleSolo => {
                                         if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
                                             t.solo = !t.solo;
+                                            self.project.mark_dirty();
                                         }
                                     }
                                     TrackHeaderAction::ToggleLock => {
                                         if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
                                             t.locked = !t.locked;
+                                            self.project.mark_dirty();
                                         }
                                     }
                                     TrackHeaderAction::TogglePatchTarget => {
@@ -2233,6 +2283,7 @@ impl eframe::App for TrimApp {
                                     TrackHeaderAction::VolumeChanged(vol) => {
                                         if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
                                             t.volume = vol;
+                                            self.project.mark_dirty();
                                         }
                                     }
                                     TrackHeaderAction::ResizeTrack(new_h) => {
@@ -2339,6 +2390,7 @@ impl eframe::App for TrimApp {
                                             let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
                                             let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
                                             split_at_playhead(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                                            self.project.mark_dirty();
                                         }
                                         CanvasAction::RazorCut { track_id, clip_id, cut_time } => {
                                             let cmd = Box::new(SplitClipCommand::new(track_id, clip_id, cut_time));
@@ -2719,6 +2771,7 @@ impl eframe::App for TrimApp {
                                     let new_track = trim_core::track::Track::new(&new_track_name, trim_core::track::TrackType::Video);
                                     let new_id = new_track.id.clone();
                                     let _ = self.undo_stack.push(Box::new(AddTrackCommand::new(new_track, 0)), &mut self.project.timeline);
+                                    self.project.mark_dirty();
                                     self.status_message = format!("Üst video kanalı otomatik oluşturuldu: {}", new_track_name);
                                     new_id
                                 }
@@ -2836,7 +2889,7 @@ impl eframe::App for TrimApp {
         if let Some(act) = self.welcome_dialog.show(ctx) {
             match act {
                 WelcomeAction::CreateNewProject { name, width, height, fps } => {
-                    if self.project.is_dirty {
+                    if self.has_unsaved_changes() {
                         let current_name = self.project.settings.name.clone();
                         self.close_confirm_dialog.prompt(PendingCloseAction::NewProject, current_name);
                         self.welcome_dialog.close();
@@ -2851,7 +2904,7 @@ impl eframe::App for TrimApp {
                     }
                 }
                 WelcomeAction::OpenProjectRequested => {
-                    if self.project.is_dirty {
+                    if self.has_unsaved_changes() {
                         let name = self.project.settings.name.clone();
                         self.close_confirm_dialog.prompt(PendingCloseAction::OpenProject, name);
                         self.welcome_dialog.close();
@@ -2861,7 +2914,7 @@ impl eframe::App for TrimApp {
                     }
                 }
                 WelcomeAction::OpenRecentProject(path) => {
-                    if self.project.is_dirty {
+                    if self.has_unsaved_changes() {
                         let name = self.project.settings.name.clone();
                         self.close_confirm_dialog.prompt(PendingCloseAction::OpenPath(PathBuf::from(path)), name);
                         self.welcome_dialog.close();
@@ -2896,6 +2949,7 @@ impl eframe::App for TrimApp {
                 }
                 CloseConfirmAction::DiscardAndProceed(pending) => {
                     self.project.is_dirty = false;
+                    self.last_saved_undo_len = self.undo_stack.len();
                     match pending {
                         PendingCloseAction::ExitApp => {
                             self.confirmed_exit = true;

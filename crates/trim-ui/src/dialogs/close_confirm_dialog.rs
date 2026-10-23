@@ -56,11 +56,15 @@ impl CloseConfirmDialog {
             PendingCloseAction::OpenProject | PendingCloseAction::OpenPath(_) => "Farklı Proje Açmadan Önce Kaydet",
         };
 
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::new("close_confirm_backdrop")));
+        painter.rect_filled(ctx.screen_rect(), 0.0, Color32::from_black_alpha(160));
+
         Window::new(title)
             .collapsible(false)
             .resizable(false)
             .default_width(420.0)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 ui.add_space(4.0);
 
