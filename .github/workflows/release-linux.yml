@@ -150,7 +150,7 @@ jobs:
         run: |
           $ver = "${{ github.ref_name }}"
           if ([string]::IsNullOrEmpty($ver) -or $ver -notlike "v*") {
-            $ver = "v0.6.0"
+            $ver = "v1.0.0"
           }
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           $stage = Join-Path $env:TEMP "trim-stage"

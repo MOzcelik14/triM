@@ -13,7 +13,7 @@
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-2021%20edition-orange.svg?style=flat-square" alt="Rust 2021"></a>
   <a href="https://github.com/emilk/egui"><img src="https://img.shields.io/badge/GUI-egui%20%2F%20eframe-blueviolet.svg?style=flat-square" alt="GUI: egui / eframe"></a>
   <a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/media-FFmpeg%206.0+-007808.svg?style=flat-square" alt="FFmpeg 6.0+"></a>
-  <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.6.0"><img src="https://img.shields.io/badge/release-v0.6.0-E07A38.svg?style=flat-square" alt="Release v0.6.0"></a>
+  <a href="https://github.com/MOzcelik14/triM/releases/tag/v1.0.0"><img src="https://img.shields.io/badge/release-v1.0.0-E07A38.svg?style=flat-square" alt="Release v1.0.0"></a>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows-28282E.svg?style=flat-square" alt="Linux | Windows">
 </p>
 
@@ -33,6 +33,10 @@ Engineered with a modular Cargo workspace architecture, **triM.** delivers preci
 ### Highlights
 
 - **100% Rust & Native Desktop:** Zero Electron, zero Python dependencies. Instant startup and deterministic memory safety (Linux & Windows).
+- **Interactive On-Screen Type Tool (T) & Timeline Title Clips:** Click anywhere on the Program Monitor preview to place typography, drag to reposition, type in real time, and automatically generate dedicated layered clips on the timeline.
+- **Interoperability (CMX 3600 EDL & Final Cut Pro XML):** Export sequences directly into DaVinci Resolve, Adobe Premiere Pro, or Final Cut Pro with exact frame timing and cut retention.
+- **3-Point Color Wheels & Chroma Key:** Interactive vector color wheels for Lift (Shadows), Gamma (Midtones), and Gain (Highlights) plus Euclidean green/blue screen removal with edge feathering.
+- **Ken Burns Motion Presets:** Instant Zoom In, Zoom Out, Pan Left/Right, and Dramatic Zoom animations with smooth cubic Ease-In-Out keyframing.
 - **Subtitle Suite (.SRT / .VTT) & Smart Scene Detection:** Full bidirectional subtitle import/export with lower-third auto-generation, and FFmpeg scene-detection auto-cut (`gt(scene, 0.3)`) to slice clips automatically at visual cuts.
 - **3D LUT Support & Cinematic Color Presets:** External `.cube` 3D LUT loading and built-in cinematic presets (Teal & Orange, Vintage Film, Monochrome Noir, Cyberpunk Neon) with real-time Program Monitor preview and FFmpeg filtergraph export.
 - **Live Timeline Voiceover Recorder:** One-click track microphone capture directly on audio tracks (`A1`, `A2`...) with live timer and auto-commitment to the timeline at the playhead position.
@@ -150,6 +154,10 @@ Modüler Cargo çalışma alanı mimarisi üzerine kurulan **triM.**; hassas vid
 ### Öne Çıkan Özellikler
 
 - **%100 Rust ve Yerel Masaüstü:** Sıfır Electron yükü, sıfır Python bağımlılığı. Anında açılış ve kararlı bellek yönetimi (Linux & Windows desteği).
+- **Ekran Üzerinde Canlı Metin Aracı (T) & Zaman Çizgisi Başlık Klibi:** Program Monitörü üzerinde istenilen noktaya doğrudan tıklayarak metin yerleştirme, sürükleyerek konumlandırma, canlı düzenleme ve zaman çizgisinde bağımsız katman klibi oluşturma.
+- **Birlikte Çalışabilirlik (CMX 3600 EDL & Final Cut Pro XML):** Projeyi doğrudan DaVinci Resolve, Adobe Premiere Pro veya Final Cut Pro'ya kare doğruluğunda aktarma.
+- **3-Noktalı Renk Çarkları (Lift, Gamma, Gain) & Chroma Key:** Gölgeler, orta tonlar ve açık tonlar için etkileşimli vektörel renk çarkları ve yumuşak kenar geçişli yeşil/mavi perde (Chroma Key) ayrıştırma.
+- **Ken Burns Hareket Hazır Ayarları (Pan & Zoom):** Yumuşak Ease-In-Out anahtar kare enterpolasyonuyla tek tıkla Yakınlaşma (Zoom In), Uzaklaşma (Zoom Out) ve Kayma (Pan Left/Right).
 - **Altyazı Süiti (.SRT / .VTT) & Akıllı Sahne Algılama:** Çift yönlü altyazı içe/dışa aktarımı, otomatik lower-third klip üretimi ve FFmpeg sahne analizi (`scene > 0.3`) ile videodaki görsel kesim noktalarından otomatik jiletleme.
 - **3D LUT Desteği & Sinematik Renk Profilleri:** Harici `.cube` 3D LUT yükleme ve yerleşik sinematik hazır ayarlar (Teal & Orange, Vintage Film, Monochrome Noir, Cyberpunk Neon) ile Program Monitöründe canlı önizleme ve FFmpeg export.
 - **Canlı Zaman Çizgisi Ses Kaydedicisi (Voiceover):** Ses izleri (`A1`, `A2`...) üzerinde tek tıkla stüdyo kalitesinde mikrofon kaydı, canlı sayaç rozeti ve durdurulduğunda oynatma kafası konumuna otomatik klip yerleşimi.

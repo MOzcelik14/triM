@@ -26,6 +26,11 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.0.0" date="2026-10-23">
+      <description>
+        <p>triM. v1.0.0 is the first major production milestone! Featuring a complete native non-linear video editing workflow: interactive on-screen Type tool (T) with real-time viewport text placement and automatic timeline clip generation, multi-NLE keyboard shortcut profiles (triM., Adobe Premiere Pro, DaVinci Resolve), CMX 3600 EDL and Final Cut Pro XML sequence interoperability, 3-point interactive Color Wheels (Lift, Gamma, Gain), real-time Chroma Key green screen compositor, Ken Burns Pan &amp; Zoom motion presets, Subtitle Suite (.SRT/.VTT), Smart Scene Detection, timeline voiceover recording, 4K Smart Proxy workflow, and GPU-accelerated export.</p>
+      </description>
+    </release>
     <release version="0.6.0" date="2026-10-23">
       <description>
         <p>triM. v0.6.0 adds Subtitle Suite (.SRT/.VTT) import and export, Smart Scene Detection auto-cut using FFmpeg scene score, 3D LUT support (.cube) with cinematic color grading presets (Teal &amp; Orange, Vintage Film, Monochrome Noir, Cyberpunk Neon), Live Timeline Voiceover recording directly on audio tracks, Smart Proxy workflow for smooth 4K/UHD playback, and dynamic Keyboard Shortcut Profiles (triM. Default, Adobe Premiere Pro, DaVinci Resolve).</p>
