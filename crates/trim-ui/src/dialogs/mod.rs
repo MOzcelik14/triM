@@ -5,6 +5,7 @@ pub mod close_confirm_dialog;
 pub mod export_dialog;
 pub mod recovery_dialog;
 pub mod shortcuts_dialog;
+pub mod silence_dialog;
 pub mod speed_dialog;
 pub mod title_dialog;
 pub mod welcome_dialog;
@@ -14,6 +15,7 @@ pub use close_confirm_dialog::{CloseConfirmAction, CloseConfirmDialog, PendingCl
 pub use export_dialog::{ExportDialog, ExportDialogAction};
 pub use recovery_dialog::{RecoveryAction, RecoveryDialog};
 pub use shortcuts_dialog::ShortcutsDialog;
+pub use silence_dialog::{SilenceDialog, SilenceDialogAction};
 pub use speed_dialog::{SpeedDialog, SpeedDialogAction};
 pub use title_dialog::{TitleDialog, TitleDialogAction, TitlePosition};
 pub use welcome_dialog::{WelcomeAction, WelcomeDialog};

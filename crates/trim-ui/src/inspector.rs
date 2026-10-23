@@ -9,6 +9,7 @@ pub enum InspectorAction {
     ClipModified,
     ChangeSpeed(f64, bool),
     TriggerSceneDetect,
+    TriggerSilenceDetect,
     ImportSubtitles,
     ExportSubtitles,
 }
@@ -247,6 +248,9 @@ fn render_speed_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
             ui.add_space(4.0);
             if ui.button(RichText::new("🎬 Sahneleri Algıla ve Böl (Smart Cut)").size(11.0).color(egui::Color32::from_rgb(0xe0, 0x7a, 0x38))).clicked() {
                 *action = Some(InspectorAction::TriggerSceneDetect);
+            }
+            if ui.button(RichText::new("⚡ Sessizlikleri Otomatik Kes (Jump-Cut)").size(11.0).color(egui::Color32::from_rgb(0x50, 0xc8, 0x78))).clicked() {
+                *action = Some(InspectorAction::TriggerSilenceDetect);
             }
         }
     });

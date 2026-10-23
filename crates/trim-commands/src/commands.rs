@@ -1148,3 +1148,220 @@ impl Command for ChangeClipSpeedCommand {
         "Hız ve Yön Değiştir"
     }
 }
+
+// -----------------------------------------------------------------------------
+// 15. AutoSilenceCutCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct AutoSilenceCutCommand {
+    pub track_id: String,
+    pub original_clip_id: String,
+    pub speech_intervals: Vec<(f64, f64)>, // (source_in, source_out) in seconds
+    pub original_clip: Option<Clip>,
+    pub generated_clips: Vec<Clip>,
+    pub shift_amount: f64,
+}
+
+impl AutoSilenceCutCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        speech_intervals: Vec<(f64, f64)>,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            original_clip_id: clip_id.into(),
+            speech_intervals,
+            original_clip: None,
+            generated_clips: Vec::new(),
+            shift_amount: 0.0,
+        }
+    }
+}
+
+impl Command for AutoSilenceCutCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+
+        let orig = track
+            .remove_clip(&self.original_clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.original_clip_id.clone()))?;
+
+        let old_end_tl = orig.timeline_out;
+        let mut current_tl = orig.timeline_in;
+        let mut new_clips = Vec::new();
+
+        for &(sp_in, sp_out) in &self.speech_intervals {
+            let src_span = (sp_out - sp_in).max(0.04);
+            let tl_dur = src_span / orig.speed.max(0.1);
+            let mut sub = orig.clone();
+            sub.id = uuid::Uuid::new_v4().to_string();
+            sub.source_in = sp_in;
+            sub.source_out = Some(sp_out);
+            sub.timeline_in = current_tl;
+            sub.timeline_out = current_tl + tl_dur;
+            current_tl += tl_dur;
+            track.add_clip(sub.clone());
+            new_clips.push(sub);
+        }
+
+        let new_end_tl = current_tl;
+        let shift = (old_end_tl - new_end_tl).max(0.0);
+        self.shift_amount = shift;
+
+        if shift > 1e-4 {
+            for c in &mut track.clips {
+                if c.timeline_in >= old_end_tl - 1e-4 {
+                    c.move_to((c.timeline_in - shift).max(0.0));
+                }
+            }
+        }
+
+        track.sort_clips();
+        self.original_clip = Some(orig);
+        self.generated_clips = new_clips;
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+
+        // Remove generated clips
+        for c in &self.generated_clips {
+            track.remove_clip(&c.id);
+        }
+
+        // Shift subsequent clips back right
+        if self.shift_amount > 1e-4 {
+            if let Some(orig) = &self.original_clip {
+                let shifted_boundary = orig.timeline_out - self.shift_amount;
+                for c in &mut track.clips {
+                    if c.timeline_in >= shifted_boundary - 1e-4 {
+                        c.move_to(c.timeline_in + self.shift_amount);
+                    }
+                }
+            }
+        }
+
+        // Restore original clip
+        if let Some(orig) = self.original_clip.take() {
+            track.add_clip(orig);
+        }
+
+        track.sort_clips();
+        self.generated_clips.clear();
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Sessizlikleri Otomatik Kes (Jump-Cut)"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 16. LinkClipsCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct LinkClipsCommand {
+    pub clip_pairs: Vec<(String, String)>, // (track_id, clip_id)
+    pub previous_group_ids: Vec<Option<String>>,
+    pub new_group_id: String,
+}
+
+impl LinkClipsCommand {
+    pub fn new(clip_pairs: Vec<(String, String)>) -> Self {
+        let new_group_id = uuid::Uuid::new_v4().to_string();
+        Self {
+            clip_pairs,
+            previous_group_ids: Vec::new(),
+            new_group_id,
+        }
+    }
+}
+
+impl Command for LinkClipsCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        self.previous_group_ids.clear();
+        for (tr_id, cl_id) in &self.clip_pairs {
+            let track = timeline
+                .get_track_by_id_mut(tr_id)
+                .ok_or_else(|| CommandError::TrackNotFound(tr_id.clone()))?;
+            let clip = track
+                .get_clip_by_id_mut(cl_id)
+                .ok_or_else(|| CommandError::ClipNotFound(cl_id.clone()))?;
+            self.previous_group_ids.push(clip.linked_group_id.clone());
+            clip.linked_group_id = Some(self.new_group_id.clone());
+        }
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        for ((tr_id, cl_id), old_gid) in self.clip_pairs.iter().zip(self.previous_group_ids.iter()) {
+            if let Some(track) = timeline.get_track_by_id_mut(tr_id) {
+                if let Some(clip) = track.get_clip_by_id_mut(cl_id) {
+                    clip.linked_group_id = old_gid.clone();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Klipleri Bağla (Link)"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 17. UnlinkClipsCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct UnlinkClipsCommand {
+    pub clip_pairs: Vec<(String, String)>, // (track_id, clip_id)
+    pub previous_group_ids: Vec<Option<String>>,
+}
+
+impl UnlinkClipsCommand {
+    pub fn new(clip_pairs: Vec<(String, String)>) -> Self {
+        Self {
+            clip_pairs,
+            previous_group_ids: Vec::new(),
+        }
+    }
+}
+
+impl Command for UnlinkClipsCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        self.previous_group_ids.clear();
+        for (tr_id, cl_id) in &self.clip_pairs {
+            let track = timeline
+                .get_track_by_id_mut(tr_id)
+                .ok_or_else(|| CommandError::TrackNotFound(tr_id.clone()))?;
+            let clip = track
+                .get_clip_by_id_mut(cl_id)
+                .ok_or_else(|| CommandError::ClipNotFound(cl_id.clone()))?;
+            self.previous_group_ids.push(clip.linked_group_id.clone());
+            clip.linked_group_id = None;
+        }
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        for ((tr_id, cl_id), old_gid) in self.clip_pairs.iter().zip(self.previous_group_ids.iter()) {
+            if let Some(track) = timeline.get_track_by_id_mut(tr_id) {
+                if let Some(clip) = track.get_clip_by_id_mut(cl_id) {
+                    clip.linked_group_id = old_gid.clone();
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Klip Bağını Kaldır (Unlink)"
+    }
+}
+

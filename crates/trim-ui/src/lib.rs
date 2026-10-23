@@ -225,7 +225,51 @@ mod tests {
         proj.mark_dirty();
         assert!(proj.is_dirty);
     }
+
+    #[test]
+    fn test_silence_dialog_lifecycle() {
+        use dialogs::SilenceDialog;
+        let mut dlg = SilenceDialog::default();
+        assert!(!dlg.is_open);
+
+        dlg.open("v1", "c1", "My Voice Clip", 14.5);
+        assert!(dlg.is_open);
+        assert_eq!(dlg.track_id, "v1");
+        assert_eq!(dlg.clip_id, "c1");
+        assert_eq!(dlg.clip_name, "My Voice Clip");
+        assert_eq!(dlg.clip_duration, 14.5);
+
+        // Simulate analysis output
+        let silences = vec![(2.0, 4.5), (8.0, 10.0)];
+        let speech = vec![(0.0, 2.0), (4.5, 8.0), (10.0, 14.5)];
+        dlg.set_analysis_results(silences, speech.clone());
+
+        assert_eq!(dlg.detected_silence_count, Some(2));
+        assert!((dlg.total_silence_duration.unwrap() - 4.5).abs() < 1e-3);
+        assert_eq!(dlg.speech_intervals, Some(speech));
+
+        dlg.close();
+        assert!(!dlg.is_open);
+    }
+
+    #[test]
+    fn test_clip_linking_and_transitions_defaults() {
+        use trim_core::clip::Clip;
+        let mut c = Clip::new("m1", 0.0, 6.0);
+        assert!(c.linked_group_id.is_none());
+        assert!(c.transition_in.is_none());
+        assert!(c.transition_out.is_none());
+
+        c.linked_group_id = Some("grp-123".to_string());
+        c.transition_in = Some("cross_dissolve".to_string());
+        c.transition_out = Some("dip_black".to_string());
+
+        assert_eq!(c.linked_group_id.as_deref(), Some("grp-123"));
+        assert_eq!(c.transition_in.as_deref(), Some("cross_dissolve"));
+        assert_eq!(c.transition_out.as_deref(), Some("dip_black"));
+    }
 }
+
 
 
 

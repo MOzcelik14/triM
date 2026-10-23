@@ -317,6 +317,20 @@ pub fn render_timeline_canvas(
                 Color32::from_rgba_premultiplied(255, 255, 255, 20),
             );
 
+            // Visual transition bands (Cross dissolve, dip, slide etc.)
+            if clip.transition_in.is_some() {
+                let trans_w = ((clip.fade_in.max(0.5) as f32) * state.pixels_per_second).clamp(8.0, (clip_rect.width() * 0.45).max(8.0));
+                let trans_rect = Rect::from_min_size(clip_rect.left_top(), Vec2::new(trans_w, clip_rect.height()));
+                painter.rect_filled(trans_rect, 2.0, Color32::from_rgba_premultiplied(0x9b, 0x59, 0xb6, 55));
+                painter.line_segment([trans_rect.left_bottom(), trans_rect.right_top()], Stroke::new(1.0_f32, Color32::from_rgb(0xc3, 0x9b, 0xd3)));
+            }
+            if clip.transition_out.is_some() {
+                let trans_w = ((clip.fade_out.max(0.5) as f32) * state.pixels_per_second).clamp(8.0, (clip_rect.width() * 0.45).max(8.0));
+                let trans_rect = Rect::from_min_size(Pos2::new(clip_rect.right() - trans_w, clip_rect.top()), Vec2::new(trans_w, clip_rect.height()));
+                painter.rect_filled(trans_rect, 2.0, Color32::from_rgba_premultiplied(0x9b, 0x59, 0xb6, 55));
+                painter.line_segment([trans_rect.left_top(), trans_rect.right_bottom()], Stroke::new(1.0_f32, Color32::from_rgb(0xc3, 0x9b, 0xd3)));
+            }
+
             // Clip text & badges
             let speed_badge = if (clip.speed - 1.0).abs() > 0.01 || clip.reverse {
                 let mut p = Vec::new();
@@ -333,7 +347,14 @@ pub fn render_timeline_canvas(
 
             let kf_badge = if clip.has_keyframes(None) { " *" } else { "" };
             let lock_badge = if track.locked { " [K]" } else { "" };
-            let title_str = format!("{}{}  [{:.2}s]{}{}", clip.name, lock_badge, clip.duration(), speed_badge, kf_badge);
+            let link_badge = if clip.linked_group_id.is_some() { " 🔗" } else { "" };
+            let trans_badge = match (clip.transition_in.as_deref(), clip.transition_out.as_deref()) {
+                (Some(_), Some(_)) => " ⧗⧗",
+                (Some(_), None) => " ⧗-",
+                (None, Some(_)) => " -⧗",
+                (None, None) => "",
+            };
+            let title_str = format!("{}{}{}{}{}  [{:.2}s]{}", clip.name, lock_badge, link_badge, trans_badge, kf_badge, clip.duration(), speed_badge);
 
             painter.text(
                 Pos2::new(clip_rect.left() + 10.0, clip_rect.top() + 6.0),
@@ -342,6 +363,33 @@ pub fn render_timeline_canvas(
                 egui::FontId::proportional(11.0),
                 Color32::WHITE,
             );
+
+            // Sync offset badge for linked clips
+            if let Some(ref gid) = clip.linked_group_id {
+                let companion_in = project.timeline.tracks.iter()
+                    .filter(|t| t.id != track.id)
+                    .find_map(|t| t.clips.iter().find(|c| c.linked_group_id.as_ref() == Some(gid)))
+                    .map(|c| c.timeline_in);
+
+                if let Some(comp_in) = companion_in {
+                    let sync_diff = clip.timeline_in - comp_in;
+                    if sync_diff.abs() > 0.03 && clip_rect.width() > 65.0 {
+                        let sync_str = format!("{:+0.2}s", sync_diff);
+                        let badge_rect = Rect::from_min_size(
+                            Pos2::new(clip_rect.right() - 48.0, clip_rect.top() + 4.0),
+                            Vec2::new(42.0, 14.0),
+                        );
+                        painter.rect_filled(badge_rect, 3.0, Color32::from_rgb(0xdc, 0x35, 0x45));
+                        painter.text(
+                            badge_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            sync_str,
+                            egui::FontId::proportional(9.5),
+                            Color32::WHITE,
+                        );
+                    }
+                }
+            }
 
             // Keyframe diamonds along the bottom of the clip
             if clip.has_keyframes(None) {
@@ -625,7 +673,24 @@ pub fn render_timeline_canvas(
                         state.selected_clip_pairs.push(pair.clone());
                     }
                 } else if !state.selected_clip_pairs.contains(&pair) {
-                    state.selected_clip_pairs = vec![pair.clone()];
+                    let is_alt = ui.input(|i| i.modifiers.alt);
+                    let mut linked_pairs = vec![pair.clone()];
+                    if !is_alt {
+                        if let Some(tr) = project.timeline.get_track_by_id(&tr_id) {
+                            if let Some(cl) = tr.get_clip_by_id(&cl_id) {
+                                if let Some(ref gid) = cl.linked_group_id {
+                                    for t in &project.timeline.tracks {
+                                        for c in &t.clips {
+                                            if c.linked_group_id.as_ref() == Some(gid) && (t.id != tr_id || c.id != cl_id) {
+                                                linked_pairs.push((t.id.clone(), c.id.clone()));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    state.selected_clip_pairs = linked_pairs;
                     action = Some(CanvasAction::SelectClip(tr_id.clone(), cl_id.clone()));
                 }
 

@@ -326,4 +326,97 @@ mod tests {
         assert_eq!(tl.tracks[0].clips[0].timeline_in, 0.0);
         assert_eq!(tl.tracks[0].clips[0].timeline_out, 10.0);
     }
+
+    #[test]
+    fn test_auto_silence_cut_command() {
+        let mut tl = TimelineModel::default();
+        let mut stack = UndoStack::new();
+
+        let track_id = tl.tracks[0].id.clone();
+        let clip = Clip::new("speech_media", 0.0, 10.0);
+        let clip_id = clip.id.clone();
+        tl.tracks[0].add_clip(clip);
+
+        // Subsequent clip at 12.0
+        let next_clip = Clip::new("other_media", 12.0, 15.0);
+        let next_id = next_clip.id.clone();
+        tl.tracks[0].add_clip(next_clip);
+
+        // Suppose silence is between 3.0 and 6.0. Speech intervals are [0.0..3.0] and [6.0..10.0]
+        let speech_intervals = vec![(0.0, 3.0), (6.0, 10.0)];
+        let cmd = Box::new(AutoSilenceCutCommand::new(&track_id, &clip_id, speech_intervals));
+        stack.push(cmd, &mut tl).unwrap();
+
+        // Original clip of 10s replaced by 3s + 4s = 7s.
+        // Old end was 10.0, new end is 7.0, silence eliminated = 3.0s.
+        // Track now has 2 speech subclips + 1 shifted subsequent clip = 3 clips total.
+        assert_eq!(tl.tracks[0].clips.len(), 3);
+        let c0 = &tl.tracks[0].clips[0];
+        let c1 = &tl.tracks[0].clips[1];
+        let c2 = &tl.tracks[0].clips[2];
+
+        assert_eq!(c0.timeline_in, 0.0);
+        assert_eq!(c0.timeline_out, 3.0);
+        assert_eq!(c1.timeline_in, 3.0);
+        assert_eq!(c1.timeline_out, 7.0);
+
+        // next_clip shifted left by 3.0s (from 12.0 to 9.0)
+        assert_eq!(c2.id, next_id);
+        assert_eq!(c2.timeline_in, 9.0);
+        assert_eq!(c2.timeline_out, 12.0);
+
+        // Undo
+        assert!(stack.undo(&mut tl).unwrap());
+        assert_eq!(tl.tracks[0].clips.len(), 2);
+        assert_eq!(tl.tracks[0].clips[0].id, clip_id);
+        assert_eq!(tl.tracks[0].clips[0].timeline_out, 10.0);
+        assert_eq!(tl.tracks[0].clips[1].id, next_id);
+        assert_eq!(tl.tracks[0].clips[1].timeline_in, 12.0);
+    }
+
+    #[test]
+    fn test_link_unlink_clips_commands() {
+        let mut tl = TimelineModel::default();
+        let mut stack = UndoStack::new();
+
+        let v1_id = tl.tracks[0].id.clone();
+        let a1_id = tl.tracks[1].id.clone();
+
+        let c_video = Clip::new("v_media", 0.0, 5.0);
+        let c_audio = Clip::new("a_media", 0.0, 5.0);
+        let cv_id = c_video.id.clone();
+        let ca_id = c_audio.id.clone();
+
+        tl.tracks[0].add_clip(c_video);
+        tl.tracks[1].add_clip(c_audio);
+
+        // 1. Link them together
+        let pairs = vec![(v1_id.clone(), cv_id.clone()), (a1_id.clone(), ca_id.clone())];
+        let link_cmd = Box::new(LinkClipsCommand::new(pairs.clone()));
+        stack.push(link_cmd, &mut tl).unwrap();
+
+        let gid_v = tl.tracks[0].get_clip_by_id(&cv_id).unwrap().linked_group_id.clone();
+        let gid_a = tl.tracks[1].get_clip_by_id(&ca_id).unwrap().linked_group_id.clone();
+        assert!(gid_v.is_some());
+        assert_eq!(gid_v, gid_a);
+
+        // 2. Unlink them
+        let unlink_cmd = Box::new(UnlinkClipsCommand::new(pairs));
+        stack.push(unlink_cmd, &mut tl).unwrap();
+
+        assert!(tl.tracks[0].get_clip_by_id(&cv_id).unwrap().linked_group_id.is_none());
+        assert!(tl.tracks[1].get_clip_by_id(&ca_id).unwrap().linked_group_id.is_none());
+
+        // Undo Unlink
+        assert!(stack.undo(&mut tl).unwrap());
+        assert_eq!(
+            tl.tracks[0].get_clip_by_id(&cv_id).unwrap().linked_group_id,
+            tl.tracks[1].get_clip_by_id(&ca_id).unwrap().linked_group_id
+        );
+
+        // Undo Link
+        assert!(stack.undo(&mut tl).unwrap());
+        assert!(tl.tracks[0].get_clip_by_id(&cv_id).unwrap().linked_group_id.is_none());
+    }
 }
+

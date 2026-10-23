@@ -200,22 +200,34 @@ impl TimelineExporter {
         }
 
         // Fades and Transitions: regular fades dissolve to whatever is underneath.
-        // Dip-to-white fades the pixels to white.
+        // Dip-to-white / dip-to-black fades the pixels to white/black.
         // Wipe and slide transitions perform directional revealing.
-        if clip.fade_in > 0.0 {
-            let d = clip.fade_in.min(dur);
+        let eff_fade_in = if clip.transition_in.is_some() && clip.fade_in <= 0.0 {
+            0.5f64.min(dur * 0.5)
+        } else {
+            clip.fade_in
+        };
+        if eff_fade_in > 0.0 {
+            let d = eff_fade_in.min(dur);
             match clip.transition_in.as_deref() {
                 Some("dip_white") => f.push(format!("fade=t=in:st=0:d={:.4}:color=white", d)),
+                Some("dip_black") => f.push(format!("fade=t=in:st=0:d={:.4}:color=black", d)),
                 Some("wipe_left") => f.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte(X/W,min(1,T/{:.4})),alpha(X,Y),0)'", d)),
                 Some("wipe_right") => f.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(gte(X/W,max(0,1-T/{:.4})),alpha(X,Y),0)'", d)),
                 _ => f.push(format!("fade=t=in:st=0:d={:.4}:alpha=1", d)),
             }
         }
-        if clip.fade_out > 0.0 {
-            let d = clip.fade_out.min(dur);
+        let eff_fade_out = if clip.transition_out.is_some() && clip.fade_out <= 0.0 {
+            0.5f64.min(dur * 0.5)
+        } else {
+            clip.fade_out
+        };
+        if eff_fade_out > 0.0 {
+            let d = eff_fade_out.min(dur);
             let st = (dur - d).max(0.0);
             match clip.transition_out.as_deref() {
                 Some("dip_white") => f.push(format!("fade=t=out:st={:.4}:d={:.4}:color=white", st, d)),
+                Some("dip_black") => f.push(format!("fade=t=out:st={:.4}:d={:.4}:color=black", st, d)),
                 Some("wipe_left") => f.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte(X/W,max(0,1-(T-{:.4})/{:.4})),alpha(X,Y),0)'", st, d)),
                 Some("wipe_right") => f.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(gte(X/W,min(1,(T-{:.4})/{:.4})),alpha(X,Y),0)'", st, d)),
                 _ => f.push(format!("fade=t=out:st={:.4}:d={:.4}:alpha=1", st, d)),
@@ -272,17 +284,27 @@ impl TimelineExporter {
         };
 
         let mut slide_x = String::new();
-        if clip.fade_in > 0.0 {
-            let d = clip.fade_in.min(clip.duration());
+        let eff_in = if clip.transition_in.is_some() && clip.fade_in <= 0.0 {
+            0.5f64.min(clip.duration() * 0.5)
+        } else {
+            clip.fade_in
+        };
+        if eff_in > 0.0 {
+            let d = eff_in.min(clip.duration());
             if clip.transition_in.as_deref() == Some("slide_left") {
                 slide_x.push_str(&format!("+if(lt({local},{d:.4}),(1-{local}/{d:.4})*W,0)"));
             } else if clip.transition_in.as_deref() == Some("slide_right") {
                 slide_x.push_str(&format!("-if(lt({local},{d:.4}),(1-{local}/{d:.4})*W,0)"));
             }
         }
-        if clip.fade_out > 0.0 {
+        let eff_out = if clip.transition_out.is_some() && clip.fade_out <= 0.0 {
+            0.5f64.min(clip.duration() * 0.5)
+        } else {
+            clip.fade_out
+        };
+        if eff_out > 0.0 {
             let dur = clip.duration();
-            let d = clip.fade_out.min(dur);
+            let d = eff_out.min(dur);
             let st = (dur - d).max(0.0);
             if clip.transition_out.as_deref() == Some("slide_left") {
                 slide_x.push_str(&format!("-if(gt({local},{st:.4}),(({local}-{st:.4})/{d:.4})*W,0)"));

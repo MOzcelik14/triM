@@ -93,6 +93,7 @@ pub struct TrimApp {
 
     pub export_dialog: ExportDialog,
     pub speed_dialog: SpeedDialog,
+    pub silence_dialog: SilenceDialog,
     pub title_dialog: TitleDialog,
     pub recovery_dialog: RecoveryDialog,
     pub audio_mixer_dialog: AudioMixerDialog,
@@ -172,6 +173,7 @@ impl TrimApp {
             media_bin_textures: HashMap::new(),
             export_dialog: ExportDialog::default(),
             speed_dialog: SpeedDialog::default(),
+            silence_dialog: SilenceDialog::default(),
             title_dialog: TitleDialog::default(),
             recovery_dialog: RecoveryDialog::default(),
             audio_mixer_dialog: AudioMixerDialog::default(),
@@ -758,6 +760,117 @@ impl TrimApp {
                 self.status_message = format!("Sahne algılama başarısız: {}", e);
             }
         }
+    }
+
+    pub fn open_silence_cut_dialog_for_selected(&mut self) {
+        let selected = self.canvas_state.selected_clip_pairs.first().cloned();
+        let Some((tr_id, cl_id)) = selected else {
+            self.status_message = "Lütfen önce sessizlikleri kesilecek bir klip seçin".to_string();
+            return;
+        };
+
+        let clip_info = if let Some(tr) = self.project.timeline.get_track_by_id(&tr_id) {
+            tr.get_clip_by_id(&cl_id).cloned()
+        } else {
+            None
+        };
+
+        let Some(clip) = clip_info else {
+            self.status_message = "Seçili klip bulunamadı".to_string();
+            return;
+        };
+
+        let name = if !clip.name.is_empty() {
+            clip.name.clone()
+        } else if let Some(media) = self.project.get_media(&clip.media_id) {
+            media.name.clone()
+        } else {
+            "Klip".to_string()
+        };
+
+        self.silence_dialog.open(tr_id, cl_id, name, clip.duration());
+    }
+
+    pub fn detect_silence_for_dialog(&mut self, track_id: &str, clip_id: &str, noise_db: f32, min_dur: f64) {
+        let clip_info = if let Some(tr) = self.project.timeline.get_track_by_id(track_id) {
+            tr.get_clip_by_id(clip_id).cloned()
+        } else {
+            None
+        };
+        let Some(clip) = clip_info else {
+            self.silence_dialog.status_text = "Klip bulunamadı".to_string();
+            self.silence_dialog.is_analyzing = false;
+            return;
+        };
+
+        let media_path = if let Some(media) = self.project.get_media(&clip.media_id) {
+            std::path::PathBuf::from(&media.file_path)
+        } else {
+            std::path::PathBuf::from(&clip.media_id)
+        };
+
+        if !media_path.exists() {
+            self.silence_dialog.status_text = "Kaynak medya dosyası bulunamadı".to_string();
+            self.silence_dialog.is_analyzing = false;
+            return;
+        }
+
+        let source_in = clip.source_in;
+        let source_out = clip.effective_source_out();
+        let padding = self.silence_dialog.padding;
+
+        match trim_media::detect_silence_regions(&media_path, source_in, source_out, noise_db, min_dur) {
+            Ok(silences) => {
+                let speech = trim_media::calculate_speech_intervals(source_in, source_out, &silences, padding);
+                self.silence_dialog.set_analysis_results(silences, speech);
+            }
+            Err(e) => {
+                self.silence_dialog.status_text = format!("Hata: {}", e);
+                self.silence_dialog.is_analyzing = false;
+            }
+        }
+    }
+
+    pub fn toggle_link_selected_clips(&mut self) {
+        if self.canvas_state.selected_clip_pairs.len() < 2 {
+            if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first() {
+                if let Some(tr) = self.project.timeline.get_track_by_id(tr_id) {
+                    if let Some(cl) = tr.get_clip_by_id(cl_id) {
+                        if cl.linked_group_id.is_some() {
+                            let cmd = Box::new(UnlinkClipsCommand::new(vec![(tr_id.clone(), cl_id.clone())]));
+                            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                            self.status_message = "Klip bağı kaldırıldı".to_string();
+                            self.project.mark_dirty();
+                            return;
+                        }
+                    }
+                }
+            }
+            self.status_message = "Bağlamak için en az 2 klip seçin (Shift + Tık)".to_string();
+            return;
+        }
+
+        let first_pair = &self.canvas_state.selected_clip_pairs[0];
+        let first_gid = self.project.timeline.get_track_by_id(&first_pair.0)
+            .and_then(|t| t.get_clip_by_id(&first_pair.1))
+            .and_then(|c| c.linked_group_id.clone());
+
+        let all_linked = first_gid.is_some() && self.canvas_state.selected_clip_pairs.iter().all(|(tr_id, cl_id)| {
+            self.project.timeline.get_track_by_id(tr_id)
+                .and_then(|t| t.get_clip_by_id(cl_id))
+                .and_then(|c| c.linked_group_id.as_ref()) == first_gid.as_ref()
+        });
+
+        if all_linked {
+            let cmd = Box::new(UnlinkClipsCommand::new(self.canvas_state.selected_clip_pairs.clone()));
+            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+            self.status_message = "Kliplerin bağı kaldırıldı (Unlink)".to_string();
+        } else {
+            let cmd = Box::new(LinkClipsCommand::new(self.canvas_state.selected_clip_pairs.clone()));
+            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+            self.status_message = "Klipler birbirine bağlandı (Link)".to_string();
+        }
+        self.project.mark_dirty();
     }
 
     pub fn add_video_track(&mut self) {
@@ -1525,6 +1638,8 @@ impl eframe::App for TrimApp {
                         self.confirmed_exit = true;
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
+                } else if i.modifiers.ctrl && i.key_pressed(Key::L) {
+                    self.toggle_link_selected_clips();
                 } else if i.modifiers.ctrl && i.key_pressed(Key::I) {
                     self.prompt_import_media();
                 } else if i.modifiers.ctrl && (i.key_pressed(Key::E) || i.key_pressed(Key::M)) {
@@ -1649,6 +1764,15 @@ impl eframe::App for TrimApp {
                     }
                     if ui.button("Seçimi Kaldır (Ctrl+D)").clicked() {
                         self.canvas_state.selected_clip_pairs.clear();
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.button("Klipleri Bağla / Ayır (Ctrl+L)").clicked() {
+                        self.toggle_link_selected_clips();
+                        ui.close_menu();
+                    }
+                    if ui.button("Sessizlikleri Otomatik Kes (Jump-Cut)...").clicked() {
+                        self.open_silence_cut_dialog_for_selected();
                         ui.close_menu();
                     }
                     ui.separator();
@@ -2343,6 +2467,9 @@ impl eframe::App for TrimApp {
                                 InspectorAction::TriggerSceneDetect => {
                                     self.smart_scene_cut_selected_clip();
                                 }
+                                InspectorAction::TriggerSilenceDetect => {
+                                    self.open_silence_cut_dialog_for_selected();
+                                }
                                 InspectorAction::ImportSubtitles => {
                                     self.import_subtitles_dialog();
                                 }
@@ -2407,6 +2534,21 @@ impl eframe::App for TrimApp {
                 SpeedDialogAction::Apply { track_id, clip_id, speed, reverse } => {
                     let cmd = Box::new(ChangeClipSpeedCommand::new(track_id, clip_id, speed, reverse));
                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                    self.project.mark_dirty();
+                }
+            }
+        }
+
+        if let Some(act) = self.silence_dialog.show(ctx) {
+            match act {
+                SilenceDialogAction::DetectRequested { track_id, clip_id, noise_db, min_duration } => {
+                    self.detect_silence_for_dialog(&track_id, &clip_id, noise_db, min_duration);
+                }
+                SilenceDialogAction::ApplyCut { track_id, clip_id, speech_intervals } => {
+                    let cmd = Box::new(AutoSilenceCutCommand::new(track_id, clip_id, speech_intervals));
+                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                    self.canvas_state.selected_clip_pairs.clear();
+                    self.status_message = "Sessizlikler otomatik kesildi (Jump-cut uygulandı)".to_string();
                     self.project.mark_dirty();
                 }
             }

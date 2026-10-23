@@ -170,6 +170,8 @@ pub struct Clip {
     pub opacity: f64,
     #[serde(default)]
     pub keyframes: HashMap<String, Vec<Keyframe>>,
+    #[serde(default)]
+    pub linked_group_id: Option<String>,
 }
 
 fn default_speed() -> f64 {
@@ -211,6 +213,7 @@ impl Default for Clip {
             rotation: 0.0,
             opacity: 1.0,
             keyframes: HashMap::new(),
+            linked_group_id: None,
         }
     }
 }
