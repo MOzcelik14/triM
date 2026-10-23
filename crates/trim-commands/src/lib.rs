@@ -282,4 +282,39 @@ mod tests {
         assert_eq!(tl.tracks.len(), 3);
         assert_eq!(tl.tracks[0].name, "V2");
     }
+
+    #[test]
+    fn test_batch_split_clip_command() {
+        let mut tl = TimelineModel::default();
+        let mut stack = UndoStack::new();
+
+        let track_id = tl.tracks[0].id.clone();
+        let clip = Clip::new("media1", 0.0, 10.0);
+        let clip_id = clip.id.clone();
+        tl.tracks[0].add_clip(clip);
+
+        assert_eq!(tl.tracks[0].clips.len(), 1);
+
+        // Split at 2.5 and 7.0
+        let cmd = Box::new(BatchSplitClipCommand::new(&track_id, &clip_id, vec![2.5, 7.0]));
+        stack.push(cmd, &mut tl).unwrap();
+
+        // Should now have 3 clips: [0.0..2.5], [2.5..7.0], [7.0..10.0]
+        assert_eq!(tl.tracks[0].clips.len(), 3);
+        let mut sorted = tl.tracks[0].clips.clone();
+        sorted.sort_by(|a, b| a.timeline_in.partial_cmp(&b.timeline_in).unwrap());
+        assert_eq!(sorted[0].timeline_in, 0.0);
+        assert_eq!(sorted[0].timeline_out, 2.5);
+        assert_eq!(sorted[1].timeline_in, 2.5);
+        assert_eq!(sorted[1].timeline_out, 7.0);
+        assert_eq!(sorted[2].timeline_in, 7.0);
+        assert_eq!(sorted[2].timeline_out, 10.0);
+
+        // Undo -> back to 1 original clip
+        assert!(stack.undo(&mut tl).unwrap());
+        assert_eq!(tl.tracks[0].clips.len(), 1);
+        assert_eq!(tl.tracks[0].clips[0].id, clip_id);
+        assert_eq!(tl.tracks[0].clips[0].timeline_in, 0.0);
+        assert_eq!(tl.tracks[0].clips[0].timeline_out, 10.0);
+    }
 }

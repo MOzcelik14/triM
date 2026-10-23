@@ -6,6 +6,7 @@ use crate::inspector::{render_inspector_panel, InspectorAction};
 use crate::media_bin::{render_media_bin, LeftPanelTab, MediaBinAction};
 use crate::monitor::{ActiveTextOverlay, MonitorAction, MonitorMode, MonitorWidget};
 use crate::ruler::{render_time_ruler, RulerAction};
+use crate::shortcuts::ShortcutProfile;
 use crate::theme::*;
 use crate::toolbar::{render_vertical_toolbar, EditTool};
 use crate::track_header::{render_track_header, TrackHeaderAction};
@@ -30,13 +31,19 @@ use trim_core::time::seconds_to_timecode;
 use trim_export::runner::{ExportMessage, ExportRunner};
 use trim_media::{
     decode_frame_raw, generate_title_image, AudioMixer, AudioStreamPlayer, FFprobeAnalyzer,
-    ThumbnailGenerator, VideoEngine, WaveformGenerator,
+    ThumbnailGenerator, VideoEngine, VoiceoverRecorder, WaveformGenerator,
 };
 use trim_project::{bundle_project, load_project, save_project, AutosaveManager};
 use trim_timeline::{
     find_next_edit_point, find_prev_edit_point, ripple_trim_head, ripple_trim_tail,
     split_at_playhead,
 };
+
+pub struct ActiveVoiceover {
+    pub track_id: String,
+    pub start_timeline_time: f64,
+    pub recorder: VoiceoverRecorder,
+}
 
 #[derive(Default)]
 pub struct SourceMonitorState {
@@ -104,6 +111,11 @@ pub struct TrimApp {
     pub show_source_monitor: bool,
     pub show_safe_zones: bool,
     pub active_left_tab: LeftPanelTab,
+    pub active_voiceover: Option<ActiveVoiceover>,
+    pub use_proxies: bool,
+    pub shortcut_profile: ShortcutProfile,
+    pub proxy_rx: Option<Receiver<(String, Result<String, String>)>>,
+    pub proxy_generating_ids: Vec<String>,
 }
 
 impl TrimApp {
@@ -173,6 +185,11 @@ impl TrimApp {
             show_source_monitor: false,
             show_safe_zones: false,
             active_left_tab: LeftPanelTab::Project,
+            active_voiceover: None,
+            use_proxies: false,
+            shortcut_profile: ShortcutProfile::TrimDefault,
+            proxy_rx: None,
+            proxy_generating_ids: Vec::new(),
         };
 
         // Check crash recovery
@@ -202,12 +219,120 @@ impl TrimApp {
     }
 
     pub fn pause(&mut self) {
+        if self.active_voiceover.is_some() {
+            self.finish_voiceover();
+        }
         self.is_playing = false;
         self.playback_speed = 1.0;
         self.clock_start = None;
         self.video_engine.streamer.stop();
         self.audio_player.stop();
         self.vu_state.reset();
+    }
+
+    pub fn toggle_proxy(&mut self) {
+        self.use_proxies = !self.use_proxies;
+        self.video_engine.use_proxies = self.use_proxies;
+        self.video_engine.clear_cache();
+        self.last_rendered_dirty = true;
+        let state_str = if self.use_proxies { "AÇIK (720p H.264)" } else { "KAPALI (Orijinal 4K/UHD)" };
+        self.status_message = format!("⚡ Akıllı Proxy Önizleme: {}", state_str);
+    }
+
+    pub fn generate_proxy_for_media(&mut self, media_id: &str) {
+        let media = match self.project.get_media(media_id) {
+            Some(m) => m,
+            None => return,
+        };
+        if media.media_type != MediaType::Video {
+            self.status_message = "Proxy yalnızca video medyaları için oluşturulabilir.".to_string();
+            return;
+        }
+
+        let src = std::path::PathBuf::from(&media.file_path);
+        let out = trim_media::default_proxy_path_for(&src);
+
+        if out.exists() {
+            if let Some(m) = self.project.get_media_mut(media_id) {
+                m.proxy_path = Some(out.to_string_lossy().to_string());
+            }
+            self.status_message = format!("⚡ Proxy zaten mevcut: {}", out.file_name().unwrap().to_string_lossy());
+            return;
+        }
+
+        let m_id = media_id.to_string();
+        self.proxy_generating_ids.push(m_id.clone());
+        let (tx, rx) = channel();
+        self.proxy_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            let res = trim_media::generate_proxy(&src, &out);
+            let payload = res.map(|_| out.to_string_lossy().to_string());
+            let _ = tx.send((m_id, payload));
+        });
+
+        self.status_message = "⚡ 720p Proxy arka planda oluşturuluyor...".to_string();
+    }
+
+    pub fn start_voiceover(&mut self, track_id: String) {
+        if let Some(t) = self.project.timeline.get_track_by_id(&track_id) {
+            if t.locked {
+                self.status_message = "Kilitli kanala ses kaydı yapılamaz.".to_string();
+                return;
+            }
+        }
+
+        let vo_dir = trim_core::paths::cache_dir().join("voiceovers");
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let wav_path = vo_dir.join(format!("voiceover_{}.wav", timestamp));
+
+        match trim_media::VoiceoverRecorder::start(&wav_path) {
+            Ok(rec) => {
+                let start_time = self.current_time;
+                self.active_voiceover = Some(ActiveVoiceover {
+                    track_id,
+                    start_timeline_time: start_time,
+                    recorder: rec,
+                });
+                self.play();
+                self.status_message = "🔴 Canlı seslendirme kaydediliyor... Durdurmak için [⏹] veya Boşluk tuşuna basın.".to_string();
+            }
+            Err(e) => {
+                self.status_message = format!("Ses kaydı başlatılamadı: {}", e);
+            }
+        }
+    }
+
+    pub fn finish_voiceover(&mut self) {
+        let mut vo = match self.active_voiceover.take() {
+            Some(v) => v,
+            None => return,
+        };
+
+        match vo.recorder.stop() {
+            Ok(dur) => {
+                let p_str = vo.recorder.output_path().to_string_lossy().to_string();
+                let mut media_item = trim_core::media::MediaItem::new(&p_str);
+                media_item.media_type = MediaType::Audio;
+                media_item.duration = dur;
+                media_item.name = format!("Ses Kaydı ({:.1}s)", dur);
+                let media_id = media_item.id.clone();
+                self.project.add_media(media_item);
+
+                let mut clip = Clip::new(&media_id, vo.start_timeline_time, vo.start_timeline_time + dur);
+                clip.name = "Seslendirme Kaydı".to_string();
+
+                let cmd = Box::new(AddClipCommand::new(vo.track_id.clone(), clip));
+                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                self.status_message = format!("🎤 Seslendirme başarıyla kaydedildi ({:.1}s) ve kanala eklendi!", dur);
+            }
+            Err(e) => {
+                self.status_message = format!("Ses kaydı kaydedilemedi: {}", e);
+            }
+        }
     }
 
     pub fn stop(&mut self) {
@@ -452,6 +577,169 @@ impl TrimApp {
                 Err(e) => {
                     self.status_message = format!("Paketleme hatası: {}", e);
                 }
+            }
+        }
+    }
+
+    pub fn import_subtitles_dialog(&mut self) {
+        if let Some(path) = rfd::FileDialog::new()
+            .set_title("Altyazı Dosyası Seç (.srt, .vtt)")
+            .add_filter("Altyazı Dosyaları (*.srt, *.vtt)", &["srt", "vtt"])
+            .pick_file()
+        {
+            match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                    let ext = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    let parsed = if ext == "vtt" {
+                        trim_core::parse_vtt(&content)
+                    } else {
+                        trim_core::parse_srt(&content)
+                    };
+
+                    match parsed {
+                        Ok(entries) => {
+                            if entries.is_empty() {
+                                self.status_message = "Altyazı dosyasında geçerli satır bulunamadı".to_string();
+                                return;
+                            }
+                            let clips = trim_core::subtitle_entries_to_clips(&entries, 48.0);
+                            let count = clips.len();
+
+                            let target_track_id = if let Some(v_track) = self
+                                .project
+                                .timeline
+                                .tracks
+                                .iter()
+                                .find(|t| t.track_type == trim_core::track::TrackType::Video && t.name.to_lowercase().contains("altyazı"))
+                            {
+                                v_track.id.clone()
+                            } else {
+                                self.project.timeline.add_new_video_track()
+                            };
+
+                            if let Some(tr) = self.project.timeline.get_track_by_id_mut(&target_track_id) {
+                                if !tr.name.to_lowercase().contains("altyazı") {
+                                    tr.name = format!("{} (Altyazı)", tr.name);
+                                }
+                                for clip in clips {
+                                    tr.add_clip(clip);
+                                }
+                                self.project.mark_dirty();
+                                self.status_message = format!("{} adet altyazı zaman çizgisine başarıyla eklendi", count);
+                            }
+                        }
+                        Err(e) => {
+                            self.status_message = format!("Altyazı ayrıştırma hatası: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    self.status_message = format!("Dosya okunamadı: {}", e);
+                }
+            }
+        }
+    }
+
+    pub fn export_subtitles_dialog(&mut self) {
+        let mut all_clips = Vec::new();
+        for t in &self.project.timeline.tracks {
+            for c in &t.clips {
+                if c.text_overlay.as_ref().is_some_and(|txt| !txt.content.trim().is_empty()) {
+                    all_clips.push(c.clone());
+                }
+            }
+        }
+
+        if all_clips.is_empty() {
+            self.status_message = "Dışa aktarılacak metin veya altyazı klibi bulunamadı".to_string();
+            return;
+        }
+
+        let entries = trim_core::clips_to_subtitle_entries(&all_clips);
+        let srt_text = trim_core::export_srt(&entries);
+        let default_name = format!("{}_altyazi.srt", self.project.settings.name);
+
+        if let Some(path) = rfd::FileDialog::new()
+            .set_title("Altyazıları SRT Olarak Kaydet")
+            .set_file_name(&default_name)
+            .add_filter("SubRip Altyazı (*.srt)", &["srt"])
+            .save_file()
+        {
+            match std::fs::write(&path, srt_text) {
+                Ok(()) => {
+                    self.status_message = format!("{} adet altyazı dışa aktarıldı: {:?}", entries.len(), path);
+                }
+                Err(e) => {
+                    self.status_message = format!("Altyazı kayıt hatası: {}", e);
+                }
+            }
+        }
+    }
+
+    pub fn smart_scene_cut_selected_clip(&mut self) {
+        let selected = self.canvas_state.selected_clip_pairs.first().cloned();
+        let Some((tr_id, cl_id)) = selected else {
+            self.status_message = "Lütfen önce sahne tespiti yapılacak bir video klibi seçin".to_string();
+            return;
+        };
+
+        let clip_info = if let Some(tr) = self.project.timeline.get_track_by_id(&tr_id) {
+            tr.get_clip_by_id(&cl_id).cloned()
+        } else {
+            None
+        };
+
+        let Some(clip) = clip_info else {
+            self.status_message = "Seçili klip bulunamadı".to_string();
+            return;
+        };
+
+        let media_path = if let Some(media) = self.project.get_media(&clip.media_id) {
+            std::path::PathBuf::from(&media.file_path)
+        } else {
+            std::path::PathBuf::from(&clip.media_id)
+        };
+
+        if !media_path.exists() {
+            self.status_message = "Klibin kaynak video dosyası bulunamadı".to_string();
+            return;
+        }
+
+        let source_in = clip.source_in;
+        let source_out = clip.effective_source_out();
+
+        self.status_message = "Sahneler taranıyor (FFmpeg)...".to_string();
+
+        match trim_media::detect_scene_changes(&media_path, source_in, source_out, 0.40) {
+            Ok(source_cuts) => {
+                if source_cuts.is_empty() {
+                    self.status_message = "Klipte belirgin sahne geçişi algılanmadı (Eşik: 0.40)".to_string();
+                    return;
+                }
+
+                let timeline_cuts: Vec<f64> = source_cuts
+                    .iter()
+                    .map(|&s| clip.timeline_in + (s - clip.source_in) / clip.speed)
+                    .filter(|&t| t > clip.timeline_in + 0.05 && t < clip.timeline_out - 0.05)
+                    .collect();
+
+                let count = timeline_cuts.len();
+                if count == 0 {
+                    self.status_message = "Klip sınırları içinde yeni sahne kesimi bulunamadı".to_string();
+                    return;
+                }
+
+                let cmd = Box::new(trim_commands::BatchSplitClipCommand::new(&tr_id, &cl_id, timeline_cuts));
+                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                self.project.mark_dirty();
+                self.status_message = format!("Akıllı Kesim Tamamlandı: {} yeni sahne algılandı ve bölündü", count);
+            }
+            Err(e) => {
+                self.status_message = format!("Sahne algılama başarısız: {}", e);
             }
         }
     }
@@ -1019,6 +1307,28 @@ impl eframe::App for TrimApp {
             self.export_rx = None;
         }
 
+        // Check background proxy generation messages
+        if let Some(rx) = &self.proxy_rx {
+            while let Ok((m_id, res)) = rx.try_recv() {
+                self.proxy_generating_ids.retain(|id| id != &m_id);
+                match res {
+                    Ok(p_path) => {
+                        if let Some(m) = self.project.get_media_mut(&m_id) {
+                            m.proxy_path = Some(p_path);
+                        }
+                        self.status_message = "⚡ 720p Proxy başarıyla oluşturuldu!".to_string();
+                    }
+                    Err(e) => {
+                        self.status_message = format!("Proxy hatası: {}", e);
+                    }
+                }
+            }
+        }
+
+        if self.active_voiceover.is_some() {
+            ctx.request_repaint();
+        }
+
         // -------------------------------------------------------------
         // Global Keyboard Shortcuts
         // -------------------------------------------------------------
@@ -1040,15 +1350,33 @@ impl eframe::App for TrimApp {
                         self.source_state.mark_out = Some(self.source_state.current_time);
                         self.status_message = format!("Kaynak Çıkış: {:.2}s", self.source_state.current_time);
                     }
-                } else if i.key_pressed(Key::V) && !i.modifiers.ctrl {
+                } else if i.modifiers.ctrl && i.key_pressed(Key::K) && self.shortcut_profile == ShortcutProfile::PremierePro {
+                    let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
+                    let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
+                    split_at_playhead(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                } else if i.modifiers.ctrl && (i.key_pressed(Key::Backslash) || i.key_pressed(Key::B)) && self.shortcut_profile == ShortcutProfile::DaVinciResolve {
+                    let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
+                    let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
+                    split_at_playhead(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
+                } else if i.key_pressed(Key::V) && !i.modifiers.ctrl && self.shortcut_profile != ShortcutProfile::DaVinciResolve {
                     self.current_edit_tool = EditTool::Select;
+                } else if i.key_pressed(Key::A) && !i.modifiers.ctrl {
+                    if self.shortcut_profile == ShortcutProfile::DaVinciResolve {
+                        self.current_edit_tool = EditTool::Select;
+                    } else {
+                        self.current_edit_tool = EditTool::TrackSelect;
+                    }
+                } else if i.key_pressed(Key::B) && !i.modifiers.ctrl {
+                    if self.shortcut_profile == ShortcutProfile::DaVinciResolve {
+                        self.current_edit_tool = EditTool::Razor;
+                    } else {
+                        self.current_edit_tool = EditTool::Ripple;
+                    }
+                } else if i.key_pressed(Key::T) && !i.modifiers.ctrl && self.shortcut_profile == ShortcutProfile::DaVinciResolve {
+                    self.current_edit_tool = EditTool::Ripple;
                 } else if i.key_pressed(Key::C) && !i.modifiers.ctrl {
                     self.current_edit_tool = EditTool::Razor;
-                } else if i.key_pressed(Key::B) && !i.modifiers.ctrl {
-                    self.current_edit_tool = EditTool::Ripple;
-                } else if i.key_pressed(Key::A) && !i.modifiers.ctrl {
-                    self.current_edit_tool = EditTool::TrackSelect;
-                } else if i.key_pressed(Key::S) && !i.modifiers.ctrl {
+                } else if i.key_pressed(Key::S) && !i.modifiers.ctrl && self.shortcut_profile == ShortcutProfile::TrimDefault {
                     let preferred_track = self.canvas_state.selected_clip_pairs.first().map(|(t, _)| t.as_str());
                     let preferred_clip = self.canvas_state.selected_clip_pairs.first().map(|(_, c)| c.as_str());
                     split_at_playhead(&mut self.project.timeline, &mut self.undo_stack, preferred_track, preferred_clip, self.current_time);
@@ -1063,7 +1391,9 @@ impl eframe::App for TrimApp {
                 } else if i.key_pressed(Key::M) && !i.modifiers.ctrl {
                     self.add_or_toggle_marker();
                 } else if i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace) {
-                    if i.modifiers.shift {
+                    let is_ripple = i.modifiers.shift
+                        || (self.shortcut_profile == ShortcutProfile::DaVinciResolve && i.key_pressed(Key::Delete));
+                    if is_ripple {
                         if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first().cloned() {
                             let is_locked = self.project.timeline.get_track_by_id(&tr_id).map(|t| t.locked).unwrap_or(false);
                             if !is_locked {
@@ -1189,6 +1519,14 @@ impl eframe::App for TrimApp {
                         self.prompt_import_media();
                         ui.close_menu();
                     }
+                    if ui.button("Altyazı Dosyası İçe Aktar (.srt, .vtt)...").clicked() {
+                        self.import_subtitles_dialog();
+                        ui.close_menu();
+                    }
+                    if ui.button("Altyazıları Dışa Aktar (.srt)...").clicked() {
+                        self.export_subtitles_dialog();
+                        ui.close_menu();
+                    }
                     if ui.button("Dışa Aktarma Stüdyosu... (Ctrl+M)").clicked() {
                         self.export_dialog.open(&self.project);
                         ui.close_menu();
@@ -1237,12 +1575,26 @@ impl eframe::App for TrimApp {
                         self.canvas_state.selected_clip_pairs.clear();
                         ui.close_menu();
                     }
+                    ui.separator();
+                    ui.menu_button("Klavye Kısayol Profili", |ui| {
+                        for p in ShortcutProfile::ALL {
+                            if ui.selectable_label(self.shortcut_profile == *p, p.label()).clicked() {
+                                self.shortcut_profile = *p;
+                                self.status_message = format!("Kısayol Profili: {}", p.label());
+                                ui.close_menu();
+                            }
+                        }
+                    });
                 });
 
                 // Sekans
                 ui.menu_button("Sekans", |ui| {
                     if ui.button("Oynatma Çizgisinde Kes (S / Ctrl+K)").clicked() {
                         self.split_at_playhead_command();
+                        ui.close_menu();
+                    }
+                    if ui.button("🎬 Seçili Klipte Sahneleri Algıla ve Böl (Smart Cut)").clicked() {
+                        self.smart_scene_cut_selected_clip();
                         ui.close_menu();
                     }
                     if ui.button("İşaretçi (Marker) Ekle / Kaldır (M)").clicked() {
@@ -1272,6 +1624,15 @@ impl eframe::App for TrimApp {
                         }
                     });
                     if ui.checkbox(&mut self.show_safe_zones, "Güvenli Alan Rehber Çizgileri").clicked() {
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    if ui.checkbox(&mut self.use_proxies, "⚡ Akıllı Proxy Önizleme (720p H.264)").clicked() {
+                        self.video_engine.use_proxies = self.use_proxies;
+                        self.video_engine.clear_cache();
+                        self.last_rendered_dirty = true;
+                        let state_str = if self.use_proxies { "Açık" } else { "Kapalı" };
+                        self.status_message = format!("⚡ Proxy Önizleme: {}", state_str);
                         ui.close_menu();
                     }
                     ui.separator();
@@ -1432,6 +1793,31 @@ impl eframe::App for TrimApp {
                         self.add_audio_track();
                     }
 
+                    ui.add_space(6.0);
+                    let proxy_btn = Button::new(
+                        RichText::new(if self.use_proxies { "⚡ Proxy: Açık" } else { "⚡ Proxy: Kapalı" })
+                            .size(11.0)
+                            .color(if self.use_proxies { Color32::from_rgb(0x38, 0xa0, 0xf0) } else { Color32::from_rgb(0x70, 0x70, 0x80) })
+                    )
+                    .fill(if self.use_proxies { Color32::from_rgb(0x18, 0x28, 0x3e) } else { Color32::from_rgb(0x20, 0x20, 0x26) });
+                    if ui.add(proxy_btn).on_hover_text("Düşük Donanımlar İçin Akıllı 720p Proxy Önizleme").clicked() {
+                        self.toggle_proxy();
+                    }
+
+                    if let Some(ref vo) = self.active_voiceover {
+                        let vo_dur = vo.recorder.elapsed_seconds();
+                        let vo_rec_btn = Button::new(
+                            RichText::new(format!("🔴 SES KAYDI: {:.1}s [⏹ Durdur]", vo_dur))
+                                .size(11.0)
+                                .strong()
+                                .color(Color32::WHITE)
+                        )
+                        .fill(Color32::from_rgb(0xd0, 0x24, 0x24));
+                        if ui.add(vo_rec_btn).clicked() {
+                            self.finish_voiceover();
+                        }
+                    }
+
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.add_space(8.0);
                         ui.add_sized(
@@ -1457,8 +1843,8 @@ impl eframe::App for TrimApp {
                     ui.add_space(2.0);
                     ui.separator();
 
-                    // 2. Pinned Track Headers (Left, Fixed width 125px)
-                    let header_w = 125.0;
+                    // 2. Pinned Track Headers (Left, Fixed width 142px)
+                    let header_w = 142.0;
                     ui.allocate_ui(Vec2::new(header_w, ui.available_height()), |ui| {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
                         ui.vertical(|ui| {
@@ -1479,7 +1865,8 @@ impl eframe::App for TrimApp {
                             for track in &self.project.timeline.tracks {
                                 let is_patch = self.target_video_track == track.id || self.target_audio_track == track.id;
                                 let tr_h = self.canvas_state.get_track_height(&track.id);
-                                let (_, hdr_act) = render_track_header(ui, track, tr_h, is_patch);
+                                let is_recording_vo = self.active_voiceover.as_ref().map(|vo| vo.track_id == track.id).unwrap_or(false);
+                                let (_, hdr_act) = render_track_header(ui, track, tr_h, is_patch, is_recording_vo);
                                 if let Some(act) = hdr_act {
                                     pending_header_actions.push((track.id.clone(), act));
                                 }
@@ -1510,6 +1897,17 @@ impl eframe::App for TrimApp {
                                             } else {
                                                 self.target_audio_track = t_id.clone();
                                             }
+                                        }
+                                    }
+                                    TrackHeaderAction::RecordVoiceover => {
+                                        let is_currently_rec = self.active_voiceover.as_ref().map(|vo| vo.track_id == t_id).unwrap_or(false);
+                                        if is_currently_rec {
+                                            self.finish_voiceover();
+                                        } else {
+                                            if self.active_voiceover.is_some() {
+                                                self.finish_voiceover();
+                                            }
+                                            self.start_voiceover(t_id.clone());
                                         }
                                     }
                                     TrackHeaderAction::VolumeChanged(vol) => {
@@ -1836,6 +2234,9 @@ impl eframe::App for TrimApp {
                                         self.project.mark_dirty();
                                     }
                                 }
+                                MediaBinAction::GenerateProxy(m_id) => {
+                                    self.generate_proxy_for_media(&m_id);
+                                }
                             }
                         }
                     }
@@ -1861,6 +2262,15 @@ impl eframe::App for TrimApp {
                                             }
                                         }
                                     }
+                                }
+                                InspectorAction::TriggerSceneDetect => {
+                                    self.smart_scene_cut_selected_clip();
+                                }
+                                InspectorAction::ImportSubtitles => {
+                                    self.import_subtitles_dialog();
+                                }
+                                InspectorAction::ExportSubtitles => {
+                                    self.export_subtitles_dialog();
                                 }
                             }
                         }
@@ -2108,7 +2518,7 @@ impl eframe::App for TrimApp {
         // -------------------------------------------------------------
         // Keyboard Shortcuts Modal (F1)
         // -------------------------------------------------------------
-        self.shortcuts_dialog.show(ctx);
+        self.shortcuts_dialog.show(ctx, &mut self.shortcut_profile);
 
         if self.show_about_dialog {
             egui::Window::new("triM. Hakkında")

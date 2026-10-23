@@ -26,6 +26,11 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="0.6.0" date="2026-10-23">
+      <description>
+        <p>triM. v0.6.0 adds Subtitle Suite (.SRT/.VTT) import and export, Smart Scene Detection auto-cut using FFmpeg scene score, 3D LUT support (.cube) with cinematic color grading presets (Teal &amp; Orange, Vintage Film, Monochrome Noir, Cyberpunk Neon), Live Timeline Voiceover recording directly on audio tracks, Smart Proxy workflow for smooth 4K/UHD playback, and dynamic Keyboard Shortcut Profiles (triM. Default, Adobe Premiere Pro, DaVinci Resolve).</p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-10-23">
       <description>
         <p>triM. v0.5.0 adds GPU hardware-accelerated exports (NVIDIA NVENC, Intel QSV, AMD AMF, Linux VAAPI), 9:16 vertical Shorts/Reels canvas mode with interactive Safe Zones guides, EBU R128 loudness normalization, Voice Clarity and Podcast EQ presets with Noise Gate, real-time Live Titler and subtitle generator, and standalone portable project archiving.</p>

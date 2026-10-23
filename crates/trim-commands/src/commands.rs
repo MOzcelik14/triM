@@ -443,6 +443,130 @@ impl Command for SplitClipCommand {
 }
 
 // -----------------------------------------------------------------------------
+// 5b. BatchSplitClipCommand (Smart Cut / Scene Detection)
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct BatchSplitClipCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub split_times: Vec<f64>,
+    pub original_clip: Option<Clip>,
+    pub created_clip_ids: Vec<String>,
+}
+
+impl BatchSplitClipCommand {
+    pub fn new(track_id: impl Into<String>, clip_id: impl Into<String>, mut split_times: Vec<f64>) -> Self {
+        split_times.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        split_times.dedup_by(|a, b| (*a - *b).abs() < 0.05);
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            split_times,
+            original_clip: None,
+            created_clip_ids: Vec::new(),
+        }
+    }
+}
+
+impl Command for BatchSplitClipCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let orig = track
+            .get_clip_by_id(&self.clip_id)
+            .cloned()
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+
+        // Filter valid split times strictly within clip boundaries
+        let valid_splits: Vec<f64> = self
+            .split_times
+            .iter()
+            .copied()
+            .filter(|&t| t > orig.timeline_in + 0.05 && t < orig.timeline_out - 0.05)
+            .collect();
+
+        if valid_splits.is_empty() {
+            return Ok(());
+        }
+
+        let mut boundaries = vec![orig.timeline_in];
+        boundaries.extend_from_slice(&valid_splits);
+        boundaries.push(orig.timeline_out);
+
+        let mut segments = Vec::new();
+        let mut ids = Vec::new();
+
+        for i in 0..boundaries.len() - 1 {
+            let t_in = boundaries[i];
+            let t_out = boundaries[i + 1];
+            let dur = t_out - t_in;
+            if dur < 0.04 {
+                continue;
+            }
+
+            let s_in = orig.map_timeline_to_source(t_in);
+            let s_out = orig.map_timeline_to_source(t_out);
+
+            let mut seg = orig.clone();
+            seg.id = if i == 0 {
+                orig.id.clone()
+            } else {
+                uuid::Uuid::new_v4().to_string()
+            };
+            seg.timeline_in = t_in;
+            seg.timeline_out = t_out;
+            if !orig.reverse {
+                seg.source_in = s_in;
+                seg.source_out = Some(s_out);
+            } else {
+                seg.source_in = s_out;
+                seg.source_out = Some(s_in);
+            }
+            if i > 0 {
+                seg.fade_in = 0.0;
+                seg.transition_in = None;
+            }
+            if i < boundaries.len() - 2 {
+                seg.fade_out = 0.0;
+                seg.transition_out = None;
+            }
+            ids.push(seg.id.clone());
+            segments.push(seg);
+        }
+
+        self.created_clip_ids = ids;
+        self.original_clip = Some(orig);
+
+        track.remove_clip(&self.clip_id);
+        for seg in segments {
+            track.add_clip(seg);
+        }
+
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        if let Some(orig) = self.original_clip.take() {
+            let track = timeline
+                .get_track_by_id_mut(&self.track_id)
+                .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+
+            for id in &self.created_clip_ids {
+                track.remove_clip(id);
+            }
+            track.remove_clip(&orig.id);
+            track.add_clip(orig);
+        }
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Sahneleri Böl (Smart Cut)"
+    }
+}
+
+// -----------------------------------------------------------------------------
 // 6. RippleDeleteCommand
 // -----------------------------------------------------------------------------
 #[derive(Debug, Clone)]

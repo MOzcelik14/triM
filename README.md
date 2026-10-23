@@ -13,7 +13,7 @@
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/rust-2021%20edition-orange.svg?style=flat-square" alt="Rust 2021"></a>
   <a href="https://github.com/emilk/egui"><img src="https://img.shields.io/badge/GUI-egui%20%2F%20eframe-blueviolet.svg?style=flat-square" alt="GUI: egui / eframe"></a>
   <a href="https://ffmpeg.org/"><img src="https://img.shields.io/badge/media-FFmpeg%206.0+-007808.svg?style=flat-square" alt="FFmpeg 6.0+"></a>
-  <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.5.0"><img src="https://img.shields.io/badge/release-v0.5.0-E07A38.svg?style=flat-square" alt="Release v0.5.0"></a>
+  <a href="https://github.com/MOzcelik14/triM/releases/tag/v0.6.0"><img src="https://img.shields.io/badge/release-v0.6.0-E07A38.svg?style=flat-square" alt="Release v0.6.0"></a>
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows-28282E.svg?style=flat-square" alt="Linux | Windows">
 </p>
 
@@ -32,7 +32,12 @@ Engineered with a modular Cargo workspace architecture, **triM.** delivers preci
 
 ### Highlights
 
-- **100% Rust & Native Desktop:** Zero Electron, zero Python dependencies. Instant startup and deterministic memory safety.
+- **100% Rust & Native Desktop:** Zero Electron, zero Python dependencies. Instant startup and deterministic memory safety (Linux & Windows).
+- **Subtitle Suite (.SRT / .VTT) & Smart Scene Detection:** Full bidirectional subtitle import/export with lower-third auto-generation, and FFmpeg scene-detection auto-cut (`gt(scene, 0.3)`) to slice clips automatically at visual cuts.
+- **3D LUT Support & Cinematic Color Presets:** External `.cube` 3D LUT loading and built-in cinematic presets (Teal & Orange, Vintage Film, Monochrome Noir, Cyberpunk Neon) with real-time Program Monitor preview and FFmpeg filtergraph export.
+- **Live Timeline Voiceover Recorder:** One-click track microphone capture directly on audio tracks (`A1`, `A2`...) with live timer and auto-commitment to the timeline at the playhead position.
+- **Smart Proxy Workflow for 4K / UHD:** Background 720p H.264 proxy generator, `[⚡ Proxy]` timeline toggle for butter-smooth scrubbing, and 100% full-resolution master export preservation.
+- **Multi-NLE Keyboard Shortcut Profiles:** Switch on the fly between triM. Default, Adobe Premiere Pro, and DaVinci Resolve shortcut profiles with a dynamic reference dialog.
 - **GPU Hardware Acceleration:** Automated hardware encoder detection and pipeline export using NVIDIA NVENC (`h264_nvenc`/`hevc_nvenc`), Intel QuickSync (QSV), AMD AMF, and Linux VAAPI with graceful CPU fallback.
 - **Vertical Canvas & Safe Zones:** Native 9:16 Shorts/Reels/TikTok workspace, 90% Action Safe, 80% Title Safe, and interactive social media UI overlay boundaries.
 - **Pro Audio Engineering Suite:** Master audio loudness normalization (EBU R128 -23 LUFS, YouTube/Spotify -14 LUFS, Podcast -16 LUFS), Voice Clarity & Podcast EQ presets, and Noise Gate (`agate`).
@@ -145,6 +150,11 @@ Modüler Cargo çalışma alanı mimarisi üzerine kurulan **triM.**; hassas vid
 ### Öne Çıkan Özellikler
 
 - **%100 Rust ve Yerel Masaüstü:** Sıfır Electron yükü, sıfır Python bağımlılığı. Anında açılış ve kararlı bellek yönetimi (Linux & Windows desteği).
+- **Altyazı Süiti (.SRT / .VTT) & Akıllı Sahne Algılama:** Çift yönlü altyazı içe/dışa aktarımı, otomatik lower-third klip üretimi ve FFmpeg sahne analizi (`scene > 0.3`) ile videodaki görsel kesim noktalarından otomatik jiletleme.
+- **3D LUT Desteği & Sinematik Renk Profilleri:** Harici `.cube` 3D LUT yükleme ve yerleşik sinematik hazır ayarlar (Teal & Orange, Vintage Film, Monochrome Noir, Cyberpunk Neon) ile Program Monitöründe canlı önizleme ve FFmpeg export.
+- **Canlı Zaman Çizgisi Ses Kaydedicisi (Voiceover):** Ses izleri (`A1`, `A2`...) üzerinde tek tıkla stüdyo kalitesinde mikrofon kaydı, canlı sayaç rozeti ve durdurulduğunda oynatma kafası konumuna otomatik klip yerleşimi.
+- **4K / UHD için Akıllı Proxy (Smart Proxy):** Arka planda 720p H.264 proxy üretimi, kasmayan kaydırma için `[⚡ Proxy]` zaman çizgisi anahtarı ve orijinal 4K master dışa aktarım garantisi.
+- **Çoklu NLE Klavye Kısayol Profilleri:** triM. Varsayılan, Adobe Premiere Pro ve DaVinci Resolve kısayol profilleri arasında anında geçiş ve dinamik kısayol kılavuzu.
 - **GPU Donanım Hızlandırma:** NVIDIA NVENC, Intel QuickSync (QSV), AMD AMF ve Linux VAAPI ile ultra hızlı donanım destekli dışa aktarım ve otomatik CPU yedeği.
 - **Dikey Tuval & Güvenli Alan Kılavuzları (Safe Zones):** 9:16 Shorts/Reels çalışma alanı, 90% Action Safe, 80% Title Safe ve TikTok/Instagram Reels arayüz sınırları.
 - **Profesyonel Ses Mühendisliği & EBU R128:** Master miksajda YouTube/Spotify (-14 LUFS), Podcast (-16 LUFS) ve Yayın (-23 LUFS) ses normalizasyonu; klip bazlı Ses Netliği, Bas Güçlendirme ve Gürültü Kapısı (Noise Gate - `agate`).

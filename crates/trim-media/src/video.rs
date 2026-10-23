@@ -332,6 +332,7 @@ pub struct VideoEngine {
     pub last_raw_source_frame: Option<Arc<RgbaImage>>,
     pub last_rendered_frame: Option<Arc<RgbaImage>>,
     pub is_decoding_seek: bool,
+    pub use_proxies: bool,
 }
 
 impl Default for VideoEngine {
@@ -350,6 +351,7 @@ impl VideoEngine {
             last_raw_source_frame: None,
             last_rendered_frame: None,
             is_decoding_seek: false,
+            use_proxies: false,
         }
     }
 
@@ -440,6 +442,8 @@ impl VideoEngine {
                 && clip.brightness == 0.0
                 && clip.contrast == 1.0
                 && clip.saturation == 1.0
+                && clip.lut_preset == trim_core::clip::LutPreset::None
+                && clip.custom_lut_path.is_none()
                 && clip.scale == 1.0
                 && clip.pos_x == 0.0
                 && clip.pos_y == 0.0
@@ -461,6 +465,7 @@ impl VideoEngine {
                     }
                 }
             } else {
+                let eff_path = media_item.resolved_playback_path(self.use_proxies);
                 let src_t = clip.map_timeline_to_source(timeline_time);
 
                 if is_playing {
@@ -473,7 +478,7 @@ impl VideoEngine {
                     if needs_restart {
                         self.streamer.start(
                             &clip.id,
-                            &media_item.file_path,
+                            eff_path,
                             src_t,
                             project.timeline.fps,
                         );
@@ -509,7 +514,7 @@ impl VideoEngine {
                     }
 
                     let ts_key = (src_t * 30.0).round() as u64;
-                    let key = (media_item.file_path.clone(), ts_key);
+                    let key = (eff_path.to_string(), ts_key);
 
                     if let Ok(cache) = self.frame_cache.read() {
                         if let Some(cached) = cache.get(&key) {
@@ -530,7 +535,7 @@ impl VideoEngine {
 
                     if self.last_raw_source_frame.is_none() {
                         // Immediate first frame decode so monitor is never blank on initial clip placement
-                        if let Some(frame) = decode_frame_raw(&media_item.file_path, src_t) {
+                        if let Some(frame) = decode_frame_raw(eff_path, src_t) {
                             let arc = Arc::new(frame);
                             if let Ok(mut cache) = self.frame_cache.write() {
                                 cache.insert(key, arc.clone());
@@ -552,7 +557,7 @@ impl VideoEngine {
 
                     // Trigger non-blocking async seek if not already in flight
                     if !self.is_decoding_seek {
-                        self.async_decoder.request_seek(&media_item.file_path, src_t);
+                        self.async_decoder.request_seek(eff_path, src_t);
                         self.is_decoding_seek = true;
                     }
 
@@ -585,9 +590,10 @@ impl VideoEngine {
             let frame_img = match media_item.media_type {
                 MediaType::Image => self.get_image(&media_item.file_path).cloned(),
                 _ => {
+                    let eff_path = media_item.resolved_playback_path(self.use_proxies);
                     let src_t = clip.map_timeline_to_source(timeline_time);
                     let ts_key = (src_t * 30.0).round() as u64;
-                    let key = (media_item.file_path.clone(), ts_key);
+                    let key = (eff_path.to_string(), ts_key);
 
                     let streamer_frame = if is_playing && self.streamer.active_clip_id() == Some(&clip.id) {
                         self.streamer.get_frame_for_time(src_t)
@@ -604,7 +610,7 @@ impl VideoEngine {
                             self.last_raw_source_frame = Some(c.clone());
                             Some((*c).clone())
                         } else if self.last_raw_source_frame.is_none() {
-                            if let Some(frame) = decode_frame_raw(&media_item.file_path, src_t) {
+                            if let Some(frame) = decode_frame_raw(eff_path, src_t) {
                                 let arc = Arc::new(frame.clone());
                                 if let Ok(mut cache) = self.frame_cache.write() {
                                     cache.insert(key, arc.clone());
@@ -617,7 +623,7 @@ impl VideoEngine {
                             }
                         } else {
                             if !self.is_decoding_seek {
-                                self.async_decoder.request_seek(&media_item.file_path, src_t);
+                                self.async_decoder.request_seek(eff_path, src_t);
                                 self.is_decoding_seek = true;
                             }
                             self.last_raw_source_frame.as_ref().map(|f| (**f).clone())
@@ -803,7 +809,10 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
     let wipe_right_active = (clip.transition_in.as_deref() == Some("wipe_right") && in_progress < 1.0)
         || (clip.transition_out.as_deref() == Some("wipe_right") && out_progress < 1.0);
 
-    let has_color_adj = clip.brightness != 0.0 || clip.contrast != 1.0 || clip.saturation != 1.0;
+    let has_color_adj = clip.brightness != 0.0
+        || clip.contrast != 1.0
+        || clip.saturation != 1.0
+        || clip.lut_preset != trim_core::clip::LutPreset::None;
     let has_special_trans = has_dip_white || wipe_left_active || wipe_right_active || slide_x_offset.abs() > 0.1;
 
     let is_fullscreen_fit = final_w == cw as i64
@@ -885,6 +894,51 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
                     r = (luma + saturation * (r - luma)).clamp(0.0, 255.0);
                     g = (luma + saturation * (g - luma)).clamp(0.0, 255.0);
                     b = (luma + saturation * (b - luma)).clamp(0.0, 255.0);
+                }
+
+                match clip.lut_preset {
+                    trim_core::clip::LutPreset::None => {}
+                    trim_core::clip::LutPreset::TealOrange => {
+                        let luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+                        if luma < 0.5 {
+                            let shadow_w = (1.0 - luma * 2.0).clamp(0.0, 1.0);
+                            r = (r * (1.0 - 0.22 * shadow_w)).clamp(0.0, 255.0);
+                            g = (g * (1.0 + 0.08 * shadow_w)).clamp(0.0, 255.0);
+                            b = (b * (1.0 + 0.32 * shadow_w)).clamp(0.0, 255.0);
+                        } else {
+                            let hi_w = ((luma - 0.5) * 2.0).clamp(0.0, 1.0);
+                            r = (r * (1.0 + 0.25 * hi_w)).clamp(0.0, 255.0);
+                            g = (g * (1.0 + 0.08 * hi_w)).clamp(0.0, 255.0);
+                            b = (b * (1.0 - 0.22 * hi_w)).clamp(0.0, 255.0);
+                        }
+                    }
+                    trim_core::clip::LutPreset::VintageFilm => {
+                        r = (r * 1.06 + 14.0).clamp(0.0, 255.0);
+                        g = (g * 1.02 + 10.0).clamp(0.0, 255.0);
+                        b = (b * 0.90 + 6.0).clamp(0.0, 255.0);
+                    }
+                    trim_core::clip::LutPreset::MonochromeNoir => {
+                        let luma = 0.299 * r + 0.587 * g + 0.114 * b;
+                        let norm = luma / 255.0;
+                        let curved = if norm < 0.5 {
+                            2.0 * norm * norm
+                        } else {
+                            1.0 - 2.0 * (1.0 - norm) * (1.0 - norm)
+                        };
+                        let gray = (curved * 255.0).clamp(0.0, 255.0);
+                        r = gray;
+                        g = gray;
+                        b = gray;
+                    }
+                    trim_core::clip::LutPreset::CyberpunkNeon => {
+                        r = (r * 1.22 + 8.0).clamp(0.0, 255.0);
+                        g = (g * 0.88).clamp(0.0, 255.0);
+                        b = (b * 1.32 + 16.0).clamp(0.0, 255.0);
+                        let luma = 0.299 * r + 0.587 * g + 0.114 * b;
+                        r = (luma + 1.25 * (r - luma)).clamp(0.0, 255.0);
+                        g = (luma + 1.25 * (g - luma)).clamp(0.0, 255.0);
+                        b = (luma + 1.25 * (b - luma)).clamp(0.0, 255.0);
+                    }
                 }
             }
 

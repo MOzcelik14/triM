@@ -19,6 +19,7 @@ pub enum MediaBinAction {
     ImportRequested,
     AddToTimeline(String),         // media_id
     OpenInSourceMonitor(String),   // media_id
+    GenerateProxy(String),         // media_id
     DeleteMedia(String),           // media_id
 }
 
@@ -229,7 +230,11 @@ pub fn render_media_bin(
 
                     // Format / Specs below name
                     let specs_str = if item.width > 0 {
-                        format!("{}x{} {:.0}fps", item.width, item.height, item.fps)
+                        if item.proxy_path.is_some() {
+                            format!("{}x{} {:.0}fps [PX]", item.width, item.height, item.fps)
+                        } else {
+                            format!("{}x{} {:.0}fps", item.width, item.height, item.fps)
+                        }
                     } else {
                         format!("{:.1}s", item.duration)
                     };
@@ -265,6 +270,17 @@ pub fn render_media_bin(
                         if ui.button("Zaman Çizgisine Ekle").clicked() {
                             action = Some(MediaBinAction::AddToTimeline(m_id.clone()));
                             ui.close_menu();
+                        }
+                        if item.media_type == MediaType::Video {
+                            let proxy_label = if item.proxy_path.is_some() {
+                                "⚡ Proxy Mevcut (Yeniden Oluştur)"
+                            } else {
+                                "⚡ 720p Proxy Oluştur"
+                            };
+                            if ui.button(proxy_label).clicked() {
+                                action = Some(MediaBinAction::GenerateProxy(m_id.clone()));
+                                ui.close_menu();
+                            }
                         }
                         ui.separator();
                         if ui.button("Havuzdan Kaldır").clicked() {
@@ -320,7 +336,11 @@ pub fn render_media_bin(
                 // Duration & Specs
                 let dur_str = format!("{:.1}s", item.duration);
                 let res_str = if item.width > 0 {
-                    format!("{}x{} {:.0}fps", item.width, item.height, item.fps)
+                    if item.proxy_path.is_some() {
+                        format!("{}x{} {:.0}fps [PX]", item.width, item.height, item.fps)
+                    } else {
+                        format!("{}x{} {:.0}fps", item.width, item.height, item.fps)
+                    }
                 } else {
                     String::new()
                 };
@@ -352,6 +372,17 @@ pub fn render_media_bin(
                     if ui.button("Zaman Çizgisine Ekle").clicked() {
                         action = Some(MediaBinAction::AddToTimeline(m_id.clone()));
                         ui.close_menu();
+                    }
+                    if item.media_type == MediaType::Video {
+                        let proxy_label = if item.proxy_path.is_some() {
+                            "⚡ Proxy Mevcut (Yeniden Oluştur)"
+                        } else {
+                            "⚡ 720p Proxy Oluştur"
+                        };
+                        if ui.button(proxy_label).clicked() {
+                            action = Some(MediaBinAction::GenerateProxy(m_id.clone()));
+                            ui.close_menu();
+                        }
                     }
                     ui.separator();
                     if ui.button("Havuzdan Kaldır").clicked() {

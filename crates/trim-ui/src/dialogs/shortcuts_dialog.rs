@@ -1,5 +1,6 @@
 //! Keyboard Shortcuts visual cheat sheet dialog modal (F1).
 
+use crate::shortcuts::ShortcutProfile;
 use egui::{Color32, RichText, Vec2, Window};
 
 #[derive(Debug, Clone, Default)]
@@ -16,7 +17,7 @@ impl ShortcutsDialog {
         self.is_open = !self.is_open;
     }
 
-    pub fn show(&mut self, ctx: &egui::Context) {
+    pub fn show(&mut self, ctx: &egui::Context, profile: &mut ShortcutProfile) {
         if !self.is_open {
             return;
         }
@@ -24,7 +25,7 @@ impl ShortcutsDialog {
         Window::new("Klavye Kısayolları (triM.)")
             .collapsible(true)
             .resizable(false)
-            .default_size(Vec2::new(560.0, 420.0))
+            .default_size(Vec2::new(580.0, 460.0))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Hızlı Kısayol Rehberi").size(14.0).strong().color(Color32::from_rgb(0xe0, 0x7a, 0x38)));
@@ -35,22 +36,85 @@ impl ShortcutsDialog {
                     });
                 });
                 ui.separator();
+
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Aktif Kısayol Profili:").strong());
+                    egui::ComboBox::from_id_salt("shortcut_dialog_profile_combo")
+                        .selected_text(profile.label())
+                        .show_ui(ui, |ui| {
+                            for p in ShortcutProfile::ALL {
+                                ui.selectable_value(profile, *p, p.label());
+                            }
+                        });
+                    ui.label(RichText::new(profile.description()).size(10.5).color(Color32::from_rgb(0x90, 0x90, 0xa5)));
+                });
+                ui.separator();
                 ui.add_space(4.0);
 
+                let tools_shortcuts = match profile {
+                    ShortcutProfile::TrimDefault => vec![
+                        ("V", "Seçim Aracı (Selection Tool)"),
+                        ("C", "Jilet / Kesme Aracı (Razor Tool)"),
+                        ("B", "Dalgalanma Düzenleme (Ripple Edit)"),
+                        ("A", "İleri İz Seçme Aracı (Track Select Forward)"),
+                        ("Y", "Kaydırma Aracı (Slip Tool)"),
+                        ("P", "Kalem / Anahtar Kare (Pen Tool)"),
+                        ("H", "El / Gezinme Aracı (Hand Pan)"),
+                        ("T", "Metin / Yazı Aracı (Type Tool)"),
+                    ],
+                    ShortcutProfile::PremierePro => vec![
+                        ("V", "Seçim Aracı (Selection Tool)"),
+                        ("C", "Jilet Aracı (Razor Tool)"),
+                        ("A", "İleri İz Seçme Aracı (Track Select Forward)"),
+                        ("B", "Dalgalanma Düzenleme (Ripple Edit)"),
+                        ("Y", "Kaydırma Aracı (Slip Tool)"),
+                        ("P", "Kalem Aracı (Pen Tool)"),
+                        ("H", "El Aracı (Hand Tool)"),
+                        ("T", "Metin Aracı (Type Tool)"),
+                    ],
+                    ShortcutProfile::DaVinciResolve => vec![
+                        ("A", "Normal Düzenleme Modu (Selection Mode)"),
+                        ("B", "Bıçak Modu (Blade Edit Mode)"),
+                        ("T", "Kırpma Düzenleme Modu (Trim Mode)"),
+                        ("P", "Kalem / Eğri Aracı (Pen Tool)"),
+                        ("H", "El / Kaydırma Aracı (Hand Tool)"),
+                    ],
+                };
+
+                let edit_shortcuts = match profile {
+                    ShortcutProfile::TrimDefault => vec![
+                        ("S", "İmleç Konumunda Klibi Böl (Split / Cut)"),
+                        ("Q / W", "Dalgalanma Kırpma (Ripple Trim Head / Tail)"),
+                        ("Ctrl + Z", "Son İşlemi Geri Al (Undo)"),
+                        ("Ctrl + Y", "Geri Alınan İşlemi Yinele (Redo)"),
+                        ("Ctrl + R", "Klip Hızı / Yönünü Değiştir (Speed)"),
+                        ("Delete", "Seçili Klibi Sil"),
+                        ("Shift + Del", "Boşluğu Kapatarak Sil (Ripple Delete)"),
+                        ("Ctrl + A", "Tüm Klipleri Seç"),
+                    ],
+                    ShortcutProfile::PremierePro => vec![
+                        ("Ctrl + K", "İmleç Konumunda Klibi Böl (Add Edit)"),
+                        ("Q / W", "Dalgalanma Kırpma (Ripple Trim Head / Tail)"),
+                        ("Ctrl + Z", "Son İşlemi Geri Al (Undo)"),
+                        ("Ctrl + Shift + Z", "Yinele (Redo)"),
+                        ("Ctrl + R", "Hız / Süre İletişim Kutusu (Speed / Duration)"),
+                        ("Delete / Backspace", "Seçili Klibi Sil"),
+                        ("Shift + Del", "Boşluğu Kapatarak Sil (Ripple Delete)"),
+                        ("Ctrl + A", "Tüm Klipleri Seç"),
+                    ],
+                    ShortcutProfile::DaVinciResolve => vec![
+                        ("Ctrl + \\", "İmleç Konumunda Klibi Böl (Split Clip)"),
+                        ("Ctrl + Z", "Son İşlemi Geri Al (Undo)"),
+                        ("Ctrl + Shift + Z", "Yinele (Redo)"),
+                        ("Ctrl + R", "Hız Değiştirme (Change Clip Speed)"),
+                        ("Backspace", "Standart Silme (Delete)"),
+                        ("Shift + Del", "Boşluğu Kapatıp Sil (Ripple Delete)"),
+                        ("Ctrl + A", "Tüm Klipleri Seç"),
+                    ],
+                };
+
                 let sections = [
-                    (
-                        "Dikey Araç Çubuğu (Tools)",
-                        vec![
-                            ("V", "Seçim Aracı (Selection Tool)"),
-                            ("A", "İleri İz Seçme Aracı (Track Select Forward)"),
-                            ("B", "Dalgalanma Düzenleme (Ripple Edit)"),
-                            ("C", "Jilet / Kesme Aracı (Razor Tool)"),
-                            ("Y", "Kaydırma Aracı (Slip Tool)"),
-                            ("P", "Kalem / Anahtar Kare (Pen Tool)"),
-                            ("H", "El / Gezinme Aracı (Hand Pan)"),
-                            ("T", "Metin / Yazı Aracı (Type Tool)"),
-                        ],
-                    ),
+                    ("Dikey Araç Çubuğu (Tools)", tools_shortcuts),
                     (
                         "Oynatma ve Gezinme (Transport & Playback)",
                         vec![
@@ -63,18 +127,7 @@ impl ShortcutsDialog {
                             ("M", "Zaman Çizgisine İşaretçi (Marker) Ekle"),
                         ],
                     ),
-                    (
-                        "Düzenleme & Komutlar (Editing & Timeline)",
-                        vec![
-                            ("Ctrl + Z", "Son İşlemi Geri Al (Undo)"),
-                            ("Ctrl + Y", "Geri Alınan İşlemi Yinele (Redo)"),
-                            ("Ctrl + K", "İmlecin Bulunduğu Klibi Böl (Split / Cut)"),
-                            ("Ctrl + R", "Klip Hızı / Yönünü Değiştir (Speed / Duration)"),
-                            ("Shift + Del", "Boşluğu Kapatarak Sil (Ripple Delete)"),
-                            ("Ctrl + A", "Zaman Çizgisindeki Tüm Klipleri Seç"),
-                            ("Ctrl + D", "Seçimi Kaldır (Deselect All)"),
-                        ],
-                    ),
+                    ("Düzenleme & Komutlar (Editing & Timeline)", edit_shortcuts),
                     (
                         "Dosya, Paneller & Çalışma Alanı",
                         vec![
@@ -92,7 +145,7 @@ impl ShortcutsDialog {
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     for (cat, items) in sections {
                         ui.group(|ui| {
-                            ui.set_width(520.0);
+                            ui.set_width(540.0);
                             ui.strong(RichText::new(cat).color(Color32::from_rgb(0x38, 0xa0, 0xf0)).size(12.0));
                             ui.add_space(3.0);
 
@@ -108,9 +161,7 @@ impl ShortcutsDialog {
                                         .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(0x3c, 0x3c, 0x4c)))
                                         .rounding(3.0);
                                     ui.add_sized([130.0, 18.0], key_btn);
-
-                                    ui.add_space(6.0);
-                                    ui.label(RichText::new(desc).size(11.0).color(Color32::from_rgb(0xb0, 0xb0, 0xc0)));
+                                    ui.label(RichText::new(desc).size(11.5).color(Color32::from_rgb(0xd0, 0xd0, 0xdc)));
                                 });
                             }
                         });

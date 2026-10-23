@@ -8,6 +8,7 @@ pub enum TrackHeaderAction {
     ToggleSolo,
     ToggleLock,
     TogglePatchTarget,
+    RecordVoiceover,
     VolumeChanged(f64),
     DeleteTrack,
     ResizeTrack(f32),
@@ -18,8 +19,9 @@ pub fn render_track_header(
     track: &Track,
     track_height: f32,
     is_patch_target: bool,
+    is_recording_vo: bool,
 ) -> (Response, Option<TrackHeaderAction>) {
-    let width = 130.0;
+    let width = 142.0;
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, track_height), Sense::click());
     let painter = ui.painter_at(rect);
 
@@ -239,6 +241,41 @@ pub fn render_track_header(
 
                 if ui.add(lock_btn).on_hover_text(if track.locked { "Kanal Kilidini Kaldır" } else { "Kanalı Kilitle (Lock)" }).clicked() {
                     action = Some(TrackHeaderAction::ToggleLock);
+                }
+
+                // Audio Voiceover Record Button (🎤 / ⏹)
+                let (vo_bg, vo_text, vo_stroke) = if is_recording_vo {
+                    (
+                        Color32::from_rgb(0xd0, 0x24, 0x24),
+                        Color32::WHITE,
+                        Stroke::new(1.2_f32, Color32::from_rgb(0xff, 0x48, 0x48)),
+                    )
+                } else {
+                    (
+                        Color32::from_rgb(0x22, 0x22, 0x2a),
+                        Color32::from_rgb(0xaa, 0xaa, 0xba),
+                        Stroke::new(1.0_f32, Color32::from_rgb(0x30, 0x30, 0x3c)),
+                    )
+                };
+
+                let vo_icon = if is_recording_vo { "⏹" } else { "🎤" };
+                let vo_btn = Button::new(
+                    RichText::new(vo_icon)
+                        .size(10.0)
+                        .color(vo_text),
+                )
+                .min_size(Vec2::new(20.0, 22.0))
+                .fill(vo_bg)
+                .stroke(vo_stroke);
+
+                let vo_tip = if is_recording_vo {
+                    "Ses Kaydını Durdur (Voiceover)"
+                } else {
+                    "Bu Kanala Canlı Seslendirme / Dublaj Kaydet (Voiceover)"
+                };
+
+                if ui.add(vo_btn).on_hover_text(vo_tip).clicked() {
+                    action = Some(TrackHeaderAction::RecordVoiceover);
                 }
 
                 // Compact Volume Percentage

@@ -14,7 +14,7 @@
 //!   summed with `amix`, anchored to timeline time.
 
 use crate::presets::{ExportPreset, HardwareAccel};
-use trim_core::clip::Clip;
+use trim_core::clip::{Clip, LutPreset};
 use trim_core::keyframe::{Interpolation, Keyframe};
 use trim_core::media::{MediaItem, MediaType};
 use trim_core::project::Project;
@@ -164,6 +164,29 @@ impl TimelineExporter {
                 "eq=brightness={:.3}:contrast={:.3}:saturation={:.3}",
                 clip.brightness, clip.contrast, clip.saturation
             ));
+        }
+
+        if let Some(lut_path) = &clip.custom_lut_path {
+            if !lut_path.trim().is_empty() {
+                let sanitized = lut_path.replace('\\', "/").replace('\'', "\\'");
+                f.push(format!("lut3d=file='{sanitized}'"));
+            }
+        } else {
+            match clip.lut_preset {
+                LutPreset::None => {}
+                LutPreset::TealOrange => {
+                    f.push("colorbalance=rs=0.15:gs=-0.05:bs=-0.25:rh=-0.2:gh=0.05:bh=0.25,eq=contrast=1.15:saturation=1.2".to_string());
+                }
+                LutPreset::VintageFilm => {
+                    f.push("curves=vintage,eq=contrast=0.95:saturation=0.85".to_string());
+                }
+                LutPreset::MonochromeNoir => {
+                    f.push("hue=s=0,eq=contrast=1.45:brightness=-0.05".to_string());
+                }
+                LutPreset::CyberpunkNeon => {
+                    f.push("colorbalance=rm=0.2:gm=-0.1:bm=0.3:rh=-0.1:gh=-0.05:bh=0.25,eq=contrast=1.25:saturation=1.4".to_string());
+                }
+            }
         }
 
         f.push("format=rgba".into());
@@ -895,4 +918,29 @@ mod tests {
         assert!(fg.contains("box=1:boxcolor="), "filtergraph should contain subtitle box: {fg}");
         assert!(fg.contains("shadowx=2"), "filtergraph should contain shadow: {fg}");
     }
+
+    #[test]
+    fn test_lut_preset_and_custom_cube_filtergraph() {
+        let mut proj = Project::new("LutTest");
+        let mut v = MediaItem::new("/tmp/fake_lut.mp4");
+        v.media_type = MediaType::Video;
+        let vid_id = v.id.clone();
+        proj.add_media(v);
+
+        let mut c1 = Clip::new(&vid_id, 0.0, 5.0);
+        c1.lut_preset = LutPreset::TealOrange;
+        proj.timeline.tracks[0].add_clip(c1);
+
+        let preset = ExportPreset::default();
+        let (cmd1, _) = TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out1.mp4").unwrap();
+        let fg1 = cmd1.iter().position(|a| a == "-filter_complex").map(|idx| &cmd1[idx + 1]).unwrap();
+        assert!(fg1.contains("colorbalance=rs=0.15"), "should generate teal & orange filter: {fg1}");
+
+        // Now test custom cube file
+        proj.timeline.tracks[0].clips[0].custom_lut_path = Some("/path/to/cinematic.cube".to_string());
+        let (cmd2, _) = TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out2.mp4").unwrap();
+        let fg2 = cmd2.iter().position(|a| a == "-filter_complex").map(|idx| &cmd2[idx + 1]).unwrap();
+        assert!(fg2.contains("lut3d=file='/path/to/cinematic.cube'"), "should generate lut3d filter: {fg2}");
+    }
 }
+

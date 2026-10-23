@@ -54,6 +54,8 @@ pub struct MediaItem {
     pub file_size_bytes: u64,
     #[serde(default)]
     pub date_added: f64,
+    #[serde(default)]
+    pub proxy_path: Option<String>,
 }
 
 impl Default for MediaItem {
@@ -73,6 +75,7 @@ impl Default for MediaItem {
             audio_sample_rate: 0,
             file_size_bytes: 0,
             date_added: 0.0,
+            proxy_path: None,
         }
     }
 }
@@ -104,6 +107,18 @@ impl MediaItem {
     pub fn has_audio(&self) -> bool {
         self.media_type == MediaType::Audio || !self.audio_codec.is_empty() || self.audio_channels > 0
     }
+
+    /// Resolves either the proxy file path (if enabled and file exists) or original full-res media path.
+    pub fn resolved_playback_path(&self, use_proxy: bool) -> &str {
+        if use_proxy {
+            if let Some(ref p) = self.proxy_path {
+                if Path::new(p).exists() {
+                    return p.as_str();
+                }
+            }
+        }
+        &self.file_path
+    }
 }
 
 #[cfg(test)]
@@ -128,4 +143,16 @@ mod tests {
         assert_eq!(item.duration, deserialized.duration);
         assert_eq!(item.media_type, deserialized.media_type);
     }
+
+    #[test]
+    fn test_media_item_proxy_path_resolution() {
+        let mut item = MediaItem::new("/raw/4k_video.mp4");
+        assert_eq!(item.resolved_playback_path(false), "/raw/4k_video.mp4");
+        assert_eq!(item.resolved_playback_path(true), "/raw/4k_video.mp4");
+
+        // Set nonexistent proxy path: should still fall back to raw
+        item.proxy_path = Some("/nonexistent/proxy.mp4".to_string());
+        assert_eq!(item.resolved_playback_path(true), "/raw/4k_video.mp4");
+    }
 }
+

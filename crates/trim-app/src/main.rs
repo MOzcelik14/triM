@@ -69,11 +69,35 @@ fn main() -> Result<(), eframe::Error> {
                     app.open_path(p);
                 }
             }
+            if std::env::args().any(|arg| arg == "--no-welcome") {
+                app.welcome_dialog.close();
+            }
+            if std::env::args().any(|arg| arg == "--open-shortcuts") {
+                app.welcome_dialog.close();
+                app.shortcuts_dialog.open();
+            }
             if std::env::args().any(|arg| arg == "--open-export") {
+                app.welcome_dialog.close();
                 app.export_dialog.open(&app.project);
             }
             if std::env::args().any(|arg| arg == "--enable-safe-zones") {
                 app.show_safe_zones = true;
+            }
+            if let Some(srt_idx) = std::env::args().position(|arg| arg == "--import-srt") {
+                if let Some(srt_file) = std::env::args().nth(srt_idx + 1) {
+                    if let Ok(content) = std::fs::read_to_string(&srt_file) {
+                        if let Ok(entries) = trim_core::parse_srt(&content) {
+                            let clips = trim_core::subtitle_entries_to_clips(&entries, 48.0);
+                            let target_track_id = app.project.timeline.add_new_video_track();
+                            if let Some(tr) = app.project.timeline.get_track_by_id_mut(&target_track_id) {
+                                tr.name = "V2 (Altyazı)".to_string();
+                                for clip in clips {
+                                    tr.add_clip(clip);
+                                }
+                            }
+                        }
+                    }
+                }
             }
             if std::env::args().any(|arg| arg == "--tab-effects") {
                 app.active_left_tab = trim_ui::LeftPanelTab::Effects;

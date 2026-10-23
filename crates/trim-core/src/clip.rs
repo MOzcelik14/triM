@@ -36,6 +36,37 @@ impl AudioEqPreset {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LutPreset {
+    #[default]
+    None,
+    TealOrange,
+    VintageFilm,
+    MonochromeNoir,
+    CyberpunkNeon,
+}
+
+impl LutPreset {
+    pub const ALL: &'static [Self] = &[
+        Self::None,
+        Self::TealOrange,
+        Self::VintageFilm,
+        Self::MonochromeNoir,
+        Self::CyberpunkNeon,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::None => "Yok (Doğal)",
+            Self::TealOrange => "Teal & Orange (Sinematik)",
+            Self::VintageFilm => "Vintage Film (Retro Sıcak)",
+            Self::MonochromeNoir => "Monochrome Noir (Siyah & Beyaz)",
+            Self::CyberpunkNeon => "Cyberpunk Neon (Canlı Mor/Mavi)",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextOverlay {
     pub content: String,
@@ -113,6 +144,10 @@ pub struct Clip {
     pub contrast: f64,
     #[serde(default = "default_one")]
     pub saturation: f64,
+    #[serde(default)]
+    pub lut_preset: LutPreset,
+    #[serde(default)]
+    pub custom_lut_path: Option<String>,
     #[serde(default = "default_one")]
     pub volume: f64,
     #[serde(default)]
@@ -163,6 +198,8 @@ impl Default for Clip {
             brightness: 0.0,
             contrast: 1.0,
             saturation: 1.0,
+            lut_preset: LutPreset::None,
+            custom_lut_path: None,
             volume: 1.0,
             muted: false,
             eq_preset: AudioEqPreset::default(),

@@ -118,6 +118,10 @@ impl Project {
         self.media_pool.get(media_id)
     }
 
+    pub fn get_media_mut(&mut self, media_id: &str) -> Option<&mut MediaItem> {
+        self.media_pool.get_mut(media_id)
+    }
+
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }

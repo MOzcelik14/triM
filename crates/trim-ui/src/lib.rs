@@ -7,6 +7,7 @@ pub mod inspector;
 pub mod media_bin;
 pub mod monitor;
 pub mod ruler;
+pub mod shortcuts;
 pub mod theme;
 pub mod toolbar;
 pub mod track_header;
@@ -16,6 +17,7 @@ pub mod vu_meter;
 pub use app::TrimApp;
 pub use canvas::TimelineCanvasState;
 pub use media_bin::LeftPanelTab;
+pub use shortcuts::ShortcutProfile;
 pub use theme::setup_theme;
 pub use vu_meter::VuMeterState;
 
@@ -46,7 +48,7 @@ mod tests {
                         println!("Corner rect: top = {}, bottom = {}, height = {}", corner_rect.top(), corner_rect.bottom(), corner_rect.height());
 
                         for (idx, track) in project.timeline.tracks.iter().enumerate() {
-                            let (resp, _) = track_header::render_track_header(ui, track, canvas_state.track_height, false);
+                            let (resp, _) = track_header::render_track_header(ui, track, canvas_state.track_height, false, false);
                             println!("Track {} ({}) header rect: top = {}, bottom = {}, height = {}", idx, track.name, resp.rect.top(), resp.rect.bottom(), resp.rect.height());
                             ui.add_space(canvas_state.track_spacing);
                         }

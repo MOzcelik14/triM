@@ -1,13 +1,16 @@
 //! Clip Properties and Inspector panel in Turkish.
 
 use egui::{Button, DragValue, Grid, RichText, ScrollArea, Ui};
-use trim_core::clip::{AudioEqPreset, Clip, TextOverlay};
+use trim_core::clip::{AudioEqPreset, Clip, LutPreset, TextOverlay};
 use trim_core::keyframe::Interpolation;
 use trim_core::project::Project;
 
 pub enum InspectorAction {
     ClipModified,
     ChangeSpeed(f64, bool),
+    TriggerSceneDetect,
+    ImportSubtitles,
+    ExportSubtitles,
 }
 
 pub fn render_inspector_panel(
@@ -228,6 +231,13 @@ fn render_speed_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
             }
             ui.end_row();
         });
+
+        if !clip.media_id.is_empty() {
+            ui.add_space(4.0);
+            if ui.button(RichText::new("🎬 Sahneleri Algıla ve Böl (Smart Cut)").size(11.0).color(egui::Color32::from_rgb(0xe0, 0x7a, 0x38))).clicked() {
+                *action = Some(InspectorAction::TriggerSceneDetect);
+            }
+        }
     });
 }
 
@@ -235,6 +245,45 @@ fn render_color_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
     ui.group(|ui| {
         ui.strong("Renk ve Filtreler");
         Grid::new("color_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+            ui.label("Sinematik LUT:");
+            let mut curr_lut = clip.lut_preset;
+            egui::ComboBox::from_id_salt("lut_preset_combo")
+                .selected_text(curr_lut.label())
+                .show_ui(ui, |ui| {
+                    for preset in LutPreset::ALL {
+                        if ui.selectable_value(&mut curr_lut, *preset, preset.label()).clicked() {
+                            clip.lut_preset = curr_lut;
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                    }
+                });
+            ui.end_row();
+
+            ui.label("Özel .cube LUT:");
+            ui.horizontal(|ui| {
+                if let Some(p) = &clip.custom_lut_path {
+                    let fname = std::path::Path::new(p)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| p.clone());
+                    ui.label(RichText::new(format!("📁 {}", fname)).size(11.0).color(egui::Color32::from_rgb(0x38, 0xa0, 0xf0)));
+                    if ui.button("✕").on_hover_text("Özel LUT'u Kaldır").clicked() {
+                        clip.custom_lut_path = None;
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                } else if ui.button(RichText::new("Dosya Seç (.cube)...").size(11.0)).clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .set_title("3D LUT Dosyası Seç (.cube)")
+                        .add_filter("3D LUT (.cube)", &["cube"])
+                        .pick_file()
+                    {
+                        clip.custom_lut_path = Some(path.to_string_lossy().to_string());
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                }
+            });
+            ui.end_row();
+
             ui.label("Parlaklık:");
             if ui.add(DragValue::new(&mut clip.brightness).speed(0.05).range(-1.0..=1.0)).changed() {
                 *action = Some(InspectorAction::ClipModified);
@@ -258,6 +307,8 @@ fn render_color_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
                 clip.brightness = 0.0;
                 clip.contrast = 1.0;
                 clip.saturation = 1.0;
+                clip.lut_preset = LutPreset::None;
+                clip.custom_lut_path = None;
                 *action = Some(InspectorAction::ClipModified);
             }
             ui.end_row();
@@ -458,6 +509,16 @@ fn render_titler_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspect
                 ui.end_row();
             });
         }
+
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if ui.button("📥 SRT İçe Aktar").clicked() {
+                *action = Some(InspectorAction::ImportSubtitles);
+            }
+            if ui.button("📤 SRT Dışa Aktar").clicked() {
+                *action = Some(InspectorAction::ExportSubtitles);
+            }
+        });
     });
 }
 
