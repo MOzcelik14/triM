@@ -188,12 +188,16 @@ pub fn render_timeline_canvas(
             let is_sel = selected_ids.contains(&clip.id);
 
             // Clip body fill
-            let base_color = match track.track_type {
-                TrackType::Video => {
-                    if is_sel { COLOR_CLIP_VIDEO_SELECTED } else { COLOR_CLIP_VIDEO }
-                }
-                TrackType::Audio => {
-                    if is_sel { COLOR_CLIP_AUDIO_SELECTED } else { COLOR_CLIP_AUDIO }
+            let base_color = if clip.text_overlay.is_some() {
+                if is_sel { Color32::from_rgb(0x8a, 0x48, 0xa5) } else { Color32::from_rgb(0x6a, 0x32, 0x82) }
+            } else {
+                match track.track_type {
+                    TrackType::Video => {
+                        if is_sel { COLOR_CLIP_VIDEO_SELECTED } else { COLOR_CLIP_VIDEO }
+                    }
+                    TrackType::Audio => {
+                        if is_sel { COLOR_CLIP_AUDIO_SELECTED } else { COLOR_CLIP_AUDIO }
+                    }
                 }
             };
             painter.rect_filled(clip_rect, 4.0, base_color);
@@ -354,7 +358,8 @@ pub fn render_timeline_canvas(
                 (None, Some(_)) => " -⧗",
                 (None, None) => "",
             };
-            let title_str = format!("{}{}{}{}{}  [{:.2}s]{}", clip.name, lock_badge, link_badge, trans_badge, kf_badge, clip.duration(), speed_badge);
+            let title_prefix = if clip.text_overlay.is_some() { "🅃 " } else { "" };
+            let title_str = format!("{}{}{}{}{}{}  [{:.2}s]{}", title_prefix, clip.name, lock_badge, link_badge, trans_badge, kf_badge, clip.duration(), speed_badge);
 
             painter.text(
                 Pos2::new(clip_rect.left() + 10.0, clip_rect.top() + 6.0),

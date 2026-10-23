@@ -333,36 +333,54 @@ mod tests {
         let mut app = TrimApp::default();
         let mut track = Track::new("V1", TrackType::Video);
         let clip = Clip::new("m_test", 0.0, 5.0);
-        let cl_id = clip.id.clone();
-        let tr_id = track.id.clone();
+        let orig_cl_id = clip.id.clone();
+        let orig_tr_id = track.id.clone();
         track.add_clip(clip);
         app.project.timeline.add_track(track);
+        app.target_video_track = orig_tr_id.clone();
         app.current_time = 2.0;
 
-        // Test click: sets text overlay and pos
+        // Test click: creates a dedicated text clip on an upper track (V2)
         app.handle_monitor_text_click(0.35, 0.45);
-        let tr = app.project.timeline.get_track_by_id(&tr_id).unwrap();
-        let cl = tr.get_clip_by_id(&cl_id).unwrap();
-        let ov = cl.text_overlay.as_ref().expect("text_overlay should be present");
+
+        // Ensure original video clip is untouched
+        let orig_tr = app.project.timeline.get_track_by_id(&orig_tr_id).unwrap();
+        let orig_cl = orig_tr.get_clip_by_id(&orig_cl_id).unwrap();
+        assert!(orig_cl.text_overlay.is_none(), "Original video clip should not be modified");
+
+        // Ensure newly created text clip is on the timeline
+        let (selected_tr_id, selected_cl_id) = app.canvas_state.selected_clip_pairs.first().cloned().unwrap();
+        let text_tr = app.project.timeline.get_track_by_id(&selected_tr_id).unwrap();
+        let text_cl = text_tr.get_clip_by_id(&selected_cl_id).unwrap();
+
+        assert_eq!(text_cl.timeline_in, 2.0);
+        assert_eq!(text_cl.timeline_out, 7.0);
+        assert_eq!(text_cl.duration(), 5.0);
+        let ov = text_cl.text_overlay.as_ref().expect("text_overlay should be present on text clip");
         assert_eq!(ov.pos_x, 0.35);
         assert_eq!(ov.pos_y, 0.45);
-        assert_eq!(app.canvas_state.selected_clip_pairs, vec![(tr_id.clone(), cl_id.clone())]);
         assert!(app.project.is_dirty);
 
         // Test drag: updates pos
         app.handle_monitor_text_drag(0.55, 0.75);
-        let tr = app.project.timeline.get_track_by_id(&tr_id).unwrap();
-        let cl = tr.get_clip_by_id(&cl_id).unwrap();
-        let ov = cl.text_overlay.as_ref().unwrap();
+        let text_tr = app.project.timeline.get_track_by_id(&selected_tr_id).unwrap();
+        let text_cl = text_tr.get_clip_by_id(&selected_cl_id).unwrap();
+        let ov = text_cl.text_overlay.as_ref().unwrap();
         assert_eq!(ov.pos_x, 0.55);
         assert_eq!(ov.pos_y, 0.75);
 
-        // Test content change: updates text inline
+        // Test content change: updates text inline and updates clip name on timeline
         app.handle_monitor_text_content_changed("Alt Başlık Testi".to_string());
-        let tr = app.project.timeline.get_track_by_id(&tr_id).unwrap();
-        let cl = tr.get_clip_by_id(&cl_id).unwrap();
-        let ov = cl.text_overlay.as_ref().unwrap();
+        let text_tr = app.project.timeline.get_track_by_id(&selected_tr_id).unwrap();
+        let text_cl = text_tr.get_clip_by_id(&selected_cl_id).unwrap();
+        let ov = text_cl.text_overlay.as_ref().unwrap();
         assert_eq!(ov.content, "Alt Başlık Testi");
+        assert_eq!(text_cl.name, "Metin: Alt Başlık Testi");
+
+        // Test clicking near existing text overlay selects it instead of creating duplicates
+        app.canvas_state.selected_clip_pairs.clear();
+        app.handle_monitor_text_click(0.55, 0.75);
+        assert_eq!(app.canvas_state.selected_clip_pairs, vec![(selected_tr_id, selected_cl_id)]);
     }
 
     #[test]

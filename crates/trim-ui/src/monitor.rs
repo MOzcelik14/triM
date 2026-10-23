@@ -294,13 +294,31 @@ impl<'a> MonitorWidget<'a> {
             // Click or drag on monitor frame with Type Tool to place or reposition text
             if let Some(interact_pos) = response.interact_pointer_pos() {
                 if frame_rect.contains(interact_pos) {
-                    let norm_x = ((interact_pos.x - frame_rect.left()) / frame_rect.width()).clamp(0.05, 0.95);
-                    let norm_y = ((interact_pos.y - frame_rect.top()) / frame_rect.height()).clamp(0.05, 0.95);
+                    let (target_x, target_y) = if let Some(first_ov) = self.text_overlays.first() {
+                        (
+                            frame_rect.left() + frame_rect.width() * first_ov.pos_x.clamp(0.0, 1.0),
+                            frame_rect.top() + frame_rect.height() * first_ov.pos_y.clamp(0.0, 1.0),
+                        )
+                    } else {
+                        (frame_rect.center().x, frame_rect.center().y)
+                    };
+                    let input_y = if target_y - 36.0 > frame_rect.top() + 10.0 {
+                        target_y - 36.0
+                    } else {
+                        target_y + 36.0
+                    };
+                    let input_rect = Rect::from_center_size(Pos2::new(target_x, input_y), Vec2::new(260.0, 28.0));
+                    let is_inside_editor = self.inline_text_edit.is_some() && input_rect.expand(6.0).contains(interact_pos);
 
-                    if response.clicked() {
-                        action = Some(MonitorAction::TextToolClick { pos_x: norm_x, pos_y: norm_y });
-                    } else if response.dragged() {
-                        action = Some(MonitorAction::TextPositionDrag { pos_x: norm_x, pos_y: norm_y });
+                    if !is_inside_editor {
+                        let norm_x = ((interact_pos.x - frame_rect.left()) / frame_rect.width()).clamp(0.05, 0.95);
+                        let norm_y = ((interact_pos.y - frame_rect.top()) / frame_rect.height()).clamp(0.05, 0.95);
+
+                        if response.clicked() {
+                            action = Some(MonitorAction::TextToolClick { pos_x: norm_x, pos_y: norm_y });
+                        } else if response.dragged() {
+                            action = Some(MonitorAction::TextPositionDrag { pos_x: norm_x, pos_y: norm_y });
+                        }
                     }
                 }
             }
