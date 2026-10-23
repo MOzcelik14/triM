@@ -1,15 +1,20 @@
 //! Clip Properties and Inspector panel in Turkish.
 
 use egui::{Button, DragValue, Grid, RichText, ScrollArea, Ui};
-use trim_core::clip::{AudioEqPreset, Clip, LutPreset, TextOverlay};
+use trim_core::clip::{
+    AudioEqPreset, AudioVisualizerConfig, CaptionStyle, ChromaKeyConfig, Clip, ColorWheelsConfig,
+    LutPreset, PanZoomPreset, TextOverlay, VisualizerStyle,
+};
 use trim_core::keyframe::Interpolation;
 use trim_core::project::Project;
+use crate::color_wheel::render_color_wheels_panel;
 
 pub enum InspectorAction {
     ClipModified,
     ChangeSpeed(f64, bool),
     TriggerSceneDetect,
     TriggerSilenceDetect,
+    TriggerTranscribe,
     ImportSubtitles,
     ExportSubtitles,
 }
@@ -201,6 +206,21 @@ fn render_transform_group(ui: &mut Ui, clip: &mut Clip, clip_time: f64, action: 
             render_kf_btn(ui, clip, "opacity", clip_time, clip.opacity, action);
             ui.end_row();
         });
+
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Ken Burns Şablonu:").size(11.0).strong());
+            egui::ComboBox::from_id_salt("ken_burns_preset")
+                .selected_text("Seç / Uygula...")
+                .show_ui(ui, |ui| {
+                    for preset in PanZoomPreset::ALL {
+                        if ui.button(preset.label()).clicked() {
+                            clip.apply_pan_zoom_preset(*preset);
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                    }
+                });
+        });
     });
 }
 
@@ -324,10 +344,79 @@ fn render_color_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
                 clip.saturation = 1.0;
                 clip.lut_preset = LutPreset::None;
                 clip.custom_lut_path = None;
+                clip.color_wheels = None;
                 *action = Some(InspectorAction::ClipModified);
             }
             ui.end_row();
         });
+
+        // 3-Point Color Wheels (Lift, Gamma, Gain)
+        ui.add_space(4.0);
+        ui.separator();
+        ui.strong("Üç Noktalı Renk Çarkları (Lift, Gamma, Gain)");
+        let mut has_cw = clip.color_wheels.is_some();
+        if ui.checkbox(&mut has_cw, "Renk Çarklarını Etkinleştir").changed() {
+            if has_cw {
+                clip.color_wheels = Some(ColorWheelsConfig::default());
+            } else {
+                clip.color_wheels = None;
+            }
+            *action = Some(InspectorAction::ClipModified);
+        }
+
+        if let Some(cw) = &mut clip.color_wheels {
+            if render_color_wheels_panel(ui, cw) {
+                *action = Some(InspectorAction::ClipModified);
+            }
+        }
+
+        // Chroma Key (Green Screen)
+        ui.add_space(4.0);
+        ui.separator();
+        ui.strong("Kroma Anahtarı (Yeşil Ekran)");
+        let mut has_ck = clip.chromakey.is_some();
+        if ui.checkbox(&mut has_ck, "Kroma Anahtarını Etkinleştir").changed() {
+            if has_ck {
+                clip.chromakey = Some(ChromaKeyConfig::default());
+            } else {
+                clip.chromakey = None;
+            }
+            *action = Some(InspectorAction::ClipModified);
+        }
+
+        if let Some(ck) = &mut clip.chromakey {
+            Grid::new("chromakey_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+                ui.label("Anahtar Rengi:");
+                ui.horizontal(|ui| {
+                    let mut col = egui::Color32::from_rgb(ck.key_color[0], ck.key_color[1], ck.key_color[2]);
+                    if ui.color_edit_button_srgba(&mut col).changed() {
+                        ck.key_color = [col.r(), col.g(), col.b()];
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                    if ui.button("Yeşil").clicked() {
+                        ck.key_color = [0, 255, 0];
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                    if ui.button("Mavi").clicked() {
+                        ck.key_color = [0, 0, 255];
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                });
+                ui.end_row();
+
+                ui.label("Benzerlik (Eşik):");
+                if ui.add(DragValue::new(&mut ck.similarity).speed(0.01).range(0.01..=1.0)).changed() {
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                ui.end_row();
+
+                ui.label("Yumuşatma:");
+                if ui.add(DragValue::new(&mut ck.smoothness).speed(0.005).range(0.001..=0.5)).changed() {
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                ui.end_row();
+            });
+        }
     });
 }
 
@@ -421,6 +510,49 @@ fn render_audio_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
             }
             ui.end_row();
         });
+
+        ui.add_space(4.0);
+        ui.separator();
+        ui.strong("Görsel Ses Dalgası (Audio Visualizer)");
+        let mut has_vis = clip.audio_visualizer.is_some();
+        if ui.checkbox(&mut has_vis, "Ses Görselleştiriciyi Etkinleştir").changed() {
+            if has_vis {
+                clip.audio_visualizer = Some(AudioVisualizerConfig::default());
+            } else {
+                clip.audio_visualizer = None;
+            }
+            *action = Some(InspectorAction::ClipModified);
+        }
+
+        if let Some(vis) = &mut clip.audio_visualizer {
+            Grid::new("vis_grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+                ui.label("Stil:");
+                egui::ComboBox::from_id_salt("vis_style_combo")
+                    .selected_text(vis.style.label())
+                    .show_ui(ui, |ui| {
+                        for st in VisualizerStyle::ALL {
+                            if ui.selectable_value(&mut vis.style, *st, st.label()).clicked() {
+                                *action = Some(InspectorAction::ClipModified);
+                            }
+                        }
+                    });
+                ui.end_row();
+
+                ui.label("Dikey Konum:");
+                if ui.add(egui::Slider::new(&mut vis.pos_y, 0.0..=1.0).show_value(false)).changed() {
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                ui.end_row();
+
+                ui.label("Dalga Rengi:");
+                let mut col = egui::Color32::from_rgba_unmultiplied(vis.color[0], vis.color[1], vis.color[2], vis.color[3]);
+                if ui.color_edit_button_srgba(&mut col).changed() {
+                    vis.color = [col.r(), col.g(), col.b(), col.a()];
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                ui.end_row();
+            });
+        }
     });
 }
 
@@ -521,6 +653,16 @@ fn render_titler_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspect
                     }
                     *action = Some(InspectorAction::ClipModified);
                 }
+                ui.label("Altyazı Stili:");
+                egui::ComboBox::from_id_salt("caption_style_combo")
+                    .selected_text(txt.caption_style.label())
+                    .show_ui(ui, |ui| {
+                        for style in CaptionStyle::ALL {
+                            if ui.selectable_value(&mut txt.caption_style, *style, style.label()).clicked() {
+                                *action = Some(InspectorAction::ClipModified);
+                            }
+                        }
+                    });
                 ui.end_row();
             });
         }
@@ -534,6 +676,13 @@ fn render_titler_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspect
                 *action = Some(InspectorAction::ExportSubtitles);
             }
         });
+        ui.add_space(4.0);
+        if ui
+            .button(RichText::new("🎙️ Lokal Whisper ile Otomatik Deşifre Et").size(11.0).color(egui::Color32::from_rgb(0x40, 0xa0, 0xf0)))
+            .clicked()
+        {
+            *action = Some(InspectorAction::TriggerTranscribe);
+        }
     });
 }
 

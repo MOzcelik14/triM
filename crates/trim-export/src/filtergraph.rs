@@ -189,7 +189,43 @@ impl TimelineExporter {
             }
         }
 
+        if let Some(cw) = &clip.color_wheels {
+            let rs = cw.lift[0].clamp(-1.0, 1.0);
+            let gs = cw.lift[1].clamp(-1.0, 1.0);
+            let bs = cw.lift[2].clamp(-1.0, 1.0);
+            let rm = (cw.gamma[0] - 1.0).clamp(-1.0, 1.0);
+            let gm = (cw.gamma[1] - 1.0).clamp(-1.0, 1.0);
+            let bm = (cw.gamma[2] - 1.0).clamp(-1.0, 1.0);
+            let rh = (cw.gain[0] - 1.0).clamp(-1.0, 1.0);
+            let gh = (cw.gain[1] - 1.0).clamp(-1.0, 1.0);
+            let bh = (cw.gain[2] - 1.0).clamp(-1.0, 1.0);
+            if rs.abs() > 1e-4
+                || gs.abs() > 1e-4
+                || bs.abs() > 1e-4
+                || rm.abs() > 1e-4
+                || gm.abs() > 1e-4
+                || bm.abs() > 1e-4
+                || rh.abs() > 1e-4
+                || gh.abs() > 1e-4
+                || bh.abs() > 1e-4
+            {
+                f.push(format!(
+                    "colorbalance=rs={:.3}:gs={:.3}:bs={:.3}:rm={:.3}:gm={:.3}:bm={:.3}:rh={:.3}:gh={:.3}:bh={:.3}",
+                    rs, gs, bs, rm, gm, bm, rh, gh, bh
+                ));
+            }
+        }
+
         f.push("format=rgba".into());
+
+        if let Some(ck) = &clip.chromakey {
+            if ck.enabled {
+                f.push(format!(
+                    "chromakey=color=0x{:02x}{:02x}{:02x}:similarity={:.3}:smoothness={:.3}",
+                    ck.key_color[0], ck.key_color[1], ck.key_color[2], ck.similarity, ck.smoothness
+                ));
+            }
+        }
 
         // Opacity (static or keyframed).
         if let Some(kfs) = animated_kfs(clip, "opacity") {
@@ -930,6 +966,7 @@ mod tests {
             pos_x: 0.5,
             pos_y: 0.85,
             has_shadow: true,
+            ..Default::default()
         });
         proj.timeline.tracks[0].add_clip(c);
 

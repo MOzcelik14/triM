@@ -180,6 +180,7 @@ pub fn subtitle_entries_to_clips(entries: &[SubtitleEntry], default_font_size: f
                 pos_x: 0.5,
                 pos_y: 0.85,
                 has_shadow: true,
+                ..Default::default()
             });
             clip
         })

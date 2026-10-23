@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod canvas;
+pub mod color_wheel;
 pub mod dialogs;
 pub mod inspector;
 pub mod media_bin;
@@ -267,6 +268,27 @@ mod tests {
         assert_eq!(c.linked_group_id.as_deref(), Some("grp-123"));
         assert_eq!(c.transition_in.as_deref(), Some("cross_dissolve"));
         assert_eq!(c.transition_out.as_deref(), Some("dip_black"));
+    }
+
+    #[test]
+    fn test_transcribe_and_screen_record_dialogs() {
+        let mut td = crate::dialogs::TranscribeDialog::default();
+        assert!(!td.is_open);
+        td.open("/tmp/test.mp4", "Scene 1");
+        assert!(td.is_open);
+        assert_eq!(td.media_path, "/tmp/test.mp4");
+        assert_eq!(td.clip_name, "Scene 1");
+        td.close();
+        assert!(!td.is_open);
+
+        let mut srd = crate::dialogs::ScreenRecordDialog::default();
+        assert!(!srd.is_open);
+        assert_eq!(srd.source, trim_media::CaptureSource::ScreenAndMic);
+        assert!(srd.auto_add_to_timeline);
+        srd.open();
+        assert!(srd.is_open);
+        srd.close();
+        assert!(!srd.is_open);
     }
 }
 

@@ -67,6 +67,195 @@ impl LutPreset {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptionStyle {
+    #[default]
+    Standard,
+    PopUpBouncy,
+    WordHighlightYellow,
+    WordHighlightNeon,
+    BoxBackground,
+}
+
+impl CaptionStyle {
+    pub const ALL: &'static [Self] = &[
+        Self::Standard,
+        Self::PopUpBouncy,
+        Self::WordHighlightYellow,
+        Self::WordHighlightNeon,
+        Self::BoxBackground,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Standard => "Klasik Standart Altyazı",
+            Self::PopUpBouncy => "💥 Pop-Up / Zıplayan Kelime (TikTok / Reels)",
+            Self::WordHighlightYellow => "⚡ Sarı Vurgulu Kelime (YouTube Shorts)",
+            Self::WordHighlightNeon => "🟢 Neon Yeşil Vurgu (Dinamik)",
+            Self::BoxBackground => "📦 Arka Plan Kutulu (Modern NLE)",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PanZoomPreset {
+    #[default]
+    None,
+    ZoomIn,
+    ZoomOut,
+    PanLeft,
+    PanRight,
+    DramaticZoom,
+}
+
+impl PanZoomPreset {
+    pub const ALL: &'static [Self] = &[
+        Self::None,
+        Self::ZoomIn,
+        Self::ZoomOut,
+        Self::PanLeft,
+        Self::PanRight,
+        Self::DramaticZoom,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::None => "Yok (Sabit)",
+            Self::ZoomIn => "🔍 Yavaşça Yaklaş (Zoom In)",
+            Self::ZoomOut => "🔍 Yavaşça Uzaklaş (Zoom Out)",
+            Self::PanLeft => "⬅️ Sola Kay (Pan Left)",
+            Self::PanRight => "➡️ Sağa Kay (Pan Right)",
+            Self::DramaticZoom => "⚡ Hızlı Dramatik Yaklaş",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChromaKeyConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_chromakey_green")]
+    pub key_color: [u8; 3],
+    #[serde(default = "default_chromakey_similarity")]
+    pub similarity: f32,
+    #[serde(default = "default_chromakey_smoothness")]
+    pub smoothness: f32,
+}
+
+fn default_chromakey_green() -> [u8; 3] {
+    [0, 255, 0]
+}
+fn default_chromakey_similarity() -> f32 {
+    0.25
+}
+fn default_chromakey_smoothness() -> f32 {
+    0.10
+}
+
+impl Default for ChromaKeyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            key_color: default_chromakey_green(),
+            similarity: default_chromakey_similarity(),
+            smoothness: default_chromakey_smoothness(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ColorWheelsConfig {
+    #[serde(default = "default_zero_vec3")]
+    pub lift: [f32; 3], // RGB shift for Shadows: [-0.5 .. 0.5]
+    #[serde(default = "default_one_vec3")]
+    pub gamma: [f32; 3], // RGB shift for Midtones: [0.2 .. 2.0]
+    #[serde(default = "default_one_vec3")]
+    pub gain: [f32; 3], // RGB multiplier for Highlights: [0.0 .. 2.0]
+    #[serde(default = "default_zero_vec3")]
+    pub luminance: [f32; 3], // Lift, Gamma, Gain Y/brightness sliders
+}
+
+fn default_zero_vec3() -> [f32; 3] {
+    [0.0, 0.0, 0.0]
+}
+fn default_one_vec3() -> [f32; 3] {
+    [1.0, 1.0, 1.0]
+}
+
+impl Default for ColorWheelsConfig {
+    fn default() -> Self {
+        Self {
+            lift: default_zero_vec3(),
+            gamma: default_one_vec3(),
+            gain: default_one_vec3(),
+            luminance: default_zero_vec3(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VisualizerStyle {
+    #[default]
+    WaveformBars,
+    SpectrumLine,
+    CircularPulsing,
+}
+
+impl VisualizerStyle {
+    pub const ALL: &'static [Self] = &[
+        Self::WaveformBars,
+        Self::SpectrumLine,
+        Self::CircularPulsing,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::WaveformBars => "📊 Dalga Boyu Çubukları (Bars)",
+            Self::SpectrumLine => "📈 Frekans Spektrumu Çizgisi (Spectrum)",
+            Self::CircularPulsing => "🟣 Dairesel / Nabız Görselleştirici",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AudioVisualizerConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub style: VisualizerStyle,
+    #[serde(default = "default_visualizer_color")]
+    pub color: [u8; 4],
+    #[serde(default = "default_visualizer_pos_y")]
+    pub pos_y: f32,
+    #[serde(default = "default_one_f32")]
+    pub scale: f32,
+}
+
+fn default_visualizer_color() -> [u8; 4] {
+    [99, 102, 241, 255]
+}
+fn default_visualizer_pos_y() -> f32 {
+    0.75
+}
+fn default_one_f32() -> f32 {
+    1.0
+}
+
+impl Default for AudioVisualizerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            style: VisualizerStyle::WaveformBars,
+            color: default_visualizer_color(),
+            pos_y: default_visualizer_pos_y(),
+            scale: 1.0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextOverlay {
     pub content: String,
@@ -82,6 +271,10 @@ pub struct TextOverlay {
     pub pos_y: f32,
     #[serde(default = "default_true")]
     pub has_shadow: bool,
+    #[serde(default)]
+    pub caption_style: CaptionStyle,
+    #[serde(default = "default_highlight_color")]
+    pub highlight_color: [u8; 4],
 }
 
 fn default_font_size() -> f32 {
@@ -89,6 +282,9 @@ fn default_font_size() -> f32 {
 }
 fn default_white_color() -> [u8; 4] {
     [255, 255, 255, 255]
+}
+fn default_highlight_color() -> [u8; 4] {
+    [255, 230, 0, 255] // Yellow pop
 }
 fn default_half_f32() -> f32 {
     0.5
@@ -110,6 +306,8 @@ impl Default for TextOverlay {
             pos_x: 0.5,
             pos_y: 0.82,
             has_shadow: true,
+            caption_style: CaptionStyle::Standard,
+            highlight_color: default_highlight_color(),
         }
     }
 }
@@ -172,6 +370,12 @@ pub struct Clip {
     pub keyframes: HashMap<String, Vec<Keyframe>>,
     #[serde(default)]
     pub linked_group_id: Option<String>,
+    #[serde(default)]
+    pub chromakey: Option<ChromaKeyConfig>,
+    #[serde(default)]
+    pub color_wheels: Option<ColorWheelsConfig>,
+    #[serde(default)]
+    pub audio_visualizer: Option<AudioVisualizerConfig>,
 }
 
 fn default_speed() -> f64 {
@@ -214,6 +418,9 @@ impl Default for Clip {
             opacity: 1.0,
             keyframes: HashMap::new(),
             linked_group_id: None,
+            chromakey: None,
+            color_wheels: None,
+            audio_visualizer: None,
         }
     }
 }
@@ -229,6 +436,79 @@ impl Clip {
             source_in: 0.0,
             source_out: Some(dur),
             ..Default::default()
+        }
+    }
+
+    pub fn apply_pan_zoom_preset(&mut self, preset: PanZoomPreset) {
+        let dur = self.duration().max(0.1);
+        match preset {
+            PanZoomPreset::None => {
+                self.keyframes.remove("scale");
+                self.keyframes.remove("pos_x");
+                self.keyframes.remove("pos_y");
+                self.scale = 1.0;
+                self.pos_x = 0.0;
+                self.pos_y = 0.0;
+            }
+            PanZoomPreset::ZoomIn => {
+                self.pos_x = 0.0;
+                self.pos_y = 0.0;
+                self.keyframes.insert(
+                    "scale".to_string(),
+                    vec![
+                        Keyframe::new(0.0, 1.0, Interpolation::EaseInOut),
+                        Keyframe::new(dur, 1.25, Interpolation::EaseInOut),
+                    ],
+                );
+            }
+            PanZoomPreset::ZoomOut => {
+                self.pos_x = 0.0;
+                self.pos_y = 0.0;
+                self.keyframes.insert(
+                    "scale".to_string(),
+                    vec![
+                        Keyframe::new(0.0, 1.25, Interpolation::EaseInOut),
+                        Keyframe::new(dur, 1.0, Interpolation::EaseInOut),
+                    ],
+                );
+            }
+            PanZoomPreset::PanLeft => {
+                self.keyframes.insert(
+                    "scale".to_string(),
+                    vec![Keyframe::new(0.0, 1.15, Interpolation::Linear)],
+                );
+                self.keyframes.insert(
+                    "pos_x".to_string(),
+                    vec![
+                        Keyframe::new(0.0, 60.0, Interpolation::EaseInOut),
+                        Keyframe::new(dur, -60.0, Interpolation::EaseInOut),
+                    ],
+                );
+            }
+            PanZoomPreset::PanRight => {
+                self.keyframes.insert(
+                    "scale".to_string(),
+                    vec![Keyframe::new(0.0, 1.15, Interpolation::Linear)],
+                );
+                self.keyframes.insert(
+                    "pos_x".to_string(),
+                    vec![
+                        Keyframe::new(0.0, -60.0, Interpolation::EaseInOut),
+                        Keyframe::new(dur, 60.0, Interpolation::EaseInOut),
+                    ],
+                );
+            }
+            PanZoomPreset::DramaticZoom => {
+                self.pos_x = 0.0;
+                self.pos_y = 0.0;
+                self.keyframes.insert(
+                    "scale".to_string(),
+                    vec![
+                        Keyframe::new(0.0, 1.0, Interpolation::EaseInOut),
+                        Keyframe::new(dur, 1.5, Interpolation::EaseInOut),
+                    ],
+                );
+            }
         }
     }
 
@@ -453,4 +733,46 @@ mod tests {
         assert_eq!(c.timeline_out, 6.0);
         assert_eq!(c.duration(), 4.0);
     }
+
+    #[test]
+    fn test_pan_zoom_presets() {
+        let mut c = Clip::new("m1", 0.0, 4.0);
+        c.apply_pan_zoom_preset(PanZoomPreset::ZoomIn);
+        assert!(c.has_keyframes(Some("scale")));
+        let kfs = c.keyframes.get("scale").unwrap();
+        assert_eq!(kfs.len(), 2);
+        assert_eq!(kfs[0].value, 1.0);
+        assert_eq!(kfs[1].value, 1.25);
+
+        c.apply_pan_zoom_preset(PanZoomPreset::PanLeft);
+        assert!(c.has_keyframes(Some("pos_x")));
+        let x_kfs = c.keyframes.get("pos_x").unwrap();
+        assert_eq!(x_kfs[0].value, 60.0);
+        assert_eq!(x_kfs[1].value, -60.0);
+
+        c.apply_pan_zoom_preset(PanZoomPreset::None);
+        assert!(!c.has_keyframes(Some("scale")));
+        assert!(!c.has_keyframes(Some("pos_x")));
+        assert_eq!(c.scale, 1.0);
+        assert_eq!(c.pos_x, 0.0);
+    }
+
+    #[test]
+    fn test_chromakey_and_color_wheels_defaults() {
+        let c = Clip::default();
+        assert!(c.chromakey.is_none());
+        assert!(c.color_wheels.is_none());
+        assert!(c.audio_visualizer.is_none());
+
+        let ck = ChromaKeyConfig::default();
+        assert!(ck.enabled);
+        assert_eq!(ck.key_color, [0, 255, 0]);
+        assert_eq!(ck.similarity, 0.25);
+
+        let cw = ColorWheelsConfig::default();
+        assert_eq!(cw.lift, [0.0, 0.0, 0.0]);
+        assert_eq!(cw.gamma, [1.0, 1.0, 1.0]);
+        assert_eq!(cw.gain, [1.0, 1.0, 1.0]);
+    }
 }
+

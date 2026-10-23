@@ -94,6 +94,8 @@ pub struct TrimApp {
     pub export_dialog: ExportDialog,
     pub speed_dialog: SpeedDialog,
     pub silence_dialog: SilenceDialog,
+    pub transcribe_dialog: TranscribeDialog,
+    pub screen_record_dialog: ScreenRecordDialog,
     pub title_dialog: TitleDialog,
     pub recovery_dialog: RecoveryDialog,
     pub audio_mixer_dialog: AudioMixerDialog,
@@ -174,6 +176,8 @@ impl TrimApp {
             export_dialog: ExportDialog::default(),
             speed_dialog: SpeedDialog::default(),
             silence_dialog: SilenceDialog::default(),
+            transcribe_dialog: TranscribeDialog::default(),
+            screen_record_dialog: ScreenRecordDialog::default(),
             title_dialog: TitleDialog::default(),
             recovery_dialog: RecoveryDialog::default(),
             audio_mixer_dialog: AudioMixerDialog::default(),
@@ -698,6 +702,48 @@ impl TrimApp {
         }
     }
 
+    pub fn export_edl_dialog(&mut self) {
+        let edl_text = trim_export::generate_edl(&self.project);
+        let default_name = format!("{}.edl", self.project.settings.name);
+
+        if let Some(path) = rfd::FileDialog::new()
+            .set_title("Projeyi CMX 3600 EDL Olarak Dışa Aktar")
+            .set_file_name(&default_name)
+            .add_filter("CMX 3600 EDL (*.edl)", &["edl"])
+            .save_file()
+        {
+            match std::fs::write(&path, edl_text) {
+                Ok(()) => {
+                    self.status_message = format!("EDL başarıyla dışa aktarıldı: {:?}", path);
+                }
+                Err(e) => {
+                    self.status_message = format!("EDL kayıt hatası: {}", e);
+                }
+            }
+        }
+    }
+
+    pub fn export_fcpxml_dialog(&mut self) {
+        let xml_text = trim_export::generate_fcpxml(&self.project);
+        let default_name = format!("{}.xml", self.project.settings.name);
+
+        if let Some(path) = rfd::FileDialog::new()
+            .set_title("Projeyi Final Cut Pro XML (Premiere/DaVinci) Olarak Dışa Aktar")
+            .set_file_name(&default_name)
+            .add_filter("Final Cut Pro XML (*.xml)", &["xml"])
+            .save_file()
+        {
+            match std::fs::write(&path, xml_text) {
+                Ok(()) => {
+                    self.status_message = format!("FCPXML başarıyla dışa aktarıldı: {:?}", path);
+                }
+                Err(e) => {
+                    self.status_message = format!("FCPXML kayıt hatası: {}", e);
+                }
+            }
+        }
+    }
+
     pub fn smart_scene_cut_selected_clip(&mut self) {
         let selected = self.canvas_state.selected_clip_pairs.first().cloned();
         let Some((tr_id, cl_id)) = selected else {
@@ -829,6 +875,42 @@ impl TrimApp {
                 self.silence_dialog.is_analyzing = false;
             }
         }
+    }
+
+    pub fn open_transcribe_dialog_for_selected(&mut self) {
+        let selected = self.canvas_state.selected_clip_pairs.first().cloned();
+        let Some((tr_id, cl_id)) = selected else {
+            self.status_message = "Lütfen önce deşifre edilecek bir klip seçin".to_string();
+            return;
+        };
+
+        let clip_info = if let Some(tr) = self.project.timeline.get_track_by_id(&tr_id) {
+            tr.get_clip_by_id(&cl_id).cloned()
+        } else {
+            None
+        };
+        let Some(clip) = clip_info else {
+            self.status_message = "Klip bulunamadı".to_string();
+            return;
+        };
+
+        let media_path = if let Some(media) = self.project.get_media(&clip.media_id) {
+            media.file_path.clone()
+        } else {
+            clip.media_id.clone()
+        };
+
+        let name = if !clip.name.is_empty() {
+            clip.name.clone()
+        } else {
+            "Klip".to_string()
+        };
+
+        self.transcribe_dialog.open(media_path, name);
+    }
+
+    pub fn open_screen_record_dialog(&mut self) {
+        self.screen_record_dialog.open();
     }
 
     pub fn toggle_link_selected_clips(&mut self) {
@@ -1315,6 +1397,14 @@ impl TrimApp {
                     let text_color = Color32::from_rgba_unmultiplied(
                         txt.text_color[0], txt.text_color[1], txt.text_color[2], txt.text_color[3]
                     );
+                    let dur = c.duration().max(0.01);
+                    let progress = (dt / dur).clamp(0.0, 1.0) as f32;
+                    let highlight_color = Color32::from_rgba_unmultiplied(
+                        txt.highlight_color[0],
+                        txt.highlight_color[1],
+                        txt.highlight_color[2],
+                        txt.highlight_color[3],
+                    );
                     let bg_color = txt.bg_color.map(|b| {
                         Color32::from_rgba_unmultiplied(b[0], b[1], b[2], (b[3] as f32 * a) as u8)
                     });
@@ -1327,6 +1417,9 @@ impl TrimApp {
                         pos_y: txt.pos_y,
                         has_shadow: txt.has_shadow,
                         alpha: a.clamp(0.0, 1.0),
+                        caption_style: txt.caption_style,
+                        highlight_color,
+                        progress,
                     });
                 }
             }
@@ -1711,6 +1804,14 @@ impl eframe::App for TrimApp {
                         self.export_subtitles_dialog();
                         ui.close_menu();
                     }
+                    if ui.button("Projeyi EDL Olarak Dışa Aktar (.edl)...").clicked() {
+                        self.export_edl_dialog();
+                        ui.close_menu();
+                    }
+                    if ui.button("Projeyi FCPXML Olarak Dışa Aktar (Premiere/DaVinci)...").clicked() {
+                        self.export_fcpxml_dialog();
+                        ui.close_menu();
+                    }
                     if ui.button("Dışa Aktarma Stüdyosu... (Ctrl+M)").clicked() {
                         self.export_dialog.open(&self.project);
                         ui.close_menu();
@@ -1773,6 +1874,14 @@ impl eframe::App for TrimApp {
                     }
                     if ui.button("Sessizlikleri Otomatik Kes (Jump-Cut)...").clicked() {
                         self.open_silence_cut_dialog_for_selected();
+                        ui.close_menu();
+                    }
+                    if ui.button("🎙️ Lokal Whisper ile Otomatik Deşifre Et...").clicked() {
+                        self.open_transcribe_dialog_for_selected();
+                        ui.close_menu();
+                    }
+                    if ui.button("📹 Ekran ve Web Kamerası Kaydet...").clicked() {
+                        self.open_screen_record_dialog();
                         ui.close_menu();
                     }
                     ui.separator();
@@ -2002,6 +2111,17 @@ impl eframe::App for TrimApp {
                     .fill(if self.use_proxies { Color32::from_rgb(0x18, 0x28, 0x3e) } else { Color32::from_rgb(0x20, 0x20, 0x26) });
                     if ui.add(proxy_btn).on_hover_text("Düşük Donanımlar İçin Akıllı 720p Proxy Önizleme").clicked() {
                         self.toggle_proxy();
+                    }
+
+                    ui.add_space(4.0);
+                    let rec_btn = Button::new(
+                        RichText::new("📹 Ekran Kaydet")
+                            .size(11.0)
+                            .color(Color32::from_rgb(0xe0, 0x80, 0x40)),
+                    )
+                    .fill(Color32::from_rgb(0x28, 0x20, 0x1e));
+                    if ui.add(rec_btn).on_hover_text("Dahili Ekran ve Web Kamerası Kaydedici").clicked() {
+                        self.open_screen_record_dialog();
                     }
 
                     if let Some(ref vo) = self.active_voiceover {
@@ -2470,6 +2590,9 @@ impl eframe::App for TrimApp {
                                 InspectorAction::TriggerSilenceDetect => {
                                     self.open_silence_cut_dialog_for_selected();
                                 }
+                                InspectorAction::TriggerTranscribe => {
+                                    self.open_transcribe_dialog_for_selected();
+                                }
                                 InspectorAction::ImportSubtitles => {
                                     self.import_subtitles_dialog();
                                 }
@@ -2625,6 +2748,7 @@ impl eframe::App for TrimApp {
                                             _ => 0.50,
                                         },
                                         has_shadow,
+                                        ..Default::default()
                                     });
                                     let cmd = Box::new(AddClipCommand::new(target_track_id, clip));
                                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
@@ -2790,6 +2914,84 @@ impl eframe::App for TrimApp {
         // Keyboard Shortcuts Modal (F1)
         // -------------------------------------------------------------
         self.shortcuts_dialog.show(ctx, &mut self.shortcut_profile);
+
+        // -------------------------------------------------------------
+        // Whisper Speech-to-Text Transcription Modal
+        // -------------------------------------------------------------
+        if let Some(act) = self.transcribe_dialog.ui(ctx) {
+            match act {
+                TranscribeDialogAction::StartTranscribe { media_path, model_name, language } => {
+                    let whisper_bin_opt = self.transcribe_dialog.whisper_bin.clone();
+                    if let Some(whisper_bin) = whisper_bin_opt {
+                        let temp_wav = std::env::temp_dir().join(format!(
+                            "trim_whisper_{}.wav",
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .map(|d| d.as_secs())
+                                .unwrap_or(0)
+                        ));
+                        let media_p = PathBuf::from(&media_path);
+                        match trim_media::extract_audio_for_whisper(&media_p, &temp_wav) {
+                            Ok(()) => {
+                                match trim_media::run_whisper_transcription(&whisper_bin, &temp_wav, &model_name, Some(&language)) {
+                                    Ok(entries) => {
+                                        let count = entries.len();
+                                        let subtitle_clips = trim_core::subtitles::subtitle_entries_to_clips(&entries, 42.0);
+                                        let target_tr = self.project.timeline.get_video_tracks().first().map(|t| t.id.clone()).unwrap_or_default();
+                                        for c in subtitle_clips {
+                                            let cmd = Box::new(AddClipCommand::new(&target_tr, c));
+                                            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                        }
+                                        self.transcribe_dialog.close();
+                                        self.status_message = format!("{} adet altyazı başarıyla oluşturuldu ve eklendi", count);
+                                        self.project.mark_dirty();
+                                    }
+                                    Err(e) => {
+                                        self.transcribe_dialog.is_transcribing = false;
+                                        self.transcribe_dialog.status_message = format!("Deşifre hatası: {}", e);
+                                    }
+                                }
+                                let _ = std::fs::remove_file(temp_wav);
+                            }
+                            Err(e) => {
+                                self.transcribe_dialog.is_transcribing = false;
+                                self.transcribe_dialog.status_message = format!("Ses ayıklama hatası: {}", e);
+                            }
+                        }
+                    } else {
+                        self.transcribe_dialog.is_transcribing = false;
+                        self.transcribe_dialog.status_message = "Whisper çalıştırılabilir dosyası bulunamadı. Lütfen whisper-cli veya openai-whisper kurun.".to_string();
+                    }
+                }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Screen & Webcam Recorder Modal
+        // -------------------------------------------------------------
+        if let Some(act) = self.screen_record_dialog.ui(ctx) {
+            match act {
+                ScreenRecordAction::RecordingSaved { file_path, auto_add_to_timeline } => {
+                    if let Ok(mut item) = FFprobeAnalyzer::analyze(&file_path) {
+                        item.name = file_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "Ekran Kaydı".to_string());
+                        let m_id = item.id.clone();
+                        let dur = item.duration;
+                        self.project.add_media(item);
+
+                        if auto_add_to_timeline && dur > 0.1 {
+                            let current_video_tracks = self.project.timeline.get_video_tracks();
+                            if let Some(target_tr) = current_video_tracks.first() {
+                                let clip = Clip::new(m_id, self.current_time, self.current_time + dur);
+                                let cmd = Box::new(AddClipCommand::new(&target_tr.id, clip));
+                                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                self.project.mark_dirty();
+                            }
+                        }
+                        self.status_message = format!("Ekran kaydı içe aktarıldı: {:?}", file_path.file_name().unwrap_or_default());
+                    }
+                }
+            }
+        }
 
         if self.show_about_dialog {
             egui::Window::new("triM. Hakkında")

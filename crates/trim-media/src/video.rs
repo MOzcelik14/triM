@@ -827,10 +827,14 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
     let wipe_right_active = (clip.transition_in.as_deref() == Some("wipe_right") && in_progress < 1.0)
         || (clip.transition_out.as_deref() == Some("wipe_right") && out_progress < 1.0);
 
+    let has_chromakey = clip.chromakey.as_ref().is_some_and(|ck| ck.enabled);
+    let has_color_wheels = clip.color_wheels.is_some();
     let has_color_adj = clip.brightness != 0.0
         || clip.contrast != 1.0
         || clip.saturation != 1.0
-        || clip.lut_preset != trim_core::clip::LutPreset::None;
+        || clip.lut_preset != trim_core::clip::LutPreset::None
+        || has_chromakey
+        || has_color_wheels;
     let has_special_trans = has_dip_white || wipe_left_active || wipe_right_active || slide_x_offset.abs() > 0.1;
 
     let is_fullscreen_fit = final_w == cw as i64
@@ -895,7 +899,50 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
             let mut r = src_px[0] as f32;
             let mut g = src_px[1] as f32;
             let mut b = src_px[2] as f32;
-            let a = (src_px[3] as f32 / 255.0) * eff_opacity as f32;
+            let mut a = (src_px[3] as f32 / 255.0) * eff_opacity as f32;
+
+            if let Some(ck) = &clip.chromakey {
+                if ck.enabled {
+                    let kr = ck.key_color[0] as f32;
+                    let kg = ck.key_color[1] as f32;
+                    let kb = ck.key_color[2] as f32;
+                    let dr = (r - kr) / 255.0;
+                    let dg = (g - kg) / 255.0;
+                    let db = (b - kb) / 255.0;
+                    let dist = (dr * dr + dg * dg + db * db).sqrt();
+                    let sim = ck.similarity.clamp(0.01, 1.0);
+                    let smooth = ck.smoothness.clamp(0.001, 0.5);
+                    if dist < sim {
+                        continue;
+                    } else if dist < sim + smooth {
+                        let blend = (dist - sim) / smooth;
+                        a *= blend;
+                    }
+                }
+            }
+
+            if let Some(cw) = &clip.color_wheels {
+                let luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+                let shadow_w = (1.0 - luma * 2.0).clamp(0.0, 1.0);
+                let hi_w = ((luma - 0.5) * 2.0).clamp(0.0, 1.0);
+                let mid_w = (1.0 - shadow_w - hi_w).clamp(0.0, 1.0);
+
+                r += cw.lift[0] * 128.0 * shadow_w;
+                g += cw.lift[1] * 128.0 * shadow_w;
+                b += cw.lift[2] * 128.0 * shadow_w;
+
+                r *= 1.0 + (cw.gamma[0] - 1.0) * mid_w;
+                g *= 1.0 + (cw.gamma[1] - 1.0) * mid_w;
+                b *= 1.0 + (cw.gamma[2] - 1.0) * mid_w;
+
+                r *= 1.0 + (cw.gain[0] - 1.0) * hi_w;
+                g *= 1.0 + (cw.gain[1] - 1.0) * hi_w;
+                b *= 1.0 + (cw.gain[2] - 1.0) * hi_w;
+
+                r = r.clamp(0.0, 255.0);
+                g = g.clamp(0.0, 255.0);
+                b = b.clamp(0.0, 255.0);
+            }
 
             // Color adjustments
             if has_color_adj {

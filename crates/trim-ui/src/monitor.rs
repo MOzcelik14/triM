@@ -37,6 +37,27 @@ pub struct ActiveTextOverlay {
     pub pos_y: f32,
     pub has_shadow: bool,
     pub alpha: f32,
+    pub caption_style: trim_core::clip::CaptionStyle,
+    pub highlight_color: Color32,
+    pub progress: f32,
+}
+
+impl Default for ActiveTextOverlay {
+    fn default() -> Self {
+        Self {
+            text: String::new(),
+            font_size: 42.0,
+            text_color: Color32::WHITE,
+            bg_color: None,
+            pos_x: 0.5,
+            pos_y: 0.85,
+            has_shadow: true,
+            alpha: 1.0,
+            caption_style: trim_core::clip::CaptionStyle::Standard,
+            highlight_color: Color32::from_rgb(255, 230, 0),
+            progress: 0.0,
+        }
+    }
 }
 
 pub struct MonitorWidget<'a> {
@@ -253,6 +274,14 @@ impl<'a> MonitorWidget<'a> {
             let target_x = frame_rect.left() + frame_rect.width() * ov.pos_x.clamp(0.0, 1.0);
             let target_y = frame_rect.top() + frame_rect.height() * ov.pos_y.clamp(0.0, 1.0);
 
+            let words: Vec<&str> = ov.text.split_whitespace().collect();
+            let is_multi_word = words.len() > 1;
+            let active_idx = if is_multi_word {
+                ((ov.progress * words.len() as f32).floor() as usize).min(words.len() - 1)
+            } else {
+                0
+            };
+
             let mut final_col = ov.text_color;
             if ov.alpha < 0.999 {
                 final_col = Color32::from_rgba_premultiplied(
@@ -263,33 +292,98 @@ impl<'a> MonitorWidget<'a> {
                 );
             }
 
-            let galley = painter.layout_no_wrap(ov.text.clone(), font, final_col);
-            let text_rect = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
+            match ov.caption_style {
+                trim_core::clip::CaptionStyle::PopUpBouncy => {
+                    let bounce = 1.0 + 0.18 * (1.0 - (ov.progress * 2.0 - 1.0).abs()).max(0.0);
+                    let pop_font = egui::FontId::proportional(scaled_font_size * bounce);
+                    let galley = painter.layout_no_wrap(ov.text.clone(), pop_font, ov.highlight_color);
+                    let text_rect = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
 
-            // Optional background box
-            if let Some(bg_col) = ov.bg_color {
-                let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
-                let box_rect = text_rect.expand(pad);
-                let mut box_col = bg_col;
-                if ov.alpha < 0.999 {
-                    box_col = Color32::from_rgba_premultiplied(
-                        (box_col.r() as f32 * ov.alpha) as u8,
-                        (box_col.g() as f32 * ov.alpha) as u8,
-                        (box_col.b() as f32 * ov.alpha) as u8,
-                        (box_col.a() as f32 * ov.alpha) as u8,
-                    );
+                    if let Some(bg_col) = ov.bg_color {
+                        let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
+                        painter.rect_filled(text_rect.expand(pad), 6.0, bg_col);
+                    }
+                    if ov.has_shadow {
+                        painter.galley(text_rect.min + Vec2::new(2.0, 2.0), galley.clone(), Color32::from_black_alpha((180.0 * ov.alpha) as u8));
+                    }
+                    painter.galley(text_rect.min, galley, ov.highlight_color);
                 }
-                painter.rect_filled(box_rect, 4.0, box_col);
-            }
+                trim_core::clip::CaptionStyle::WordHighlightYellow | trim_core::clip::CaptionStyle::WordHighlightNeon => {
+                    let hl_col = if ov.caption_style == trim_core::clip::CaptionStyle::WordHighlightYellow {
+                        Color32::from_rgb(255, 230, 0)
+                    } else {
+                        Color32::from_rgb(0, 255, 102)
+                    };
 
-            // Drop shadow
-            if ov.has_shadow {
-                let shadow_offset = Vec2::new(2.0, 2.0);
-                painter.galley(text_rect.min + shadow_offset, galley.clone(), Color32::from_black_alpha((160.0 * ov.alpha) as u8));
-            }
+                    let mut job = egui::text::LayoutJob::default();
+                    for (i, word) in words.iter().enumerate() {
+                        let col = if i == active_idx { hl_col } else { final_col };
+                        let f = if i == active_idx {
+                            egui::FontId::proportional(scaled_font_size * 1.08)
+                        } else {
+                            font.clone()
+                        };
+                        job.append(
+                            word,
+                            0.0,
+                            egui::TextFormat {
+                                font_id: f,
+                                color: col,
+                                ..Default::default()
+                            },
+                        );
+                        if i + 1 < words.len() {
+                            job.append(
+                                " ",
+                                0.0,
+                                egui::TextFormat {
+                                    font_id: font.clone(),
+                                    color: final_col,
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                    }
+                    let galley = painter.layout_job(job);
+                    let text_rect = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
 
-            // Main text
-            painter.galley(text_rect.min, galley, final_col);
+                    if let Some(bg_col) = ov.bg_color {
+                        let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
+                        painter.rect_filled(text_rect.expand(pad), 4.0, bg_col);
+                    }
+                    if ov.has_shadow {
+                        painter.galley(text_rect.min + Vec2::new(2.0, 2.0), galley.clone(), Color32::from_black_alpha((180.0 * ov.alpha) as u8));
+                    }
+                    painter.galley(text_rect.min, galley, final_col);
+                }
+                trim_core::clip::CaptionStyle::BoxBackground | trim_core::clip::CaptionStyle::Standard => {
+                    let galley = painter.layout_no_wrap(ov.text.clone(), font, final_col);
+                    let text_rect = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
+
+                    if let Some(bg_col) = ov.bg_color {
+                        let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
+                        let mut box_col = bg_col;
+                        if ov.alpha < 0.999 {
+                            box_col = Color32::from_rgba_premultiplied(
+                                (box_col.r() as f32 * ov.alpha) as u8,
+                                (box_col.g() as f32 * ov.alpha) as u8,
+                                (box_col.b() as f32 * ov.alpha) as u8,
+                                (box_col.a() as f32 * ov.alpha) as u8,
+                            );
+                        }
+                        painter.rect_filled(text_rect.expand(pad), 4.0, box_col);
+                    } else if ov.caption_style == trim_core::clip::CaptionStyle::BoxBackground {
+                        let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
+                        painter.rect_filled(text_rect.expand(pad), 4.0, Color32::from_rgba_unmultiplied(0, 0, 0, 180));
+                    }
+
+                    if ov.has_shadow {
+                        let shadow_offset = Vec2::new(2.0, 2.0);
+                        painter.galley(text_rect.min + shadow_offset, galley.clone(), Color32::from_black_alpha((160.0 * ov.alpha) as u8));
+                    }
+                    painter.galley(text_rect.min, galley, final_col);
+                }
+            }
         }
 
         // High contrast frame border
