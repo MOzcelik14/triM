@@ -4,6 +4,7 @@ use crate::theme::*;
 use crate::toolbar::EditTool;
 use egui::{Color32, Pos2, Rect, Response, RichText, Sense, Stroke, Ui, Vec2};
 use std::collections::HashSet;
+use trim_core::clip::ColorLabel;
 use trim_core::media::MediaType;
 use trim_core::project::Project;
 use trim_core::track::TrackType;
@@ -50,6 +51,7 @@ pub struct TimelineCanvasState {
     pub snap_guide_x: Option<f32>,
     pub drag_target_track_id: Option<String>,
     pub track_heights: std::collections::HashMap<String, f32>,
+    pub selected_gap: Option<(String, f64, f64)>, // (track_id, gap_start, gap_end)
 }
 
 impl Default for TimelineCanvasState {
@@ -75,6 +77,7 @@ impl Default for TimelineCanvasState {
             snap_guide_x: None,
             drag_target_track_id: None,
             track_heights: std::collections::HashMap::new(),
+            selected_gap: None,
         }
     }
 }
@@ -144,6 +147,17 @@ pub enum CanvasAction {
         track_id: String,
         time: f64,
     },
+    CloseGap {
+        track_id: Option<String>,
+        gap_start: f64,
+        gap_end: f64,
+    },
+    SetClipColor {
+        track_id: String,
+        clip_id: String,
+        color: trim_core::clip::ColorLabel,
+    },
+    ToggleLinkSelected,
 }
 
 pub fn render_timeline_canvas(
@@ -203,6 +217,90 @@ pub fn render_timeline_canvas(
             Stroke::new(1.0_f32, Color32::from_rgb(0x2a, 0x2a, 0x32)),
         );
 
+        // Draw gaps on this track
+        let mut prev_t = 0.0;
+        for clip in &track.clips {
+            if clip.timeline_in - prev_t > 0.04 {
+                let g_in = prev_t;
+                let g_out = clip.timeline_in;
+                let gx = rect.left() + (g_in as f32 * state.pixels_per_second);
+                let gw = ((g_out - g_in) as f32 * state.pixels_per_second).max(2.0);
+                let gap_rect = Rect::from_min_size(Pos2::new(gx, ty), Vec2::new(gw, track_h));
+
+                let is_gap_sel =
+                    state.selected_gap.as_ref() == Some(&(track.id.clone(), g_in, g_out));
+                let is_hovered = ui
+                    .input(|i| i.pointer.hover_pos())
+                    .map(|p| gap_rect.contains(p))
+                    .unwrap_or(false);
+
+                if is_gap_sel {
+                    painter.rect_filled(
+                        gap_rect,
+                        2.0,
+                        Color32::from_rgba_premultiplied(0xf5, 0x9e, 0x0b, 50),
+                    );
+                    painter.rect_stroke(gap_rect, 2.0, Stroke::new(1.5_f32, COLOR_AMBER));
+
+                    // Diagonal hatch lines inside selected gap
+                    let step = 14.0_f32;
+                    let mut lx = gap_rect.left();
+                    while lx < gap_rect.right() + gap_rect.height() {
+                        let p1 = Pos2::new(
+                            lx.min(gap_rect.right()),
+                            gap_rect.top() + (lx - gap_rect.right()).max(0.0),
+                        );
+                        let p2 = Pos2::new(
+                            (lx - gap_rect.height()).max(gap_rect.left()),
+                            gap_rect.top()
+                                + (lx - (lx - gap_rect.height()).max(gap_rect.left()))
+                                    .min(gap_rect.height()),
+                        );
+                        painter.line_segment(
+                            [p1, p2],
+                            Stroke::new(
+                                1.0_f32,
+                                Color32::from_rgba_premultiplied(0xf5, 0x9e, 0x0b, 70),
+                            ),
+                        );
+                        lx += step;
+                    }
+
+                    if gap_rect.width() > 64.0 {
+                        let dur = g_out - g_in;
+                        let badge_text = format!("⏩ Boşluk: {:.2}s", dur);
+                        let badge_rect =
+                            Rect::from_center_size(gap_rect.center(), Vec2::new(104.0, 18.0));
+                        painter.rect_filled(
+                            badge_rect,
+                            4.0,
+                            Color32::from_rgba_premultiplied(19, 21, 28, 225),
+                        );
+                        painter.rect_stroke(badge_rect, 4.0, Stroke::new(1.0_f32, COLOR_AMBER));
+                        painter.text(
+                            badge_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            badge_text,
+                            egui::FontId::proportional(10.0),
+                            COLOR_AMBER,
+                        );
+                    }
+                } else if is_hovered && state.drag_mode == DragMode::None {
+                    painter.rect_filled(
+                        gap_rect,
+                        2.0,
+                        Color32::from_rgba_premultiplied(255, 255, 255, 12),
+                    );
+                    painter.rect_stroke(
+                        gap_rect,
+                        2.0,
+                        Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(255, 255, 255, 40)),
+                    );
+                }
+            }
+            prev_t = prev_t.max(clip.timeline_out);
+        }
+
         // Draw clips on this track
         for clip in &track.clips {
             let cx = rect.left() + (clip.timeline_in as f32 * state.pixels_per_second);
@@ -212,7 +310,21 @@ pub fn render_timeline_canvas(
             let is_sel = selected_ids.contains(&clip.id);
 
             // Clip body fill
-            let base_color = if clip.text_overlay.is_some() {
+            let base_color = if let Some([r, g, b]) = clip.color_label.color_rgb() {
+                if is_sel {
+                    Color32::from_rgb(
+                        (r as f32 * 1.15).min(255.0) as u8,
+                        (g as f32 * 1.15).min(255.0) as u8,
+                        (b as f32 * 1.15).min(255.0) as u8,
+                    )
+                } else {
+                    Color32::from_rgb(
+                        (r as f32 * 0.70) as u8,
+                        (g as f32 * 0.70) as u8,
+                        (b as f32 * 0.70) as u8,
+                    )
+                }
+            } else if clip.text_overlay.is_some() {
                 if is_sel {
                     Color32::from_rgb(0x8a, 0x48, 0xa5)
                 } else {
@@ -237,6 +349,13 @@ pub fn render_timeline_canvas(
                 }
             };
             painter.rect_filled(clip_rect, 4.0, base_color);
+
+            // Colored top accent stripe if label is set
+            if let Some([r, g, b]) = clip.color_label.color_rgb() {
+                let stripe_rect =
+                    Rect::from_min_size(clip_rect.left_top(), Vec2::new(clip_rect.width(), 3.5));
+                painter.rect_filled(stripe_rect, 2.0, Color32::from_rgb(r, g, b));
+            }
 
             // Waveform
             if track.track_type == TrackType::Audio
@@ -933,6 +1052,7 @@ pub fn render_timeline_canvas(
             let is_multi = ui.input(|i| i.modifiers.shift || i.modifiers.ctrl);
 
             if let Some((tr_id, cl_id, mode)) = hit {
+                state.selected_gap = None;
                 let pair = (tr_id.clone(), cl_id.clone());
                 if is_multi {
                     if let Some(pos_idx) = state.selected_clip_pairs.iter().position(|p| p == &pair)
@@ -991,12 +1111,24 @@ pub fn render_timeline_canvas(
                     }
                 }
             } else {
-                // Clicked empty track area
-                if is_multi {
+                // Clicked empty area - check if user clicked an inter-clip gap
+                let gap_hit = find_gap_at_pos(project, state, rect, pos);
+                if let Some(gap) = gap_hit {
+                    state.selected_gap = Some(gap);
+                    state.selected_clip_pairs.clear();
+                    let clicked_t =
+                        ((pos.x - rect.left()) / state.pixels_per_second).max(0.0) as f64;
+                    let snapped_t = project
+                        .timeline
+                        .snap_time(clicked_t, Some(snap_thresh), None);
+                    action = Some(CanvasAction::Seek(snapped_t));
+                } else if is_multi {
+                    state.selected_gap = None;
                     state.drag_mode = DragMode::Rubberband;
                     state.rubberband_start = Some(pos);
                     state.rubberband_rect = Some(Rect::from_min_max(pos, pos));
                 } else {
+                    state.selected_gap = None;
                     state.selected_clip_pairs.clear();
                     state.drag_mode = DragMode::Scrub;
                     let clicked_t =
@@ -1306,6 +1438,67 @@ pub fn render_timeline_canvas(
 
     // Context Menu on right click
     response.context_menu(|ui| {
+        // 1. If a gap is selected (or hovered right click on a gap)
+        if state.selected_gap.is_none() && state.selected_clip_pairs.is_empty() {
+            if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+                if let Some(gap) = find_gap_at_pos(project, state, rect, pos) {
+                    state.selected_gap = Some(gap);
+                }
+            }
+        }
+
+        if let Some((tr_id, gap_start, gap_end)) = state.selected_gap.clone() {
+            let gap_dur = (gap_end - gap_start).max(0.0);
+            ui.label(
+                RichText::new(format!("⏩ Zaman Çizgisi Boşluğu ({:.2}s)", gap_dur))
+                    .color(COLOR_AMBER)
+                    .strong(),
+            );
+            ui.label(
+                RichText::new(format!("Aralık: {:.2}s - {:.2}s", gap_start, gap_end))
+                    .small()
+                    .color(Color32::from_rgb(0xa0, 0xa0, 0xb0)),
+            );
+            ui.separator();
+
+            let is_locked = project
+                .timeline
+                .get_track_by_id(&tr_id)
+                .map(|t| t.locked)
+                .unwrap_or(false);
+
+            ui.add_enabled_ui(!is_locked, |ui| {
+                if ui
+                    .button("⏩ Boşluğu Kapat (Ripple Delete Gap)  [Del / Shift+Del]")
+                    .clicked()
+                {
+                    action = Some(CanvasAction::CloseGap {
+                        track_id: Some(tr_id.clone()),
+                        gap_start,
+                        gap_end,
+                    });
+                    ui.close_menu();
+                }
+            });
+
+            if ui.button("⏩ Tüm Kanallardaki Boşluğu Kapat").clicked() {
+                action = Some(CanvasAction::CloseGap {
+                    track_id: None,
+                    gap_start,
+                    gap_end,
+                });
+                ui.close_menu();
+            }
+
+            ui.separator();
+            if ui.button("Boşluk Seçimini Kaldır (Esc)").clicked() {
+                state.selected_gap = None;
+                ui.close_menu();
+            }
+            return;
+        }
+
+        // 2. If clip(s) are selected
         if let Some((tr_id, cl_id)) = state.selected_clip_pairs.first().cloned() {
             let is_locked = project
                 .timeline
@@ -1339,6 +1532,48 @@ pub fn render_timeline_canvas(
 
                 if ui.button("Klibi Böl (S)").clicked() {
                     action = Some(CanvasAction::SplitAtPlayhead);
+                    ui.close_menu();
+                }
+
+                ui.separator();
+
+                // Color labels submenu
+                ui.menu_button("🎨 Renk Etiketi (Color Label)", |ui| {
+                    for color in ColorLabel::ALL {
+                        let mut btn_text = RichText::new(color.label());
+                        if let Some([r, g, b]) = color.color_rgb() {
+                            btn_text = btn_text.color(Color32::from_rgb(r, g, b));
+                        }
+                        if ui.button(btn_text).clicked() {
+                            action = Some(CanvasAction::SetClipColor {
+                                track_id: tr_id.clone(),
+                                clip_id: cl_id.clone(),
+                                color: *color,
+                            });
+                            ui.close_menu();
+                        }
+                    }
+                });
+
+                // Link / Unlink toggle button
+                let is_linked = project
+                    .timeline
+                    .get_track_by_id(&tr_id)
+                    .and_then(|t| t.get_clip_by_id(&cl_id))
+                    .and_then(|c| c.linked_group_id.as_ref())
+                    .is_some();
+                if is_linked {
+                    if ui
+                        .button("🔗 Klip Bağını Kaldır (Unlink)  [Ctrl+L]")
+                        .clicked()
+                    {
+                        action = Some(CanvasAction::ToggleLinkSelected);
+                        ui.close_menu();
+                    }
+                } else if state.selected_clip_pairs.len() > 1
+                    && ui.button("🔗 Klipleri Bağla (Link)  [Ctrl+L]").clicked()
+                {
+                    action = Some(CanvasAction::ToggleLinkSelected);
                     ui.close_menu();
                 }
 
@@ -1417,6 +1652,43 @@ fn find_clip_at_pos(
             }
         }
 
+        return None;
+    }
+    None
+}
+
+pub fn find_gap_at_pos(
+    project: &Project,
+    state: &TimelineCanvasState,
+    canvas_rect: Rect,
+    pos: Pos2,
+) -> Option<(String, f64, f64)> {
+    let track_offsets = state.calculate_track_offsets(&project.timeline.tracks, canvas_rect.top());
+    for (t_idx, track) in project.timeline.tracks.iter().enumerate() {
+        let (ty, track_h) = track_offsets[t_idx];
+        let track_rect = Rect::from_min_size(
+            Pos2::new(canvas_rect.left(), ty),
+            Vec2::new(canvas_rect.width(), track_h),
+        );
+        if !track_rect.contains(pos) {
+            continue;
+        }
+
+        let click_time = ((pos.x - canvas_rect.left()) / state.pixels_per_second) as f64;
+        if click_time < 0.0 {
+            return None;
+        }
+
+        let mut prev_out = 0.0;
+        for clip in &track.clips {
+            if clip.timeline_in - prev_out > 0.04
+                && click_time >= prev_out
+                && click_time <= clip.timeline_in
+            {
+                return Some((track.id.clone(), prev_out, clip.timeline_in));
+            }
+            prev_out = prev_out.max(clip.timeline_out);
+        }
         return None;
     }
     None

@@ -100,6 +100,63 @@ impl CaptionStyle {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum ColorLabel {
+    #[default]
+    None,
+    Blue,
+    Green,
+    Orange,
+    Purple,
+    Yellow,
+    Red,
+    Cyan,
+    Magenta,
+}
+
+impl ColorLabel {
+    pub const ALL: &'static [Self] = &[
+        Self::None,
+        Self::Blue,
+        Self::Green,
+        Self::Orange,
+        Self::Purple,
+        Self::Yellow,
+        Self::Red,
+        Self::Cyan,
+        Self::Magenta,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::None => "Varsayılan (Gri/Kanal Rengi)",
+            Self::Blue => "Mavi (B-Roll / Sahne)",
+            Self::Green => "Yeşil (Röportaj / A-Roll)",
+            Self::Orange => "Turuncu (Aksiyon / Vurgu)",
+            Self::Purple => "Mor (Müzik / SFX)",
+            Self::Yellow => "Sarı (Diyalog / Vokal)",
+            Self::Red => "Kırmızı (Önemli / Düzeltme)",
+            Self::Cyan => "Camgöbeği (VFX / Grafik)",
+            Self::Magenta => "Pembe / Magenta (Sosyal Medya)",
+        }
+    }
+
+    pub fn color_rgb(&self) -> Option<[u8; 3]> {
+        match self {
+            Self::None => None,
+            Self::Blue => Some([59, 130, 246]),
+            Self::Green => Some([34, 197, 94]),
+            Self::Orange => Some([249, 115, 22]),
+            Self::Purple => Some([168, 85, 247]),
+            Self::Yellow => Some([234, 179, 8]),
+            Self::Red => Some([239, 68, 68]),
+            Self::Cyan => Some([6, 182, 212]),
+            Self::Magenta => Some([236, 72, 153]),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum PanZoomPreset {
     #[default]
     None,
@@ -376,6 +433,8 @@ pub struct Clip {
     pub color_wheels: Option<ColorWheelsConfig>,
     #[serde(default)]
     pub audio_visualizer: Option<AudioVisualizerConfig>,
+    #[serde(default)]
+    pub color_label: ColorLabel,
 }
 
 fn default_speed() -> f64 {
@@ -421,6 +480,7 @@ impl Default for Clip {
             chromakey: None,
             color_wheels: None,
             audio_visualizer: None,
+            color_label: ColorLabel::None,
         }
     }
 }
@@ -783,5 +843,18 @@ mod tests {
         assert_eq!(cw.lift, [0.0, 0.0, 0.0]);
         assert_eq!(cw.gamma, [1.0, 1.0, 1.0]);
         assert_eq!(cw.gain, [1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn test_color_label_roundtrip() {
+        let mut c = Clip::default();
+        assert_eq!(c.color_label, ColorLabel::None);
+        c.color_label = ColorLabel::Orange;
+        assert_eq!(c.color_label.label(), "Turuncu (Aksiyon / Vurgu)");
+        assert_eq!(c.color_label.color_rgb(), Some([249, 115, 22]));
+
+        let json = serde_json::to_string(&c).expect("serialize clip");
+        let decoded: Clip = serde_json::from_str(&json).expect("deserialize clip");
+        assert_eq!(decoded.color_label, ColorLabel::Orange);
     }
 }

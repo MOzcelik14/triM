@@ -508,4 +508,59 @@ mod tests {
             .linked_group_id
             .is_none());
     }
+
+    #[test]
+    fn test_close_gap_command() {
+        let mut tl = TimelineModel::default();
+        let tr_id = tl.add_new_video_track();
+
+        let c1 = Clip::new("m1", 0.0, 2.0);
+        let c2 = Clip::new("m2", 5.0, 8.0); // 3.0s gap from 2.0 to 5.0
+        let c2_id = c2.id.clone();
+        tl.tracks[0].add_clip(c1);
+        tl.tracks[0].add_clip(c2);
+
+        let mut stack = UndoStack::new();
+        let cmd = Box::new(CloseGapCommand::new(Some(tr_id.clone()), 2.0, 5.0));
+        stack.push(cmd, &mut tl).unwrap();
+
+        // c2 should now start at 2.0 and end at 5.0
+        let moved_c2 = tl.tracks[0].get_clip_by_id(&c2_id).unwrap();
+        assert_eq!(moved_c2.timeline_in, 2.0);
+        assert_eq!(moved_c2.timeline_out, 5.0);
+
+        // Undo
+        assert!(stack.undo(&mut tl).unwrap());
+        let undone_c2 = tl.tracks[0].get_clip_by_id(&c2_id).unwrap();
+        assert_eq!(undone_c2.timeline_in, 5.0);
+        assert_eq!(undone_c2.timeline_out, 8.0);
+    }
+
+    #[test]
+    fn test_set_clip_color_command() {
+        let mut tl = TimelineModel::default();
+        let tr_id = tl.add_new_video_track();
+        let c = Clip::new("m1", 0.0, 3.0);
+        let c_id = c.id.clone();
+        tl.tracks[0].add_clip(c);
+
+        let mut stack = UndoStack::new();
+        let cmd = Box::new(SetClipColorCommand::new(
+            tr_id.clone(),
+            c_id.clone(),
+            trim_core::clip::ColorLabel::Cyan,
+        ));
+        stack.push(cmd, &mut tl).unwrap();
+
+        assert_eq!(
+            tl.tracks[0].get_clip_by_id(&c_id).unwrap().color_label,
+            trim_core::clip::ColorLabel::Cyan
+        );
+
+        assert!(stack.undo(&mut tl).unwrap());
+        assert_eq!(
+            tl.tracks[0].get_clip_by_id(&c_id).unwrap().color_label,
+            trim_core::clip::ColorLabel::None
+        );
+    }
 }

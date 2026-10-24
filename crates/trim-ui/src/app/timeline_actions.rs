@@ -2,10 +2,11 @@
 
 use crate::app::TrimApp;
 use trim_commands::{
-    AddClipCommand, AddMarkerCommand, AddTrackCommand, LinkClipsCommand, RemoveMarkerCommand,
-    RemoveMultipleClipsCommand, RippleDeleteCommand, UnlinkClipsCommand,
+    AddClipCommand, AddMarkerCommand, AddTrackCommand, CloseGapCommand, LinkClipsCommand,
+    RemoveMarkerCommand, RemoveMultipleClipsCommand, RippleDeleteCommand, SetClipColorCommand,
+    UnlinkClipsCommand,
 };
-use trim_core::clip::{Clip, TextOverlay};
+use trim_core::clip::{Clip, ColorLabel, TextOverlay};
 use trim_core::marker::Marker;
 use trim_media::{generate_title_image, FFprobeAnalyzer};
 use trim_timeline::split_at_playhead;
@@ -434,5 +435,32 @@ impl TrimApp {
 
     pub fn add_marker_at_playhead(&mut self) {
         self.add_or_toggle_marker();
+    }
+
+    pub fn close_selected_gap(&mut self, all_tracks: bool) {
+        if let Some((tr_id, gap_start, gap_end)) = self.canvas_state.selected_gap.take() {
+            let dur = (gap_end - gap_start).max(0.0);
+            if dur <= 1e-4 {
+                return;
+            }
+            let target_tr = if all_tracks { None } else { Some(tr_id) };
+            let cmd = Box::new(CloseGapCommand::new(target_tr, gap_start, gap_end));
+            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+            self.status_message = format!("⏩ Boşluk kapatıldı ({:.2}s)", dur);
+            self.project.mark_dirty();
+        }
+    }
+
+    pub fn set_selected_clips_color(&mut self, color: ColorLabel) {
+        for (tr_id, cl_id) in &self.canvas_state.selected_clip_pairs {
+            let cmd = Box::new(SetClipColorCommand::new(
+                tr_id.clone(),
+                cl_id.clone(),
+                color,
+            ));
+            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+        }
+        self.status_message = format!("🎨 Klip rengi güncellendi: {}", color.label());
+        self.project.mark_dirty();
     }
 }

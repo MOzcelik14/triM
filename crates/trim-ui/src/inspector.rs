@@ -6,8 +6,8 @@ use egui::{
     Stroke, TextEdit, Ui, Vec2,
 };
 use trim_core::clip::{
-    AudioEqPreset, AudioVisualizerConfig, CaptionStyle, ChromaKeyConfig, Clip, ColorWheelsConfig,
-    LutPreset, PanZoomPreset, TextOverlay, VisualizerStyle,
+    AudioEqPreset, AudioVisualizerConfig, CaptionStyle, ChromaKeyConfig, Clip, ColorLabel,
+    ColorWheelsConfig, LutPreset, PanZoomPreset, TextOverlay, VisualizerStyle,
 };
 use trim_core::keyframe::Interpolation;
 use trim_core::media::MediaType;
@@ -561,6 +561,54 @@ fn render_info_and_timing_card(
                     clip.source_out =
                         Some(clip.source_in + (clip.timeline_out - clip.timeline_in) * clip.speed);
                     *action = Some(InspectorAction::ClipModified);
+                }
+            });
+
+            prop_row(ui, "Renk Etiketi", |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = 5.0;
+                    for color in ColorLabel::ALL {
+                        let is_active = clip.color_label == *color;
+                        let sw_color = if let Some([r, g, b]) = color.color_rgb() {
+                            Color32::from_rgb(r, g, b)
+                        } else {
+                            Color32::from_rgb(80, 88, 105)
+                        };
+                        let (rect, resp) =
+                            ui.allocate_exact_size(Vec2::new(16.0, 16.0), egui::Sense::click());
+                        let painter = ui.painter();
+                        if resp.hovered() || is_active {
+                            painter.circle_stroke(
+                                rect.center(),
+                                9.0,
+                                Stroke::new(
+                                    1.5_f32,
+                                    if is_active {
+                                        Color32::WHITE
+                                    } else {
+                                        Color32::from_gray(180)
+                                    },
+                                ),
+                            );
+                        }
+                        painter.circle_filled(rect.center(), 6.5, sw_color);
+                        if resp.on_hover_text(color.label()).clicked() {
+                            clip.color_label = *color;
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                    }
+                });
+            });
+
+            prop_row(ui, "A/V Senkron", |ui| {
+                if clip.linked_group_id.is_some() {
+                    render_badge(
+                        ui,
+                        "🔗 Bağlı (A/V Senkron)",
+                        Color32::from_rgb(59, 130, 246),
+                    );
+                } else {
+                    render_badge(ui, "Bağımsız Klip", Color32::from_rgb(100, 116, 139));
                 }
             });
         },

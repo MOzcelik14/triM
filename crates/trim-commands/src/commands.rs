@@ -1,7 +1,7 @@
 //! Complete implementation of all 14 timeline editing commands.
 
 use crate::{Command, CommandError};
-use trim_core::clip::Clip;
+use trim_core::clip::{Clip, ColorLabel};
 use trim_core::marker::Marker;
 use trim_core::timeline::TimelineModel;
 use trim_core::track::{Track, TrackType};
@@ -1391,5 +1391,142 @@ impl Command for UnlinkClipsCommand {
 
     fn name(&self) -> &str {
         "Klip Bağını Kaldır (Unlink)"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 18. CloseGapCommand (Ripple Delete Gap)
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct CloseGapCommand {
+    pub track_id: Option<String>,
+    pub gap_start: f64,
+    pub gap_end: f64,
+    pub shifted_tracks: Vec<String>,
+    pub shift_amount: f64,
+}
+
+impl CloseGapCommand {
+    pub fn new(track_id: Option<String>, gap_start: f64, gap_end: f64) -> Self {
+        Self {
+            track_id,
+            gap_start,
+            gap_end,
+            shifted_tracks: Vec::new(),
+            shift_amount: (gap_end - gap_start).max(0.0),
+        }
+    }
+}
+
+impl Command for CloseGapCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let dur = (self.gap_end - self.gap_start).max(0.0);
+        if dur <= 1e-4 {
+            return Ok(());
+        }
+        self.shift_amount = dur;
+        self.shifted_tracks.clear();
+
+        if let Some(ref tid) = self.track_id {
+            let track = timeline
+                .get_track_by_id_mut(tid)
+                .ok_or_else(|| CommandError::TrackNotFound(tid.clone()))?;
+            for c in &mut track.clips {
+                if c.timeline_in >= self.gap_end - 1e-4 {
+                    c.move_to((c.timeline_in - dur).max(0.0));
+                }
+            }
+            track.sort_clips();
+            self.shifted_tracks.push(tid.clone());
+        } else {
+            for track in &mut timeline.tracks {
+                if !track.locked {
+                    for c in &mut track.clips {
+                        if c.timeline_in >= self.gap_end - 1e-4 {
+                            c.move_to((c.timeline_in - dur).max(0.0));
+                        }
+                    }
+                    track.sort_clips();
+                    self.shifted_tracks.push(track.id.clone());
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        if self.shift_amount <= 1e-4 {
+            return Ok(());
+        }
+        for tid in &self.shifted_tracks {
+            if let Some(track) = timeline.get_track_by_id_mut(tid) {
+                for c in &mut track.clips {
+                    if c.timeline_in >= self.gap_start - 1e-4 {
+                        c.move_to(c.timeline_in + self.shift_amount);
+                    }
+                }
+                track.sort_clips();
+            }
+        }
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Boşluğu Kapat (Ripple Delete Gap)"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 19. SetClipColorCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct SetClipColorCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub new_color: ColorLabel,
+    pub old_color: ColorLabel,
+}
+
+impl SetClipColorCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        new_color: ColorLabel,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            new_color,
+            old_color: ColorLabel::None,
+        }
+    }
+}
+
+impl Command for SetClipColorCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        self.old_color = clip.color_label;
+        clip.color_label = self.new_color;
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.color_label = self.old_color;
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Klip Rengini Değiştir"
     }
 }

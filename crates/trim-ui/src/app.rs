@@ -25,6 +25,7 @@ use trim_core::clip::{Clip, TextOverlay};
 use trim_core::media::MediaType;
 use trim_core::project::Project;
 use trim_core::time::seconds_to_timecode;
+use trim_core::track::TrackType;
 use trim_export::runner::{ExportMessage, ExportRunner};
 use trim_media::{
     generate_title_image, AudioMixer, AudioStreamPlayer, FFprobeAnalyzer, ThumbnailGenerator,
@@ -758,7 +759,9 @@ impl eframe::App for TrimApp {
                     let is_ripple = i.modifiers.shift
                         || (self.shortcut_profile == ShortcutProfile::DaVinciResolve
                             && i.key_pressed(Key::Delete));
-                    if is_ripple {
+                    if self.canvas_state.selected_gap.is_some() {
+                        self.close_selected_gap(is_ripple);
+                    } else if is_ripple {
                         if let Some((tr_id, cl_id)) =
                             self.canvas_state.selected_clip_pairs.first().cloned()
                         {
@@ -1968,6 +1971,14 @@ impl eframe::App for TrimApp {
                                                 let media_w = media.width;
                                                 let media_h = media.height;
                                                 let media_name = media.name.clone();
+                                                let has_audio =
+                                                    media.has_audio() || media.audio_channels > 0;
+                                                let is_video_track = self
+                                                    .project
+                                                    .timeline
+                                                    .get_track_by_id(&track_id)
+                                                    .map(|t| t.track_type == TrackType::Video)
+                                                    .unwrap_or(false);
 
                                                 if self
                                                     .project
@@ -1984,16 +1995,88 @@ impl eframe::App for TrimApp {
                                                             .set_resolution(media_w, media_h);
                                                     }
                                                 }
+
+                                                let link_group = if has_audio && is_video_track {
+                                                    Some(uuid::Uuid::new_v4().to_string())
+                                                } else {
+                                                    None
+                                                };
+
                                                 let mut clip =
-                                                    Clip::new(media_id, time, time + clip_dur);
-                                                clip.name = media_name;
+                                                    Clip::new(&media_id, time, time + clip_dur);
+                                                clip.name = media_name.clone();
+                                                clip.linked_group_id = link_group.clone();
                                                 let cmd =
                                                     Box::new(AddClipCommand::new(track_id, clip));
                                                 let _ = self
                                                     .undo_stack
                                                     .push(cmd, &mut self.project.timeline);
+
+                                                if let Some(gid) = link_group {
+                                                    let audio_track_id = self
+                                                        .project
+                                                        .timeline
+                                                        .get_audio_tracks()
+                                                        .first()
+                                                        .map(|t| t.id.clone())
+                                                        .unwrap_or_else(|| {
+                                                            self.project
+                                                                .timeline
+                                                                .add_new_audio_track()
+                                                        });
+                                                    let mut audio_clip =
+                                                        Clip::new(&media_id, time, time + clip_dur);
+                                                    audio_clip.name =
+                                                        format!("{} (Ses)", media_name);
+                                                    audio_clip.linked_group_id = Some(gid);
+                                                    let cmd_a = Box::new(AddClipCommand::new(
+                                                        audio_track_id,
+                                                        audio_clip,
+                                                    ));
+                                                    let _ = self
+                                                        .undo_stack
+                                                        .push(cmd_a, &mut self.project.timeline);
+                                                }
+
                                                 self.project.mark_dirty();
                                             }
+                                        }
+                                        CanvasAction::CloseGap {
+                                            track_id,
+                                            gap_start,
+                                            gap_end,
+                                        } => {
+                                            let dur = (gap_end - gap_start).max(0.0);
+                                            let cmd = Box::new(CloseGapCommand::new(
+                                                track_id, gap_start, gap_end,
+                                            ));
+                                            let _ = self
+                                                .undo_stack
+                                                .push(cmd, &mut self.project.timeline);
+                                            self.canvas_state.selected_gap = None;
+                                            self.status_message =
+                                                format!("⏩ Boşluk kapatıldı ({:.2}s)", dur);
+                                            self.project.mark_dirty();
+                                        }
+                                        CanvasAction::SetClipColor {
+                                            track_id,
+                                            clip_id,
+                                            color,
+                                        } => {
+                                            let cmd = Box::new(SetClipColorCommand::new(
+                                                track_id, clip_id, color,
+                                            ));
+                                            let _ = self
+                                                .undo_stack
+                                                .push(cmd, &mut self.project.timeline);
+                                            self.status_message = format!(
+                                                "🎨 Klip rengi güncellendi: {}",
+                                                color.label()
+                                            );
+                                            self.project.mark_dirty();
+                                        }
+                                        CanvasAction::ToggleLinkSelected => {
+                                            self.toggle_link_selected_clips();
                                         }
                                     }
                                 }
@@ -2123,18 +2206,35 @@ impl eframe::App for TrimApp {
                                         "Klip Kaynak Monitöründe Açıldı".to_string();
                                 }
                                 MediaBinAction::AddToTimeline(m_id) => {
-                                    if let Some(media) = self.project.get_media(&m_id) {
+                                    let media_info = self.project.get_media(&m_id).map(|media| {
                                         let clip_dur = if media.media_type == MediaType::Image {
                                             5.0
                                         } else {
                                             media.duration.max(0.1)
                                         };
-                                        let media_type = media.media_type;
-                                        let media_fps = media.fps;
-                                        let media_w = media.width;
-                                        let media_h = media.height;
-                                        let media_name = media.name.clone();
+                                        let has_audio =
+                                            media.has_audio() || media.audio_channels > 0;
+                                        (
+                                            clip_dur,
+                                            media.media_type,
+                                            media.fps,
+                                            media.width,
+                                            media.height,
+                                            media.name.clone(),
+                                            has_audio,
+                                        )
+                                    });
 
+                                    if let Some((
+                                        clip_dur,
+                                        media_type,
+                                        media_fps,
+                                        media_w,
+                                        media_h,
+                                        media_name,
+                                        has_audio,
+                                    )) = media_info
+                                    {
                                         let target_track = if media_type == MediaType::Audio {
                                             if self
                                                 .project
@@ -2192,17 +2292,61 @@ impl eframe::App for TrimApp {
                                                             .set_resolution(media_w, media_h);
                                                     }
                                                 }
+                                                let is_video_track = self
+                                                    .project
+                                                    .timeline
+                                                    .get_track_by_id(&track_id)
+                                                    .map(|t| t.track_type == TrackType::Video)
+                                                    .unwrap_or(false);
+
+                                                let link_group = if has_audio && is_video_track {
+                                                    Some(uuid::Uuid::new_v4().to_string())
+                                                } else {
+                                                    None
+                                                };
+
                                                 let mut clip = Clip::new(
-                                                    m_id,
+                                                    &m_id,
                                                     self.current_time,
                                                     self.current_time + clip_dur,
                                                 );
-                                                clip.name = media_name;
+                                                clip.name = media_name.clone();
+                                                clip.linked_group_id = link_group.clone();
                                                 let cmd =
                                                     Box::new(AddClipCommand::new(track_id, clip));
                                                 let _ = self
                                                     .undo_stack
                                                     .push(cmd, &mut self.project.timeline);
+
+                                                if let Some(gid) = link_group {
+                                                    let audio_track_id = self
+                                                        .project
+                                                        .timeline
+                                                        .get_audio_tracks()
+                                                        .first()
+                                                        .map(|t| t.id.clone())
+                                                        .unwrap_or_else(|| {
+                                                            self.project
+                                                                .timeline
+                                                                .add_new_audio_track()
+                                                        });
+                                                    let mut audio_clip = Clip::new(
+                                                        &m_id,
+                                                        self.current_time,
+                                                        self.current_time + clip_dur,
+                                                    );
+                                                    audio_clip.name =
+                                                        format!("{} (Ses)", media_name);
+                                                    audio_clip.linked_group_id = Some(gid);
+                                                    let cmd_a = Box::new(AddClipCommand::new(
+                                                        audio_track_id,
+                                                        audio_clip,
+                                                    ));
+                                                    let _ = self
+                                                        .undo_stack
+                                                        .push(cmd_a, &mut self.project.timeline);
+                                                }
+
                                                 self.project.mark_dirty();
                                             }
                                         }
