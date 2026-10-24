@@ -1761,14 +1761,32 @@ impl eframe::App for TrimApp {
                                     &mut self.canvas_state,
                                     self.current_time,
                                     &self.waveform_gen,
+                                    &self.media_bin_textures,
                                 );
 
                                 if let Some(act) = canvas_act {
                                     match act {
                                         CanvasAction::Seek(t) => self.seek(t),
+                                        CanvasAction::SelectClips(pairs) => {
+                                            self.canvas_state.selected_clip_pairs = pairs;
+                                        }
                                         CanvasAction::SelectClip(tr_id, cl_id) => {
                                             self.canvas_state.selected_clip_pairs =
                                                 vec![(tr_id, cl_id)];
+                                        }
+                                        CanvasAction::SetClipVolume {
+                                            track_id,
+                                            clip_id,
+                                            old_volume,
+                                            new_volume,
+                                        } => {
+                                            let cmd = Box::new(SetClipVolumeCommand::new(
+                                                track_id, clip_id, old_volume, new_volume,
+                                            ));
+                                            let _ = self
+                                                .undo_stack
+                                                .push(cmd, &mut self.project.timeline);
+                                            self.project.mark_dirty();
                                         }
                                         CanvasAction::ClearSelection => {
                                             self.canvas_state.selected_clip_pairs.clear();

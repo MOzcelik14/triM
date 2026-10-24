@@ -363,6 +363,9 @@ pub fn render_track_header(
     });
 
     response.context_menu(|ui| {
+        ui.set_min_width(220.0);
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+        ui.spacing_mut().button_padding = Vec2::new(8.0, 4.0);
         ui.label(RichText::new(&track.name).strong());
         ui.separator();
         let mute_label = if track.muted {

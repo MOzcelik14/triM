@@ -18,6 +18,7 @@ pub enum DragMode {
     TrimOut,
     FadeIn,
     FadeOut,
+    VolumeRubberband,
     Scrub,
     Rubberband,
     HandPan,
@@ -44,6 +45,7 @@ pub struct TimelineCanvasState {
     pub drag_orig_out: f64,
     pub drag_orig_sin: f64,
     pub drag_orig_sout: f64,
+    pub drag_orig_vol: f64,
     pub batch_orig_ins: Vec<(String, String, f64)>, // (track_id, clip_id, orig_in)
 
     pub rubberband_start: Option<Pos2>,
@@ -71,6 +73,7 @@ impl Default for TimelineCanvasState {
             drag_orig_out: 0.0,
             drag_orig_sin: 0.0,
             drag_orig_sout: 0.0,
+            drag_orig_vol: 1.0,
             batch_orig_ins: Vec::new(),
             rubberband_start: None,
             rubberband_rect: None,
@@ -114,6 +117,7 @@ impl TimelineCanvasState {
 pub enum CanvasAction {
     Seek(f64),
     SelectClip(String, String),
+    SelectClips(Vec<(String, String)>),
     ClearSelection,
     ClipMoved {
         old_track_id: String,
@@ -157,6 +161,12 @@ pub enum CanvasAction {
         clip_id: String,
         color: trim_core::clip::ColorLabel,
     },
+    SetClipVolume {
+        track_id: String,
+        clip_id: String,
+        old_volume: f64,
+        new_volume: f64,
+    },
     ToggleLinkSelected,
 }
 
@@ -166,6 +176,7 @@ pub fn render_timeline_canvas(
     state: &mut TimelineCanvasState,
     current_time: f64,
     waveform_gen: &WaveformGenerator,
+    textures: &std::collections::HashMap<String, egui::TextureHandle>,
 ) -> (Response, Option<CanvasAction>) {
     let min_sec = (project.timeline.duration() + 30.0).max(60.0) as f32;
     let canvas_width = ui.available_width().max(min_sec * state.pixels_per_second);
@@ -357,12 +368,61 @@ pub fn render_timeline_canvas(
                 painter.rect_filled(stripe_rect, 2.0, Color32::from_rgb(r, g, b));
             }
 
-            // Waveform
-            if track.track_type == TrackType::Audio
-                || project
-                    .get_media(&clip.media_id)
-                    .is_some_and(|m| m.has_audio())
-            {
+            // Video Filmstrip Thumbnails (Video tracks only)
+            if track.track_type == TrackType::Video && clip_rect.width() >= 28.0 {
+                if let Some(tex) = textures.get(&clip.media_id) {
+                    let body_top = clip_rect.top() + 18.0;
+                    let body_bottom = clip_rect.bottom() - 2.0;
+                    if body_bottom > body_top + 8.0 {
+                        let film_h = body_bottom - body_top;
+                        let film_w = (film_h * 1.777_f32).clamp(16.0, 100.0);
+                        let total_w = clip_rect.width() - 4.0;
+                        let num_frames = ((total_w / film_w).floor() as usize).max(1);
+
+                        let mut frame_x = clip_rect.left() + 2.0;
+                        for i in 0..num_frames {
+                            let curr_w = if i == num_frames - 1 {
+                                (clip_rect.right() - 2.0 - frame_x).min(film_w).max(2.0)
+                            } else {
+                                film_w
+                            };
+                            let frame_rect = Rect::from_min_size(
+                                Pos2::new(frame_x, body_top),
+                                Vec2::new(curr_w, film_h),
+                            );
+
+                            let uv_max_x = (curr_w / film_w).clamp(0.0, 1.0);
+                            let uv =
+                                Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(uv_max_x, 1.0));
+
+                            painter.image(
+                                tex.id(),
+                                frame_rect,
+                                uv,
+                                Color32::from_rgba_premultiplied(225, 225, 235, 210),
+                            );
+
+                            if i > 0 {
+                                painter.line_segment(
+                                    [frame_rect.left_top(), frame_rect.left_bottom()],
+                                    Stroke::new(
+                                        1.0_f32,
+                                        Color32::from_rgba_premultiplied(0, 0, 0, 180),
+                                    ),
+                                );
+                            }
+
+                            frame_x += film_w;
+                            if frame_x >= clip_rect.right() - 3.0 {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Waveform (Audio tracks only)
+            if track.track_type == TrackType::Audio {
                 if let Some(media) = project.get_media(&clip.media_id) {
                     if let Some(wf) = waveform_gen.get_waveform(&media.file_path) {
                         let wf_len = wf.len();
@@ -375,11 +435,7 @@ pub fn render_timeline_canvas(
                             let slice = &wf[s_in..end_idx];
                             let cy = clip_rect.center().y;
                             let max_amp = (clip_rect.height() - 16.0) / 2.0;
-                            let wf_col = if track.track_type == TrackType::Audio {
-                                Color32::from_rgba_premultiplied(0x64, 0xe6, 0xa0, 0xb4)
-                            } else {
-                                Color32::from_rgba_premultiplied(0x8c, 0xcd, 0xff, 0x8c)
-                            };
+                            let wf_col = Color32::from_rgba_premultiplied(0x64, 0xe6, 0xa0, 0xb4);
 
                             let vis_left = (rect.left() - clip_rect.left()).max(0.0);
                             let vis_right =
@@ -409,6 +465,62 @@ pub fn render_timeline_canvas(
                             }
                         }
                     }
+                }
+
+                // Volume Rubberband (Audio tracks only)
+                if clip_rect.width() >= 12.0 {
+                    let norm = (clip.volume / 2.0).clamp(0.0, 1.0) as f32;
+                    let active_top = clip_rect.top() + 18.0;
+                    let active_bottom = clip_rect.bottom() - 6.0;
+                    let range = (active_bottom - active_top).max(8.0);
+                    let vol_y = active_bottom - (norm * range);
+
+                    let line_color = if is_sel {
+                        Color32::from_rgba_premultiplied(0xf5, 0x9e, 0x0b, 220)
+                    } else {
+                        Color32::from_rgba_premultiplied(0x38, 0xa0, 0xf0, 190)
+                    };
+                    painter.line_segment(
+                        [
+                            Pos2::new(clip_rect.left() + 2.0, vol_y),
+                            Pos2::new(clip_rect.right() - 2.0, vol_y),
+                        ],
+                        Stroke::new(1.5_f32, line_color),
+                    );
+
+                    let hover_p = ui.input(|i| i.pointer.hover_pos());
+                    let is_hovered = hover_p
+                        .map(|p| clip_rect.contains(p) && (p.y - vol_y).abs() <= 5.0)
+                        .unwrap_or(false);
+
+                    let is_active_vol = state.drag_mode == DragMode::VolumeRubberband
+                        && state.drag_clip_id.as_deref() == Some(&clip.id);
+
+                    let node_x = if is_active_vol || is_hovered {
+                        hover_p
+                            .map(|p| p.x)
+                            .unwrap_or(clip_rect.center().x)
+                            .clamp(clip_rect.left() + 8.0, clip_rect.right() - 8.0)
+                    } else {
+                        clip_rect.center().x
+                    };
+
+                    let node_r = if is_hovered || is_active_vol {
+                        4.5
+                    } else {
+                        3.0
+                    };
+                    let node_col = if is_hovered || is_active_vol {
+                        Color32::WHITE
+                    } else {
+                        line_color
+                    };
+                    painter.circle_filled(Pos2::new(node_x, vol_y), node_r, node_col);
+                    painter.circle_stroke(
+                        Pos2::new(node_x, vol_y),
+                        node_r,
+                        Stroke::new(1.0_f32, Color32::from_rgb(0x18, 0x18, 0x24)),
+                    );
                 }
             }
 
@@ -616,8 +728,18 @@ pub fn render_timeline_canvas(
                 speed_badge
             );
 
+            let header_rect = Rect::from_min_size(
+                Pos2::new(clip_rect.left() + 2.0, clip_rect.top() + 2.0),
+                Vec2::new((clip_rect.width() - 4.0).max(4.0), 16.0),
+            );
+            painter.rect_filled(
+                header_rect,
+                2.0,
+                Color32::from_rgba_premultiplied(16, 18, 24, 150),
+            );
+
             painter.text(
-                Pos2::new(clip_rect.left() + 10.0, clip_rect.top() + 6.0),
+                Pos2::new(clip_rect.left() + 10.0, clip_rect.top() + 4.0),
                 egui::Align2::LEFT_TOP,
                 title_str,
                 egui::FontId::proportional(11.0),
@@ -947,6 +1069,43 @@ pub fn render_timeline_canvas(
         }
     }
 
+    // Set dynamic cursor icons on hover
+    if response.hovered() {
+        if let Some(pos) = pointer.hover_pos() {
+            if state.drag_mode == DragMode::None {
+                match state.active_tool {
+                    EditTool::Razor => {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+                    }
+                    EditTool::Hand => {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                    }
+                    EditTool::Type => {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+                    }
+                    _ => {
+                        if let Some((_, _, mode)) = find_clip_at_pos(project, state, rect, pos) {
+                            match mode {
+                                DragMode::TrimIn | DragMode::TrimOut => {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                                }
+                                DragMode::VolumeRubberband => {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+                                }
+                                DragMode::FadeIn | DragMode::FadeOut => {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            } else if state.drag_mode == DragMode::VolumeRubberband {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+            }
+        }
+    }
+
     // 7. User Interactions: Mouse press, drag, release
 
     if response.hovered() && pointer.primary_pressed() {
@@ -1054,6 +1213,7 @@ pub fn render_timeline_canvas(
             if let Some((tr_id, cl_id, mode)) = hit {
                 state.selected_gap = None;
                 let pair = (tr_id.clone(), cl_id.clone());
+                let is_alt = ui.input(|i| i.modifiers.alt);
                 if is_multi {
                     if let Some(pos_idx) = state.selected_clip_pairs.iter().position(|p| p == &pair)
                     {
@@ -1061,8 +1221,8 @@ pub fn render_timeline_canvas(
                     } else {
                         state.selected_clip_pairs.push(pair.clone());
                     }
+                    action = Some(CanvasAction::SelectClips(state.selected_clip_pairs.clone()));
                 } else if !state.selected_clip_pairs.contains(&pair) {
-                    let is_alt = ui.input(|i| i.modifiers.alt);
                     let mut linked_pairs = vec![pair.clone()];
                     if !is_alt {
                         if let Some(tr) = project.timeline.get_track_by_id(&tr_id) {
@@ -1081,8 +1241,26 @@ pub fn render_timeline_canvas(
                             }
                         }
                     }
-                    state.selected_clip_pairs = linked_pairs;
-                    action = Some(CanvasAction::SelectClip(tr_id.clone(), cl_id.clone()));
+                    state.selected_clip_pairs = linked_pairs.clone();
+                    action = Some(CanvasAction::SelectClips(linked_pairs));
+                } else if !is_alt {
+                    // Even if already selected, ensure companion linked clips are in selected_clip_pairs
+                    if let Some(tr) = project.timeline.get_track_by_id(&tr_id) {
+                        if let Some(cl) = tr.get_clip_by_id(&cl_id) {
+                            if let Some(ref gid) = cl.linked_group_id {
+                                for t in &project.timeline.tracks {
+                                    for c in &t.clips {
+                                        if c.linked_group_id.as_ref() == Some(gid) {
+                                            let p = (t.id.clone(), c.id.clone());
+                                            if !state.selected_clip_pairs.contains(&p) {
+                                                state.selected_clip_pairs.push(p);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 state.drag_mode = mode;
@@ -1091,12 +1269,29 @@ pub fn render_timeline_canvas(
                 state.drag_target_track_id = Some(tr_id.clone());
                 state.drag_start_x = pos.x;
 
-                if let Some(tr) = project.timeline.get_track_by_id(&tr_id) {
-                    if let Some(cl) = tr.get_clip_by_id(&cl_id) {
+                if let Some(tr) = project.timeline.get_track_by_id_mut(&tr_id) {
+                    if let Some(cl) = tr.get_clip_by_id_mut(&cl_id) {
                         state.drag_orig_in = cl.timeline_in;
                         state.drag_orig_out = cl.timeline_out;
                         state.drag_orig_sin = cl.source_in;
                         state.drag_orig_sout = cl.effective_source_out();
+                        state.drag_orig_vol = cl.volume;
+
+                        if mode == DragMode::VolumeRubberband
+                            && (ui.input(|i| {
+                                i.pointer
+                                    .button_double_clicked(egui::PointerButton::Primary)
+                            }) || is_alt)
+                        {
+                            let old_v = cl.volume;
+                            cl.volume = 1.0;
+                            action = Some(CanvasAction::SetClipVolume {
+                                track_id: tr_id.clone(),
+                                clip_id: cl_id.clone(),
+                                old_volume: old_v,
+                                new_volume: 1.0,
+                            });
+                        }
                     }
                 }
 
@@ -1210,10 +1405,20 @@ pub fn render_timeline_canvas(
                         }
 
                         if state.selected_clip_pairs.len() > 1 {
+                            let min_orig = state
+                                .batch_orig_ins
+                                .iter()
+                                .map(|(_, _, o)| *o)
+                                .fold(f64::INFINITY, f64::min);
+                            let safe_dt = if min_orig.is_finite() {
+                                actual_dt.max(-min_orig)
+                            } else {
+                                actual_dt
+                            };
                             for (t_id, c_id, orig_in) in &state.batch_orig_ins {
                                 if let Some(tr) = project.timeline.get_track_by_id_mut(t_id) {
                                     if let Some(cl) = tr.get_clip_by_id_mut(c_id) {
-                                        cl.move_to((orig_in + actual_dt).max(0.0));
+                                        cl.move_to((orig_in + safe_dt).max(0.0));
                                     }
                                 }
                             }
@@ -1332,6 +1537,54 @@ pub fn render_timeline_canvas(
                         }
                     }
                 }
+                DragMode::VolumeRubberband => {
+                    if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id)
+                    {
+                        if let Some(t_idx) =
+                            project.timeline.tracks.iter().position(|t| &t.id == tr_id)
+                        {
+                            let (ty, track_h) = track_offsets[t_idx];
+                            let active_top = ty + 18.0;
+                            let active_bottom = ty + track_h - 6.0;
+                            let range = (active_bottom - active_top).max(8.0);
+                            let norm = ((active_bottom - pos.y) / range).clamp(0.0, 1.0);
+                            let mut new_vol = (norm as f64) * 2.0;
+                            if (new_vol - 1.0).abs() < 0.05 {
+                                new_vol = 1.0;
+                            }
+
+                            if let Some(tr) = project.timeline.get_track_by_id_mut(tr_id) {
+                                if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
+                                    cl.volume = new_vol;
+                                }
+                            }
+
+                            let db = if new_vol > 0.0001 {
+                                20.0 * new_vol.log10()
+                            } else {
+                                -99.0
+                            };
+                            let tip_str = if db <= -60.0 {
+                                "Ses: -∞ dB (Sessiz)".to_string()
+                            } else {
+                                format!("Ses: {:+.1} dB ({:.0}%)", db, new_vol * 100.0)
+                            };
+                            let tip_rect = Rect::from_center_size(
+                                Pos2::new(pos.x, pos.y - 20.0),
+                                Vec2::new(140.0, 22.0),
+                            );
+                            painter.rect_filled(tip_rect, 4.0, Color32::from_rgb(0x18, 0x1b, 0x24));
+                            painter.rect_stroke(tip_rect, 4.0, Stroke::new(1.0_f32, COLOR_AMBER));
+                            painter.text(
+                                tip_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                tip_str,
+                                egui::FontId::proportional(11.0),
+                                COLOR_AMBER,
+                            );
+                        }
+                    }
+                }
                 DragMode::HandPan => {
                     let dx = pos.x - state.drag_start_x;
                     ui.scroll_with_delta(Vec2::new(dx, 0.0));
@@ -1427,6 +1680,22 @@ pub fn render_timeline_canvas(
             DragMode::FadeIn | DragMode::FadeOut => {
                 action = Some(CanvasAction::ClipModified);
             }
+            DragMode::VolumeRubberband => {
+                if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id) {
+                    if let Some(tr) = project.timeline.get_track_by_id(tr_id) {
+                        if let Some(cl) = tr.get_clip_by_id(cl_id) {
+                            if (cl.volume - state.drag_orig_vol).abs() > 1e-4 {
+                                action = Some(CanvasAction::SetClipVolume {
+                                    track_id: tr_id.clone(),
+                                    clip_id: cl_id.clone(),
+                                    old_volume: state.drag_orig_vol,
+                                    new_volume: cl.volume,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
 
@@ -1438,6 +1707,11 @@ pub fn render_timeline_canvas(
 
     // Context Menu on right click
     response.context_menu(|ui| {
+        ui.set_min_width(260.0);
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+        ui.spacing_mut().button_padding = Vec2::new(10.0, 5.0);
+        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+
         // 1. If a gap is selected (or hovered right click on a gap)
         if state.selected_gap.is_none() && state.selected_clip_pairs.is_empty() {
             if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
@@ -1539,6 +1813,10 @@ pub fn render_timeline_canvas(
 
                 // Color labels submenu
                 ui.menu_button("🎨 Renk Etiketi (Color Label)", |ui| {
+                    ui.set_min_width(200.0);
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                    ui.spacing_mut().button_padding = Vec2::new(8.0, 4.0);
+
                     for color in ColorLabel::ALL {
                         let mut btn_text = RichText::new(color.label());
                         if let Some([r, g, b]) = color.color_rgb() {
@@ -1646,6 +1924,23 @@ fn find_clip_at_pos(
                 }
                 if pos.x >= clip_rect.right() - state.trim_handle_width {
                     return Some((track.id.clone(), clip.id.clone(), DragMode::TrimOut));
+                }
+
+                // Check volume rubberband on Audio tracks
+                if track.track_type == TrackType::Audio && clip_rect.width() >= 12.0 {
+                    let norm = (clip.volume / 2.0).clamp(0.0, 1.0) as f32;
+                    let active_top = clip_rect.top() + 18.0;
+                    let active_bottom = clip_rect.bottom() - 6.0;
+                    let range = (active_bottom - active_top).max(8.0);
+                    let vol_y = active_bottom - (norm * range);
+
+                    if (pos.y - vol_y).abs() <= 5.0 {
+                        return Some((
+                            track.id.clone(),
+                            clip.id.clone(),
+                            DragMode::VolumeRubberband,
+                        ));
+                    }
                 }
 
                 return Some((track.id.clone(), clip.id.clone(), DragMode::Move));

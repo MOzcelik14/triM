@@ -339,6 +339,9 @@ pub fn render_media_bin(
 
                     // Context Menu
                     card_resp.context_menu(|ui| {
+                        ui.set_min_width(220.0);
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                        ui.spacing_mut().button_padding = Vec2::new(8.0, 4.0);
                         if ui.button("Kaynak Monitöründe Aç (Çift Tık)").clicked() {
                             action = Some(MediaBinAction::OpenInSourceMonitor(m_id.clone()));
                             ui.close_menu();
@@ -457,6 +460,9 @@ pub fn render_media_bin(
                 }
 
                 resp.context_menu(|ui| {
+                    ui.set_min_width(220.0);
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                    ui.spacing_mut().button_padding = Vec2::new(8.0, 4.0);
                     if ui.button("Kaynak Monitöründe Aç").clicked() {
                         action = Some(MediaBinAction::OpenInSourceMonitor(m_id.clone()));
                         ui.close_menu();

@@ -526,7 +526,11 @@ impl TimelineExporter {
                 let is_image = media.media_type == MediaType::Image;
                 let wants_video =
                     track.track_type == TrackType::Video && track.visible && media.has_video();
-                let wants_audio = track_audible && !clip.muted && !is_image && media.has_audio();
+                let wants_audio = track.track_type == TrackType::Audio
+                    && track_audible
+                    && !clip.muted
+                    && !is_image
+                    && media.has_audio();
                 if !wants_video && !wants_audio {
                     continue;
                 }
@@ -873,6 +877,9 @@ mod tests {
             .next()
             .unwrap();
         a1.add_clip(Clip::new(&mu_id, 1.0, 9.0));
+        let mut a2 = Track::new("A2", TrackType::Audio);
+        a2.add_clip(Clip::new(&bg_id, 0.0, 10.0));
+        proj.timeline.add_track(a2);
 
         let (cmd, dur) =
             TimelineExporter::build_export_pipeline(&proj, &ExportPreset::default(), "/tmp/o.mp4")
@@ -881,7 +888,7 @@ mod tests {
         assert!((dur - 10.0).abs() < 1e-6);
         assert!(!graph.contains("concat"), "{graph}");
         assert_eq!(graph.matches("overlay=").count(), 2, "{graph}");
-        // Background audio + music on the audio track + silence bed.
+        // Background audio on A2 + music on A1 + silence bed.
         assert!(graph.contains("amix=inputs=3"), "{graph}");
         assert!(graph.contains("adelay=delays=1000:all=1"), "{graph}");
     }
@@ -895,7 +902,16 @@ mod tests {
         let id = m.id.clone();
         proj.add_media(m);
         proj.timeline.tracks[0].add_clip(Clip::new(&id, 0.0, 3.0));
-        proj.timeline.tracks[0].muted = true;
+        let a1 = proj
+            .timeline
+            .get_audio_tracks_mut()
+            .into_iter()
+            .next()
+            .unwrap();
+        a1.add_clip(Clip::new(&id, 0.0, 3.0));
+        let a1_id = a1.id.clone();
+
+        proj.timeline.get_track_by_id_mut(&a1_id).unwrap().muted = true;
         let (cmd, _) =
             TimelineExporter::build_export_pipeline(&proj, &ExportPreset::default(), "/tmp/o.mp4")
                 .unwrap();
@@ -903,7 +919,7 @@ mod tests {
         assert!(g.contains("overlay="));
         assert!(g.contains("amix=inputs=1"), "{g}");
 
-        proj.timeline.tracks[0].muted = false;
+        proj.timeline.get_track_by_id_mut(&a1_id).unwrap().muted = false;
         proj.timeline.tracks[0].visible = false;
         let (cmd, _) =
             TimelineExporter::build_export_pipeline(&proj, &ExportPreset::default(), "/tmp/o.mp4")
@@ -1102,7 +1118,13 @@ mod tests {
         let mut c = Clip::new(&vid_id, 0.0, 5.0);
         c.eq_preset = AudioEqPreset::VoiceClarity;
         c.noise_gate = true;
-        proj.timeline.tracks[0].add_clip(c);
+        let a1 = proj
+            .timeline
+            .get_audio_tracks_mut()
+            .into_iter()
+            .next()
+            .unwrap();
+        a1.add_clip(c);
 
         let preset = ExportPreset {
             loudness_norm: LoudnessNorm::YouTube,

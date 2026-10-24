@@ -563,4 +563,41 @@ mod tests {
             trim_core::clip::ColorLabel::None
         );
     }
+
+    #[test]
+    fn test_set_clip_volume_command() {
+        let mut tl = TimelineModel::default();
+        let tr_id = tl.add_new_audio_track();
+        let c = Clip::new("m1", 0.0, 3.0);
+        let c_id = c.id.clone();
+        tl.get_track_by_id_mut(&tr_id).unwrap().add_clip(c);
+
+        let mut stack = UndoStack::new();
+        let cmd = Box::new(SetClipVolumeCommand::new(
+            tr_id.clone(),
+            c_id.clone(),
+            1.0,
+            1.5,
+        ));
+        stack.push(cmd, &mut tl).unwrap();
+
+        assert_eq!(
+            tl.get_track_by_id(&tr_id)
+                .unwrap()
+                .get_clip_by_id(&c_id)
+                .unwrap()
+                .volume,
+            1.5
+        );
+
+        assert!(stack.undo(&mut tl).unwrap());
+        assert_eq!(
+            tl.get_track_by_id(&tr_id)
+                .unwrap()
+                .get_clip_by_id(&c_id)
+                .unwrap()
+                .volume,
+            1.0
+        );
+    }
 }

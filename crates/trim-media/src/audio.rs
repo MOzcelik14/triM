@@ -118,6 +118,9 @@ impl AudioMixer {
         let inv_i16 = 1.0_f32 / 32768.0_f32;
 
         for track in &project.timeline.tracks {
+            if track.track_type != trim_core::track::TrackType::Audio {
+                continue;
+            }
             if track.muted {
                 continue;
             }

@@ -1530,3 +1530,58 @@ impl Command for SetClipColorCommand {
         "Klip Rengini Değiştir"
     }
 }
+
+// -----------------------------------------------------------------------------
+// 17. SetClipVolumeCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct SetClipVolumeCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub new_volume: f64,
+    pub old_volume: f64,
+}
+
+impl SetClipVolumeCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_volume: f64,
+        new_volume: f64,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            new_volume,
+            old_volume,
+        }
+    }
+}
+
+impl Command for SetClipVolumeCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.volume = self.new_volume;
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.volume = self.old_volume;
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Klip Ses Seviyesini Değiştir"
+    }
+}
