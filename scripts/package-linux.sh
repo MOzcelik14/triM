@@ -207,7 +207,8 @@ build_appimage() {
   rm -rf "$work"
   mkdir -p "$tools" "$work"
   install_payload "$appdir"
-  write_runtime_launcher "$appdir/AppRun" "usr/bin/trim"
+  local custom_apprun="$work/AppRun.custom"
+  write_runtime_launcher "$custom_apprun" "usr/bin/trim"
   local linuxdeploy="$tools/linuxdeploy-x86_64.AppImage"
   if [[ ! -s "$linuxdeploy" ]]; then
     curl --fail --location --retry 3 --silent --show-error \
@@ -220,7 +221,7 @@ build_appimage() {
     export ARCH=x86_64 VERSION="$VERSION" APPIMAGE_EXTRACT_AND_RUN=1
     "$linuxdeploy" --appdir "$appdir" \
       --executable "$BIN" --desktop-file "$DESKTOP" --icon-file "$ICON" \
-      --custom-apprun "$appdir/AppRun" \
+      --custom-apprun "$custom_apprun" \
       --output appimage
   )
   local output
