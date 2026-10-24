@@ -10,7 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
     nav_shortcuts: "Kısayollar",
     nav_download: "İndir",
 
-    hero_kicker: "MASAÜSTÜ VİDEO DÜZENLEYİCİ · v1.0.0",
+    hero_kicker: "MASAÜSTÜ VİDEO DÜZENLEYİCİ · v1.0.1",
     hero_line1: "Kurgunun ritmini",
     hero_line2: "hissedin.",
     hero_description: "Büyük kurulum dosyaları, ağır tarayıcı motorları ve karmaşık abonelikler olmadan video kurgulayın. triM., 4K akıllı proxy iş akışı, zaman çizgisi ses kaydı, SRT altyazı motoru ve GPU hızlandırmalı render desteğiyle ihtiyacınız olan her şeyi yaklaşık 19 MB boyutta sunar.",
@@ -25,7 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
     tab_audio: "Ses & EQ",
     tab_shortcuts: "Kısayol Profilleri",
     tab_export: "GPU Dışa Aktarım",
-    preview_caption: "Gerçek uygulama görüntüsü / triM. v1.0.0",
+    preview_caption: "Gerçek uygulama görüntüsü / triM. v1.0.1",
 
     features_index: "KURGU ARAÇLARI",
     features_title: "İhtiyacınız olan her şey <em>tek ekranda.</em>",
@@ -101,7 +101,7 @@ document.addEventListener("DOMContentLoaded", () => {
     nav_shortcuts: "Shortcuts",
     nav_download: "Download",
 
-    hero_kicker: "DESKTOP VIDEO EDITOR · v1.0.0",
+    hero_kicker: "DESKTOP VIDEO EDITOR · v1.0.1",
     hero_line1: "Edit video with",
     hero_line2: "clarity and speed.",
     hero_description: "Edit video without massive downloads, sluggish web wrappers, or complicated cloud subscriptions. triM. delivers 4K smart proxy workflows, timeline voiceover recording, an SRT subtitle suite, and GPU-accelerated export in a compact ~19 MB native application.",
@@ -116,7 +116,7 @@ document.addEventListener("DOMContentLoaded", () => {
     tab_audio: "Audio & EQ",
     tab_shortcuts: "Shortcut Profiles",
     tab_export: "GPU Render",
-    preview_caption: "Actual app screenshots / triM. v1.0.0",
+    preview_caption: "Actual app screenshots / triM. v1.0.1",
 
     features_index: "THE TOOLS",
     features_title: "Everything you need <em>on one screen.</em>",

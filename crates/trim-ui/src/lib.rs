@@ -148,9 +148,16 @@ mod tests {
     #[test]
     fn test_welcome_dialog_and_audio_mixer_defaults() {
         use dialogs::{AudioMixerDialog, ShortcutsDialog, WelcomeDialog};
-        let welcome = WelcomeDialog::default();
+        let mut welcome = WelcomeDialog::default();
         assert!(welcome.is_open);
         assert_eq!(welcome.new_project_name, "Yeni Proje");
+
+        let ctx = Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            let act = welcome.show(ctx);
+            assert!(act.is_none());
+            assert!(welcome.is_open);
+        });
 
         let mixer = AudioMixerDialog::default();
         assert!(!mixer.is_open);

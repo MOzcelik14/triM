@@ -138,6 +138,33 @@ impl TrimApp {
                 let file_path = item.file_path.clone();
                 let has_audio = item.media_type == MediaType::Audio || item.audio_channels > 0;
                 let m_id = item.id.clone();
+
+                let has_any_video_media = self
+                    .project
+                    .media_pool
+                    .values()
+                    .any(|m| m.media_type == MediaType::Video);
+                let timeline_empty = self
+                    .project
+                    .timeline
+                    .tracks
+                    .iter()
+                    .all(|t| t.clips.is_empty());
+
+                if !has_any_video_media
+                    && timeline_empty
+                    && item.media_type == MediaType::Video
+                    && item.width > 0
+                    && item.height > 0
+                    && self.project.timeline.width == 1920
+                    && self.project.timeline.height == 1080
+                {
+                    self.project.set_resolution(item.width, item.height);
+                    if item.fps > 1.0 {
+                        self.project.set_fps(item.fps);
+                    }
+                }
+
                 self.project.add_media(item);
                 if has_audio {
                     self.audio_mixer.preload_audio_async(&file_path);
@@ -508,11 +535,10 @@ impl TrimApp {
             .all(|t| t.clips.is_empty())
         {
             if media_fps > 1.0 {
-                self.project.timeline.fps = media_fps;
+                self.project.set_fps(media_fps);
             }
             if media_w > 0 && media_h > 0 {
-                self.project.timeline.width = media_w;
-                self.project.timeline.height = media_h;
+                self.project.set_resolution(media_w, media_h);
             }
         }
 

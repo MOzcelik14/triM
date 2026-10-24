@@ -45,7 +45,7 @@ impl EditTool {
 
 pub fn render_vertical_toolbar(ui: &mut Ui, current_tool: &mut EditTool) {
     ui.vertical_centered(|ui| {
-        ui.add_space(4.0);
+        ui.add_space(6.0);
 
         let tools = [
             EditTool::Select,
@@ -61,7 +61,7 @@ pub fn render_vertical_toolbar(ui: &mut Ui, current_tool: &mut EditTool) {
         for tool in tools {
             let tooltip = tool.tooltip();
             let is_selected = *current_tool == tool;
-            let (rect, resp) = ui.allocate_exact_size(Vec2::new(28.0, 28.0), egui::Sense::click());
+            let (rect, resp) = ui.allocate_exact_size(Vec2::new(32.0, 32.0), egui::Sense::click());
             if resp.clicked() {
                 *current_tool = tool;
             }
@@ -89,7 +89,7 @@ pub fn render_vertical_toolbar(ui: &mut Ui, current_tool: &mut EditTool) {
             };
 
             let painter = ui.painter();
-            painter.rect(rect, 4.0, bg_color, border_stroke);
+            painter.rect(rect, 5.0, bg_color, border_stroke);
 
             let center = rect.center();
             let stroke = Stroke::new(1.5_f32, fg_color);
@@ -238,7 +238,7 @@ pub fn render_vertical_toolbar(ui: &mut Ui, current_tool: &mut EditTool) {
                 }
             }
 
-            ui.add_space(3.0);
+            ui.add_space(5.0);
         }
     });
 }

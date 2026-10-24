@@ -56,6 +56,11 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.0.1" date="2026-10-24">
+      <description>
+        <p>triM. v1.0.1 brings full Windows x86_64 MSVC compatibility, OpenGL 3.3 / GLES 3.0 off-screen FBO GPU preview compositing, a 5 ms lookahead brickwall master bus limiter, non-blocking asynchronous native file dialogs, J-K-L shuttle transport, magnetic timeline snapping with visual guides, and a redesigned Project Hub welcome screen.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-10-23">
       <description>
         <p>triM. v1.0.0 is the first major production milestone! Featuring a complete native non-linear video editing workflow: interactive on-screen Type tool (T) with real-time viewport text placement and automatic timeline clip generation, multi-NLE keyboard shortcut profiles (triM., Adobe Premiere Pro, DaVinci Resolve), CMX 3600 EDL and Final Cut Pro XML sequence interoperability, 3-point interactive Color Wheels (Lift, Gamma, Gain), real-time Chroma Key green screen compositor, Ken Burns Pan &amp; Zoom motion presets, Subtitle Suite (.SRT/.VTT), Smart Scene Detection, timeline voiceover recording, 4K Smart Proxy workflow, and GPU-accelerated export.</p>

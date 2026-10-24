@@ -122,16 +122,68 @@ impl Project {
         self.media_pool.get_mut(media_id)
     }
 
+    pub fn set_resolution(&mut self, width: u32, height: u32) {
+        if width > 0 && height > 0 {
+            self.settings.width = width;
+            self.settings.height = height;
+            self.timeline.width = width;
+            self.timeline.height = height;
+        }
+    }
+
+    pub fn set_fps(&mut self, fps: f64) {
+        if fps > 0.0 {
+            self.settings.fps = fps;
+            self.timeline.fps = fps;
+        }
+    }
+
+    pub fn sync_settings_from_timeline(&mut self) {
+        if self.timeline.width > 0 && self.timeline.height > 0 {
+            self.settings.width = self.timeline.width;
+            self.settings.height = self.timeline.height;
+        }
+        if self.timeline.fps > 0.0 {
+            self.settings.fps = self.timeline.fps;
+        }
+    }
+
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string_pretty(self)
+        let mut normalized = self.clone();
+        normalized.sync_settings_from_timeline();
+        serde_json::to_string_pretty(&normalized)
     }
 
     pub fn from_json(json_str: &str) -> Result<Self, serde_json::Error> {
-        let mut proj: Self = serde_json::from_str(json_str)?;
-        // Sync timeline dimensions from settings if needed
-        proj.timeline.width = proj.settings.width;
-        proj.timeline.height = proj.settings.height;
-        proj.timeline.fps = proj.settings.fps;
+        let raw: serde_json::Value = serde_json::from_str(json_str)?;
+        let timeline_has_dims = raw.get("timeline").and_then(|t| t.get("width")).is_some()
+            && raw.get("timeline").and_then(|t| t.get("height")).is_some();
+
+        let mut proj: Self = serde_json::from_value(raw)?;
+
+        if timeline_has_dims {
+            // If timeline had non-default resolution/fps (e.g. 3840x2160 set on timeline while
+            // settings remained at default 1920x1080), preserve timeline values and sync settings.
+            let timeline_non_default = proj.timeline.width != 1920
+                || proj.timeline.height != 1080
+                || (proj.timeline.fps - 30.0).abs() > 1e-4;
+            let settings_is_default = proj.settings.width == 1920
+                && proj.settings.height == 1080
+                && (proj.settings.fps - 30.0).abs() <= 1e-4;
+
+            if timeline_non_default || settings_is_default {
+                proj.sync_settings_from_timeline();
+            } else {
+                proj.timeline.width = proj.settings.width;
+                proj.timeline.height = proj.settings.height;
+                proj.timeline.fps = proj.settings.fps;
+            }
+        } else {
+            // Legacy format where dimensions only existed in settings
+            proj.timeline.width = proj.settings.width;
+            proj.timeline.height = proj.settings.height;
+            proj.timeline.fps = proj.settings.fps;
+        }
         Ok(proj)
     }
 }
@@ -157,6 +209,54 @@ mod tests {
     }
 
     #[test]
+    fn test_uhd_resolution_preserved_on_autosave_recovery() {
+        let mut proj = Project::new("UHD 4K Kurgu");
+        // Simulate timeline resolution changed to 3860x2160 @ 60fps
+        proj.timeline.width = 3860;
+        proj.timeline.height = 2160;
+        proj.timeline.fps = 60.0;
+
+        let json = proj.to_json().unwrap();
+        let restored = Project::from_json(&json).unwrap();
+        assert_eq!(restored.timeline.width, 3860);
+        assert_eq!(restored.timeline.height, 2160);
+        assert_eq!(restored.timeline.fps, 60.0);
+        assert_eq!(restored.settings.width, 3860);
+        assert_eq!(restored.settings.height, 2160);
+        assert_eq!(restored.settings.fps, 60.0);
+    }
+
+    #[test]
+    fn test_legacy_unsynced_recovery_json_preserves_timeline_resolution() {
+        // Simulate an older recovery file where settings had 1920x1080 but timeline had 3840x2160
+        let unsynced_json = r#"{
+            "format": "trim",
+            "version": 1,
+            "settings": {
+                "name": "Yeni Proje",
+                "width": 1920,
+                "height": 1080,
+                "fps": 30.0
+            },
+            "media_pool": {},
+            "timeline": {
+                "tracks": [],
+                "markers": [],
+                "width": 3840,
+                "height": 2160,
+                "fps": 59.94
+            }
+        }"#;
+
+        let proj = Project::from_json(unsynced_json).unwrap();
+        assert_eq!(proj.timeline.width, 3840);
+        assert_eq!(proj.timeline.height, 2160);
+        assert!((proj.timeline.fps - 59.94).abs() < 1e-4);
+        assert_eq!(proj.settings.width, 3840);
+        assert_eq!(proj.settings.height, 2160);
+    }
+
+    #[test]
     fn test_legacy_cutline_format_compatibility() {
         let legacy_json = r#"{
             "format": "cutline",
@@ -177,6 +277,8 @@ mod tests {
         let proj = Project::from_json(legacy_json).unwrap();
         assert_eq!(proj.settings.name, "Legacy Cutline Project");
         assert_eq!(proj.settings.width, 1280);
+        assert_eq!(proj.timeline.width, 1280);
+        assert_eq!(proj.timeline.height, 720);
         assert_eq!(proj.settings.fps, 24.0);
     }
 }

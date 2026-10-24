@@ -43,7 +43,7 @@ modules:
     sources:
       - type: git
         url: https://github.com/MOzcelik14/triM.git
-        tag: v1.0.0
+        tag: v1.0.1
         commit: 59afdb773dc9dcee3c58d91c0d7d5ab0908bdfb4
       - cargo-sources.json
       - type: file

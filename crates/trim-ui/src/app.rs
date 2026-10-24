@@ -463,6 +463,7 @@ impl TrimApp {
                 }
                 MonitorAction::SetAspectRatio(r) => {
                     self.project.timeline.set_aspect_ratio(r);
+                    self.project.sync_settings_from_timeline();
                     self.project.mark_dirty();
                     self.status_message = format!("Format Değiştirildi: {}", r.label());
                 }
@@ -581,7 +582,7 @@ impl eframe::App for TrimApp {
         // -------------------------------------------------------------
         // Global Keyboard Shortcuts
         // -------------------------------------------------------------
-        if !ctx.wants_keyboard_input() {
+        if !ctx.wants_keyboard_input() && !self.welcome_dialog.is_open {
             ctx.input(|i| {
                 if i.key_pressed(Key::Space) {
                     self.toggle_play();
@@ -1146,6 +1147,8 @@ impl eframe::App for TrimApp {
                         ] {
                             if ui.selectable_label(curr == r, r.label()).clicked() {
                                 self.project.timeline.set_aspect_ratio(r);
+                                self.project.sync_settings_from_timeline();
+                                self.project.mark_dirty();
                                 self.status_message = format!("Format Değiştirildi: {}", r.label());
                                 ui.close_menu();
                             }
@@ -1301,8 +1304,12 @@ impl eframe::App for TrimApp {
                     }
 
                     let dirty_str = if self.has_unsaved_changes() { " *" } else { "" };
-                    let title_text =
-                        format!("{} - triM Proje{}", self.project.settings.name, dirty_str);
+                    let title_text = format!(
+                        "{} — triM. v{}{}",
+                        self.project.settings.name,
+                        env!("CARGO_PKG_VERSION"),
+                        dirty_str
+                    );
                     ui.label(
                         RichText::new(title_text)
                             .size(11.5)
@@ -1369,24 +1376,27 @@ impl eframe::App for TrimApp {
                     );
 
                     ui.add_space(10.0);
-                    let snap_btn = Button::new(
-                        RichText::new(if self.snap_enabled {
-                            "[Mıknatıs: Açık]"
+                    let snap_btn =
+                        Button::new(RichText::new("Mıknatıs").size(11.0).strong().color(
+                            if self.snap_enabled {
+                                Color32::WHITE
+                            } else {
+                                Color32::from_rgb(0x90, 0x94, 0xa6)
+                            },
+                        ))
+                        .fill(if self.snap_enabled {
+                            Color32::from_rgb(0x28, 0x5a, 0x9e)
                         } else {
-                            "[Mıknatıs: Kapalı]"
+                            Color32::from_rgb(0x20, 0x20, 0x26)
                         })
-                        .size(11.0)
-                        .color(if self.snap_enabled {
-                            Color32::from_rgb(0x50, 0xd0, 0x70)
-                        } else {
-                            Color32::from_rgb(0x70, 0x70, 0x80)
-                        }),
-                    )
-                    .fill(if self.snap_enabled {
-                        Color32::from_rgb(0x1a, 0x2e, 0x20)
-                    } else {
-                        Color32::from_rgb(0x20, 0x20, 0x26)
-                    });
+                        .stroke(Stroke::new(
+                            1.0_f32,
+                            if self.snap_enabled {
+                                Color32::from_rgb(0x4a, 0x8a, 0xe8)
+                            } else {
+                                Color32::from_rgb(0x30, 0x32, 0x3e)
+                            },
+                        ));
                     if ui
                         .add(snap_btn)
                         .on_hover_text("Mıknatıs / Hizalama (Snapping - N)")
@@ -1396,7 +1406,7 @@ impl eframe::App for TrimApp {
                     }
 
                     if ui
-                        .button(RichText::new("[İşaretçi]").size(11.0))
+                        .button(RichText::new("İşaretçi").size(11.0))
                         .on_hover_text("İşaretçi Ekle / Sil (M)")
                         .clicked()
                     {
@@ -1404,7 +1414,7 @@ impl eframe::App for TrimApp {
                     }
 
                     if ui
-                        .button(RichText::new("[+ Video]").size(11.0))
+                        .button(RichText::new("+ Video").size(11.0))
                         .on_hover_text("Yeni Video Kanalı Ekle (Üste)")
                         .clicked()
                     {
@@ -1412,7 +1422,7 @@ impl eframe::App for TrimApp {
                     }
 
                     if ui
-                        .button(RichText::new("[+ Ses]").size(11.0))
+                        .button(RichText::new("+ Ses").size(11.0))
                         .on_hover_text("Yeni Ses Kanalı Ekle (Alta)")
                         .clicked()
                     {
@@ -1421,7 +1431,7 @@ impl eframe::App for TrimApp {
 
                     if ui
                         .button(
-                            RichText::new("[+ Başlık Klibi]")
+                            RichText::new("+ Başlık")
                                 .size(11.0)
                                 .color(Color32::from_rgb(0x81, 0x8c, 0xf8)),
                         )
@@ -1512,8 +1522,8 @@ impl eframe::App for TrimApp {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::ZERO;
 
-                    // 1. Vertical Toolbar (Fixed width 34px)
-                    ui.allocate_ui(Vec2::new(34.0, ui.available_height()), |ui| {
+                    // 1. Vertical Toolbar (Fixed width 42px for 32x32 tools)
+                    ui.allocate_ui(Vec2::new(42.0, ui.available_height()), |ui| {
                         render_vertical_toolbar(ui, &mut self.current_edit_tool);
                     });
 
@@ -1705,7 +1715,7 @@ impl eframe::App for TrimApp {
                     }
 
                     // 3. Scrollable Timeline Canvas
-                    let vu_w = 46.0;
+                    let vu_w = 58.0;
                     let avail_canvas_w = (ui.available_width() - vu_w).max(100.0);
                     ui.allocate_ui(Vec2::new(avail_canvas_w, ui.available_height()), |ui| {
                         ScrollArea::horizontal().show(ui, |ui| {
@@ -1967,11 +1977,11 @@ impl eframe::App for TrimApp {
                                                     .all(|t| t.clips.is_empty())
                                                 {
                                                     if media_fps > 1.0 {
-                                                        self.project.timeline.fps = media_fps;
+                                                        self.project.set_fps(media_fps);
                                                     }
                                                     if media_w > 0 && media_h > 0 {
-                                                        self.project.timeline.width = media_w;
-                                                        self.project.timeline.height = media_h;
+                                                        self.project
+                                                            .set_resolution(media_w, media_h);
                                                     }
                                                 }
                                                 let mut clip =
@@ -1993,7 +2003,10 @@ impl eframe::App for TrimApp {
 
                     // 4. Master VU Meter (Far Right)
                     ui.allocate_ui(Vec2::new(vu_w, ui.available_height()), |ui| {
-                        ui.add(VuMeterWidget::new(&mut self.vu_state));
+                        ui.horizontal(|ui| {
+                            ui.add_space(3.0);
+                            ui.add(VuMeterWidget::new(&mut self.vu_state));
+                        });
                     });
                 });
             });
@@ -2172,11 +2185,11 @@ impl eframe::App for TrimApp {
                                                     .all(|t| t.clips.is_empty())
                                                 {
                                                     if media_fps > 1.0 {
-                                                        self.project.timeline.fps = media_fps;
+                                                        self.project.set_fps(media_fps);
                                                     }
                                                     if media_w > 0 && media_h > 0 {
-                                                        self.project.timeline.width = media_w;
-                                                        self.project.timeline.height = media_h;
+                                                        self.project
+                                                            .set_resolution(media_w, media_h);
                                                     }
                                                 }
                                                 let mut clip = Clip::new(
@@ -2517,8 +2530,33 @@ impl eframe::App for TrimApp {
         if let Some(act) = self.recovery_dialog.show(ctx) {
             match act {
                 RecoveryAction::Restore(p) => {
-                    if let Ok(proj) = load_project(&p) {
+                    if let Ok(mut proj) = load_project(&p) {
+                        // If an older recovery snapshot had 1920x1080 clobbered over a 4K/custom
+                        // video clip, recover the resolution from the timeline's first video clip.
+                        if proj.timeline.width == 1920 && proj.timeline.height == 1080 {
+                            let first_video_dims = proj
+                                .timeline
+                                .tracks
+                                .iter()
+                                .flat_map(|t| t.clips.iter())
+                                .filter_map(|c| proj.media_pool.get(&c.media_id))
+                                .find(|m| {
+                                    m.media_type == MediaType::Video && m.width > 0 && m.height > 0
+                                })
+                                .map(|m| (m.width, m.height, m.fps));
+                            if let Some((vw, vh, vfps)) = first_video_dims {
+                                if vw != 1920 || vh != 1080 {
+                                    proj.set_resolution(vw, vh);
+                                    if vfps > 1.0 {
+                                        proj.set_fps(vfps);
+                                    }
+                                }
+                            }
+                        }
+
                         self.project = proj;
+                        self.project.mark_dirty();
+                        self.welcome_dialog.close();
                         self.undo_stack.clear();
                         self.canvas_state.selected_clip_pairs.clear();
                         self.current_time = 0.0;
@@ -2528,6 +2566,7 @@ impl eframe::App for TrimApp {
                         self.audio_player.stop();
                         self.is_playing = false;
                         self.monitor_texture = None;
+                        self.last_rendered_dirty = true;
                         self.source_state.media_id = None;
                         self.source_state.texture = None;
                         self.source_state.is_playing = false;
@@ -2538,7 +2577,12 @@ impl eframe::App for TrimApp {
                             }
                         }
                         let _ = std::fs::remove_file(&p);
-                        self.status_message = "Proje otomatik kayıttan kurtarıldı".to_string();
+                        self.status_message = format!(
+                            "Proje otomatik kayıttan kurtarıldı ({}×{} @ {:.0}fps)",
+                            self.project.timeline.width,
+                            self.project.timeline.height,
+                            self.project.timeline.fps
+                        );
                     }
                 }
                 RecoveryAction::Discard(p) => {
@@ -2583,8 +2627,14 @@ impl eframe::App for TrimApp {
 
         // -------------------------------------------------------------
         // Welcome Screen / Project Launcher Modal
+        // (Do not overlap when Crash Recovery modal is active)
         // -------------------------------------------------------------
-        if let Some(act) = self.welcome_dialog.show(ctx) {
+        let welcome_act = if self.recovery_dialog.is_open {
+            None
+        } else {
+            self.welcome_dialog.show(ctx)
+        };
+        if let Some(act) = welcome_act {
             match act {
                 WelcomeAction::CreateNewProject {
                     name,
@@ -2600,11 +2650,12 @@ impl eframe::App for TrimApp {
                     } else {
                         self.reset_to_new_project();
                         self.project.settings.name = name;
-                        self.project.timeline.width = width;
-                        self.project.timeline.height = height;
-                        self.project.timeline.fps = fps;
-                        self.status_message =
-                            format!("Yeni proje hazır: {}", self.project.settings.name);
+                        self.project.set_resolution(width, height);
+                        self.project.set_fps(fps);
+                        self.status_message = format!(
+                            "Yeni proje hazır: {} ({}×{} @ {:.0}fps)",
+                            self.project.settings.name, width, height, fps
+                        );
                         self.welcome_dialog.close();
                     }
                 }
@@ -2774,27 +2825,204 @@ impl eframe::App for TrimApp {
         }
 
         if self.show_about_dialog {
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.show_about_dialog = false;
+            }
+
+            let screen_rect = ctx.screen_rect();
+            egui::Area::new(egui::Id::new("about_modal_backdrop"))
+                .order(egui::Order::Middle)
+                .fixed_pos(egui::Pos2::ZERO)
+                .show(ctx, |ui| {
+                    let (rect, resp) =
+                        ui.allocate_exact_size(screen_rect.size(), egui::Sense::click_and_drag());
+                    ui.painter()
+                        .rect_filled(rect, 0.0, Color32::from_black_alpha(155));
+                    if resp.clicked() {
+                        self.show_about_dialog = false;
+                    }
+                });
+
+            let about_frame = egui::Frame::window(&ctx.style())
+                .fill(Color32::from_rgb(0x16, 0x17, 0x1e))
+                .rounding(egui::Rounding::same(10.0))
+                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x2e, 0x31, 0x3e)))
+                .inner_margin(egui::Margin::symmetric(24.0, 20.0))
+                .shadow(egui::epaint::Shadow {
+                    offset: Vec2::new(0.0, 12.0),
+                    blur: 32.0,
+                    spread: 3.0,
+                    color: Color32::from_black_alpha(180),
+                });
+
+            let gpu_status = if self.gpu_compositor.is_some() {
+                "OpenGL 3.3 FBO Shader (Aktif)"
+            } else {
+                "CPU Yazılım Birleştirici (Fallback)"
+            };
+
             egui::Window::new("triM. Hakkında")
+                .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
+                .order(egui::Order::Foreground)
+                .fixed_size(Vec2::new(450.0, 340.0))
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                .frame(about_frame)
                 .show(ctx, |ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.heading(
-                            RichText::new("triM.")
-                                .size(24.0)
-                                .color(Color32::from_rgb(0xe0, 0x7a, 0x38)),
+                    ui.vertical(|ui| {
+                        // Top Branding Header
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new("triM.")
+                                    .size(30.0)
+                                    .strong()
+                                    .color(Color32::from_rgb(0xe0, 0x7a, 0x38)),
+                            );
+                            ui.add_space(6.0);
+                            egui::Frame::none()
+                                .fill(Color32::from_rgb(0x28, 0x1e, 0x18))
+                                .rounding(egui::Rounding::same(6.0))
+                                .stroke(Stroke::new(
+                                    1.0_f32,
+                                    Color32::from_rgb(0x8a, 0x4b, 0x24),
+                                ))
+                                .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "v{}",
+                                            env!("CARGO_PKG_VERSION")
+                                        ))
+                                        .size(11.0)
+                                        .strong()
+                                        .color(Color32::from_rgb(0xf2, 0x9b, 0x5e)),
+                                    );
+                                });
+                            ui.add_space(4.0);
+                            egui::Frame::none()
+                                .fill(Color32::from_rgb(0x1b, 0x24, 0x34))
+                                .rounding(egui::Rounding::same(6.0))
+                                .stroke(Stroke::new(
+                                    1.0_f32,
+                                    Color32::from_rgb(0x32, 0x4e, 0x78),
+                                ))
+                                .inner_margin(egui::Margin::symmetric(8.0, 3.0))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        RichText::new("RUST NATIVE NLE")
+                                            .size(10.0)
+                                            .strong()
+                                            .color(Color32::from_rgb(0x68, 0xb0, 0xf8)),
+                                    );
+                                });
+                        });
+
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new(
+                                "Düşük gecikmeli, bağımsız ve modern masaüstü video kurgu stüdyosu.",
+                            )
+                            .size(12.0)
+                            .color(Color32::from_rgb(0x9a, 0x9e, 0xb2)),
                         );
-                        ui.label(format!(
-                            "v{} (Rust Native Desktop)",
-                            env!("CARGO_PKG_VERSION")
-                        ));
-                        ui.add_space(8.0);
-                        ui.label("Hafif, hızlı, modern masaüstü video düzenleyici.");
-                        ui.label("Geliştirici: MOzcelik14");
+
+                        ui.add_space(12.0);
+
+                        // Technical Specs Box
+                        egui::Frame::none()
+                            .fill(Color32::from_rgb(0x11, 0x12, 0x17))
+                            .rounding(egui::Rounding::same(8.0))
+                            .stroke(Stroke::new(
+                                1.0_f32,
+                                Color32::from_rgb(0x25, 0x28, 0x34),
+                            ))
+                            .inner_margin(egui::Margin::symmetric(14.0, 12.0))
+                            .show(ui, |ui| {
+                                ui.set_min_width(400.0);
+                                egui::Grid::new("about_specs_grid")
+                                    .num_columns(2)
+                                    .spacing([16.0, 7.0])
+                                    .show(ui, |ui| {
+                                        let rows = [
+                                            ("Görüntü Hattı:", gpu_status),
+                                            (
+                                                "Ses DSP Motoru:",
+                                                "48 kHz Stereo · 5 ms Lookahead Limiter",
+                                            ),
+                                            (
+                                                "Medya Çekirdeği:",
+                                                "FFmpeg / FFprobe · 720p H.264 Proxy",
+                                            ),
+                                            ("Derleme & Dil:", "Rust 2021 · egui / glow"),
+                                            ("Lisans:", "GPL-3.0-or-later (Açık Kaynak)"),
+                                            ("Geliştirici:", "MOzcelik14"),
+                                        ];
+                                        for (k, v) in rows {
+                                            ui.label(
+                                                RichText::new(k)
+                                                    .size(11.0)
+                                                    .strong()
+                                                    .color(Color32::from_rgb(0x82, 0x86, 0x9a)),
+                                            );
+                                            ui.label(
+                                                RichText::new(v)
+                                                    .size(11.0)
+                                                    .monospace()
+                                                    .color(Color32::from_rgb(0xdc, 0xe0, 0xee)),
+                                            );
+                                            ui.end_row();
+                                        }
+                                    });
+                            });
+
                         ui.add_space(14.0);
-                        if ui.button("Kapat").clicked() {
-                            self.show_about_dialog = false;
-                        }
+
+                        // Bottom Action Buttons
+                        ui.horizontal(|ui| {
+                            let gh_btn = Button::new(
+                                RichText::new("🌐 GitHub Deposu")
+                                    .size(11.5)
+                                    .strong()
+                                    .color(Color32::from_rgb(0xd8, 0xdc, 0xec)),
+                            )
+                            .min_size(Vec2::new(140.0, 32.0))
+                            .rounding(egui::Rounding::same(6.0))
+                            .fill(Color32::from_rgb(0x22, 0x25, 0x32))
+                            .stroke(Stroke::new(
+                                1.0_f32,
+                                Color32::from_rgb(0x36, 0x3a, 0x4c),
+                            ));
+
+                            if ui
+                                .add(gh_btn)
+                                .on_hover_text("https://github.com/MOzcelik14/triM")
+                                .clicked()
+                            {
+                                ctx.open_url(egui::OpenUrl::new_tab(
+                                    "https://github.com/MOzcelik14/triM",
+                                ));
+                            }
+
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let close_btn = Button::new(
+                                        RichText::new("Kapat")
+                                            .size(12.0)
+                                            .strong()
+                                            .color(Color32::WHITE),
+                                    )
+                                    .min_size(Vec2::new(100.0, 32.0))
+                                    .rounding(egui::Rounding::same(6.0))
+                                    .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
+
+                                    if ui.add(close_btn).clicked() {
+                                        self.show_about_dialog = false;
+                                    }
+                                },
+                            );
+                        });
                     });
                 });
         }

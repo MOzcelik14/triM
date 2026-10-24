@@ -142,11 +142,26 @@ impl TrimApp {
 
                     // Render mixed audio chunk & update VU levels & output to speakers
                     if (self.playback_speed - 1.0).abs() < 0.01 {
-                        let (samples, db_l, db_r) = self.audio_mixer.render_audio_interval(
-                            &self.project,
-                            prev_t,
-                            self.current_time,
-                        );
+                        let (mut samples, mut db_l, mut db_r) = self
+                            .audio_mixer
+                            .render_audio_interval(&self.project, prev_t, self.current_time);
+                        let master_vol = self.audio_mixer_dialog.master_volume;
+                        if (master_vol - 1.0).abs() > 1e-4 {
+                            for s in &mut samples {
+                                *s = ((*s as f32) * master_vol)
+                                    .round()
+                                    .clamp(i16::MIN as f32, i16::MAX as f32)
+                                    as i16;
+                            }
+                            if master_vol <= 0.0001 {
+                                db_l = -60.0;
+                                db_r = -60.0;
+                            } else {
+                                let gain_db = 20.0 * master_vol.log10();
+                                db_l = (db_l + gain_db).clamp(-60.0, 0.0);
+                                db_r = (db_r + gain_db).clamp(-60.0, 0.0);
+                            }
+                        }
                         self.vu_state.set_levels(db_l, db_r);
                         self.audio_player.write_samples(&samples);
                     }

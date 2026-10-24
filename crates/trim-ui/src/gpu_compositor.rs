@@ -394,6 +394,8 @@ pub struct GpuCompositor {
     vao: glow::VertexArray,
     fbo: glow::Framebuffer,
     fbo_texture: glow::Texture,
+    fbo_internal_format: i32,
+    supports_srgb_framebuffer: bool,
     fbo_texture_registered: bool,
     egui_texture_id: Option<egui::TextureId>,
     fbo_width: u32,
@@ -500,7 +502,23 @@ impl GpuCompositor {
             let fbo_width = 640 * GPU_PREVIEW_SCALE;
             let fbo_height = 360 * GPU_PREVIEW_SCALE;
 
-            let fbo_texture = match Self::create_rgba_texture(&gl, fbo_width, fbo_height) {
+            let exts = gl.supported_extensions();
+            let srgb_textures =
+                (ver.is_embedded && ver.major >= 3) || exts.iter().any(|ext| ext.contains("sRGB"));
+            let supports_srgb_framebuffer =
+                exts.iter().any(|ext| ext.ends_with("ARB_framebuffer_sRGB"));
+            let fbo_internal_format = if srgb_textures {
+                glow::SRGB8_ALPHA8 as i32
+            } else {
+                glow::RGBA8 as i32
+            };
+
+            let fbo_texture = match Self::create_texture_with_format(
+                &gl,
+                fbo_width,
+                fbo_height,
+                fbo_internal_format,
+            ) {
                 Ok(t) => t,
                 Err(e) => {
                     log::error!("GPU Compositor: FBO dokusu oluşturulamadı: {}", e);
@@ -575,6 +593,8 @@ impl GpuCompositor {
                 vao,
                 fbo,
                 fbo_texture,
+                fbo_internal_format,
+                supports_srgb_framebuffer,
                 fbo_texture_registered: false,
                 egui_texture_id: None,
                 fbo_width,
@@ -593,6 +613,15 @@ impl GpuCompositor {
         gl: &glow::Context,
         width: u32,
         height: u32,
+    ) -> Result<glow::Texture, String> {
+        Self::create_texture_with_format(gl, width, height, glow::RGBA8 as i32)
+    }
+
+    unsafe fn create_texture_with_format(
+        gl: &glow::Context,
+        width: u32,
+        height: u32,
+        internal_format: i32,
     ) -> Result<glow::Texture, String> {
         let tex = gl.create_texture()?;
         gl.bind_texture(glow::TEXTURE_2D, Some(tex));
@@ -620,7 +649,7 @@ impl GpuCompositor {
         gl.tex_image_2d(
             glow::TEXTURE_2D,
             0,
-            glow::RGBA8 as i32,
+            internal_format,
             width as i32,
             height as i32,
             0,
@@ -643,7 +672,7 @@ impl GpuCompositor {
         self.gl.tex_image_2d(
             glow::TEXTURE_2D,
             0,
-            glow::RGBA8 as i32,
+            self.fbo_internal_format,
             self.fbo_width as i32,
             self.fbo_height as i32,
             0,
@@ -769,6 +798,9 @@ impl GpuCompositor {
                 .get_parameter_i32_slice(glow::VIEWPORT, &mut prev_viewport);
 
             self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.fbo));
+            if self.supports_srgb_framebuffer {
+                self.gl.disable(glow::FRAMEBUFFER_SRGB);
+            }
             self.gl
                 .viewport(0, 0, self.fbo_width as i32, self.fbo_height as i32);
             self.gl.disable(glow::SCISSOR_TEST);

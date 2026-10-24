@@ -89,25 +89,25 @@ impl<'a> VuMeterWidget<'a> {
 
 impl<'a> Widget for VuMeterWidget<'a> {
     fn ui(self, ui: &mut Ui) -> Response {
-        let desired_size = Vec2::new(42.0, ui.available_height().max(160.0));
+        let desired_size = Vec2::new(52.0, ui.available_height().max(160.0));
         let (rect, response) = ui.allocate_exact_size(desired_size, Sense::hover());
 
         let painter = ui.painter_at(rect);
 
         // Background
-        painter.rect_filled(rect, 3.0, Color32::from_rgb(0x18, 0x18, 0x1d));
+        painter.rect_filled(rect, 4.0, Color32::from_rgb(0x18, 0x18, 0x1d));
         painter.rect_stroke(
             rect,
-            3.0,
+            4.0,
             Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x30)),
         );
 
         let bar_width = 8.0;
         let spacing = 4.0;
-        let left_x = rect.left() + 6.0;
+        let left_x = rect.left() + 7.0;
         let right_x = left_x + bar_width + spacing;
-        let top_y = rect.top() + 6.0;
-        let bottom_y = rect.bottom() - 6.0;
+        let top_y = rect.top() + 8.0;
+        let bottom_y = rect.bottom() - 8.0;
         let bar_height = (bottom_y - top_y).max(10.0);
 
         // Draw left and right channels
@@ -130,7 +130,7 @@ impl<'a> Widget for VuMeterWidget<'a> {
             self.state.peak_r,
         );
 
-        // Draw dB scale text
+        // Draw dB scale text with comfortable left/right margin
         let labels = [
             ("0", 0.0),
             ("-6", -6.0),
@@ -138,7 +138,7 @@ impl<'a> Widget for VuMeterWidget<'a> {
             ("-24", -24.0),
             ("-40", -40.0),
         ];
-        let text_x = right_x + bar_width + 4.0;
+        let text_x = right_x + bar_width + 6.0;
         for (txt, db) in labels {
             let frac = (db - (-60.0)) / 60.0;
             let y = bottom_y - bar_height * frac;
@@ -146,8 +146,8 @@ impl<'a> Widget for VuMeterWidget<'a> {
                 Pos2::new(text_x, y),
                 egui::Align2::LEFT_CENTER,
                 txt,
-                egui::FontId::monospace(8.0),
-                Color32::from_rgb(0x70, 0x70, 0x80),
+                egui::FontId::monospace(8.5),
+                Color32::from_rgb(0x82, 0x86, 0x96),
             );
         }
 

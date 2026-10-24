@@ -37,7 +37,7 @@ fn main() -> Result<(), eframe::Error> {
     );
 
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title("triM.")
+        .with_title(format!("triM. v{}", env!("CARGO_PKG_VERSION")))
         .with_inner_size([1366.0, 850.0])
         .with_min_inner_size([1024.0, 600.0]);
 
