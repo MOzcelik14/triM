@@ -2032,14 +2032,20 @@ LUT_3D_SIZE 2
 
         let v1_id = project
             .timeline
-            .get_video_tracks()
-            .first()
+            .tracks
+            .iter()
+            .find(|t| t.name == "V1")
             .unwrap()
             .id
             .clone();
-        let v2_track = trim_core::track::Track::new("V2", trim_core::track::TrackType::Video);
-        let v2_id = v2_track.id.clone();
-        project.timeline.add_track(v2_track);
+        let v2_id = project
+            .timeline
+            .tracks
+            .iter()
+            .find(|t| t.name == "V2")
+            .unwrap()
+            .id
+            .clone();
 
         project
             .timeline

@@ -485,10 +485,10 @@ mod tests {
         );
 
         // Rename tracks
-        if let Some(t) = app.project.timeline.get_video_tracks_mut().first_mut() {
+        for t in app.project.timeline.get_video_tracks_mut() {
             t.name = "CustomVideo".to_string();
         }
-        if let Some(t) = app.project.timeline.get_audio_tracks_mut().first_mut() {
+        for t in app.project.timeline.get_audio_tracks_mut() {
             t.name = "CustomAudio".to_string();
         }
         // Now resolve should fallback to the first video and audio tracks

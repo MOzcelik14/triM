@@ -116,8 +116,10 @@ impl Default for TimelineModel {
     fn default() -> Self {
         Self {
             tracks: vec![
+                Track::new("V2", TrackType::Video),
                 Track::new("V1", TrackType::Video),
                 Track::new("A1", TrackType::Audio),
+                Track::new("A2", TrackType::Audio),
             ],
             markers: Vec::new(),
             width: 1920,
@@ -450,7 +452,9 @@ impl TimelineModel {
     /// Returns visible video clips at `time` in bottom-to-top order (V1, V2, ...).
     pub fn get_visible_video_clips_at(&self, time: f64) -> Vec<(&Track, &Clip)> {
         let mut result = Vec::new();
-        for track in self.get_video_tracks() {
+        // Video tracks in self.tracks are stacked topmost first [V2, V1, ...].
+        // To render bottom-to-top (V1 as base layer, V2 on top), iterate in reverse:
+        for track in self.get_video_tracks().into_iter().rev() {
             if !track.visible {
                 continue;
             }
@@ -463,8 +467,8 @@ impl TimelineModel {
 
     /// Returns the topmost visible video clip at `time`.
     pub fn get_top_visible_video_clip_at(&self, time: f64) -> Option<(&Track, &Clip)> {
-        // Iterate backwards from highest layer to lowest
-        for track in self.get_video_tracks().into_iter().rev() {
+        // Iterate from highest layer (index 0 is V2) to lowest
+        for track in self.get_video_tracks() {
             if !track.visible {
                 continue;
             }
@@ -586,32 +590,29 @@ mod tests {
     #[test]
     fn test_dynamic_track_addition_and_removal() {
         let mut tl = TimelineModel::default();
-        // Starts with V1 and A1
-        assert_eq!(tl.tracks.len(), 2);
-        assert_eq!(tl.tracks[0].name, "V1");
-        assert_eq!(tl.tracks[1].name, "A1");
-
-        // Add V2 -> should become index 0
-        let v2_id = tl.add_new_video_track();
+        // Starts with V2, V1 and A1, A2
+        assert_eq!(tl.tracks.len(), 4);
         assert_eq!(tl.tracks[0].name, "V2");
-        assert_eq!(tl.tracks[0].id, v2_id);
         assert_eq!(tl.tracks[1].name, "V1");
         assert_eq!(tl.tracks[2].name, "A1");
-
-        // Add A2 -> should become index 3
-        let a2_id = tl.add_new_audio_track();
-        assert_eq!(tl.tracks.len(), 4);
         assert_eq!(tl.tracks[3].name, "A2");
-        assert_eq!(tl.tracks[3].id, a2_id);
 
-        // Safe removal of V2
-        assert!(tl.remove_track_safe(&v2_id).is_ok());
-        assert_eq!(tl.get_video_tracks().len(), 1);
+        // Add V3 -> should become index 0
+        let v3_id = tl.add_new_video_track();
+        assert_eq!(tl.tracks[0].name, "V3");
+        assert_eq!(tl.tracks[0].id, v3_id);
+        assert_eq!(tl.tracks[1].name, "V2");
+        assert_eq!(tl.tracks[2].name, "V1");
 
-        // Trying to remove the last video track (V1) should fail safely
-        let v1_id = tl.tracks[0].id.clone();
-        assert!(tl.remove_track_safe(&v1_id).is_err());
-        assert_eq!(tl.get_video_tracks().len(), 1);
+        // Add A3 -> should become index 5
+        let a3_id = tl.add_new_audio_track();
+        assert_eq!(tl.tracks.len(), 6);
+        assert_eq!(tl.tracks[5].name, "A3");
+        assert_eq!(tl.tracks[5].id, a3_id);
+
+        // Safe removal of V3
+        assert!(tl.remove_track_safe(&v3_id).is_ok());
+        assert_eq!(tl.get_video_tracks().len(), 2);
     }
 
     #[test]

@@ -18,7 +18,7 @@ use trim_core::clip::{Clip, LutPreset, MotionTitleStyle};
 use trim_core::keyframe::{Interpolation, Keyframe};
 use trim_core::media::{MediaItem, MediaType};
 use trim_core::project::Project;
-use trim_core::track::TrackType;
+use trim_core::track::{Track, TrackType};
 
 /// Preview canvas size used by the interactive monitor. Clip positions
 /// (`pos_x`, `pos_y`) are stored in preview pixels.
@@ -534,7 +534,11 @@ impl TimelineExporter {
         let any_solo = timeline.tracks.iter().any(|t| t.solo);
         let mut audio_labels: Vec<String> = Vec::new();
 
-        for track in &timeline.tracks {
+        let mut ordered_tracks: Vec<&Track> =
+            timeline.get_video_tracks().into_iter().rev().collect();
+        ordered_tracks.extend(timeline.get_audio_tracks());
+
+        for track in ordered_tracks {
             let track_audible = !track.muted && (!any_solo || track.solo);
             for clip in &track.clips {
                 let dur = clip.duration();
@@ -887,20 +891,37 @@ mod tests {
         proj.add_media(fg);
         proj.add_media(music);
 
-        proj.timeline.tracks[0].add_clip(Clip::new(&bg_id, 0.0, 10.0));
-        let mut v2 = Track::new("V2", TrackType::Video);
+        let v1 = proj
+            .timeline
+            .tracks
+            .iter_mut()
+            .find(|t| t.name == "V1")
+            .unwrap();
+        v1.add_clip(Clip::new(&bg_id, 0.0, 10.0));
+
+        let v2 = proj
+            .timeline
+            .tracks
+            .iter_mut()
+            .find(|t| t.name == "V2")
+            .unwrap();
         v2.add_clip(Clip::new(&fg_id, 2.0, 4.0));
-        proj.timeline.tracks.insert(1, v2);
+
         let a1 = proj
             .timeline
-            .get_audio_tracks_mut()
-            .into_iter()
-            .next()
+            .tracks
+            .iter_mut()
+            .find(|t| t.name == "A1")
             .unwrap();
         a1.add_clip(Clip::new(&mu_id, 1.0, 9.0));
-        let mut a2 = Track::new("A2", TrackType::Audio);
+
+        let a2 = proj
+            .timeline
+            .tracks
+            .iter_mut()
+            .find(|t| t.name == "A2")
+            .unwrap();
         a2.add_clip(Clip::new(&bg_id, 0.0, 10.0));
-        proj.timeline.add_track(a2);
 
         let (cmd, dur) =
             TimelineExporter::build_export_pipeline(&proj, &ExportPreset::default(), "/tmp/o.mp4")

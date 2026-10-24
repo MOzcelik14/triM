@@ -320,35 +320,35 @@ mod tests {
         let mut tl = TimelineModel::default();
         let mut stack = UndoStack::new();
 
-        assert_eq!(tl.tracks.len(), 2);
-        let new_track = trim_core::track::Track::new("V2", trim_core::track::TrackType::Video);
+        assert_eq!(tl.tracks.len(), 4);
+        let new_track = trim_core::track::Track::new("V3", trim_core::track::TrackType::Video);
         let tr_id = new_track.id.clone();
 
         // Add track at index 0
         stack
             .push(Box::new(AddTrackCommand::new(new_track, 0)), &mut tl)
             .unwrap();
-        assert_eq!(tl.tracks.len(), 3);
-        assert_eq!(tl.tracks[0].name, "V2");
+        assert_eq!(tl.tracks.len(), 5);
+        assert_eq!(tl.tracks[0].name, "V3");
 
-        // Undo -> back to 2 tracks
+        // Undo -> back to 4 tracks
         assert!(stack.undo(&mut tl).unwrap());
-        assert_eq!(tl.tracks.len(), 2);
+        assert_eq!(tl.tracks.len(), 4);
 
-        // Redo -> 3 tracks
+        // Redo -> 5 tracks
         assert!(stack.redo(&mut tl).unwrap());
-        assert_eq!(tl.tracks.len(), 3);
+        assert_eq!(tl.tracks.len(), 5);
 
         // Remove track
         stack
             .push(Box::new(RemoveTrackCommand::new(&tr_id)), &mut tl)
             .unwrap();
-        assert_eq!(tl.tracks.len(), 2);
+        assert_eq!(tl.tracks.len(), 4);
 
         // Undo Remove -> restored
         assert!(stack.undo(&mut tl).unwrap());
-        assert_eq!(tl.tracks.len(), 3);
-        assert_eq!(tl.tracks[0].name, "V2");
+        assert_eq!(tl.tracks.len(), 5);
+        assert_eq!(tl.tracks[0].name, "V3");
     }
 
     #[test]
