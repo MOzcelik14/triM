@@ -89,14 +89,22 @@ impl FFprobeAnalyzer {
 
         if duration <= 0.0 {
             if let Some(vs) = video_stream {
-                if let Some(d) = vs.get("duration").and_then(|d| d.as_str()).and_then(|s| s.parse::<f64>().ok()) {
+                if let Some(d) = vs
+                    .get("duration")
+                    .and_then(|d| d.as_str())
+                    .and_then(|s| s.parse::<f64>().ok())
+                {
                     duration = d;
                 }
             }
         }
         if duration <= 0.0 {
             if let Some(as_) = audio_stream {
-                if let Some(d) = as_.get("duration").and_then(|d| d.as_str()).and_then(|s| s.parse::<f64>().ok()) {
+                if let Some(d) = as_
+                    .get("duration")
+                    .and_then(|d| d.as_str())
+                    .and_then(|s| s.parse::<f64>().ok())
+                {
                     duration = d;
                 }
             }

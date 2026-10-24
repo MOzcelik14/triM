@@ -23,4 +23,3 @@ pub use speed_dialog::{SpeedDialog, SpeedDialogAction};
 pub use title_dialog::{TitleDialog, TitleDialogAction, TitlePosition};
 pub use transcribe_dialog::{TranscribeDialog, TranscribeDialogAction};
 pub use welcome_dialog::{WelcomeAction, WelcomeDialog};
-

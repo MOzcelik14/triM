@@ -621,12 +621,22 @@ impl Clip {
         default_val
     }
 
-    pub fn add_keyframe(&mut self, prop: &str, time: f64, value: f64, interpolation: Interpolation) {
+    pub fn add_keyframe(
+        &mut self,
+        prop: &str,
+        time: f64,
+        value: f64,
+        interpolation: Interpolation,
+    ) {
         let list = self.keyframes.entry(prop.to_string()).or_default();
         // Remove existing keyframe if very close
         list.retain(|k| (k.time - time).abs() > 0.04);
         list.push(Keyframe::new(time, value, interpolation));
-        list.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+        list.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
 
     pub fn remove_keyframe(&mut self, prop: &str, time: f64, tolerance: f64) -> bool {
@@ -775,4 +785,3 @@ mod tests {
         assert_eq!(cw.gain, [1.0, 1.0, 1.0]);
     }
 }
-

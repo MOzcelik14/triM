@@ -34,12 +34,19 @@ pub fn detect_silence_regions(
         .arg(media_path)
         .arg("-vn")
         .arg("-af")
-        .arg(format!("silencedetect=noise={:.1}dB:d={:.2}", noise, min_dur))
+        .arg(format!(
+            "silencedetect=noise={:.1}dB:d={:.2}",
+            noise, min_dur
+        ))
         .arg("-f")
         .arg("null")
         .arg("-");
 
-    log::info!("Running silence detection on {}: {:?}", media_path.display(), cmd);
+    log::info!(
+        "Running silence detection on {}: {:?}",
+        media_path.display(),
+        cmd
+    );
 
     let output = cmd
         .output()

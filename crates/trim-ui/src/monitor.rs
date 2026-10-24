@@ -1,7 +1,9 @@
 //! Dual Monitor widget rendering Source Monitor (raw clips) and Program Monitor (timeline sequence)
 //! with Premiere Pro style transport bars, In/Out range marking, and frame extraction.
 
-use egui::{Button, Color32, Pos2, Rect, Response, RichText, Sense, Stroke, TextureHandle, Ui, Vec2};
+use egui::{
+    Button, Color32, Pos2, Rect, Response, RichText, Sense, Stroke, TextureHandle, Ui, Vec2,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MonitorMode {
@@ -110,7 +112,11 @@ impl<'a> MonitorWidget<'a> {
             title,
             texture,
             has_content,
-            aspect_ratio: if aspect_ratio > 0.1 { aspect_ratio } else { 16.0 / 9.0 },
+            aspect_ratio: if aspect_ratio > 0.1 {
+                aspect_ratio
+            } else {
+                16.0 / 9.0
+            },
             current_time,
             duration: duration.max(0.0),
             mark_in,
@@ -157,12 +163,17 @@ impl<'a> MonitorWidget<'a> {
     pub fn show(self, ui: &mut Ui) -> (Response, Option<MonitorAction>) {
         let avail_w = ui.available_width().max(180.0);
         let avail_h = ui.available_height().max(120.0);
-        let (outer_rect, response) = ui.allocate_exact_size(Vec2::new(avail_w, avail_h), Sense::click_and_drag());
+        let (outer_rect, response) =
+            ui.allocate_exact_size(Vec2::new(avail_w, avail_h), Sense::click_and_drag());
         let painter = ui.painter().clone();
 
         // Dark container background
         painter.rect_filled(outer_rect, 3.0, Color32::from_rgb(0x12, 0x12, 0x16));
-        painter.rect_stroke(outer_rect, 3.0, Stroke::new(1.0_f32, Color32::from_rgb(0x24, 0x24, 0x2c)));
+        painter.rect_stroke(
+            outer_rect,
+            3.0,
+            Stroke::new(1.0_f32, Color32::from_rgb(0x24, 0x24, 0x2c)),
+        );
 
         let mut action = None;
 
@@ -173,7 +184,10 @@ impl<'a> MonitorWidget<'a> {
             Pos2::new(outer_rect.max.x, outer_rect.min.y + tab_h),
         );
         painter.rect_filled(tab_rect, 3.0, Color32::from_rgb(0x18, 0x18, 0x1e));
-        painter.line_segment([tab_rect.left_bottom(), tab_rect.right_bottom()], Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x32)));
+        painter.line_segment(
+            [tab_rect.left_bottom(), tab_rect.right_bottom()],
+            Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x32)),
+        );
 
         // Tab badge on left
         let prefix = match self.mode {
@@ -189,7 +203,10 @@ impl<'a> MonitorWidget<'a> {
         painter.rect_filled(active_tab_rect, 2.0, Color32::from_rgb(0x22, 0x22, 0x2a));
         // Blue active top/bottom border
         painter.line_segment(
-            [active_tab_rect.left_bottom(), active_tab_rect.right_bottom()],
+            [
+                active_tab_rect.left_bottom(),
+                active_tab_rect.right_bottom(),
+            ],
             Stroke::new(2.0_f32, Color32::from_rgb(0x38, 0x7a, 0xe0)),
         );
         painter.text(
@@ -225,7 +242,8 @@ impl<'a> MonitorWidget<'a> {
         let max_w = (viewport_rect.width() - 8.0).max(10.0);
         let max_h = (viewport_rect.height() - 8.0).max(10.0);
         let (target_w, target_h) = fit_aspect(max_w, max_h, self.aspect_ratio);
-        let frame_rect = Rect::from_center_size(viewport_rect.center(), Vec2::new(target_w, target_h));
+        let frame_rect =
+            Rect::from_center_size(viewport_rect.center(), Vec2::new(target_w, target_h));
 
         // Deep black canvas background
         painter.rect_filled(frame_rect, 0.0, Color32::from_rgb(0x02, 0x02, 0x04));
@@ -235,7 +253,11 @@ impl<'a> MonitorWidget<'a> {
             painter.text(
                 Pos2::new(center.x, center.y - 30.0),
                 egui::Align2::CENTER_CENTER,
-                if self.mode == MonitorMode::Source { "Klipsiz Kaynak" } else { "Sekans Boş" },
+                if self.mode == MonitorMode::Source {
+                    "Klipsiz Kaynak"
+                } else {
+                    "Sekans Boş"
+                },
                 egui::FontId::proportional(16.0),
                 Color32::from_rgb(0x80, 0x80, 0x95),
             );
@@ -256,7 +278,8 @@ impl<'a> MonitorWidget<'a> {
             let btn_y = center.y + 36.0;
             let btn_w = 110.0;
             let btn_h = 26.0;
-            let r_import = Rect::from_center_size(Pos2::new(center.x, btn_y), Vec2::new(btn_w + 30.0, btn_h));
+            let r_import =
+                Rect::from_center_size(Pos2::new(center.x, btn_y), Vec2::new(btn_w + 30.0, btn_h));
 
             if let Some(mouse_pos) = response.hover_pos() {
                 if ui.input(|i| i.pointer.primary_clicked()) && r_import.contains(mouse_pos) {
@@ -275,7 +298,11 @@ impl<'a> MonitorWidget<'a> {
             painter.text(
                 frame_rect.center(),
                 egui::Align2::CENTER_CENTER,
-                if self.is_decoding { "Kare hazırlanıyor..." } else { "Önizleme Yükleniyor..." },
+                if self.is_decoding {
+                    "Kare hazırlanıyor..."
+                } else {
+                    "Önizleme Yükleniyor..."
+                },
                 egui::FontId::proportional(12.0),
                 Color32::from_rgb(0x80, 0x80, 0x90),
             );
@@ -307,17 +334,29 @@ impl<'a> MonitorWidget<'a> {
                     } else {
                         target_y + 36.0
                     };
-                    let input_rect = Rect::from_center_size(Pos2::new(target_x, input_y), Vec2::new(260.0, 28.0));
-                    let is_inside_editor = self.inline_text_edit.is_some() && input_rect.expand(6.0).contains(interact_pos);
+                    let input_rect = Rect::from_center_size(
+                        Pos2::new(target_x, input_y),
+                        Vec2::new(260.0, 28.0),
+                    );
+                    let is_inside_editor = self.inline_text_edit.is_some()
+                        && input_rect.expand(6.0).contains(interact_pos);
 
                     if !is_inside_editor {
-                        let norm_x = ((interact_pos.x - frame_rect.left()) / frame_rect.width()).clamp(0.05, 0.95);
-                        let norm_y = ((interact_pos.y - frame_rect.top()) / frame_rect.height()).clamp(0.05, 0.95);
+                        let norm_x = ((interact_pos.x - frame_rect.left()) / frame_rect.width())
+                            .clamp(0.05, 0.95);
+                        let norm_y = ((interact_pos.y - frame_rect.top()) / frame_rect.height())
+                            .clamp(0.05, 0.95);
 
                         if response.clicked() {
-                            action = Some(MonitorAction::TextToolClick { pos_x: norm_x, pos_y: norm_y });
+                            action = Some(MonitorAction::TextToolClick {
+                                pos_x: norm_x,
+                                pos_y: norm_y,
+                            });
                         } else if response.dragged() {
-                            action = Some(MonitorAction::TextPositionDrag { pos_x: norm_x, pos_y: norm_y });
+                            action = Some(MonitorAction::TextPositionDrag {
+                                pos_x: norm_x,
+                                pos_y: norm_y,
+                            });
                         }
                     }
                 }
@@ -328,7 +367,8 @@ impl<'a> MonitorWidget<'a> {
             if ov.alpha <= 0.001 || ov.text.is_empty() {
                 continue;
             }
-            let scaled_font_size = (ov.font_size * (frame_rect.height() / 1080.0)).clamp(10.0, 160.0);
+            let scaled_font_size =
+                (ov.font_size * (frame_rect.height() / 1080.0)).clamp(10.0, 160.0);
             let font = egui::FontId::proportional(scaled_font_size);
             let target_x = frame_rect.left() + frame_rect.width() * ov.pos_x.clamp(0.0, 1.0);
             let target_y = frame_rect.top() + frame_rect.height() * ov.pos_y.clamp(0.0, 1.0);
@@ -355,25 +395,33 @@ impl<'a> MonitorWidget<'a> {
                 trim_core::clip::CaptionStyle::PopUpBouncy => {
                     let bounce = 1.0 + 0.18 * (1.0 - (ov.progress * 2.0 - 1.0).abs()).max(0.0);
                     let pop_font = egui::FontId::proportional(scaled_font_size * bounce);
-                    let galley = painter.layout_no_wrap(ov.text.clone(), pop_font, ov.highlight_color);
-                    let tr = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
+                    let galley =
+                        painter.layout_no_wrap(ov.text.clone(), pop_font, ov.highlight_color);
+                    let tr = egui::Align2::CENTER_CENTER
+                        .anchor_size(Pos2::new(target_x, target_y), galley.size());
 
                     if let Some(bg_col) = ov.bg_color {
                         let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
                         painter.rect_filled(tr.expand(pad), 6.0, bg_col);
                     }
                     if ov.has_shadow {
-                        painter.galley(tr.min + Vec2::new(2.0, 2.0), galley.clone(), Color32::from_black_alpha((180.0 * ov.alpha) as u8));
+                        painter.galley(
+                            tr.min + Vec2::new(2.0, 2.0),
+                            galley.clone(),
+                            Color32::from_black_alpha((180.0 * ov.alpha) as u8),
+                        );
                     }
                     painter.galley(tr.min, galley, ov.highlight_color);
                     tr
                 }
-                trim_core::clip::CaptionStyle::WordHighlightYellow | trim_core::clip::CaptionStyle::WordHighlightNeon => {
-                    let hl_col = if ov.caption_style == trim_core::clip::CaptionStyle::WordHighlightYellow {
-                        Color32::from_rgb(255, 230, 0)
-                    } else {
-                        Color32::from_rgb(0, 255, 102)
-                    };
+                trim_core::clip::CaptionStyle::WordHighlightYellow
+                | trim_core::clip::CaptionStyle::WordHighlightNeon => {
+                    let hl_col =
+                        if ov.caption_style == trim_core::clip::CaptionStyle::WordHighlightYellow {
+                            Color32::from_rgb(255, 230, 0)
+                        } else {
+                            Color32::from_rgb(0, 255, 102)
+                        };
 
                     let mut job = egui::text::LayoutJob::default();
                     for (i, word) in words.iter().enumerate() {
@@ -405,21 +453,28 @@ impl<'a> MonitorWidget<'a> {
                         }
                     }
                     let galley = painter.layout_job(job);
-                    let tr = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
+                    let tr = egui::Align2::CENTER_CENTER
+                        .anchor_size(Pos2::new(target_x, target_y), galley.size());
 
                     if let Some(bg_col) = ov.bg_color {
                         let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
                         painter.rect_filled(tr.expand(pad), 4.0, bg_col);
                     }
                     if ov.has_shadow {
-                        painter.galley(tr.min + Vec2::new(2.0, 2.0), galley.clone(), Color32::from_black_alpha((180.0 * ov.alpha) as u8));
+                        painter.galley(
+                            tr.min + Vec2::new(2.0, 2.0),
+                            galley.clone(),
+                            Color32::from_black_alpha((180.0 * ov.alpha) as u8),
+                        );
                     }
                     painter.galley(tr.min, galley, final_col);
                     tr
                 }
-                trim_core::clip::CaptionStyle::BoxBackground | trim_core::clip::CaptionStyle::Standard => {
+                trim_core::clip::CaptionStyle::BoxBackground
+                | trim_core::clip::CaptionStyle::Standard => {
                     let galley = painter.layout_no_wrap(ov.text.clone(), font, final_col);
-                    let tr = egui::Align2::CENTER_CENTER.anchor_size(Pos2::new(target_x, target_y), galley.size());
+                    let tr = egui::Align2::CENTER_CENTER
+                        .anchor_size(Pos2::new(target_x, target_y), galley.size());
 
                     if let Some(bg_col) = ov.bg_color {
                         let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
@@ -435,12 +490,20 @@ impl<'a> MonitorWidget<'a> {
                         painter.rect_filled(tr.expand(pad), 4.0, box_col);
                     } else if ov.caption_style == trim_core::clip::CaptionStyle::BoxBackground {
                         let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
-                        painter.rect_filled(tr.expand(pad), 4.0, Color32::from_rgba_unmultiplied(0, 0, 0, 180));
+                        painter.rect_filled(
+                            tr.expand(pad),
+                            4.0,
+                            Color32::from_rgba_unmultiplied(0, 0, 0, 180),
+                        );
                     }
 
                     if ov.has_shadow {
                         let shadow_offset = Vec2::new(2.0, 2.0);
-                        painter.galley(tr.min + shadow_offset, galley.clone(), Color32::from_black_alpha((160.0 * ov.alpha) as u8));
+                        painter.galley(
+                            tr.min + shadow_offset,
+                            galley.clone(),
+                            Color32::from_black_alpha((160.0 * ov.alpha) as u8),
+                        );
                     }
                     painter.galley(tr.min, galley, final_col);
                     tr
@@ -483,12 +546,23 @@ impl<'a> MonitorWidget<'a> {
                 } else {
                     target_y + 36.0
                 };
-                let input_rect = Rect::from_center_size(Pos2::new(target_x, input_y), Vec2::new(input_w, input_h));
+                let input_rect = Rect::from_center_size(
+                    Pos2::new(target_x, input_y),
+                    Vec2::new(input_w, input_h),
+                );
 
                 painter.rect_filled(input_rect, 4.0, Color32::from_black_alpha(220));
-                painter.rect_stroke(input_rect, 4.0, Stroke::new(1.5_f32, Color32::from_rgb(0x38, 0xa0, 0xf0)));
+                painter.rect_stroke(
+                    input_rect,
+                    4.0,
+                    Stroke::new(1.5_f32, Color32::from_rgb(0x38, 0xa0, 0xf0)),
+                );
 
-                let mut child_ui = ui.new_child(egui::UiBuilder::new().max_rect(input_rect.shrink(2.0)).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                let mut child_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(input_rect.shrink(2.0))
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                );
                 let resp = child_ui.add(
                     egui::TextEdit::singleline(&mut edit_txt)
                         .desired_width(input_w - 12.0)
@@ -502,7 +576,11 @@ impl<'a> MonitorWidget<'a> {
         }
 
         // High contrast frame border
-        painter.rect_stroke(frame_rect, 0.0, Stroke::new(1.0_f32, Color32::from_rgb(0x38, 0x38, 0x46)));
+        painter.rect_stroke(
+            frame_rect,
+            0.0,
+            Stroke::new(1.0_f32, Color32::from_rgb(0x38, 0x38, 0x46)),
+        );
         draw_corner_guides(&painter, frame_rect);
         if self.safe_zones {
             draw_safe_zones(&painter, frame_rect, self.aspect_ratio < 1.0);
@@ -510,11 +588,21 @@ impl<'a> MonitorWidget<'a> {
 
         // 3. Scrubber Bar
         let scrub_rect = Rect::from_min_max(
-            Pos2::new(outer_rect.left() + 6.0, outer_rect.bottom() - bottom_total_h),
-            Pos2::new(outer_rect.right() - 6.0, outer_rect.bottom() - bottom_total_h + scrubber_h),
+            Pos2::new(
+                outer_rect.left() + 6.0,
+                outer_rect.bottom() - bottom_total_h,
+            ),
+            Pos2::new(
+                outer_rect.right() - 6.0,
+                outer_rect.bottom() - bottom_total_h + scrubber_h,
+            ),
         );
         painter.rect_filled(scrub_rect, 2.0, Color32::from_rgb(0x18, 0x18, 0x20));
-        painter.rect_stroke(scrub_rect, 2.0, Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x32)));
+        painter.rect_stroke(
+            scrub_rect,
+            2.0,
+            Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x32)),
+        );
 
         if self.duration > 0.0 {
             let dur = self.duration;
@@ -531,18 +619,37 @@ impl<'a> MonitorWidget<'a> {
                     Pos2::new(r_in_x.min(r_out_x), scrub_rect.top() + 2.0),
                     Pos2::new(r_in_x.max(r_out_x), scrub_rect.bottom() - 2.0),
                 );
-                painter.rect_filled(in_out_rect, 1.0, Color32::from_rgba_premultiplied(56, 122, 224, 70));
+                painter.rect_filled(
+                    in_out_rect,
+                    1.0,
+                    Color32::from_rgba_premultiplied(56, 122, 224, 70),
+                );
 
                 // Bracket handles { }
-                painter.line_segment([Pos2::new(r_in_x, scrub_rect.top()), Pos2::new(r_in_x, scrub_rect.bottom())], Stroke::new(2.0_f32, Color32::from_rgb(0x4a, 0x9a, 0xff)));
-                painter.line_segment([Pos2::new(r_out_x, scrub_rect.top()), Pos2::new(r_out_x, scrub_rect.bottom())], Stroke::new(2.0_f32, Color32::from_rgb(0x4a, 0x9a, 0xff)));
+                painter.line_segment(
+                    [
+                        Pos2::new(r_in_x, scrub_rect.top()),
+                        Pos2::new(r_in_x, scrub_rect.bottom()),
+                    ],
+                    Stroke::new(2.0_f32, Color32::from_rgb(0x4a, 0x9a, 0xff)),
+                );
+                painter.line_segment(
+                    [
+                        Pos2::new(r_out_x, scrub_rect.top()),
+                        Pos2::new(r_out_x, scrub_rect.bottom()),
+                    ],
+                    Stroke::new(2.0_f32, Color32::from_rgb(0x4a, 0x9a, 0xff)),
+                );
             }
 
             // Current playhead position
             let curr_ratio = (self.current_time / dur).clamp(0.0, 1.0) as f32;
             let playhead_x = x_start + curr_ratio * track_w;
             painter.line_segment(
-                [Pos2::new(playhead_x, scrub_rect.top()), Pos2::new(playhead_x, scrub_rect.bottom())],
+                [
+                    Pos2::new(playhead_x, scrub_rect.top()),
+                    Pos2::new(playhead_x, scrub_rect.bottom()),
+                ],
                 Stroke::new(2.0_f32, Color32::from_rgb(0xe0, 0x7a, 0x38)),
             );
 
@@ -558,11 +665,17 @@ impl<'a> MonitorWidget<'a> {
 
         // 4. Bottom Transport Toolbar (Premiere Pro buttons row)
         let tool_rect = Rect::from_min_max(
-            Pos2::new(outer_rect.left(), outer_rect.bottom() - (bottom_total_h - scrubber_h)),
+            Pos2::new(
+                outer_rect.left(),
+                outer_rect.bottom() - (bottom_total_h - scrubber_h),
+            ),
             Pos2::new(outer_rect.right(), outer_rect.bottom()),
         );
         painter.rect_filled(tool_rect, 3.0, Color32::from_rgb(0x16, 0x16, 0x1b));
-        painter.line_segment([tool_rect.left_top(), tool_rect.right_top()], Stroke::new(1.0_f32, Color32::from_rgb(0x26, 0x26, 0x30)));
+        painter.line_segment(
+            [tool_rect.left_top(), tool_rect.right_top()],
+            Stroke::new(1.0_f32, Color32::from_rgb(0x26, 0x26, 0x30)),
+        );
 
         ui.allocate_new_ui(egui::UiBuilder::new().max_rect(tool_rect), |ui| {
             ui.horizontal_centered(|ui| {
@@ -577,7 +690,11 @@ impl<'a> MonitorWidget<'a> {
                         .color(Color32::from_rgb(0x38, 0xa0, 0xe8))
                         .strong(),
                 );
-                ui.label(RichText::new("/").size(10.0).color(Color32::from_rgb(0x60, 0x60, 0x70)));
+                ui.label(
+                    RichText::new("/")
+                        .size(10.0)
+                        .color(Color32::from_rgb(0x60, 0x60, 0x70)),
+                );
                 ui.label(
                     RichText::new(self.duration_timecode)
                         .monospace()
@@ -593,7 +710,11 @@ impl<'a> MonitorWidget<'a> {
                 let btn_in = Button::new(RichText::new("{").strong().size(13.0))
                     .min_size(Vec2::new(24.0, 24.0))
                     .fill(Color32::from_rgb(0x22, 0x22, 0x2a));
-                if ui.add(btn_in).on_hover_text("Giriş Noktası Koy (Mark In - I veya {)").clicked() {
+                if ui
+                    .add(btn_in)
+                    .on_hover_text("Giriş Noktası Koy (Mark In - I veya {)")
+                    .clicked()
+                {
                     action = Some(MonitorAction::MarkIn);
                 }
 
@@ -601,7 +722,11 @@ impl<'a> MonitorWidget<'a> {
                 let btn_out = Button::new(RichText::new("}").strong().size(13.0))
                     .min_size(Vec2::new(24.0, 24.0))
                     .fill(Color32::from_rgb(0x22, 0x22, 0x2a));
-                if ui.add(btn_out).on_hover_text("Çıkış Noktası Koy (Mark Out - O veya })").clicked() {
+                if ui
+                    .add(btn_out)
+                    .on_hover_text("Çıkış Noktası Koy (Mark Out - O veya })")
+                    .clicked()
+                {
                     action = Some(MonitorAction::MarkOut);
                 }
 
@@ -609,7 +734,11 @@ impl<'a> MonitorWidget<'a> {
                 let btn_go_in = Button::new(RichText::new("|<").size(11.0).strong())
                     .min_size(Vec2::new(24.0, 24.0))
                     .fill(Color32::from_rgb(0x22, 0x22, 0x2a));
-                if ui.add(btn_go_in).on_hover_text("Giriş Noktasına Git (Go to In)").clicked() {
+                if ui
+                    .add(btn_go_in)
+                    .on_hover_text("Giriş Noktasına Git (Go to In)")
+                    .clicked()
+                {
                     action = Some(MonitorAction::GoToIn);
                 }
 
@@ -617,12 +746,17 @@ impl<'a> MonitorWidget<'a> {
                 let btn_prev = Button::new(RichText::new("<").size(12.0).strong())
                     .min_size(Vec2::new(24.0, 24.0))
                     .fill(Color32::from_rgb(0x22, 0x22, 0x2a));
-                if ui.add(btn_prev).on_hover_text("Önceki Kare (Sol Ok)").clicked() {
+                if ui
+                    .add(btn_prev)
+                    .on_hover_text("Önceki Kare (Sol Ok)")
+                    .clicked()
+                {
                     action = Some(MonitorAction::StepFrame(-1));
                 }
 
                 // Play / Pause button (vector painted triangle / pause bars)
-                let (play_rect, play_resp) = ui.allocate_exact_size(Vec2::new(30.0, 24.0), Sense::click());
+                let (play_rect, play_resp) =
+                    ui.allocate_exact_size(Vec2::new(30.0, 24.0), Sense::click());
                 let pp = ui.painter_at(play_rect);
                 let bg_col = if play_resp.hovered() {
                     Color32::from_rgb(0x38, 0x38, 0x46)
@@ -630,14 +764,24 @@ impl<'a> MonitorWidget<'a> {
                     Color32::from_rgb(0x28, 0x28, 0x34)
                 };
                 pp.rect_filled(play_rect, 3.0, bg_col);
-                pp.rect_stroke(play_rect, 3.0, Stroke::new(1.0_f32, Color32::from_rgb(0x3c, 0x3c, 0x4c)));
+                pp.rect_stroke(
+                    play_rect,
+                    3.0,
+                    Stroke::new(1.0_f32, Color32::from_rgb(0x3c, 0x3c, 0x4c)),
+                );
 
                 let p_center = play_rect.center();
                 if self.is_playing {
                     let bar_w = 3.0;
                     let bar_h = 10.0;
-                    let bar1 = Rect::from_center_size(Pos2::new(p_center.x - 3.5, p_center.y), Vec2::new(bar_w, bar_h));
-                    let bar2 = Rect::from_center_size(Pos2::new(p_center.x + 3.5, p_center.y), Vec2::new(bar_w, bar_h));
+                    let bar1 = Rect::from_center_size(
+                        Pos2::new(p_center.x - 3.5, p_center.y),
+                        Vec2::new(bar_w, bar_h),
+                    );
+                    let bar2 = Rect::from_center_size(
+                        Pos2::new(p_center.x + 3.5, p_center.y),
+                        Vec2::new(bar_w, bar_h),
+                    );
                     pp.rect_filled(bar1, 1.0, Color32::from_rgb(0x50, 0xd0, 0x70));
                     pp.rect_filled(bar2, 1.0, Color32::from_rgb(0x50, 0xd0, 0x70));
                 } else {
@@ -646,9 +790,16 @@ impl<'a> MonitorWidget<'a> {
                         Pos2::new(p_center.x + 6.0, p_center.y),
                         Pos2::new(p_center.x - 4.0, p_center.y + 6.0),
                     ];
-                    pp.add(egui::Shape::convex_polygon(tri, Color32::WHITE, Stroke::NONE));
+                    pp.add(egui::Shape::convex_polygon(
+                        tri,
+                        Color32::WHITE,
+                        Stroke::NONE,
+                    ));
                 }
-                if play_resp.on_hover_text("Oynat / Duraklat (Boşluk)").clicked() {
+                if play_resp
+                    .on_hover_text("Oynat / Duraklat (Boşluk)")
+                    .clicked()
+                {
                     action = Some(MonitorAction::TogglePlay);
                 }
 
@@ -656,7 +807,11 @@ impl<'a> MonitorWidget<'a> {
                 let btn_next = Button::new(RichText::new(">").size(12.0).strong())
                     .min_size(Vec2::new(24.0, 24.0))
                     .fill(Color32::from_rgb(0x22, 0x22, 0x2a));
-                if ui.add(btn_next).on_hover_text("Sonraki Kare (Sağ Ok)").clicked() {
+                if ui
+                    .add(btn_next)
+                    .on_hover_text("Sonraki Kare (Sağ Ok)")
+                    .clicked()
+                {
                     action = Some(MonitorAction::StepFrame(1));
                 }
 
@@ -664,7 +819,11 @@ impl<'a> MonitorWidget<'a> {
                 let btn_go_out = Button::new(RichText::new(">|").size(11.0).strong())
                     .min_size(Vec2::new(24.0, 24.0))
                     .fill(Color32::from_rgb(0x22, 0x22, 0x2a));
-                if ui.add(btn_go_out).on_hover_text("Çıkış Noktasına Git (Go to Out)").clicked() {
+                if ui
+                    .add(btn_go_out)
+                    .on_hover_text("Çıkış Noktasına Git (Go to Out)")
+                    .clicked()
+                {
                     action = Some(MonitorAction::GoToOut);
                 }
 
@@ -683,7 +842,11 @@ impl<'a> MonitorWidget<'a> {
                         )
                         .min_size(Vec2::new(26.0, 24.0))
                         .fill(Color32::from_rgb(0x20, 0x2a, 0x38));
-                        if ui.add(btn_insert).on_hover_text("Zaman Çizgisine Ekle (Insert - Virgül ',')").clicked() {
+                        if ui
+                            .add(btn_insert)
+                            .on_hover_text("Zaman Çizgisine Ekle (Insert - Virgül ',')")
+                            .clicked()
+                        {
                             action = Some(MonitorAction::InsertToTimeline);
                         }
 
@@ -696,7 +859,11 @@ impl<'a> MonitorWidget<'a> {
                         )
                         .min_size(Vec2::new(26.0, 24.0))
                         .fill(Color32::from_rgb(0x1c, 0x30, 0x28));
-                        if ui.add(btn_overwrite).on_hover_text("Üzerine Yaz (Overwrite - Nokta '.')").clicked() {
+                        if ui
+                            .add(btn_overwrite)
+                            .on_hover_text("Üzerine Yaz (Overwrite - Nokta '.')")
+                            .clicked()
+                        {
                             action = Some(MonitorAction::OverwriteToTimeline);
                         }
                     }
@@ -710,7 +877,11 @@ impl<'a> MonitorWidget<'a> {
                         )
                         .min_size(Vec2::new(26.0, 24.0))
                         .fill(Color32::from_rgb(0x2d, 0x28, 0x20));
-                        if ui.add(btn_frame).on_hover_text("Mevcut Kareyi Dışa Aktar (Export Frame)").clicked() {
+                        if ui
+                            .add(btn_frame)
+                            .on_hover_text("Mevcut Kareyi Dışa Aktar (Export Frame)")
+                            .clicked()
+                        {
                             action = Some(MonitorAction::ExportFrame);
                         }
 
@@ -726,8 +897,16 @@ impl<'a> MonitorWidget<'a> {
                                 .strong(),
                         )
                         .min_size(Vec2::new(26.0, 24.0))
-                        .fill(if self.safe_zones { Color32::from_rgb(0x18, 0x30, 0x48) } else { Color32::from_rgb(0x22, 0x22, 0x2a) });
-                        if ui.add(btn_safe).on_hover_text("Güvenli Alan & Sosyal Medya Rehber Çizgileri").clicked() {
+                        .fill(if self.safe_zones {
+                            Color32::from_rgb(0x18, 0x30, 0x48)
+                        } else {
+                            Color32::from_rgb(0x22, 0x22, 0x2a)
+                        });
+                        if ui
+                            .add(btn_safe)
+                            .on_hover_text("Güvenli Alan & Sosyal Medya Rehber Çizgileri")
+                            .clicked()
+                        {
                             action = Some(MonitorAction::ToggleSafeZones);
                         }
 
@@ -776,20 +955,68 @@ fn draw_corner_guides(painter: &egui::Painter, rect: Rect) {
     let guide_stroke = Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(255, 255, 255, 45));
 
     // Top-Left
-    painter.line_segment([rect.left_top(), Pos2::new(rect.left() + guide_len, rect.top())], guide_stroke);
-    painter.line_segment([rect.left_top(), Pos2::new(rect.left(), rect.top() + guide_len)], guide_stroke);
+    painter.line_segment(
+        [
+            rect.left_top(),
+            Pos2::new(rect.left() + guide_len, rect.top()),
+        ],
+        guide_stroke,
+    );
+    painter.line_segment(
+        [
+            rect.left_top(),
+            Pos2::new(rect.left(), rect.top() + guide_len),
+        ],
+        guide_stroke,
+    );
 
     // Top-Right
-    painter.line_segment([rect.right_top(), Pos2::new(rect.right() - guide_len, rect.top())], guide_stroke);
-    painter.line_segment([rect.right_top(), Pos2::new(rect.right(), rect.top() + guide_len)], guide_stroke);
+    painter.line_segment(
+        [
+            rect.right_top(),
+            Pos2::new(rect.right() - guide_len, rect.top()),
+        ],
+        guide_stroke,
+    );
+    painter.line_segment(
+        [
+            rect.right_top(),
+            Pos2::new(rect.right(), rect.top() + guide_len),
+        ],
+        guide_stroke,
+    );
 
     // Bottom-Left
-    painter.line_segment([rect.left_bottom(), Pos2::new(rect.left() + guide_len, rect.bottom())], guide_stroke);
-    painter.line_segment([rect.left_bottom(), Pos2::new(rect.left(), rect.bottom() - guide_len)], guide_stroke);
+    painter.line_segment(
+        [
+            rect.left_bottom(),
+            Pos2::new(rect.left() + guide_len, rect.bottom()),
+        ],
+        guide_stroke,
+    );
+    painter.line_segment(
+        [
+            rect.left_bottom(),
+            Pos2::new(rect.left(), rect.bottom() - guide_len),
+        ],
+        guide_stroke,
+    );
 
     // Bottom-Right
-    painter.line_segment([rect.right_bottom(), Pos2::new(rect.right() - guide_len, rect.bottom())], guide_stroke);
-    painter.line_segment([rect.right_bottom(), Pos2::new(rect.right(), rect.bottom() - guide_len)], guide_stroke);
+    painter.line_segment(
+        [
+            rect.right_bottom(),
+            Pos2::new(rect.right() - guide_len, rect.bottom()),
+        ],
+        guide_stroke,
+    );
+    painter.line_segment(
+        [
+            rect.right_bottom(),
+            Pos2::new(rect.right(), rect.bottom() - guide_len),
+        ],
+        guide_stroke,
+    );
 }
 
 fn draw_button(painter: &egui::Painter, rect: Rect, text: &str, is_primary: bool) {
@@ -804,7 +1031,14 @@ fn draw_button(painter: &egui::Painter, rect: Rect, text: &str, is_primary: bool
     painter.rect_stroke(
         rect,
         4.0,
-        Stroke::new(1.0_f32, if is_primary { Color32::from_rgb(0xcb, 0x69, 0x29) } else { Color32::from_rgb(0x38, 0x38, 0x44) }),
+        Stroke::new(
+            1.0_f32,
+            if is_primary {
+                Color32::from_rgb(0xcb, 0x69, 0x29)
+            } else {
+                Color32::from_rgb(0x38, 0x38, 0x44)
+            },
+        ),
     );
 
     painter.text(
@@ -820,8 +1054,14 @@ fn draw_safe_zones(painter: &egui::Painter, rect: Rect, is_vertical: bool) {
     let action_safe = rect.shrink2(Vec2::new(rect.width() * 0.05, rect.height() * 0.05));
     let title_safe = rect.shrink2(Vec2::new(rect.width() * 0.10, rect.height() * 0.10));
 
-    let stroke_action = Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(0x38, 0xa0, 0xe8, 60));
-    let stroke_title = Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(0xe0, 0xaa, 0x50, 70));
+    let stroke_action = Stroke::new(
+        1.0_f32,
+        Color32::from_rgba_premultiplied(0x38, 0xa0, 0xe8, 60),
+    );
+    let stroke_title = Stroke::new(
+        1.0_f32,
+        Color32::from_rgba_premultiplied(0xe0, 0xaa, 0x50, 70),
+    );
 
     painter.rect_stroke(action_safe, 0.0, stroke_action);
     painter.rect_stroke(title_safe, 0.0, stroke_title);
@@ -830,26 +1070,57 @@ fn draw_safe_zones(painter: &egui::Painter, rect: Rect, is_vertical: bool) {
     let c = rect.center();
     let cross_len = 8.0;
     let cross_stroke = Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(255, 255, 255, 60));
-    painter.line_segment([Pos2::new(c.x - cross_len, c.y), Pos2::new(c.x + cross_len, c.y)], cross_stroke);
-    painter.line_segment([Pos2::new(c.x, c.y - cross_len), Pos2::new(c.x, c.y + cross_len)], cross_stroke);
+    painter.line_segment(
+        [
+            Pos2::new(c.x - cross_len, c.y),
+            Pos2::new(c.x + cross_len, c.y),
+        ],
+        cross_stroke,
+    );
+    painter.line_segment(
+        [
+            Pos2::new(c.x, c.y - cross_len),
+            Pos2::new(c.x, c.y + cross_len),
+        ],
+        cross_stroke,
+    );
 
     if is_vertical {
         // Vertical Shorts / Reels / TikTok UI zones overlay
         // Right side buttons zone (likes, comments, share)
         let right_ui = Rect::from_min_max(
-            Pos2::new(rect.right() - rect.width() * 0.18, rect.top() + rect.height() * 0.40),
+            Pos2::new(
+                rect.right() - rect.width() * 0.18,
+                rect.top() + rect.height() * 0.40,
+            ),
             Pos2::new(rect.right(), rect.top() + rect.height() * 0.85),
         );
-        painter.rect_filled(right_ui, 2.0, Color32::from_rgba_premultiplied(240, 60, 60, 25));
-        painter.rect_stroke(right_ui, 2.0, Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(240, 60, 60, 60)));
+        painter.rect_filled(
+            right_ui,
+            2.0,
+            Color32::from_rgba_premultiplied(240, 60, 60, 25),
+        );
+        painter.rect_stroke(
+            right_ui,
+            2.0,
+            Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(240, 60, 60, 60)),
+        );
 
         // Bottom captions zone
         let bottom_ui = Rect::from_min_max(
             Pos2::new(rect.left(), rect.bottom() - rect.height() * 0.20),
             Pos2::new(rect.right(), rect.bottom()),
         );
-        painter.rect_filled(bottom_ui, 2.0, Color32::from_rgba_premultiplied(240, 60, 60, 20));
-        painter.rect_stroke(bottom_ui, 2.0, Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(240, 60, 60, 50)));
+        painter.rect_filled(
+            bottom_ui,
+            2.0,
+            Color32::from_rgba_premultiplied(240, 60, 60, 20),
+        );
+        painter.rect_stroke(
+            bottom_ui,
+            2.0,
+            Stroke::new(1.0_f32, Color32::from_rgba_premultiplied(240, 60, 60, 50)),
+        );
 
         painter.text(
             Pos2::new(rect.left() + 6.0, rect.bottom() - 14.0),

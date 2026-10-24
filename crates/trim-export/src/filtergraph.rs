@@ -35,7 +35,10 @@ struct InputList {
 
 impl InputList {
     fn new() -> Self {
-        Self { args: Vec::new(), count: 0 }
+        Self {
+            args: Vec::new(),
+            count: 0,
+        }
     }
 
     fn push(&mut self, args: impl IntoIterator<Item = String>) -> usize {
@@ -53,7 +56,11 @@ fn even(v: u32) -> u32 {
 /// Builds an FFmpeg expression that evaluates keyframes at local time `var`.
 /// Mirrors `trim_core::keyframe::interpolate_keyframes`.
 fn keyframe_expr(keyframes: &[Keyframe], var: &str, map: impl Fn(f64) -> f64) -> String {
-    let mut kfs: Vec<Keyframe> = keyframes.iter().filter(|k| k.time.is_finite() && k.value.is_finite()).cloned().collect();
+    let mut kfs: Vec<Keyframe> = keyframes
+        .iter()
+        .filter(|k| k.time.is_finite() && k.value.is_finite())
+        .cloned()
+        .collect();
     kfs.sort_by(|a, b| a.time.total_cmp(&b.time));
     match kfs.len() {
         0 => return format!("{:.6}", map(0.0)),
@@ -85,11 +92,18 @@ fn keyframe_expr(keyframes: &[Keyframe], var: &str, map: impl Fn(f64) -> f64) ->
         expr = format!("if(lt({var},{:.6}),{seg},{expr})", k1.time);
     }
     let first = &kfs[0];
-    format!("if(lt({var},{:.6}),{:.6},{expr})", first.time, map(first.value))
+    format!(
+        "if(lt({var},{:.6}),{:.6},{expr})",
+        first.time,
+        map(first.value)
+    )
 }
 
 fn animated_kfs<'a>(clip: &'a Clip, prop: &str) -> Option<&'a [Keyframe]> {
-    clip.keyframes.get(prop).filter(|k| !k.is_empty()).map(|v| v.as_slice())
+    clip.keyframes
+        .get(prop)
+        .filter(|k| !k.is_empty())
+        .map(|v| v.as_slice())
 }
 
 /// Source window `[start, start + src_dur)` that a clip reads from.
@@ -130,7 +144,13 @@ impl TimelineExporter {
 
     /// Video filter chain for one clip, producing an RGBA stream whose PTS is
     /// already shifted to the clip's timeline position.
-    fn clip_video_chain(clip: &Clip, media: &MediaItem, out_w: u32, out_h: u32, out_fps: f64) -> String {
+    fn clip_video_chain(
+        clip: &Clip,
+        media: &MediaItem,
+        out_w: u32,
+        out_h: u32,
+        out_fps: f64,
+    ) -> String {
         let dur = clip.duration();
         let mut f: Vec<String> = Vec::new();
 
@@ -153,7 +173,9 @@ impl TimelineExporter {
         let scale = clip.get_property_at_time("scale", 0.0).max(0.05);
         let box_w = ((out_w as f64) * scale).round().max(2.0) as u32;
         let box_h = ((out_h as f64) * scale).round().max(2.0) as u32;
-        f.push(format!("scale={box_w}:{box_h}:force_original_aspect_ratio=decrease"));
+        f.push(format!(
+            "scale={box_w}:{box_h}:force_original_aspect_ratio=decrease"
+        ));
         if !is_image {
             f.push(format!("pad={box_w}:{box_h}:(ow-iw)/2:(oh-ih)/2:black"));
         }
@@ -230,9 +252,14 @@ impl TimelineExporter {
         // Opacity (static or keyframed).
         if let Some(kfs) = animated_kfs(clip, "opacity") {
             let expr = keyframe_expr(kfs, "T", |v| v.clamp(0.0, 1.0));
-            f.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*({expr})'"));
+            f.push(format!(
+                "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*({expr})'"
+            ));
         } else if clip.opacity < 0.999 {
-            f.push(format!("colorchannelmixer=aa={:.4}", clip.opacity.clamp(0.0, 1.0)));
+            f.push(format!(
+                "colorchannelmixer=aa={:.4}",
+                clip.opacity.clamp(0.0, 1.0)
+            ));
         }
 
         // Fades and Transitions: regular fades dissolve to whatever is underneath.
@@ -271,12 +298,15 @@ impl TimelineExporter {
         }
 
         if let Some(txt) = &clip.text_overlay {
-            let sanitized = txt.content
+            let sanitized = txt
+                .content
                 .replace('\\', "\\\\")
                 .replace('\'', "\\'")
                 .replace(':', "\\:")
                 .replace('%', "\\%");
-            let font_size = ((txt.font_size as f64) * (out_h as f64 / 1080.0)).round().max(10.0) as u32;
+            let font_size = ((txt.font_size as f64) * (out_h as f64 / 1080.0))
+                .round()
+                .max(10.0) as u32;
             let font_color = format!(
                 "0x{:02x}{:02x}{:02x}{:02x}",
                 txt.text_color[0], txt.text_color[1], txt.text_color[2], txt.text_color[3]
@@ -291,7 +321,10 @@ impl TimelineExporter {
             let box_part = if let Some(bg) = txt.bg_color {
                 format!(
                     ":box=1:boxcolor=0x{:02x}{:02x}{:02x}@{:.2}:boxborderw=8",
-                    bg[0], bg[1], bg[2], bg[3] as f32 / 255.0
+                    bg[0],
+                    bg[1],
+                    bg[2],
+                    bg[3] as f32 / 255.0
                 )
             } else {
                 String::new()
@@ -343,19 +376,27 @@ impl TimelineExporter {
             let d = eff_out.min(dur);
             let st = (dur - d).max(0.0);
             if clip.transition_out.as_deref() == Some("slide_left") {
-                slide_x.push_str(&format!("-if(gt({local},{st:.4}),(({local}-{st:.4})/{d:.4})*W,0)"));
+                slide_x.push_str(&format!(
+                    "-if(gt({local},{st:.4}),(({local}-{st:.4})/{d:.4})*W,0)"
+                ));
             } else if clip.transition_out.as_deref() == Some("slide_right") {
-                slide_x.push_str(&format!("+if(gt({local},{st:.4}),(({local}-{st:.4})/{d:.4})*W,0)"));
+                slide_x.push_str(&format!(
+                    "+if(gt({local},{st:.4}),(({local}-{st:.4})/{d:.4})*W,0)"
+                ));
             }
         }
 
-        (format!("'(W-w)/2+{px}{slide_x}'"), format!("'(H-h)/2+{py}'"))
+        (
+            format!("'(W-w)/2+{px}{slide_x}'"),
+            format!("'(H-h)/2+{py}'"),
+        )
     }
 
     /// Audio filter chain for one clip, delayed to its timeline position.
     fn clip_audio_chain(clip: &Clip, eff_vol: f64) -> String {
         let dur = clip.duration();
-        let mut a: Vec<String> = vec!["aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo".into()];
+        let mut a: Vec<String> =
+            vec!["aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo".into()];
         if clip.reverse {
             a.push("areverse".into());
         }
@@ -373,7 +414,10 @@ impl TimelineExporter {
         // Audio EQ preset and noise reduction filters
         match clip.eq_preset {
             trim_core::clip::AudioEqPreset::VoiceClarity => {
-                a.push("highpass=f=80,equalizer=f=3000:t=q:w=1.5:g=3,equalizer=f=300:t=q:w=1.0:g=-2".into());
+                a.push(
+                    "highpass=f=80,equalizer=f=3000:t=q:w=1.5:g=3,equalizer=f=300:t=q:w=1.0:g=-2"
+                        .into(),
+                );
             }
             trim_core::clip::AudioEqPreset::BassBoost => {
                 a.push("equalizer=f=100:t=q:w=1.0:g=6".into());
@@ -382,7 +426,9 @@ impl TimelineExporter {
                 a.push("highpass=f=75,equalizer=f=2500:t=q:w=1.2:g=2.5,lowpass=f=12000".into());
             }
             trim_core::clip::AudioEqPreset::DenoiseGate => {
-                a.push("highpass=f=100,lowpass=f=10000,agate=threshold=0.03:ratio=2:range=0.05".into());
+                a.push(
+                    "highpass=f=100,lowpass=f=10000,agate=threshold=0.03:ratio=2:range=0.05".into(),
+                );
             }
             trim_core::clip::AudioEqPreset::Flat => {}
         }
@@ -396,7 +442,11 @@ impl TimelineExporter {
         }
         if clip.fade_out > 0.0 {
             let d = clip.fade_out.min(dur);
-            a.push(format!("afade=t=out:st={:.4}:d={:.4}", (dur - d).max(0.0), d));
+            a.push(format!(
+                "afade=t=out:st={:.4}:d={:.4}",
+                (dur - d).max(0.0),
+                d
+            ));
         }
         let delay_ms = (clip.timeline_in * 1000.0).round().max(0.0) as u64;
         if delay_ms > 0 {
@@ -417,10 +467,11 @@ impl TimelineExporter {
         }
 
         let total_duration = timeline.duration();
-        let has_any_clip = timeline
-            .tracks
-            .iter()
-            .any(|t| t.clips.iter().any(|c| project.get_media(&c.media_id).is_some() && c.duration() > 0.0));
+        let has_any_clip = timeline.tracks.iter().any(|t| {
+            t.clips
+                .iter()
+                .any(|c| project.get_media(&c.media_id).is_some() && c.duration() > 0.0)
+        });
         if !has_any_clip || total_duration <= 0.0 {
             return Err("Dışa aktarılacak klip bulunamadı".to_string());
         }
@@ -428,7 +479,11 @@ impl TimelineExporter {
         let out_w = even(preset.width.unwrap_or(timeline.width));
         let out_h = even(preset.height.unwrap_or(timeline.height));
         let out_fps = preset.fps.unwrap_or(timeline.fps);
-        let out_fps = if out_fps.is_finite() && out_fps > 0.0 { out_fps } else { 30.0 };
+        let out_fps = if out_fps.is_finite() && out_fps > 0.0 {
+            out_fps
+        } else {
+            30.0
+        };
 
         let mut inputs = InputList::new();
         let mut filters: Vec<String> = Vec::new();
@@ -438,7 +493,10 @@ impl TimelineExporter {
             "-f".into(),
             "lavfi".into(),
             "-i".into(),
-            format!("color=c=black:s={}x{}:r={}:d={:.6}", out_w, out_h, out_fps, total_duration),
+            format!(
+                "color=c=black:s={}x{}:r={}:d={:.6}",
+                out_w, out_h, out_fps, total_duration
+            ),
         ]);
         let base_a = inputs.push([
             "-f".into(),
@@ -466,7 +524,8 @@ impl TimelineExporter {
                     continue;
                 };
                 let is_image = media.media_type == MediaType::Image;
-                let wants_video = track.track_type == TrackType::Video && track.visible && media.has_video();
+                let wants_video =
+                    track.track_type == TrackType::Video && track.visible && media.has_video();
                 let wants_audio = track_audible && !clip.muted && !is_image && media.has_audio();
                 if !wants_video && !wants_audio {
                     continue;
@@ -540,7 +599,13 @@ impl TimelineExporter {
 
         let full_filtergraph = filters.join(";");
 
-        let mut cmd = vec!["ffmpeg".into(), "-y".into(), "-v".into(), "error".into(), "-nostdin".into()];
+        let mut cmd = vec![
+            "ffmpeg".into(),
+            "-y".into(),
+            "-v".into(),
+            "error".into(),
+            "-nostdin".into(),
+        ];
         cmd.extend(inputs.args);
         cmd.extend([
             "-filter_complex".into(),
@@ -605,7 +670,11 @@ impl TimelineExporter {
 
         match target_accel {
             HardwareAccel::Nvenc if available.has_nvidia_nvenc() => {
-                let codec = if is_hevc && available.hevc_nvenc { "hevc_nvenc" } else { "h264_nvenc" };
+                let codec = if is_hevc && available.hevc_nvenc {
+                    "hevc_nvenc"
+                } else {
+                    "h264_nvenc"
+                };
                 vec![
                     "-c:v".into(),
                     codec.into(),
@@ -618,7 +687,11 @@ impl TimelineExporter {
                 ]
             }
             HardwareAccel::Qsv if available.has_intel_qsv() => {
-                let codec = if is_hevc && available.hevc_qsv { "hevc_qsv" } else { "h264_qsv" };
+                let codec = if is_hevc && available.hevc_qsv {
+                    "hevc_qsv"
+                } else {
+                    "h264_qsv"
+                };
                 vec![
                     "-c:v".into(),
                     codec.into(),
@@ -629,7 +702,11 @@ impl TimelineExporter {
                 ]
             }
             HardwareAccel::Vaapi if available.has_vaapi() => {
-                let codec = if is_hevc && available.hevc_vaapi { "hevc_vaapi" } else { "h264_vaapi" };
+                let codec = if is_hevc && available.hevc_vaapi {
+                    "hevc_vaapi"
+                } else {
+                    "h264_vaapi"
+                };
                 vec![
                     "-c:v".into(),
                     codec.into(),
@@ -638,7 +715,11 @@ impl TimelineExporter {
                 ]
             }
             HardwareAccel::Amf if available.has_amd_amf() => {
-                let codec = if is_hevc && available.hevc_amf { "hevc_amf" } else { "h264_amf" };
+                let codec = if is_hevc && available.hevc_amf {
+                    "hevc_amf"
+                } else {
+                    "h264_amf"
+                };
                 vec![
                     "-c:v".into(),
                     codec.into(),
@@ -707,15 +788,27 @@ mod tests {
         media.audio_codec.clear();
         let id = media.id.clone();
         project.add_media(media);
-        let video_track = project.timeline.get_video_tracks_mut().into_iter().next().unwrap();
+        let video_track = project
+            .timeline
+            .get_video_tracks_mut()
+            .into_iter()
+            .next()
+            .unwrap();
         video_track.add_clip(Clip::new(id, 0.0, 5.0));
 
-        let (command, _) =
-            TimelineExporter::build_export_pipeline(&project, &ExportPreset::default(), "/tmp/out.mp4").unwrap();
+        let (command, _) = TimelineExporter::build_export_pipeline(
+            &project,
+            &ExportPreset::default(),
+            "/tmp/out.mp4",
+        )
+        .unwrap();
         let graph = graph_of(&command);
         // Inputs: 0 = base colour, 1 = silence bed, 2 = clip.
         assert!(graph.contains("[2:v]"), "video input missing: {graph}");
-        assert!(!graph.contains("[2:a]"), "silent media must not reference an audio stream: {graph}");
+        assert!(
+            !graph.contains("[2:a]"),
+            "silent media must not reference an audio stream: {graph}"
+        );
         assert!(graph.contains("amix=inputs=1"), "{graph}");
     }
 
@@ -728,14 +821,20 @@ mod tests {
         let m_id = m.id.clone();
         proj.add_media(m);
 
-        let v_track = proj.timeline.get_video_tracks_mut().into_iter().next().unwrap();
+        let v_track = proj
+            .timeline
+            .get_video_tracks_mut()
+            .into_iter()
+            .next()
+            .unwrap();
         let mut c = Clip::new(&m_id, 2.0, 6.0);
         c.speed = 2.0;
         c.brightness = 0.1;
         v_track.add_clip(c);
 
         let preset = ExportPreset::default();
-        let (cmd, dur) = TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out.mp4").unwrap();
+        let (cmd, dur) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out.mp4").unwrap();
 
         assert!((dur - 6.0).abs() < 1e-3);
         assert!(cmd.contains(&"-filter_complex".to_string()));
@@ -767,10 +866,17 @@ mod tests {
         let mut v2 = Track::new("V2", TrackType::Video);
         v2.add_clip(Clip::new(&fg_id, 2.0, 4.0));
         proj.timeline.tracks.insert(1, v2);
-        let a1 = proj.timeline.get_audio_tracks_mut().into_iter().next().unwrap();
+        let a1 = proj
+            .timeline
+            .get_audio_tracks_mut()
+            .into_iter()
+            .next()
+            .unwrap();
         a1.add_clip(Clip::new(&mu_id, 1.0, 9.0));
 
-        let (cmd, dur) = TimelineExporter::build_export_pipeline(&proj, &ExportPreset::default(), "/tmp/o.mp4").unwrap();
+        let (cmd, dur) =
+            TimelineExporter::build_export_pipeline(&proj, &ExportPreset::default(), "/tmp/o.mp4")
+                .unwrap();
         let graph = graph_of(&cmd);
         assert!((dur - 10.0).abs() < 1e-6);
         assert!(!graph.contains("concat"), "{graph}");
@@ -790,14 +896,18 @@ mod tests {
         proj.add_media(m);
         proj.timeline.tracks[0].add_clip(Clip::new(&id, 0.0, 3.0));
         proj.timeline.tracks[0].muted = true;
-        let (cmd, _) = TimelineExporter::build_export_pipeline(&proj, &ExportPreset::default(), "/tmp/o.mp4").unwrap();
+        let (cmd, _) =
+            TimelineExporter::build_export_pipeline(&proj, &ExportPreset::default(), "/tmp/o.mp4")
+                .unwrap();
         let g = graph_of(&cmd);
         assert!(g.contains("overlay="));
         assert!(g.contains("amix=inputs=1"), "{g}");
 
         proj.timeline.tracks[0].muted = false;
         proj.timeline.tracks[0].visible = false;
-        let (cmd, _) = TimelineExporter::build_export_pipeline(&proj, &ExportPreset::default(), "/tmp/o.mp4").unwrap();
+        let (cmd, _) =
+            TimelineExporter::build_export_pipeline(&proj, &ExportPreset::default(), "/tmp/o.mp4")
+                .unwrap();
         let g = graph_of(&cmd);
         assert!(!g.contains("overlay="), "{g}");
         assert!(g.contains("amix=inputs=2"), "{g}");
@@ -838,16 +948,47 @@ mod tests {
         let img = dir.path().join("logo.png");
         let aud = dir.path().join("tone.wav");
         let ok = |args: &[&str]| {
-            Command::new("ffmpeg").args(["-v", "error", "-y"]).args(args).status().map(|s| s.success()).unwrap_or(false)
+            Command::new("ffmpeg")
+                .args(["-v", "error", "-y"])
+                .args(args)
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
         };
         assert!(ok(&[
-            "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=4",
-            "-f", "lavfi", "-i", "sine=frequency=440:duration=4",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=320x240:rate=25:duration=4",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=4",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
             vid.to_str().unwrap(),
         ]));
-        assert!(ok(&["-f", "lavfi", "-i", "color=c=red@0.5:s=64x64,format=rgba", "-frames:v", "1", img.to_str().unwrap()]));
-        assert!(ok(&["-f", "lavfi", "-i", "sine=frequency=880:duration=2", aud.to_str().unwrap()]));
+        assert!(ok(&[
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red@0.5:s=64x64,format=rgba",
+            "-frames:v",
+            "1",
+            img.to_str().unwrap()
+        ]));
+        assert!(ok(&[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=880:duration=2",
+            aud.to_str().unwrap()
+        ]));
 
         let mut proj = Project::new("E2E");
         proj.timeline.width = 320;
@@ -882,7 +1023,12 @@ mod tests {
         logo.add_keyframe("opacity", 1.0, 1.0, Interpolation::Linear);
         v2.add_clip(logo);
         proj.timeline.tracks.insert(1, v2);
-        let a1 = proj.timeline.get_audio_tracks_mut().into_iter().next().unwrap();
+        let a1 = proj
+            .timeline
+            .get_audio_tracks_mut()
+            .into_iter()
+            .next()
+            .unwrap();
         a1.add_clip(Clip::new(&aud_id, 0.5, 2.5));
 
         let out = dir.path().join("out.mp4");
@@ -893,29 +1039,48 @@ mod tests {
             hw_accel: HardwareAccel::Cpu,
             ..Default::default()
         };
-        let (cmd, dur) = TimelineExporter::build_export_pipeline(&proj, &preset, out.to_str().unwrap()).unwrap();
+        let (cmd, dur) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, out.to_str().unwrap()).unwrap();
         let output = Command::new(&cmd[0]).args(&cmd[1..]).output().unwrap();
-        assert!(output.status.success(), "ffmpeg failed: {}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "ffmpeg failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
 
         let probe = Command::new("ffprobe")
-            .args(["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1"])
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=nw=1:nk=1",
+            ])
             .arg(&out)
             .output()
             .unwrap();
-        let got: f64 = String::from_utf8_lossy(&probe.stdout).trim().parse().unwrap_or(0.0);
+        let got: f64 = String::from_utf8_lossy(&probe.stdout)
+            .trim()
+            .parse()
+            .unwrap_or(0.0);
         assert!((got - dur).abs() < 0.25, "duration {got} vs {dur}");
     }
 
     #[test]
     fn test_resolve_video_codec_args() {
-        let mut preset = ExportPreset::default();
-        preset.hw_accel = HardwareAccel::Cpu;
+        let preset = ExportPreset {
+            hw_accel: HardwareAccel::Cpu,
+            ..Default::default()
+        };
         let args = TimelineExporter::resolve_video_codec_args(&preset);
         assert!(args.contains(&"libx264".to_string()));
         assert!(args.contains(&"-crf".to_string()));
 
-        let mut prores_preset = ExportPreset::default();
-        prores_preset.video_codec = "prores_ks".to_string();
+        let prores_preset = ExportPreset {
+            video_codec: "prores_ks".to_string(),
+            ..Default::default()
+        };
         let args = TimelineExporter::resolve_video_codec_args(&prores_preset);
         assert!(args.contains(&"prores_ks".to_string()));
         assert!(args.contains(&"-profile:v".to_string()));
@@ -937,14 +1102,30 @@ mod tests {
         c.noise_gate = true;
         proj.timeline.tracks[0].add_clip(c);
 
-        let mut preset = ExportPreset::default();
-        preset.loudness_norm = LoudnessNorm::YouTube;
-        let (cmd, _) = TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out.mp4").unwrap();
+        let preset = ExportPreset {
+            loudness_norm: LoudnessNorm::YouTube,
+            ..Default::default()
+        };
+        let (cmd, _) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out.mp4").unwrap();
 
-        let fg = cmd.iter().position(|a| a == "-filter_complex").map(|idx| &cmd[idx + 1]).unwrap();
-        assert!(fg.contains("equalizer=f=3000"), "filtergraph should include voice clarity EQ: {fg}");
-        assert!(fg.contains("agate=threshold=0.03"), "filtergraph should include noise gate: {fg}");
-        assert!(fg.contains("loudnorm=I=-14.0"), "filtergraph should include EBU R128 loudnorm: {fg}");
+        let fg = cmd
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd[idx + 1])
+            .unwrap();
+        assert!(
+            fg.contains("equalizer=f=3000"),
+            "filtergraph should include voice clarity EQ: {fg}"
+        );
+        assert!(
+            fg.contains("agate=threshold=0.03"),
+            "filtergraph should include noise gate: {fg}"
+        );
+        assert!(
+            fg.contains("loudnorm=I=-14.0"),
+            "filtergraph should include EBU R128 loudnorm: {fg}"
+        );
     }
 
     #[test]
@@ -971,12 +1152,26 @@ mod tests {
         proj.timeline.tracks[0].add_clip(c);
 
         let preset = ExportPreset::default();
-        let (cmd, _) = TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out.mp4").unwrap();
-        let fg = cmd.iter().position(|a| a == "-filter_complex").map(|idx| &cmd[idx + 1]).unwrap();
+        let (cmd, _) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out.mp4").unwrap();
+        let fg = cmd
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd[idx + 1])
+            .unwrap();
 
-        assert!(fg.contains("drawtext=text='Hello triM'"), "filtergraph should contain drawtext: {fg}");
-        assert!(fg.contains("box=1:boxcolor="), "filtergraph should contain subtitle box: {fg}");
-        assert!(fg.contains("shadowx=2"), "filtergraph should contain shadow: {fg}");
+        assert!(
+            fg.contains("drawtext=text='Hello triM'"),
+            "filtergraph should contain drawtext: {fg}"
+        );
+        assert!(
+            fg.contains("box=1:boxcolor="),
+            "filtergraph should contain subtitle box: {fg}"
+        );
+        assert!(
+            fg.contains("shadowx=2"),
+            "filtergraph should contain shadow: {fg}"
+        );
     }
 
     #[test]
@@ -992,15 +1187,31 @@ mod tests {
         proj.timeline.tracks[0].add_clip(c1);
 
         let preset = ExportPreset::default();
-        let (cmd1, _) = TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out1.mp4").unwrap();
-        let fg1 = cmd1.iter().position(|a| a == "-filter_complex").map(|idx| &cmd1[idx + 1]).unwrap();
-        assert!(fg1.contains("colorbalance=rs=0.15"), "should generate teal & orange filter: {fg1}");
+        let (cmd1, _) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out1.mp4").unwrap();
+        let fg1 = cmd1
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd1[idx + 1])
+            .unwrap();
+        assert!(
+            fg1.contains("colorbalance=rs=0.15"),
+            "should generate teal & orange filter: {fg1}"
+        );
 
         // Now test custom cube file
-        proj.timeline.tracks[0].clips[0].custom_lut_path = Some("/path/to/cinematic.cube".to_string());
-        let (cmd2, _) = TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out2.mp4").unwrap();
-        let fg2 = cmd2.iter().position(|a| a == "-filter_complex").map(|idx| &cmd2[idx + 1]).unwrap();
-        assert!(fg2.contains("lut3d=file='/path/to/cinematic.cube'"), "should generate lut3d filter: {fg2}");
+        proj.timeline.tracks[0].clips[0].custom_lut_path =
+            Some("/path/to/cinematic.cube".to_string());
+        let (cmd2, _) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out2.mp4").unwrap();
+        let fg2 = cmd2
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd2[idx + 1])
+            .unwrap();
+        assert!(
+            fg2.contains("lut3d=file='/path/to/cinematic.cube'"),
+            "should generate lut3d filter: {fg2}"
+        );
     }
 }
-

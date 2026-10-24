@@ -47,12 +47,7 @@ pub enum LoudnessNorm {
 }
 
 impl LoudnessNorm {
-    pub const ALL: &'static [Self] = &[
-        Self::Off,
-        Self::YouTube,
-        Self::Podcast,
-        Self::BroadcastEbu,
-    ];
+    pub const ALL: &'static [Self] = &[Self::Off, Self::YouTube, Self::Podcast, Self::BroadcastEbu];
 
     pub fn label(&self) -> &'static str {
         match self {

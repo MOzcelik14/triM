@@ -49,13 +49,20 @@ impl Default for SilenceDialog {
             detected_silence_count: None,
             total_silence_duration: None,
             speech_intervals: None,
-            status_text: "Sessizlikleri tespit etmek için 'Analiz Et' butonuna tıklayın.".to_string(),
+            status_text: "Sessizlikleri tespit etmek için 'Analiz Et' butonuna tıklayın."
+                .to_string(),
         }
     }
 }
 
 impl SilenceDialog {
-    pub fn open(&mut self, track_id: impl Into<String>, clip_id: impl Into<String>, clip_name: impl Into<String>, duration: f64) {
+    pub fn open(
+        &mut self,
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        clip_name: impl Into<String>,
+        duration: f64,
+    ) {
         self.track_id = track_id.into();
         self.clip_id = clip_id.into();
         self.clip_name = clip_name.into();
@@ -64,7 +71,10 @@ impl SilenceDialog {
         self.detected_silence_count = None;
         self.total_silence_duration = None;
         self.speech_intervals = None;
-        self.status_text = format!("Klip: \"{}\" ({:.1}s) hazır.", self.clip_name, self.clip_duration);
+        self.status_text = format!(
+            "Klip: \"{}\" ({:.1}s) hazır.",
+            self.clip_name, self.clip_duration
+        );
         self.is_open = true;
     }
 

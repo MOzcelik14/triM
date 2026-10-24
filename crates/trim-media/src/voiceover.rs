@@ -24,19 +24,79 @@ impl VoiceoverRecorder {
 
         // Cross-platform audio device argument resolution
         let child = if cfg!(target_os = "windows") {
-            Self::spawn_ffmpeg(&["-f", "dshow", "-i", "audio=default", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", &out_str])
-                .or_else(|_| {
-                    // Fallback to wavein or direct audio capture if available
-                    Self::spawn_ffmpeg(&["-f", "dshow", "-i", "audio=Microphone", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", &out_str])
-                })
+            Self::spawn_ffmpeg(&[
+                "-f",
+                "dshow",
+                "-i",
+                "audio=default",
+                "-ac",
+                "2",
+                "-ar",
+                "44100",
+                "-c:a",
+                "pcm_s16le",
+                &out_str,
+            ])
+            .or_else(|_| {
+                // Fallback to wavein or direct audio capture if available
+                Self::spawn_ffmpeg(&[
+                    "-f",
+                    "dshow",
+                    "-i",
+                    "audio=Microphone",
+                    "-ac",
+                    "2",
+                    "-ar",
+                    "44100",
+                    "-c:a",
+                    "pcm_s16le",
+                    &out_str,
+                ])
+            })
         } else if cfg!(target_os = "macos") {
-            Self::spawn_ffmpeg(&["-f", "avfoundation", "-i", ":0", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", &out_str])
+            Self::spawn_ffmpeg(&[
+                "-f",
+                "avfoundation",
+                "-i",
+                ":0",
+                "-ac",
+                "2",
+                "-ar",
+                "44100",
+                "-c:a",
+                "pcm_s16le",
+                &out_str,
+            ])
         } else {
             // Linux: Try PulseAudio/PipeWire default first, then fallback to ALSA default
-            Self::spawn_ffmpeg(&["-f", "pulse", "-i", "default", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", &out_str])
-                .or_else(|_| {
-                    Self::spawn_ffmpeg(&["-f", "alsa", "-i", "default", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", &out_str])
-                })
+            Self::spawn_ffmpeg(&[
+                "-f",
+                "pulse",
+                "-i",
+                "default",
+                "-ac",
+                "2",
+                "-ar",
+                "44100",
+                "-c:a",
+                "pcm_s16le",
+                &out_str,
+            ])
+            .or_else(|_| {
+                Self::spawn_ffmpeg(&[
+                    "-f",
+                    "alsa",
+                    "-i",
+                    "default",
+                    "-ac",
+                    "2",
+                    "-ar",
+                    "44100",
+                    "-c:a",
+                    "pcm_s16le",
+                    &out_str,
+                ])
+            })
         };
 
         match child {

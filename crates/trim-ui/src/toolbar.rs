@@ -5,14 +5,14 @@ use egui::{Color32, Stroke, Ui, Vec2};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EditTool {
     #[default]
-    Select,     // V
-    TrackSelect,// A
-    Ripple,     // B
-    Razor,      // C
-    Slip,       // Y
-    Pen,        // P
-    Hand,       // H
-    Type,       // T
+    Select, // V
+    TrackSelect, // A
+    Ripple,      // B
+    Razor,       // C
+    Slip,        // Y
+    Pen,         // P
+    Hand,        // H
+    Type,        // T
 }
 
 impl EditTool {
@@ -110,40 +110,112 @@ pub fn render_vertical_toolbar(ui: &mut Ui, current_tool: &mut EditTool) {
                 }
                 EditTool::TrackSelect => {
                     // Vertical bar + double arrow
-                    painter.line_segment([center + Vec2::new(-6.0, -6.0), center + Vec2::new(-6.0, 6.0)], stroke);
-                    painter.line_segment([center + Vec2::new(-3.0, -5.0), center + Vec2::new(1.0, 0.0)], stroke);
-                    painter.line_segment([center + Vec2::new(1.0, 0.0), center + Vec2::new(-3.0, 5.0)], stroke);
-                    painter.line_segment([center + Vec2::new(2.0, -5.0), center + Vec2::new(6.0, 0.0)], stroke);
-                    painter.line_segment([center + Vec2::new(6.0, 0.0), center + Vec2::new(2.0, 5.0)], stroke);
+                    painter.line_segment(
+                        [
+                            center + Vec2::new(-6.0, -6.0),
+                            center + Vec2::new(-6.0, 6.0),
+                        ],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(-3.0, -5.0), center + Vec2::new(1.0, 0.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(1.0, 0.0), center + Vec2::new(-3.0, 5.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(2.0, -5.0), center + Vec2::new(6.0, 0.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(6.0, 0.0), center + Vec2::new(2.0, 5.0)],
+                        stroke,
+                    );
                 }
                 EditTool::Ripple => {
                     // Opposing brackets / edit point
-                    painter.line_segment([center + Vec2::new(-6.0, -6.0), center + Vec2::new(-6.0, 6.0)], stroke);
-                    painter.line_segment([center + Vec2::new(-6.0, 0.0), center + Vec2::new(-1.0, -4.0)], stroke);
-                    painter.line_segment([center + Vec2::new(-6.0, 0.0), center + Vec2::new(-1.0, 4.0)], stroke);
-                    painter.line_segment([center + Vec2::new(6.0, -6.0), center + Vec2::new(6.0, 6.0)], stroke);
-                    painter.line_segment([center + Vec2::new(6.0, 0.0), center + Vec2::new(1.0, -4.0)], stroke);
-                    painter.line_segment([center + Vec2::new(6.0, 0.0), center + Vec2::new(1.0, 4.0)], stroke);
+                    painter.line_segment(
+                        [
+                            center + Vec2::new(-6.0, -6.0),
+                            center + Vec2::new(-6.0, 6.0),
+                        ],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [
+                            center + Vec2::new(-6.0, 0.0),
+                            center + Vec2::new(-1.0, -4.0),
+                        ],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(-6.0, 0.0), center + Vec2::new(-1.0, 4.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(6.0, -6.0), center + Vec2::new(6.0, 6.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(6.0, 0.0), center + Vec2::new(1.0, -4.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(6.0, 0.0), center + Vec2::new(1.0, 4.0)],
+                        stroke,
+                    );
                 }
                 EditTool::Razor => {
                     // Scissors / razor cut
-                    painter.line_segment([center + Vec2::new(-5.0, -6.0), center + Vec2::new(5.0, 6.0)], stroke);
-                    painter.line_segment([center + Vec2::new(5.0, -6.0), center + Vec2::new(-5.0, 6.0)], stroke);
+                    painter.line_segment(
+                        [center + Vec2::new(-5.0, -6.0), center + Vec2::new(5.0, 6.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(5.0, -6.0), center + Vec2::new(-5.0, 6.0)],
+                        stroke,
+                    );
                     painter.circle_stroke(center + Vec2::new(-4.0, 5.0), 2.2, stroke);
                     painter.circle_stroke(center + Vec2::new(4.0, 5.0), 2.2, stroke);
                 }
                 EditTool::Slip => {
                     // Two-way horizontal slip arrows
-                    painter.line_segment([center + Vec2::new(-6.0, 0.0), center + Vec2::new(6.0, 0.0)], stroke);
-                    painter.line_segment([center + Vec2::new(-6.0, 0.0), center + Vec2::new(-3.0, -3.0)], stroke);
-                    painter.line_segment([center + Vec2::new(-6.0, 0.0), center + Vec2::new(-3.0, 3.0)], stroke);
-                    painter.line_segment([center + Vec2::new(6.0, 0.0), center + Vec2::new(3.0, -3.0)], stroke);
-                    painter.line_segment([center + Vec2::new(6.0, 0.0), center + Vec2::new(3.0, 3.0)], stroke);
+                    painter.line_segment(
+                        [center + Vec2::new(-6.0, 0.0), center + Vec2::new(6.0, 0.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [
+                            center + Vec2::new(-6.0, 0.0),
+                            center + Vec2::new(-3.0, -3.0),
+                        ],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(-6.0, 0.0), center + Vec2::new(-3.0, 3.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(6.0, 0.0), center + Vec2::new(3.0, -3.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(6.0, 0.0), center + Vec2::new(3.0, 3.0)],
+                        stroke,
+                    );
                 }
                 EditTool::Pen => {
                     // Pen nib / keyframe diamond
-                    painter.line_segment([center + Vec2::new(-4.0, 5.0), center + Vec2::new(4.0, -5.0)], stroke);
-                    painter.line_segment([center + Vec2::new(2.0, -6.0), center + Vec2::new(6.0, -2.0)], stroke);
+                    painter.line_segment(
+                        [center + Vec2::new(-4.0, 5.0), center + Vec2::new(4.0, -5.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(2.0, -6.0), center + Vec2::new(6.0, -2.0)],
+                        stroke,
+                    );
                     painter.circle_filled(center + Vec2::new(-4.0, 5.0), 2.0, fg_color);
                 }
                 EditTool::Hand => {

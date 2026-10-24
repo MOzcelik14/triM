@@ -34,8 +34,13 @@ pub fn render_transport_bar(
 
         // Play / Pause button
         let play_icon = if is_playing { "||" } else { ">" };
-        let play_btn = Button::new(RichText::new(play_icon).size(13.0).strong().color(Color32::WHITE))
-            .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
+        let play_btn = Button::new(
+            RichText::new(play_icon)
+                .size(13.0)
+                .strong()
+                .color(Color32::WHITE),
+        )
+        .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
 
         if ui.add(play_btn).clicked() {
             action = Some(TransportAction::TogglePlay);

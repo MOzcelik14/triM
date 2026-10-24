@@ -96,7 +96,11 @@ impl<'a> Widget for VuMeterWidget<'a> {
 
         // Background
         painter.rect_filled(rect, 3.0, Color32::from_rgb(0x18, 0x18, 0x1d));
-        painter.rect_stroke(rect, 3.0, Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x30)));
+        painter.rect_stroke(
+            rect,
+            3.0,
+            Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x30)),
+        );
 
         let bar_width = 8.0;
         let spacing = 4.0;
@@ -107,11 +111,33 @@ impl<'a> Widget for VuMeterWidget<'a> {
         let bar_height = (bottom_y - top_y).max(10.0);
 
         // Draw left and right channels
-        draw_bar(&painter, left_x, top_y, bar_width, bar_height, self.state.current_l, self.state.peak_l);
-        draw_bar(&painter, right_x, top_y, bar_width, bar_height, self.state.current_r, self.state.peak_r);
+        draw_bar(
+            &painter,
+            left_x,
+            top_y,
+            bar_width,
+            bar_height,
+            self.state.current_l,
+            self.state.peak_l,
+        );
+        draw_bar(
+            &painter,
+            right_x,
+            top_y,
+            bar_width,
+            bar_height,
+            self.state.current_r,
+            self.state.peak_r,
+        );
 
         // Draw dB scale text
-        let labels = [("0", 0.0), ("-6", -6.0), ("-12", -12.0), ("-24", -24.0), ("-40", -40.0)];
+        let labels = [
+            ("0", 0.0),
+            ("-6", -6.0),
+            ("-12", -12.0),
+            ("-24", -24.0),
+            ("-40", -40.0),
+        ];
         let text_x = right_x + bar_width + 4.0;
         for (txt, db) in labels {
             let frac = (db - (-60.0)) / 60.0;

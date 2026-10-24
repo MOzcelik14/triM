@@ -196,7 +196,10 @@ pub struct AddTrackCommand {
 
 impl AddTrackCommand {
     pub fn new(track: Track, insert_index: usize) -> Self {
-        Self { track, insert_index }
+        Self {
+            track,
+            insert_index,
+        }
     }
 }
 
@@ -360,7 +363,9 @@ impl Command for SplitClipCommand {
             .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
 
         if self.split_time <= orig.timeline_in || self.split_time >= orig.timeline_out {
-            return Err(CommandError::InvalidOperation("Kesim noktası klip sınırları dışında".into()));
+            return Err(CommandError::InvalidOperation(
+                "Kesim noktası klip sınırları dışında".into(),
+            ));
         }
 
         let split_source = orig.map_timeline_to_source(self.split_time);
@@ -455,7 +460,11 @@ pub struct BatchSplitClipCommand {
 }
 
 impl BatchSplitClipCommand {
-    pub fn new(track_id: impl Into<String>, clip_id: impl Into<String>, mut split_times: Vec<f64>) -> Self {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        mut split_times: Vec<f64>,
+    ) -> Self {
         split_times.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         split_times.dedup_by(|a, b| (*a - *b).abs() < 0.05);
         Self {
@@ -803,7 +812,9 @@ impl Command for DetachAudioCommand {
         }
 
         // Remove created audio clip
-        if let (Some(at_id), Some(ac_id)) = (&self.created_audio_track_id, &self.created_audio_clip_id) {
+        if let (Some(at_id), Some(ac_id)) =
+            (&self.created_audio_track_id, &self.created_audio_clip_id)
+        {
             if let Some(at) = timeline.get_track_by_id_mut(at_id) {
                 at.remove_clip(ac_id);
             }
@@ -836,7 +847,11 @@ pub struct RippleTrimHeadCommand {
 }
 
 impl RippleTrimHeadCommand {
-    pub fn new(track_id: impl Into<String>, clip_id: impl Into<String>, playhead_time: f64) -> Self {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        playhead_time: f64,
+    ) -> Self {
         Self {
             track_id: track_id.into(),
             clip_id: clip_id.into(),
@@ -864,7 +879,9 @@ impl Command for RippleTrimHeadCommand {
 
         let dt = self.playhead_time - orig_in;
         if dt <= 0.04 || dt >= clip.duration() - 0.04 {
-            return Err(CommandError::InvalidOperation("Geçersiz kırpma konumu".into()));
+            return Err(CommandError::InvalidOperation(
+                "Geçersiz kırpma konumu".into(),
+            ));
         }
 
         clip.trim_in(self.playhead_time);
@@ -924,7 +941,11 @@ pub struct RippleTrimTailCommand {
 }
 
 impl RippleTrimTailCommand {
-    pub fn new(track_id: impl Into<String>, clip_id: impl Into<String>, playhead_time: f64) -> Self {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        playhead_time: f64,
+    ) -> Self {
         Self {
             track_id: track_id.into(),
             clip_id: clip_id.into(),
@@ -952,7 +973,9 @@ impl Command for RippleTrimTailCommand {
 
         let dt = orig_out - self.playhead_time;
         if dt <= 0.04 || dt >= clip.duration() - 0.04 {
-            return Err(CommandError::InvalidOperation("Geçersiz kırpma konumu".into()));
+            return Err(CommandError::InvalidOperation(
+                "Geçersiz kırpma konumu".into(),
+            ));
         }
 
         clip.trim_out(self.playhead_time);
@@ -1015,9 +1038,11 @@ impl AddMarkerCommand {
 impl Command for AddMarkerCommand {
     fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
         timeline.markers.push(self.marker.clone());
-        timeline
-            .markers
-            .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+        timeline.markers.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         Ok(())
     }
 
@@ -1061,9 +1086,11 @@ impl Command for RemoveMarkerCommand {
     fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
         if let Some(m) = self.removed_marker.take() {
             timeline.markers.push(m);
-            timeline
-                .markers
-                .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+            timeline.markers.sort_by(|a, b| {
+                a.time
+                    .partial_cmp(&b.time)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
         }
         Ok(())
     }
@@ -1300,7 +1327,8 @@ impl Command for LinkClipsCommand {
     }
 
     fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
-        for ((tr_id, cl_id), old_gid) in self.clip_pairs.iter().zip(self.previous_group_ids.iter()) {
+        for ((tr_id, cl_id), old_gid) in self.clip_pairs.iter().zip(self.previous_group_ids.iter())
+        {
             if let Some(track) = timeline.get_track_by_id_mut(tr_id) {
                 if let Some(clip) = track.get_clip_by_id_mut(cl_id) {
                     clip.linked_group_id = old_gid.clone();
@@ -1350,7 +1378,8 @@ impl Command for UnlinkClipsCommand {
     }
 
     fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
-        for ((tr_id, cl_id), old_gid) in self.clip_pairs.iter().zip(self.previous_group_ids.iter()) {
+        for ((tr_id, cl_id), old_gid) in self.clip_pairs.iter().zip(self.previous_group_ids.iter())
+        {
             if let Some(track) = timeline.get_track_by_id_mut(tr_id) {
                 if let Some(clip) = track.get_clip_by_id_mut(cl_id) {
                     clip.linked_group_id = old_gid.clone();
@@ -1364,4 +1393,3 @@ impl Command for UnlinkClipsCommand {
         "Klip Bağını Kaldır (Unlink)"
     }
 }
-

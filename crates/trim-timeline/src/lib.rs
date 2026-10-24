@@ -56,7 +56,9 @@ pub fn split_at_playhead(
         if let Some(track) = timeline.get_track_by_id(tr_id) {
             if !track.locked {
                 if let Some(clip) = track.get_clip_by_id(cl_id) {
-                    if clip.timeline_in + 0.04 < playhead_time && playhead_time < clip.timeline_out - 0.04 {
+                    if clip.timeline_in + 0.04 < playhead_time
+                        && playhead_time < clip.timeline_out - 0.04
+                    {
                         Some((tr_id.to_string(), cl_id.to_string()))
                     } else {
                         None
@@ -80,7 +82,9 @@ pub fn split_at_playhead(
                 continue;
             }
             if let Some(clip) = track.find_clip_at(playhead_time) {
-                if clip.timeline_in + 0.04 < playhead_time && playhead_time < clip.timeline_out - 0.04 {
+                if clip.timeline_in + 0.04 < playhead_time
+                    && playhead_time < clip.timeline_out - 0.04
+                {
                     return Some((track.id.clone(), clip.id.clone()));
                 }
             }
@@ -108,7 +112,8 @@ pub fn ripple_trim_head(
         if let Some(track) = timeline.get_track_by_id(tr_id) {
             if !track.locked {
                 if let Some(clip) = track.get_clip_by_id(cl_id) {
-                    if clip.timeline_in + 0.04 < playhead_time && playhead_time <= clip.timeline_out {
+                    if clip.timeline_in + 0.04 < playhead_time && playhead_time <= clip.timeline_out
+                    {
                         Some((tr_id.to_string(), cl_id.to_string()))
                     } else {
                         None
@@ -160,7 +165,8 @@ pub fn ripple_trim_tail(
         if let Some(track) = timeline.get_track_by_id(tr_id) {
             if !track.locked {
                 if let Some(clip) = track.get_clip_by_id(cl_id) {
-                    if clip.timeline_in <= playhead_time && playhead_time < clip.timeline_out - 0.04 {
+                    if clip.timeline_in <= playhead_time && playhead_time < clip.timeline_out - 0.04
+                    {
                         Some((tr_id.to_string(), cl_id.to_string()))
                     } else {
                         None

@@ -36,7 +36,10 @@ mod tests {
                 let project = Project::default();
                 let canvas_state = TimelineCanvasState::default();
 
-                println!("Canvas track_height = {}, track_spacing = {}", canvas_state.track_height, canvas_state.track_spacing);
+                println!(
+                    "Canvas track_height = {}, track_spacing = {}",
+                    canvas_state.track_height, canvas_state.track_spacing
+                );
 
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 let header_w = track_header::TRACK_HEADER_WIDTH;
@@ -45,11 +48,18 @@ mod tests {
                     ui.spacing_mut().item_spacing = Vec2::ZERO;
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
-                        let (corner_rect, _) = ui.allocate_exact_size(Vec2::new(header_w, 26.0), egui::Sense::hover());
+                        let (corner_rect, _) =
+                            ui.allocate_exact_size(Vec2::new(header_w, 26.0), egui::Sense::hover());
                         assert_eq!(corner_rect.width(), track_header::TRACK_HEADER_WIDTH);
 
-                        for (_idx, track) in project.timeline.tracks.iter().enumerate() {
-                            let (resp, _) = track_header::render_track_header(ui, track, canvas_state.track_height, false, false);
+                        for track in &project.timeline.tracks {
+                            let (resp, _) = track_header::render_track_header(
+                                ui,
+                                track,
+                                canvas_state.track_height,
+                                false,
+                                false,
+                            );
                             assert_eq!(resp.rect.width(), track_header::TRACK_HEADER_WIDTH);
                             ui.add_space(canvas_state.track_spacing);
                         }
@@ -199,9 +209,15 @@ mod tests {
 
         // Test with OpenPath
         let test_path = PathBuf::from("/tmp/test_project.trim");
-        dialog.prompt(PendingCloseAction::OpenPath(test_path.clone()), "Another Project");
+        dialog.prompt(
+            PendingCloseAction::OpenPath(test_path.clone()),
+            "Another Project",
+        );
         assert!(dialog.is_open);
-        assert_eq!(dialog.pending_action, Some(PendingCloseAction::OpenPath(test_path)));
+        assert_eq!(
+            dialog.pending_action,
+            Some(PendingCloseAction::OpenPath(test_path))
+        );
     }
 
     #[test]
@@ -229,8 +245,8 @@ mod tests {
 
     #[test]
     fn test_has_unsaved_changes_lifecycle() {
-        use trim_core::clip::Clip;
         use trim_commands::AddClipCommand;
+        use trim_core::clip::Clip;
 
         let mut app = TrimApp::default();
         // Initially empty, clean project
@@ -346,24 +362,43 @@ mod tests {
         // Ensure original video clip is untouched
         let orig_tr = app.project.timeline.get_track_by_id(&orig_tr_id).unwrap();
         let orig_cl = orig_tr.get_clip_by_id(&orig_cl_id).unwrap();
-        assert!(orig_cl.text_overlay.is_none(), "Original video clip should not be modified");
+        assert!(
+            orig_cl.text_overlay.is_none(),
+            "Original video clip should not be modified"
+        );
 
         // Ensure newly created text clip is on the timeline
-        let (selected_tr_id, selected_cl_id) = app.canvas_state.selected_clip_pairs.first().cloned().unwrap();
-        let text_tr = app.project.timeline.get_track_by_id(&selected_tr_id).unwrap();
+        let (selected_tr_id, selected_cl_id) = app
+            .canvas_state
+            .selected_clip_pairs
+            .first()
+            .cloned()
+            .unwrap();
+        let text_tr = app
+            .project
+            .timeline
+            .get_track_by_id(&selected_tr_id)
+            .unwrap();
         let text_cl = text_tr.get_clip_by_id(&selected_cl_id).unwrap();
 
         assert_eq!(text_cl.timeline_in, 2.0);
         assert_eq!(text_cl.timeline_out, 7.0);
         assert_eq!(text_cl.duration(), 5.0);
-        let ov = text_cl.text_overlay.as_ref().expect("text_overlay should be present on text clip");
+        let ov = text_cl
+            .text_overlay
+            .as_ref()
+            .expect("text_overlay should be present on text clip");
         assert_eq!(ov.pos_x, 0.35);
         assert_eq!(ov.pos_y, 0.45);
         assert!(app.project.is_dirty);
 
         // Test drag: updates pos
         app.handle_monitor_text_drag(0.55, 0.75);
-        let text_tr = app.project.timeline.get_track_by_id(&selected_tr_id).unwrap();
+        let text_tr = app
+            .project
+            .timeline
+            .get_track_by_id(&selected_tr_id)
+            .unwrap();
         let text_cl = text_tr.get_clip_by_id(&selected_cl_id).unwrap();
         let ov = text_cl.text_overlay.as_ref().unwrap();
         assert_eq!(ov.pos_x, 0.55);
@@ -371,7 +406,11 @@ mod tests {
 
         // Test content change: updates text inline and updates clip name on timeline
         app.handle_monitor_text_content_changed("Alt Başlık Testi".to_string());
-        let text_tr = app.project.timeline.get_track_by_id(&selected_tr_id).unwrap();
+        let text_tr = app
+            .project
+            .timeline
+            .get_track_by_id(&selected_tr_id)
+            .unwrap();
         let text_cl = text_tr.get_clip_by_id(&selected_cl_id).unwrap();
         let ov = text_cl.text_overlay.as_ref().unwrap();
         assert_eq!(ov.content, "Alt Başlık Testi");
@@ -380,7 +419,10 @@ mod tests {
         // Test clicking near existing text overlay selects it instead of creating duplicates
         app.canvas_state.selected_clip_pairs.clear();
         app.handle_monitor_text_click(0.55, 0.75);
-        assert_eq!(app.canvas_state.selected_clip_pairs, vec![(selected_tr_id, selected_cl_id)]);
+        assert_eq!(
+            app.canvas_state.selected_clip_pairs,
+            vec![(selected_tr_id, selected_cl_id)]
+        );
     }
 
     #[test]
@@ -406,8 +448,59 @@ mod tests {
         app.canvas_state.active_tool = EditTool::Hand;
         assert_eq!(app.current_edit_tool, EditTool::Hand);
     }
+
+    #[test]
+    fn test_resolve_default_target_tracks_behavior() {
+        let mut app = TrimApp::default();
+        // Default project has V1 and A1
+        app.resolve_default_target_tracks();
+        assert_eq!(
+            app.project
+                .timeline
+                .get_track_by_id(&app.target_video_track)
+                .unwrap()
+                .name,
+            "V1"
+        );
+        assert_eq!(
+            app.project
+                .timeline
+                .get_track_by_id(&app.target_audio_track)
+                .unwrap()
+                .name,
+            "A1"
+        );
+
+        // Rename tracks
+        if let Some(t) = app.project.timeline.get_video_tracks_mut().first_mut() {
+            t.name = "CustomVideo".to_string();
+        }
+        if let Some(t) = app.project.timeline.get_audio_tracks_mut().first_mut() {
+            t.name = "CustomAudio".to_string();
+        }
+        // Now resolve should fallback to the first video and audio tracks
+        app.resolve_default_target_tracks();
+        assert_eq!(
+            app.project
+                .timeline
+                .get_track_by_id(&app.target_video_track)
+                .unwrap()
+                .name,
+            "CustomVideo"
+        );
+        assert_eq!(
+            app.project
+                .timeline
+                .get_track_by_id(&app.target_audio_track)
+                .unwrap()
+                .name,
+            "CustomAudio"
+        );
+
+        // If tracks are empty
+        app.project.timeline.tracks.clear();
+        app.resolve_default_target_tracks();
+        assert_eq!(app.target_video_track, "");
+        assert_eq!(app.target_audio_track, "");
+    }
 }
-
-
-
-

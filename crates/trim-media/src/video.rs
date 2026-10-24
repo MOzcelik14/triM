@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::sync::{Arc, Mutex, RwLock};
 use trim_core::clip::Clip;
+use trim_core::lru::LruCache;
 use trim_core::media::MediaType;
 use trim_core::project::Project;
 
@@ -32,45 +33,45 @@ pub fn calculate_preview_size(width: u32, height: u32) -> (u32, u32) {
 }
 
 pub type DecodedFrame = (f64, Arc<RgbaImage>);
-pub type FrameCacheMap = Arc<RwLock<HashMap<(String, u64), Arc<RgbaImage>>>>;
+pub type FrameCacheMap = Arc<RwLock<LruCache<(String, u64), Arc<RgbaImage>>>>;
 
 /// Fast, single-frame raw RGBA extraction via ffmpeg pipe.
 pub fn decode_frame_raw<P: AsRef<Path>>(file_path: P, source_time: f64) -> Option<RgbaImage> {
     let p = file_path.as_ref();
     let p_str = p.to_string_lossy().to_string();
 
-    let mut child = crate::ffmpeg::ffmpeg_cmd()
-        .args([
-            "-v",
-            "quiet",
-            "-y",
-            "-ss",
-            &format!("{:.3}", source_time.max(0.0)),
-            "-i",
-            &p_str,
-            "-vframes",
-            "1",
-            "-vf",
-            "scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black",
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "rgba",
-            "-",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
+    let mut cmd = crate::ffmpeg::ffmpeg_cmd();
+    cmd.args([
+        "-v",
+        "quiet",
+        "-y",
+        "-ss",
+        &format!("{:.3}", source_time.max(0.0)),
+        "-i",
+        &p_str,
+        "-vframes",
+        "1",
+        "-vf",
+        "scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgba",
+        "-",
+    ])
+    .stdout(Stdio::piped())
+    .stderr(Stdio::null());
+
+    let mut guard = crate::ffmpeg::ChildGuard::spawn(&mut cmd).ok()?;
 
     let mut buf = vec![0u8; PREVIEW_FRAME_BYTES];
-    if let Some(mut stdout) = child.stdout.take() {
+    if let Some(mut stdout) = guard.take_stdout() {
         if stdout.read_exact(&mut buf).is_err() {
-            let _ = child.kill();
+            let _ = guard.kill();
             return None;
         }
     }
-    let _ = child.wait();
+    let _ = guard.wait();
 
     ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(PREVIEW_WIDTH, PREVIEW_HEIGHT, buf)
 }
@@ -162,7 +163,15 @@ impl PlaybackStreamer {
     /// When `reverse` is false, video streams forward continuously via rawvideo pipe.
     /// When `reverse` is true, video decodes backwards in small ~2.0s forward chunks reversed in RAM,
     /// completely avoiding FFmpeg's memory-bloating reverse filter and eliminating any RAM leak (<60MB max).
-    pub fn start(&mut self, clip_id: &str, file_path: &str, source_start_time: f64, fps: f64, reverse: bool, source_in: f64) {
+    pub fn start(
+        &mut self,
+        clip_id: &str,
+        file_path: &str,
+        source_start_time: f64,
+        fps: f64,
+        reverse: bool,
+        source_in: f64,
+    ) {
         self.stop();
 
         let path_str = file_path.to_string();
@@ -233,7 +242,11 @@ impl PlaybackStreamer {
                     let pts = source_start_time + (frame_idx as f64 / thread_fps);
                     frame_idx += 1;
 
-                    if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(PREVIEW_WIDTH, PREVIEW_HEIGHT, buf) {
+                    if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(
+                        PREVIEW_WIDTH,
+                        PREVIEW_HEIGHT,
+                        buf,
+                    ) {
                         if tx.send((pts, Arc::new(img))).is_err() {
                             break;
                         }
@@ -263,7 +276,12 @@ impl PlaybackStreamer {
 
                     let mut cmd = crate::ffmpeg::ffmpeg_cmd();
                     cmd.arg("-v").arg("quiet");
-                    cmd.args(["-ss", &format!("{:.3}", curr_start.max(0.0)), "-t", &format!("{:.3}", actual_dur)]);
+                    cmd.args([
+                        "-ss",
+                        &format!("{:.3}", curr_start.max(0.0)),
+                        "-t",
+                        &format!("{:.3}", actual_dur),
+                    ]);
                     cmd.args([
                         "-i",
                         &thread_path,
@@ -306,7 +324,11 @@ impl PlaybackStreamer {
                         let pts = curr_start + (frame_idx as f64 / thread_fps);
                         frame_idx += 1;
 
-                        if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(PREVIEW_WIDTH, PREVIEW_HEIGHT, buf) {
+                        if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(
+                            PREVIEW_WIDTH,
+                            PREVIEW_HEIGHT,
+                            buf,
+                        ) {
                             chunk_frames.push((pts, Arc::new(img)));
                         } else {
                             break;
@@ -438,7 +460,7 @@ pub struct SeekResult {
 pub struct AsyncFrameDecoder {
     seek_tx: std::sync::mpsc::Sender<SeekCommand>,
     result_rx: Receiver<SeekResult>,
-    latest_req_id: u64,
+    pub latest_req_id: u64,
 }
 
 impl Default for AsyncFrameDecoder {
@@ -522,7 +544,7 @@ impl VideoEngine {
         Self {
             streamer: PlaybackStreamer::new(),
             async_decoder: AsyncFrameDecoder::new(),
-            frame_cache: Arc::new(RwLock::new(HashMap::new())),
+            frame_cache: Arc::new(RwLock::new(LruCache::with_capacity(300))),
             image_cache: HashMap::new(),
             last_raw_source_frame: None,
             last_rendered_frame: None,
@@ -546,7 +568,8 @@ impl VideoEngine {
         let p_str = path.as_ref().to_string_lossy().to_string();
         if !self.image_cache.contains_key(&p_str) {
             if let Ok(dyn_img) = image::open(&p_str) {
-                self.image_cache.insert(p_str.clone(), Arc::new(dyn_img.to_rgba8()));
+                self.image_cache
+                    .insert(p_str.clone(), Arc::new(dyn_img.to_rgba8()));
             } else {
                 return None;
             }
@@ -561,7 +584,8 @@ impl VideoEngine {
         timeline_time: f64,
         is_playing: bool,
     ) -> Option<Arc<RgbaImage>> {
-        let (canvas_w, canvas_h) = calculate_preview_size(project.timeline.width, project.timeline.height);
+        let (canvas_w, canvas_h) =
+            calculate_preview_size(project.timeline.width, project.timeline.height);
 
         let visible_clips = project.timeline.get_visible_video_clips_at(timeline_time);
         if visible_clips.is_empty() {
@@ -587,9 +611,6 @@ impl VideoEngine {
                 if let Some(frame) = res.frame {
                     let key = (res.path.clone(), (res.time * 30.0).round() as u64);
                     if let Ok(mut cache) = self.frame_cache.write() {
-                        if cache.len() > 300 {
-                            cache.clear();
-                        }
                         cache.insert(key, frame.clone());
                     }
                     self.last_raw_source_frame = Some(frame.clone());
@@ -637,7 +658,11 @@ impl VideoEngine {
 
                 let is_title_card = media_item.file_path.contains("titles");
                 let img_opt = if clip.text_overlay.is_some() && is_title_card {
-                    Some(Arc::new(ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 0]))))
+                    Some(Arc::new(ImageBuffer::from_pixel(
+                        canvas_w,
+                        canvas_h,
+                        Rgba([0, 0, 0, 0]),
+                    )))
                 } else {
                     self.get_image(&media_item.file_path)
                 };
@@ -647,7 +672,8 @@ impl VideoEngine {
                         self.last_rendered_frame = Some(img.clone());
                         return Some(img);
                     } else {
-                        let mut canvas = ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
+                        let mut canvas =
+                            ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
                         draw_clip_onto_canvas(&mut canvas, clip, &img, timeline_time);
                         let arc_canvas = Arc::new(canvas);
                         self.last_rendered_frame = Some(arc_canvas.clone());
@@ -661,7 +687,9 @@ impl VideoEngine {
                 if is_playing {
                     // Playback Mode: Use streaming rawvideo pipe
                     let needs_restart = match self.streamer.active_clip_id() {
-                        Some(id) => id != clip.id || self.streamer.should_restart(src_t, clip.reverse),
+                        Some(id) => {
+                            id != clip.id || self.streamer.should_restart(src_t, clip.reverse)
+                        }
                         None => true,
                     };
 
@@ -682,7 +710,11 @@ impl VideoEngine {
                             self.last_rendered_frame = Some(frame.clone());
                             return Some(frame);
                         } else {
-                            let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
+                            let mut canvas = ImageBuffer::from_pixel(
+                                PREVIEW_WIDTH,
+                                PREVIEW_HEIGHT,
+                                Rgba([0, 0, 0, 255]),
+                            );
                             draw_clip_onto_canvas(&mut canvas, clip, &frame, timeline_time);
                             let arc_canvas = Arc::new(canvas);
                             self.last_rendered_frame = Some(arc_canvas.clone());
@@ -692,7 +724,11 @@ impl VideoEngine {
                         if is_standard_transform {
                             return Some(last_raw.clone());
                         } else {
-                            let mut canvas = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0, 0, 0, 255]));
+                            let mut canvas = ImageBuffer::from_pixel(
+                                PREVIEW_WIDTH,
+                                PREVIEW_HEIGHT,
+                                Rgba([0, 0, 0, 255]),
+                            );
                             draw_clip_onto_canvas(&mut canvas, clip, last_raw, timeline_time);
                             let arc_canvas = Arc::new(canvas);
                             self.last_rendered_frame = Some(arc_canvas.clone());
@@ -708,16 +744,21 @@ impl VideoEngine {
                     let ts_key = (src_t * 30.0).round() as u64;
                     let key = (eff_path.to_string(), ts_key);
 
-                    if let Ok(cache) = self.frame_cache.read() {
+                    if let Ok(mut cache) = self.frame_cache.write() {
                         if let Some(cached) = cache.get(&key) {
+                            let cached = cached.clone();
                             self.last_raw_source_frame = Some(cached.clone());
                             self.is_decoding_seek = false;
                             if is_standard_transform {
                                 self.last_rendered_frame = Some(cached.clone());
-                                return Some(cached.clone());
+                                return Some(cached);
                             } else {
-                                let mut canvas = ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
-                                draw_clip_onto_canvas(&mut canvas, clip, cached, timeline_time);
+                                let mut canvas = ImageBuffer::from_pixel(
+                                    canvas_w,
+                                    canvas_h,
+                                    Rgba([0, 0, 0, 255]),
+                                );
+                                draw_clip_onto_canvas(&mut canvas, clip, &cached, timeline_time);
                                 let arc_canvas = Arc::new(canvas);
                                 self.last_rendered_frame = Some(arc_canvas.clone());
                                 return Some(arc_canvas);
@@ -738,7 +779,11 @@ impl VideoEngine {
                                 self.last_rendered_frame = Some(arc.clone());
                                 return Some(arc);
                             } else {
-                                let mut canvas = ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
+                                let mut canvas = ImageBuffer::from_pixel(
+                                    canvas_w,
+                                    canvas_h,
+                                    Rgba([0, 0, 0, 255]),
+                                );
                                 draw_clip_onto_canvas(&mut canvas, clip, &arc, timeline_time);
                                 let arc_canvas = Arc::new(canvas);
                                 self.last_rendered_frame = Some(arc_canvas.clone());
@@ -757,7 +802,8 @@ impl VideoEngine {
                         if is_standard_transform {
                             return Some(last_raw.clone());
                         } else {
-                            let mut canvas = ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
+                            let mut canvas =
+                                ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
                             draw_clip_onto_canvas(&mut canvas, clip, last_raw, timeline_time);
                             let arc_canvas = Arc::new(canvas);
                             self.last_rendered_frame = Some(arc_canvas.clone());
@@ -783,7 +829,11 @@ impl VideoEngine {
                 MediaType::Image => {
                     let is_title_card = media_item.file_path.contains("titles");
                     if clip.text_overlay.is_some() && is_title_card {
-                        Some(Arc::new(ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 0]))))
+                        Some(Arc::new(ImageBuffer::from_pixel(
+                            canvas_w,
+                            canvas_h,
+                            Rgba([0, 0, 0, 0]),
+                        )))
                     } else {
                         self.get_image(&media_item.file_path)
                     }
@@ -828,7 +878,11 @@ impl VideoEngine {
                         self.last_raw_source_frame = Some(sf.clone());
                         Some(sf)
                     } else {
-                        let cached = self.frame_cache.read().ok().and_then(|c| c.get(&key).cloned());
+                        let cached = self
+                            .frame_cache
+                            .write()
+                            .ok()
+                            .and_then(|mut c| c.get(&key).cloned());
                         if let Some(c) = cached {
                             self.last_raw_source_frame = Some(c.clone());
                             Some(c)
@@ -867,12 +921,19 @@ impl VideoEngine {
 }
 
 /// Backward compatibility wrapper for existing tests and synchronous tools.
-#[derive(Default)]
 pub struct VideoFrameDecoder {
     image_cache: HashMap<String, RgbaImage>,
-    frame_cache: HashMap<(String, u64), RgbaImage>,
+    frame_cache: LruCache<(String, u64), RgbaImage>,
 }
 
+impl Default for VideoFrameDecoder {
+    fn default() -> Self {
+        Self {
+            image_cache: HashMap::new(),
+            frame_cache: LruCache::with_capacity(150),
+        }
+    }
+}
 
 impl VideoFrameDecoder {
     pub fn new() -> Self {
@@ -891,7 +952,11 @@ impl VideoFrameDecoder {
         self.image_cache.get(&p_str)
     }
 
-    pub fn decode_frame<P: AsRef<Path>>(&mut self, file_path: P, source_time: f64) -> Option<RgbaImage> {
+    pub fn decode_frame<P: AsRef<Path>>(
+        &mut self,
+        file_path: P,
+        source_time: f64,
+    ) -> Option<RgbaImage> {
         let p = file_path.as_ref();
         let p_str = p.to_string_lossy().to_string();
         let ts_key = (source_time * 30.0).round() as u64;
@@ -901,9 +966,6 @@ impl VideoFrameDecoder {
         }
 
         if let Some(img) = decode_frame_raw(p, source_time) {
-            if self.frame_cache.len() > 150 {
-                self.frame_cache.clear();
-            }
             self.frame_cache.insert((p_str, ts_key), img.clone());
             Some(img)
         } else {
@@ -949,7 +1011,12 @@ impl VideoFrameDecoder {
 }
 
 /// Applies transformations, opacity, color grading and draws clip onto target canvas.
-fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage, current_time: f64) {
+fn draw_clip_onto_canvas(
+    canvas: &mut RgbaImage,
+    clip: &Clip,
+    frame: &RgbaImage,
+    current_time: f64,
+) {
     let clip_time = (current_time - clip.timeline_in).max(0.0);
     let animated_opacity = clip.get_property_at_time("opacity", clip_time);
     let animated_scale = clip.get_property_at_time("scale", clip_time);
@@ -971,8 +1038,14 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
     };
     let fade_factor = in_progress.min(out_progress);
 
-    let is_wipe_or_slide = clip.transition_in.as_deref().is_some_and(|t| t.starts_with("wipe") || t.starts_with("slide"))
-        || clip.transition_out.as_deref().is_some_and(|t| t.starts_with("wipe") || t.starts_with("slide"));
+    let is_wipe_or_slide = clip
+        .transition_in
+        .as_deref()
+        .is_some_and(|t| t.starts_with("wipe") || t.starts_with("slide"))
+        || clip
+            .transition_out
+            .as_deref()
+            .is_some_and(|t| t.starts_with("wipe") || t.starts_with("slide"));
 
     let eff_opacity = if is_wipe_or_slide {
         animated_opacity.clamp(0.0, 1.0)
@@ -1025,11 +1098,17 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
 
     let has_dip_white = (clip.transition_in.as_deref() == Some("dip_white") && fade_factor < 1.0)
         || (clip.transition_out.as_deref() == Some("dip_white") && fade_factor < 1.0);
-    let dip_white_amt = if has_dip_white { (1.0 - fade_factor) as f32 } else { 0.0 };
+    let dip_white_amt = if has_dip_white {
+        (1.0 - fade_factor) as f32
+    } else {
+        0.0
+    };
 
-    let wipe_left_active = (clip.transition_in.as_deref() == Some("wipe_left") && in_progress < 1.0)
+    let wipe_left_active = (clip.transition_in.as_deref() == Some("wipe_left")
+        && in_progress < 1.0)
         || (clip.transition_out.as_deref() == Some("wipe_left") && out_progress < 1.0);
-    let wipe_right_active = (clip.transition_in.as_deref() == Some("wipe_right") && in_progress < 1.0)
+    let wipe_right_active = (clip.transition_in.as_deref() == Some("wipe_right")
+        && in_progress < 1.0)
         || (clip.transition_out.as_deref() == Some("wipe_right") && out_progress < 1.0);
 
     let has_chromakey = clip.chromakey.as_ref().is_some_and(|ck| ck.enabled);
@@ -1041,7 +1120,8 @@ fn draw_clip_onto_canvas(canvas: &mut RgbaImage, clip: &Clip, frame: &RgbaImage,
         || clip.custom_lut_path.is_some()
         || has_chromakey
         || has_color_wheels;
-    let has_special_trans = has_dip_white || wipe_left_active || wipe_right_active || slide_x_offset.abs() > 0.1;
+    let has_special_trans =
+        has_dip_white || wipe_left_active || wipe_right_active || slide_x_offset.abs() > 0.1;
 
     let is_fullscreen_fit = final_w == cw as i64
         && final_h == ch as i64
@@ -1262,7 +1342,8 @@ pub fn generate_title_image(
     let id = uuid::Uuid::new_v4().to_string();
     let out_file = titles_dir.join(format!("title_{}.png", id));
 
-    let img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_pixel(width, height, Rgba(bg_color_rgba));
+    let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
+        ImageBuffer::from_pixel(width, height, Rgba(bg_color_rgba));
     img.save(&out_file).ok()?;
     Some(out_file)
 }
@@ -1294,10 +1375,10 @@ mod tests {
 
     #[test]
     fn test_image_preview_clears_at_end_and_during_gaps() {
+        use tempfile::tempdir;
         use trim_core::clip::Clip;
         use trim_core::media::MediaItem;
         use trim_core::project::Project;
-        use tempfile::tempdir;
 
         let dir = tempdir().unwrap();
         let image_path = dir.path().join("preview.png");
@@ -1311,7 +1392,12 @@ mod tests {
         let media_id = media.id.clone();
         project.add_media(media);
 
-        let track = project.timeline.get_video_tracks_mut().into_iter().next().unwrap();
+        let track = project
+            .timeline
+            .get_video_tracks_mut()
+            .into_iter()
+            .next()
+            .unwrap();
         track.add_clip(Clip::new(&media_id, 0.0, 2.0));
         track.add_clip(Clip::new(&media_id, 3.0, 4.0));
 
@@ -1497,7 +1583,10 @@ mod tests {
                 }
                 std::thread::sleep(std::time::Duration::from_millis(20));
             }
-            assert!(got_frame, "Streamer should deliver reversed frames from real video");
+            assert!(
+                got_frame,
+                "Streamer should deliver reversed frames from real video"
+            );
             assert!(streamer.frames_delivered() > 0);
             streamer.stop();
             assert!(!streamer.is_active());
@@ -1531,7 +1620,10 @@ mod tests {
         // Keyed out area (left half) should retain the background canvas color (Blue)
         let keyed_px = canvas.get_pixel(2, 2);
         assert_eq!(keyed_px[0], 0, "Red channel should be 0 on keyed area");
-        assert_eq!(keyed_px[1], 0, "Green channel should be keyed out (not green!)");
+        assert_eq!(
+            keyed_px[1], 0,
+            "Green channel should be keyed out (not green!)"
+        );
         assert_eq!(keyed_px[2], 255, "Blue background should show through");
 
         // Non-keyed area (right half) should show the red foreground from the clip
@@ -1543,7 +1635,7 @@ mod tests {
 
     #[test]
     fn test_color_wheels_rendering_modifies_pixels() {
-        use trim_core::clip::{ColorWheelsConfig, Clip};
+        use trim_core::clip::{Clip, ColorWheelsConfig};
 
         let mut canvas = ImageBuffer::from_pixel(10, 10, Rgba([0, 0, 0, 255]));
         let frame = ImageBuffer::from_pixel(10, 10, Rgba([128, 128, 128, 255]));
@@ -1559,8 +1651,14 @@ mod tests {
         draw_clip_onto_canvas(&mut canvas, &clip, &frame, 1.0);
 
         let modified_px = canvas.get_pixel(5, 5);
-        assert!(modified_px[0] > modified_px[1], "Red should be boosted over Green");
-        assert!(modified_px[1] > modified_px[2], "Green should be higher than Blue");
+        assert!(
+            modified_px[0] > modified_px[1],
+            "Red should be boosted over Green"
+        );
+        assert!(
+            modified_px[1] > modified_px[2],
+            "Green should be higher than Blue"
+        );
     }
 
     #[test]
@@ -1572,8 +1670,14 @@ mod tests {
         let img_path = temp_dir.join("test_trim_ck_bypass.png");
 
         // Create 640x360 green image
-        let green_img: RgbaImage = ImageBuffer::from_pixel(PREVIEW_WIDTH, PREVIEW_HEIGHT, Rgba([0u8, 255u8, 0u8, 255u8]));
-        green_img.save(&img_path).expect("Failed to save temp test image");
+        let green_img: RgbaImage = ImageBuffer::from_pixel(
+            PREVIEW_WIDTH,
+            PREVIEW_HEIGHT,
+            Rgba([0u8, 255u8, 0u8, 255u8]),
+        );
+        green_img
+            .save(&img_path)
+            .expect("Failed to save temp test image");
 
         let mut project = Project::default();
         let mut media = MediaItem::new(img_path.to_str().unwrap());
@@ -1599,9 +1703,41 @@ mod tests {
         let frame = rendered.unwrap();
         // Since green was keyed out on single clip, canvas background is black [0, 0, 0, 255]
         let px = frame.get_pixel(100, 100);
-        assert_eq!(px[1], 0, "Green should be removed by Chroma Key instead of returning raw green frame");
+        assert_eq!(
+            px[1], 0,
+            "Green should be removed by Chroma Key instead of returning raw green frame"
+        );
 
         let _ = std::fs::remove_file(img_path);
     }
-}
 
+    #[test]
+    fn test_video_engine_frame_cache_lru_bounded() {
+        let engine = VideoEngine::new();
+        let dummy_frame = Arc::new(ImageBuffer::from_pixel(16, 16, Rgba([0, 0, 0, 255])));
+
+        {
+            let mut cache = engine.frame_cache.write().unwrap();
+            for i in 0..400 {
+                let key = ("test_media.mp4".to_string(), i);
+                cache.insert(key, Arc::clone(&dummy_frame));
+            }
+            // Max capacity is 300, so size should be capped at 300
+            assert_eq!(cache.len(), 300);
+            // First 100 items (0..100) should have been evicted
+            for i in 0..100 {
+                let key = ("test_media.mp4".to_string(), i);
+                assert!(
+                    cache.get(&key).is_none(),
+                    "Key {} should have been evicted",
+                    i
+                );
+            }
+            // Items 100..400 should be present
+            for i in 100..400 {
+                let key = ("test_media.mp4".to_string(), i);
+                assert!(cache.get(&key).is_some(), "Key {} should be in cache", i);
+            }
+        }
+    }
+}

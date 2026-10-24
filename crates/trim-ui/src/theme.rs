@@ -66,9 +66,19 @@ pub fn setup_theme(ctx: &egui::Context) {
     for (i, path) in sys_fonts.iter().enumerate() {
         if let Ok(data) = std::fs::read(path) {
             let font_name = format!("sys_font_{}", i);
-            fonts.font_data.insert(font_name.clone(), egui::FontData::from_owned(data));
-            fonts.families.entry(egui::FontFamily::Proportional).or_default().push(font_name.clone());
-            fonts.families.entry(egui::FontFamily::Monospace).or_default().push(font_name);
+            fonts
+                .font_data
+                .insert(font_name.clone(), egui::FontData::from_owned(data));
+            fonts
+                .families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .push(font_name.clone());
+            fonts
+                .families
+                .entry(egui::FontFamily::Monospace)
+                .or_default()
+                .push(font_name);
         }
     }
     ctx.set_fonts(fonts);

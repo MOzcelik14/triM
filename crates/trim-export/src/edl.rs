@@ -37,7 +37,13 @@ pub fn generate_edl(project: &Project) -> String {
     // Sanitize title for CMX 3600 header (alphanumeric, underscore, dash)
     let sanitized_title: String = title
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
 
     let mut out = String::new();
@@ -82,7 +88,11 @@ pub fn generate_edl(project: &Project) -> String {
             let tc_rec_in = seconds_to_timecode(rec_in, fps);
             let tc_rec_out = seconds_to_timecode(rec_out, fps);
 
-            let edit_type = if clip.transition_in.is_some() { "D" } else { "C" };
+            let edit_type = if clip.transition_in.is_some() {
+                "D"
+            } else {
+                "C"
+            };
 
             // CMX 3600 line format:
             // 001  AX       V     C        00:00:00:00 00:00:05:00 00:00:00:00 00:00:05:00
@@ -134,20 +144,24 @@ mod tests {
         proj.settings.name = "Test Movie".to_string();
         proj.settings.fps = 24.0;
 
-        let mut media = MediaItem::default();
-        media.id = "m1".to_string();
-        media.name = "interview.mp4".to_string();
-        media.file_path = "/path/to/interview.mp4".to_string();
+        let media = MediaItem {
+            id: "m1".to_string(),
+            name: "interview.mp4".to_string(),
+            file_path: "/path/to/interview.mp4".to_string(),
+            ..Default::default()
+        };
         proj.media_pool.insert("m1".to_string(), media);
 
-        let mut clip = Clip::default();
-        clip.id = "c1".to_string();
-        clip.media_id = "m1".to_string();
-        clip.name = "Intro Scene".to_string();
-        clip.source_in = 2.0;
-        clip.source_out = Some(8.0);
-        clip.timeline_in = 0.0;
-        clip.timeline_out = 6.0;
+        let clip = Clip {
+            id: "c1".to_string(),
+            media_id: "m1".to_string(),
+            name: "Intro Scene".to_string(),
+            source_in: 2.0,
+            source_out: Some(8.0),
+            timeline_in: 0.0,
+            timeline_out: 6.0,
+            ..Default::default()
+        };
 
         let mut track = Track::new("Video 1", TrackType::Video);
         track.clips.push(clip);

@@ -28,7 +28,12 @@ impl ShortcutsDialog {
             .default_size(Vec2::new(580.0, 460.0))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Hızlı Kısayol Rehberi").size(14.0).strong().color(Color32::from_rgb(0xe0, 0x7a, 0x38)));
+                    ui.label(
+                        RichText::new("Hızlı Kısayol Rehberi")
+                            .size(14.0)
+                            .strong()
+                            .color(Color32::from_rgb(0xe0, 0x7a, 0x38)),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("Kapat (Esc)").clicked() {
                             self.is_open = false;
@@ -46,7 +51,11 @@ impl ShortcutsDialog {
                                 ui.selectable_value(profile, *p, p.label());
                             }
                         });
-                    ui.label(RichText::new(profile.description()).size(10.5).color(Color32::from_rgb(0x90, 0x90, 0xa5)));
+                    ui.label(
+                        RichText::new(profile.description())
+                            .size(10.5)
+                            .color(Color32::from_rgb(0x90, 0x90, 0xa5)),
+                    );
                 });
                 ui.separator();
                 ui.add_space(4.0);
@@ -146,7 +155,11 @@ impl ShortcutsDialog {
                     for (cat, items) in sections {
                         ui.group(|ui| {
                             ui.set_width(540.0);
-                            ui.strong(RichText::new(cat).color(Color32::from_rgb(0x38, 0xa0, 0xf0)).size(12.0));
+                            ui.strong(
+                                RichText::new(cat)
+                                    .color(Color32::from_rgb(0x38, 0xa0, 0xf0))
+                                    .size(12.0),
+                            );
                             ui.add_space(3.0);
 
                             for (key, desc) in items {
@@ -158,10 +171,17 @@ impl ShortcutsDialog {
                                         .color(Color32::WHITE);
                                     let key_btn = egui::Button::new(key_label)
                                         .fill(Color32::from_rgb(0x28, 0x28, 0x36))
-                                        .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(0x3c, 0x3c, 0x4c)))
+                                        .stroke(egui::Stroke::new(
+                                            1.0_f32,
+                                            Color32::from_rgb(0x3c, 0x3c, 0x4c),
+                                        ))
                                         .rounding(3.0);
                                     ui.add_sized([130.0, 18.0], key_btn);
-                                    ui.label(RichText::new(desc).size(11.5).color(Color32::from_rgb(0xd0, 0xd0, 0xdc)));
+                                    ui.label(
+                                        RichText::new(desc)
+                                            .size(11.5)
+                                            .color(Color32::from_rgb(0xd0, 0xd0, 0xdc)),
+                                    );
                                 });
                             }
                         });

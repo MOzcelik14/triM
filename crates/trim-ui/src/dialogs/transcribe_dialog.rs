@@ -34,7 +34,8 @@ impl Default for TranscribeDialog {
             model_name: "base".to_string(),
             whisper_bin: trim_media::find_whisper_executable(),
             is_transcribing: false,
-            status_message: "Seçili klibi yerel yapay zeka ile deşifre edip altyazı oluşturun.".to_string(),
+            status_message: "Seçili klibi yerel yapay zeka ile deşifre edip altyazı oluşturun."
+                .to_string(),
         }
     }
 }

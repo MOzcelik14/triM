@@ -1,28 +1,41 @@
 //! Audio decoding, multi-track PCM mixing, and dual VU meter RMS level analysis.
 
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
+use trim_core::lru::LruCache;
 use trim_core::media::MediaType;
 use trim_core::project::Project;
 
 use std::sync::{Arc, RwLock};
 
 pub const SAMPLE_RATE: u32 = 48000;
+pub const MAX_PCM_CACHE_BYTES: usize = 512 * 1024 * 1024; // 512 MB hard cap
 
 pub type PcmAudioBuffer = Option<Arc<Vec<[i16; 2]>>>;
-pub type PcmCache = Arc<RwLock<HashMap<String, PcmAudioBuffer>>>;
+pub type PcmCache = Arc<RwLock<LruCache<String, PcmAudioBuffer>>>;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Clone)]
 pub struct AudioMixer {
     pcm_cache: PcmCache,
+}
+
+impl Default for AudioMixer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Debug for AudioMixer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AudioMixer").finish_non_exhaustive()
+    }
 }
 
 impl AudioMixer {
     pub fn new() -> Self {
         Self {
-            pcm_cache: Arc::new(RwLock::new(HashMap::new())),
+            pcm_cache: Arc::new(RwLock::new(LruCache::with_byte_limit(MAX_PCM_CACHE_BYTES))),
         }
     }
 
@@ -39,8 +52,9 @@ impl AudioMixer {
                 }
             }
             let pcm = decode_audio_to_pcm(&path).map(Arc::new);
+            let size_bytes = pcm.as_ref().map(|a| a.len() * 4).unwrap_or(32);
             if let Ok(mut c) = cache_clone.write() {
-                c.insert(path_str, pcm);
+                c.insert_with_size(path_str, pcm, size_bytes);
             }
         });
     }
@@ -50,15 +64,16 @@ impl AudioMixer {
         let path = file_path.as_ref();
         let path_str = path.to_string_lossy().to_string();
 
-        if let Ok(c) = self.pcm_cache.read() {
+        if let Ok(mut c) = self.pcm_cache.write() {
             if let Some(opt) = c.get(&path_str) {
                 return opt.clone();
             }
         }
 
         let pcm = decode_audio_to_pcm(path).map(Arc::new);
+        let size_bytes = pcm.as_ref().map(|a| a.len() * 4).unwrap_or(32);
         if let Ok(mut c) = self.pcm_cache.write() {
-            c.insert(path_str, pcm.clone());
+            c.insert_with_size(path_str, pcm.clone(), size_bytes);
         }
         pcm
     }
@@ -170,8 +185,10 @@ impl AudioMixer {
                         let i0 = idx.floor() as usize;
                         let i1 = (i0 + 1).min(source_chunk.len() - 1);
                         let frac = (idx - i0 as f64) as f32;
-                        let l = source_chunk[i0][0] + (source_chunk[i1][0] - source_chunk[i0][0]) * frac;
-                        let r = source_chunk[i0][1] + (source_chunk[i1][1] - source_chunk[i0][1]) * frac;
+                        let l = source_chunk[i0][0]
+                            + (source_chunk[i1][0] - source_chunk[i0][0]) * frac;
+                        let r = source_chunk[i0][1]
+                            + (source_chunk[i1][1] - source_chunk[i0][1]) * frac;
                         res.push([l, r]);
                     }
                     res
@@ -254,32 +271,32 @@ impl AudioMixer {
 }
 
 fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
-    let mut child = crate::ffmpeg::ffmpeg_cmd()
-        .args([
-            "-v",
-            "quiet",
-            "-y",
-            "-i",
-            path.to_str().unwrap_or(""),
-            "-vn",
-            "-f",
-            "s16le",
-            "-ac",
-            "2",
-            "-ar",
-            &SAMPLE_RATE.to_string(),
-            "pipe:1",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
+    let mut cmd = crate::ffmpeg::ffmpeg_cmd();
+    cmd.args([
+        "-v",
+        "quiet",
+        "-y",
+        "-i",
+        path.to_str().unwrap_or(""),
+        "-vn",
+        "-f",
+        "s16le",
+        "-ac",
+        "2",
+        "-ar",
+        &SAMPLE_RATE.to_string(),
+        "pipe:1",
+    ])
+    .stdout(Stdio::piped())
+    .stderr(Stdio::null());
+
+    let mut guard = crate::ffmpeg::ChildGuard::spawn(&mut cmd).ok()?;
 
     let mut raw_bytes = Vec::new();
-    if let Some(mut stdout) = child.stdout.take() {
+    if let Some(mut stdout) = guard.take_stdout() {
         let _ = stdout.read_to_end(&mut raw_bytes);
     }
-    let status = child.wait().ok()?;
+    let status = guard.wait().ok()?;
 
     if !status.success() || raw_bytes.len() < 4 {
         return None;
@@ -298,7 +315,7 @@ fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
 
 /// Linux native audio stream player writing 48kHz 16-bit stereo PCM via PipeWire/ALSA.
 pub struct AudioStreamPlayer {
-    child: Option<Child>,
+    child: Option<crate::ffmpeg::ChildGuard>,
 }
 
 impl Default for AudioStreamPlayer {
@@ -316,35 +333,86 @@ impl AudioStreamPlayer {
         if self.child.is_none() {
             let spawned = if cfg!(windows) {
                 // Windows: ffplay with CREATE_NO_WINDOW
-                crate::ffmpeg::ffplay_cmd()
-                    .args(["-nodisp", "-autoexit", "-loglevel", "quiet", "-f", "s16le", "-ar", "48000", "-ac", "2", "-i", "-"])
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
+                crate::ffmpeg::ChildGuard::spawn(
+                    crate::ffmpeg::ffplay_cmd()
+                        .args([
+                            "-nodisp",
+                            "-autoexit",
+                            "-loglevel",
+                            "quiet",
+                            "-f",
+                            "s16le",
+                            "-ar",
+                            "48000",
+                            "-ac",
+                            "2",
+                            "-i",
+                            "-",
+                        ])
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null()),
+                )
             } else {
                 // Linux: PipeWire pw-cat (20ms) -> ALSA aplay -> ffplay
-                Command::new("pw-cat")
-                    .args(["-p", "--format=s16", "--rate=48000", "--channels=2", "--latency=20ms", "-"])
+                let mut pw_cmd = Command::new("pw-cat");
+                pw_cmd
+                    .args([
+                        "-p",
+                        "--format=s16",
+                        "--rate=48000",
+                        "--channels=2",
+                        "--latency=20ms",
+                        "-",
+                    ])
                     .stdin(Stdio::piped())
                     .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
+                    .stderr(Stdio::null());
+
+                crate::ffmpeg::ChildGuard::spawn(&mut pw_cmd)
                     .or_else(|_| {
-                        Command::new("aplay")
-                            .args(["-q", "-t", "raw", "-c", "2", "-f", "S16_LE", "-r", "48000", "--buffer-time=25000", "--period-time=5000", "-"])
+                        let mut aplay_cmd = Command::new("aplay");
+                        aplay_cmd
+                            .args([
+                                "-q",
+                                "-t",
+                                "raw",
+                                "-c",
+                                "2",
+                                "-f",
+                                "S16_LE",
+                                "-r",
+                                "48000",
+                                "--buffer-time=25000",
+                                "--period-time=5000",
+                                "-",
+                            ])
                             .stdin(Stdio::piped())
                             .stdout(Stdio::null())
-                            .stderr(Stdio::null())
-                            .spawn()
+                            .stderr(Stdio::null());
+                        crate::ffmpeg::ChildGuard::spawn(&mut aplay_cmd)
                     })
                     .or_else(|_| {
-                        crate::ffmpeg::ffplay_cmd()
-                            .args(["-nodisp", "-autoexit", "-loglevel", "quiet", "-f", "s16le", "-ar", "48000", "-ac", "2", "-i", "-"])
+                        let mut ffplay = crate::ffmpeg::ffplay_cmd();
+                        ffplay
+                            .args([
+                                "-nodisp",
+                                "-autoexit",
+                                "-loglevel",
+                                "quiet",
+                                "-f",
+                                "s16le",
+                                "-ar",
+                                "48000",
+                                "-ac",
+                                "2",
+                                "-i",
+                                "-",
+                            ])
                             .stdin(Stdio::piped())
                             .stdout(Stdio::null())
-                            .stderr(Stdio::null())
-                            .spawn()
+                            .stderr(Stdio::null());
+                        crate::ffmpeg::ChildGuard::spawn(&mut ffplay)
                     })
             };
 
@@ -383,7 +451,6 @@ impl AudioStreamPlayer {
     pub fn stop(&mut self) {
         if let Some(mut c) = self.child.take() {
             let _ = c.kill();
-            let _ = c.wait();
         }
     }
 }
@@ -417,5 +484,48 @@ mod tests {
         assert!(player.child.is_none());
         player.stop();
         assert!(player.child.is_none());
+    }
+
+    #[test]
+    fn test_audio_mixer_pcm_cache_bounded() {
+        let mixer = AudioMixer::new();
+        // Insert a 256MB synthetic buffer
+        let samples_count = 64 * 1024 * 1024; // 64M stereo pairs = 64M * 4 bytes = 256MB
+        let buf = Arc::new(vec![[0i16, 0i16]; samples_count]);
+        {
+            let mut cache = mixer.pcm_cache.write().unwrap();
+            cache.insert_with_size(
+                "file1.wav".to_string(),
+                Some(buf.clone()),
+                samples_count * 4,
+            );
+            assert_eq!(cache.len(), 1);
+            assert_eq!(cache.total_bytes(), 256 * 1024 * 1024);
+        }
+
+        // Insert another 256MB synthetic buffer -> 512MB total
+        {
+            let mut cache = mixer.pcm_cache.write().unwrap();
+            cache.insert_with_size(
+                "file2.wav".to_string(),
+                Some(buf.clone()),
+                samples_count * 4,
+            );
+            assert_eq!(cache.len(), 2);
+            assert_eq!(cache.total_bytes(), 512 * 1024 * 1024);
+        }
+
+        // Insert a third buffer (64MB) -> exceeds 512MB limit, evicts least recently used ("file1.wav")
+        let small_count = 16 * 1024 * 1024; // 64MB
+        let small_buf = Arc::new(vec![[0i16, 0i16]; small_count]);
+        {
+            let mut cache = mixer.pcm_cache.write().unwrap();
+            cache.insert_with_size("file3.wav".to_string(), Some(small_buf), small_count * 4);
+            assert_eq!(cache.len(), 2);
+            assert!(!cache.contains_key(&"file1.wav".to_string()));
+            assert!(cache.contains_key(&"file2.wav".to_string()));
+            assert!(cache.contains_key(&"file3.wav".to_string()));
+            assert_eq!(cache.total_bytes(), 320 * 1024 * 1024);
+        }
     }
 }

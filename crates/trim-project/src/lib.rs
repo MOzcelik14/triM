@@ -19,7 +19,10 @@ pub enum ProjectError {
 }
 
 /// Saves project to disk using atomic rename (.tmp -> dest).
-pub fn save_project<P: AsRef<Path>>(project: &mut Project, target_path: P) -> Result<(), ProjectError> {
+pub fn save_project<P: AsRef<Path>>(
+    project: &mut Project,
+    target_path: P,
+) -> Result<(), ProjectError> {
     let target = target_path.as_ref();
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
@@ -130,7 +133,9 @@ pub struct AutosaveManager {
 impl Default for AutosaveManager {
     fn default() -> Self {
         let rec_dir = trim_core::paths::config_dir().join("recovery");
-        Self { recovery_dir: rec_dir }
+        Self {
+            recovery_dir: rec_dir,
+        }
     }
 }
 
@@ -155,7 +160,8 @@ impl AutosaveManager {
                 .and_then(|s| s.to_str())
                 .unwrap_or("project");
             let hash = hash_path(fp);
-            self.recovery_dir.join(format!("{}_{}_recovery.trim", stem, hash))
+            self.recovery_dir
+                .join(format!("{}_{}_recovery.trim", stem, hash))
         } else {
             self.recovery_dir.join("unsaved_project_recovery.trim")
         }
@@ -179,7 +185,8 @@ impl AutosaveManager {
 
         // Check legacy stem-only recovery path
         if let Some(legacy_path) = self.get_legacy_recovery_path(project) {
-            if legacy_path.is_file() && legacy_path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+            if legacy_path.is_file() && legacy_path.metadata().map(|m| m.len() > 0).unwrap_or(false)
+            {
                 return Some(legacy_path);
             }
         }
@@ -247,7 +254,10 @@ mod tests {
         save_project(&mut proj, &file_path).unwrap();
         assert!(file_path.is_file());
         assert!(!proj.is_dirty);
-        assert_eq!(proj.file_path, Some(file_path.to_string_lossy().to_string()));
+        assert_eq!(
+            proj.file_path,
+            Some(file_path.to_string_lossy().to_string())
+        );
 
         let loaded = load_project(&file_path).unwrap();
         assert_eq!(loaded.settings.name, "Test Save");
@@ -285,7 +295,10 @@ mod tests {
         let path1 = mgr.get_recovery_path(&proj1);
         let path2 = mgr.get_recovery_path(&proj2);
 
-        assert_ne!(path1, path2, "Recovery paths must not collide for identical stems in different dirs");
+        assert_ne!(
+            path1, path2,
+            "Recovery paths must not collide for identical stems in different dirs"
+        );
 
         // Test legacy fallback
         let legacy_file = mgr.get_legacy_recovery_path(&proj1).unwrap();
@@ -319,7 +332,10 @@ mod tests {
 
         let bundled_trim_file = target_bundle.join("MyAwesomeMovie.trim");
         assert!(bundled_trim_file.is_file());
-        assert!(target_bundle.join("media").join("sample_clip.mp4").is_file());
+        assert!(target_bundle
+            .join("media")
+            .join("sample_clip.mp4")
+            .is_file());
 
         // Now move bundle to a different directory to test portability
         let new_location = tempdir().unwrap();
@@ -332,7 +348,11 @@ mod tests {
 
         let loaded_media = loaded.get_media(&m_id).unwrap();
         let loaded_media_path = Path::new(&loaded_media.file_path);
-        assert!(loaded_media_path.is_file(), "Bundled media should exist at resolved path: {:?}", loaded_media_path);
+        assert!(
+            loaded_media_path.is_file(),
+            "Bundled media should exist at resolved path: {:?}",
+            loaded_media_path
+        );
         assert_eq!(fs::read(loaded_media_path).unwrap(), b"fake video bytes");
     }
 }

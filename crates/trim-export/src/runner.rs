@@ -50,13 +50,14 @@ impl ExportRunner {
         is_cancelled.store(false, Ordering::SeqCst);
 
         thread::spawn(move || {
-            let (cmd_args, total_duration) = match TimelineExporter::build_export_pipeline(&project, &preset, &output_path) {
-                Ok(res) => res,
-                Err(err) => {
-                    let _ = tx.send(ExportMessage::Finished(Err(err)));
-                    return;
-                }
-            };
+            let (cmd_args, total_duration) =
+                match TimelineExporter::build_export_pipeline(&project, &preset, &output_path) {
+                    Ok(res) => res,
+                    Err(err) => {
+                        let _ = tx.send(ExportMessage::Finished(Err(err)));
+                        return;
+                    }
+                };
 
             let _ = tx.send(ExportMessage::Status("FFmpeg başlatılıyor...".to_string()));
             log::info!("Executing export pipeline: {}", cmd_args.join(" "));
@@ -80,18 +81,23 @@ impl ExportRunner {
             {
                 Ok(c) => c,
                 Err(e) => {
-                    let _ = tx.send(ExportMessage::Finished(Err(format!("FFmpeg başlatılamadı: {}", e))));
+                    let _ = tx.send(ExportMessage::Finished(Err(format!(
+                        "FFmpeg başlatılamadı: {}",
+                        e
+                    ))));
                     return;
                 }
             };
 
             // Concurrently drain stderr to prevent pipe buffer deadlocks if FFmpeg writes excessive logs
-            let stderr_handle = child.stderr.take().map(|mut err_pipe| thread::spawn(move || {
+            let stderr_handle = child.stderr.take().map(|mut err_pipe| {
+                thread::spawn(move || {
                     let mut s = String::new();
                     use std::io::Read;
                     let _ = err_pipe.read_to_string(&mut s);
                     s
-                }));
+                })
+            });
 
             if let Some(stdout) = child.stdout.take() {
                 let reader = BufReader::new(stdout);
@@ -117,21 +123,27 @@ impl ExportRunner {
             }
 
             let status = child.wait();
-            let stderr_str = stderr_handle.and_then(|h| h.join().ok()).unwrap_or_default();
+            let stderr_str = stderr_handle
+                .and_then(|h| h.join().ok())
+                .unwrap_or_default();
 
             if is_cancelled.load(Ordering::SeqCst) {
                 let p = Path::new(&output_path);
                 if p.is_file() {
                     let _ = std::fs::remove_file(p);
                 }
-                let _ = tx.send(ExportMessage::Finished(Err("Dışa aktarma iptal edildi".to_string())));
+                let _ = tx.send(ExportMessage::Finished(Err(
+                    "Dışa aktarma iptal edildi".to_string()
+                )));
                 return;
             }
 
             match status {
                 Ok(s) if s.success() => {
                     let _ = tx.send(ExportMessage::Progress(100.0));
-                    let _ = tx.send(ExportMessage::Status("Dışa aktarma başarıyla tamamlandı!".to_string()));
+                    let _ = tx.send(ExportMessage::Status(
+                        "Dışa aktarma başarıyla tamamlandı!".to_string(),
+                    ));
                     let _ = tx.send(ExportMessage::Finished(Ok(output_path)));
                 }
                 Ok(s) => {
@@ -142,7 +154,10 @@ impl ExportRunner {
                     ))));
                 }
                 Err(e) => {
-                    let _ = tx.send(ExportMessage::Finished(Err(format!("FFmpeg bekleme hatası: {}", e))));
+                    let _ = tx.send(ExportMessage::Finished(Err(format!(
+                        "FFmpeg bekleme hatası: {}",
+                        e
+                    ))));
                 }
             }
         });

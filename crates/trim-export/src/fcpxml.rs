@@ -32,8 +32,16 @@ pub fn generate_fcpxml(project: &Project) -> String {
     };
     let timebase = fps.round().max(1.0) as u64;
 
-    let width = if project.settings.width > 0 { project.settings.width } else { 1920 };
-    let height = if project.settings.height > 0 { project.settings.height } else { 1080 };
+    let width = if project.settings.width > 0 {
+        project.settings.width
+    } else {
+        1920
+    };
+    let height = if project.settings.height > 0 {
+        project.settings.height
+    } else {
+        1080
+    };
 
     let total_duration_seconds = project.timeline.duration();
     let total_duration_frames = (total_duration_seconds * fps).round().max(1.0) as u64;
@@ -50,7 +58,10 @@ pub fn generate_fcpxml(project: &Project) -> String {
     xml.push_str("<xmeml version=\"5\">\n");
     xml.push_str("  <sequence id=\"sequence-1\">\n");
     xml.push_str(&format!("    <name>{}</name>\n", escape_xml(proj_name)));
-    xml.push_str(&format!("    <duration>{}</duration>\n", total_duration_frames));
+    xml.push_str(&format!(
+        "    <duration>{}</duration>\n",
+        total_duration_frames
+    ));
     xml.push_str("    <rate>\n");
     xml.push_str(&format!("      <timebase>{}</timebase>\n", timebase));
     xml.push_str("      <ntsc>FALSE</ntsc>\n");
@@ -65,13 +76,21 @@ pub fn generate_fcpxml(project: &Project) -> String {
     xml.push_str(&format!("            <height>{}</height>\n", height));
     xml.push_str("            <pixelaspectratio>square</pixelaspectratio>\n");
     xml.push_str("            <rate>\n");
-    xml.push_str(&format!("              <timebase>{}</timebase>\n", timebase));
+    xml.push_str(&format!(
+        "              <timebase>{}</timebase>\n",
+        timebase
+    ));
     xml.push_str("            </rate>\n");
     xml.push_str("          </samplecharacteristics>\n");
     xml.push_str("        </format>\n");
 
     let mut clip_counter = 1usize;
-    for track in project.timeline.tracks.iter().filter(|t| t.track_type == TrackType::Video) {
+    for track in project
+        .timeline
+        .tracks
+        .iter()
+        .filter(|t| t.track_type == TrackType::Video)
+    {
         xml.push_str("        <track>\n");
         let mut sorted_clips = track.clips.clone();
         sorted_clips.sort_by(|a, b| a.timeline_in.total_cmp(&b.timeline_in));
@@ -94,10 +113,19 @@ pub fn generate_fcpxml(project: &Project) -> String {
 
             let clip_id = format!("clipitem-{}", clip_counter);
             xml.push_str(&format!("          <clipitem id=\"{}\">\n", clip_id));
-            xml.push_str(&format!("            <name>{}</name>\n", escape_xml(&clip_name)));
-            xml.push_str(&format!("            <duration>{}</duration>\n", clip_dur_frame));
+            xml.push_str(&format!(
+                "            <name>{}</name>\n",
+                escape_xml(&clip_name)
+            ));
+            xml.push_str(&format!(
+                "            <duration>{}</duration>\n",
+                clip_dur_frame
+            ));
             xml.push_str("            <rate>\n");
-            xml.push_str(&format!("              <timebase>{}</timebase>\n", timebase));
+            xml.push_str(&format!(
+                "              <timebase>{}</timebase>\n",
+                timebase
+            ));
             xml.push_str("            </rate>\n");
             xml.push_str(&format!("            <start>{}</start>\n", start_frame));
             xml.push_str(&format!("            <end>{}</end>\n", end_frame));
@@ -110,17 +138,35 @@ pub fn generate_fcpxml(project: &Project) -> String {
                 let file_url = to_file_url(&m.file_path);
 
                 xml.push_str(&format!("            <file id=\"{}\">\n", file_id));
-                xml.push_str(&format!("              <name>{}</name>\n", escape_xml(&m.name)));
-                xml.push_str(&format!("              <pathurl>{}</pathurl>\n", escape_xml(&file_url)));
+                xml.push_str(&format!(
+                    "              <name>{}</name>\n",
+                    escape_xml(&m.name)
+                ));
+                xml.push_str(&format!(
+                    "              <pathurl>{}</pathurl>\n",
+                    escape_xml(&file_url)
+                ));
                 xml.push_str("              <rate>\n");
-                xml.push_str(&format!("                <timebase>{}</timebase>\n", timebase));
+                xml.push_str(&format!(
+                    "                <timebase>{}</timebase>\n",
+                    timebase
+                ));
                 xml.push_str("              </rate>\n");
-                xml.push_str(&format!("              <duration>{}</duration>\n", media_frames));
+                xml.push_str(&format!(
+                    "              <duration>{}</duration>\n",
+                    media_frames
+                ));
                 xml.push_str("              <media>\n");
                 xml.push_str("                <video>\n");
                 xml.push_str("                  <samplecharacteristics>\n");
-                xml.push_str(&format!("                    <width>{}</width>\n", if m.width > 0 { m.width } else { width }));
-                xml.push_str(&format!("                    <height>{}</height>\n", if m.height > 0 { m.height } else { height }));
+                xml.push_str(&format!(
+                    "                    <width>{}</width>\n",
+                    if m.width > 0 { m.width } else { width }
+                ));
+                xml.push_str(&format!(
+                    "                    <height>{}</height>\n",
+                    if m.height > 0 { m.height } else { height }
+                ));
                 xml.push_str("                  </samplecharacteristics>\n");
                 xml.push_str("                </video>\n");
                 xml.push_str("              </media>\n");
@@ -136,7 +182,12 @@ pub fn generate_fcpxml(project: &Project) -> String {
 
     // Audio tracks
     xml.push_str("      <audio>\n");
-    for track in project.timeline.tracks.iter().filter(|t| t.track_type == TrackType::Audio) {
+    for track in project
+        .timeline
+        .tracks
+        .iter()
+        .filter(|t| t.track_type == TrackType::Audio)
+    {
         xml.push_str("        <track>\n");
         let mut sorted_clips = track.clips.clone();
         sorted_clips.sort_by(|a, b| a.timeline_in.total_cmp(&b.timeline_in));
@@ -159,10 +210,19 @@ pub fn generate_fcpxml(project: &Project) -> String {
 
             let clip_id = format!("clipitem-{}", clip_counter);
             xml.push_str(&format!("          <clipitem id=\"{}\">\n", clip_id));
-            xml.push_str(&format!("            <name>{}</name>\n", escape_xml(&clip_name)));
-            xml.push_str(&format!("            <duration>{}</duration>\n", clip_dur_frame));
+            xml.push_str(&format!(
+                "            <name>{}</name>\n",
+                escape_xml(&clip_name)
+            ));
+            xml.push_str(&format!(
+                "            <duration>{}</duration>\n",
+                clip_dur_frame
+            ));
             xml.push_str("            <rate>\n");
-            xml.push_str(&format!("              <timebase>{}</timebase>\n", timebase));
+            xml.push_str(&format!(
+                "              <timebase>{}</timebase>\n",
+                timebase
+            ));
             xml.push_str("            </rate>\n");
             xml.push_str(&format!("            <start>{}</start>\n", start_frame));
             xml.push_str(&format!("            <end>{}</end>\n", end_frame));
@@ -175,12 +235,24 @@ pub fn generate_fcpxml(project: &Project) -> String {
                 let file_url = to_file_url(&m.file_path);
 
                 xml.push_str(&format!("            <file id=\"{}\">\n", file_id));
-                xml.push_str(&format!("              <name>{}</name>\n", escape_xml(&m.name)));
-                xml.push_str(&format!("              <pathurl>{}</pathurl>\n", escape_xml(&file_url)));
+                xml.push_str(&format!(
+                    "              <name>{}</name>\n",
+                    escape_xml(&m.name)
+                ));
+                xml.push_str(&format!(
+                    "              <pathurl>{}</pathurl>\n",
+                    escape_xml(&file_url)
+                ));
                 xml.push_str("              <rate>\n");
-                xml.push_str(&format!("                <timebase>{}</timebase>\n", timebase));
+                xml.push_str(&format!(
+                    "                <timebase>{}</timebase>\n",
+                    timebase
+                ));
                 xml.push_str("              </rate>\n");
-                xml.push_str(&format!("              <duration>{}</duration>\n", media_frames));
+                xml.push_str(&format!(
+                    "              <duration>{}</duration>\n",
+                    media_frames
+                ));
                 xml.push_str("            </file>\n");
             }
 
@@ -214,21 +286,25 @@ mod tests {
         proj.settings.width = 1920;
         proj.settings.height = 1080;
 
-        let mut media = MediaItem::default();
-        media.id = "m1".to_string();
-        media.name = "scene1.mov".to_string();
-        media.file_path = "/media/scene1.mov".to_string();
-        media.duration = 10.0;
+        let media = MediaItem {
+            id: "m1".to_string(),
+            name: "scene1.mov".to_string(),
+            file_path: "/media/scene1.mov".to_string(),
+            duration: 10.0,
+            ..Default::default()
+        };
         proj.media_pool.insert("m1".to_string(), media);
 
-        let mut clip = Clip::default();
-        clip.id = "c1".to_string();
-        clip.media_id = "m1".to_string();
-        clip.name = "Scene 1 Action".to_string();
-        clip.source_in = 1.0;
-        clip.source_out = Some(5.0);
-        clip.timeline_in = 0.0;
-        clip.timeline_out = 4.0;
+        let clip = Clip {
+            id: "c1".to_string(),
+            media_id: "m1".to_string(),
+            name: "Scene 1 Action".to_string(),
+            source_in: 1.0,
+            source_out: Some(5.0),
+            timeline_in: 0.0,
+            timeline_out: 4.0,
+            ..Default::default()
+        };
 
         let mut track = Track::new("Video 1", TrackType::Video);
         track.clips.push(clip);

@@ -1,97 +1,186 @@
-//! Poster frame thumbnail extraction and disk caching.
+//! Poster frame thumbnail extraction, background worker pooling, and disk caching.
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use trim_core::media::{MediaItem, MediaType};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ThumbnailGenerator {
     pub cache_dir: PathBuf,
+    req_tx: Sender<MediaItem>,
+    res_rx: Arc<Mutex<Receiver<(String, PathBuf)>>>,
+    in_flight: Arc<Mutex<HashSet<String>>>,
+}
+
+impl std::fmt::Debug for ThumbnailGenerator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ThumbnailGenerator")
+            .field("cache_dir", &self.cache_dir)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for ThumbnailGenerator {
     fn default() -> Self {
         let c_dir = trim_core::paths::cache_dir().join("thumbnails");
-        Self { cache_dir: c_dir }
+        Self::new(c_dir)
     }
 }
 
 impl ThumbnailGenerator {
     pub fn new(cache_dir: PathBuf) -> Self {
-        Self { cache_dir }
+        let (req_tx, req_rx) = channel::<MediaItem>();
+        let (res_tx, res_rx) = channel::<(String, PathBuf)>();
+        let in_flight = Arc::new(Mutex::new(HashSet::<String>::new()));
+        let in_flight_worker = in_flight.clone();
+        let cache_dir_clone = cache_dir.clone();
+
+        std::thread::Builder::new()
+            .name("thumbnail-worker".to_string())
+            .spawn(move || {
+                while let Ok(item) = req_rx.recv() {
+                    let target = get_thumbnail_path_static(&cache_dir_clone, &item);
+                    let ok = if target.is_file()
+                        && target.metadata().map(|m| m.len() > 0).unwrap_or(false)
+                    {
+                        true
+                    } else {
+                        generate_thumbnail_disk(&cache_dir_clone, &item).is_some()
+                    };
+
+                    if ok {
+                        let _ = res_tx.send((item.id.clone(), target));
+                    }
+                    if let Ok(mut set) = in_flight_worker.lock() {
+                        set.remove(&item.id);
+                    }
+                }
+            })
+            .expect("Failed to spawn thumbnail worker thread");
+
+        Self {
+            cache_dir,
+            req_tx,
+            res_rx: Arc::new(Mutex::new(res_rx)),
+            in_flight,
+        }
     }
 
     pub fn get_thumbnail_path(&self, item: &MediaItem) -> PathBuf {
-        let key = format!("{}_{}_{}x{}", item.file_path, item.duration, item.width, item.height);
-        let hash = format!("{:x}", simple_hash(&key));
-        self.cache_dir.join(format!("{}.jpg", hash))
+        get_thumbnail_path_static(&self.cache_dir, item)
     }
 
-    pub fn generate(&self, item: &MediaItem) -> Option<PathBuf> {
+    /// Submits a background thumbnail generation request if not already cached or in-flight.
+    pub fn request_thumbnail(&self, item: &MediaItem) {
         let target = self.get_thumbnail_path(item);
         if target.is_file() && target.metadata().map(|m| m.len() > 0).unwrap_or(false) {
-            return Some(target);
-        }
-
-        let src = Path::new(&item.file_path);
-        if !src.is_file() {
-            return None;
-        }
-
-        let _ = fs::create_dir_all(&self.cache_dir);
-
-        match item.media_type {
-            MediaType::Image => {
-                let status = crate::ffmpeg::ffmpeg_cmd()
-                    .args([
-                        "-v",
-                        "quiet",
-                        "-y",
-                        "-i",
-                        item.file_path.as_str(),
-                        "-vf",
-                        "scale=240:-1",
-                        "-q:v",
-                        "3",
-                        target.to_str().unwrap_or(""),
-                    ])
-                    .status()
-                    .ok()?;
-                if status.success() && target.is_file() {
-                    Some(target)
-                } else {
-                    None
+            if let Ok(mut set) = self.in_flight.lock() {
+                if !set.contains(&item.id) {
+                    let _ = self.req_tx.send(item.clone());
+                    set.insert(item.id.clone());
                 }
             }
-            MediaType::Video => {
-                let seek_time = (item.duration * 0.1).clamp(0.0, 1.0);
-                let status = crate::ffmpeg::ffmpeg_cmd()
-                    .args([
-                        "-v",
-                        "quiet",
-                        "-y",
-                        "-ss",
-                        &format!("{:.2}", seek_time),
-                        "-i",
-                        item.file_path.as_str(),
-                        "-vframes",
-                        "1",
-                        "-vf",
-                        "scale=240:-1",
-                        "-q:v",
-                        "3",
-                        target.to_str().unwrap_or(""),
-                    ])
-                    .status()
-                    .ok()?;
-                if status.success() && target.is_file() {
-                    Some(target)
-                } else {
-                    None
-                }
-            }
-            _ => None,
+            return;
         }
+
+        let mut set = match self.in_flight.lock() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        if set.contains(&item.id) {
+            return;
+        }
+        set.insert(item.id.clone());
+        let _ = self.req_tx.send(item.clone());
+    }
+
+    /// Non-blocking poll for newly generated thumbnails from the background worker.
+    pub fn poll_thumbnail(&self) -> Option<(String, PathBuf)> {
+        self.res_rx.lock().ok()?.try_recv().ok()
+    }
+
+    /// Synchronous generation fallback for headless/export workflows.
+    pub fn generate(&self, item: &MediaItem) -> Option<PathBuf> {
+        generate_thumbnail_disk(&self.cache_dir, item)
+    }
+}
+
+fn get_thumbnail_path_static(cache_dir: &Path, item: &MediaItem) -> PathBuf {
+    let key = format!(
+        "{}_{}_{}x{}",
+        item.file_path, item.duration, item.width, item.height
+    );
+    let hash = format!("{:x}", simple_hash(&key));
+    cache_dir.join(format!("{}.jpg", hash))
+}
+
+fn generate_thumbnail_disk(cache_dir: &Path, item: &MediaItem) -> Option<PathBuf> {
+    let target = get_thumbnail_path_static(cache_dir, item);
+    if target.is_file() && target.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+        return Some(target);
+    }
+
+    let src = Path::new(&item.file_path);
+    if !src.is_file() {
+        return None;
+    }
+
+    let _ = fs::create_dir_all(cache_dir);
+
+    match item.media_type {
+        MediaType::Image => {
+            let mut cmd = crate::ffmpeg::ffmpeg_cmd();
+            cmd.args([
+                "-v",
+                "quiet",
+                "-y",
+                "-i",
+                item.file_path.as_str(),
+                "-vf",
+                "scale=240:-1",
+                "-q:v",
+                "3",
+                target.to_str().unwrap_or(""),
+            ]);
+            let mut guard = crate::ffmpeg::ChildGuard::spawn(&mut cmd).ok()?;
+            let status = guard.wait().ok()?;
+            if status.success() && target.is_file() {
+                Some(target)
+            } else {
+                None
+            }
+        }
+        MediaType::Video => {
+            let seek_time = (item.duration * 0.1).clamp(0.0, 1.0);
+            let mut cmd = crate::ffmpeg::ffmpeg_cmd();
+            cmd.args([
+                "-v",
+                "quiet",
+                "-y",
+                "-ss",
+                &format!("{:.2}", seek_time),
+                "-i",
+                item.file_path.as_str(),
+                "-vframes",
+                "1",
+                "-vf",
+                "scale=240:-1",
+                "-q:v",
+                "3",
+                target.to_str().unwrap_or(""),
+            ]);
+            let mut guard = crate::ffmpeg::ChildGuard::spawn(&mut cmd).ok()?;
+            let status = guard.wait().ok()?;
+            if status.success() && target.is_file() {
+                Some(target)
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }
 

@@ -39,7 +39,11 @@ pub fn render_track_header(
         Color32::from_rgb(0x1a, 0x1b, 0x24)
     };
     painter.rect_filled(rect, 2.0, bg);
-    painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, Color32::from_rgb(0x2d, 0x2f, 0x3d)));
+    painter.rect_stroke(
+        rect,
+        2.0,
+        Stroke::new(1.0_f32, Color32::from_rgb(0x2d, 0x2f, 0x3d)),
+    );
 
     // Right Divider separating track headers from the timeline canvas
     painter.line_segment(
@@ -53,7 +57,16 @@ pub fn render_track_header(
         TrackType::Audio => Color32::from_rgb(0x10, 0xb9, 0x81),
     };
     let accent_rect = egui::Rect::from_min_size(rect.left_top(), Vec2::new(4.0, track_height));
-    painter.rect_filled(accent_rect, egui::Rounding { nw: 2.0, sw: 2.0, ne: 0.0, se: 0.0 }, accent_color);
+    painter.rect_filled(
+        accent_rect,
+        egui::Rounding {
+            nw: 2.0,
+            sw: 2.0,
+            ne: 0.0,
+            se: 0.0,
+        },
+        accent_color,
+    );
 
     let mut action = None;
 
@@ -102,7 +115,10 @@ pub fn render_track_header(
         .rounding(egui::Rounding::same(4.0));
 
         let patch_tip = if is_patch_target {
-            format!("{} (Kaynak Hedefleme Aktif - Klipler buraya eklenir)", track.name)
+            format!(
+                "{} (Kaynak Hedefleme Aktif - Klipler buraya eklenir)",
+                track.name
+            )
         } else {
             format!("{} (Kaynak Hedef Seçmek İçin Tıklayın)", track.name)
         };
@@ -131,18 +147,22 @@ pub fn render_track_header(
                     )
                 };
 
-                let eye_btn = Button::new(
-                    RichText::new(vis_icon)
-                        .size(11.5)
-                        .color(vis_text)
-                        .strong(),
-                )
-                .min_size(Vec2::new(26.0, 24.0))
-                .fill(vis_bg)
-                .stroke(vis_stroke)
-                .rounding(egui::Rounding::same(4.0));
+                let eye_btn =
+                    Button::new(RichText::new(vis_icon).size(11.5).color(vis_text).strong())
+                        .min_size(Vec2::new(26.0, 24.0))
+                        .fill(vis_bg)
+                        .stroke(vis_stroke)
+                        .rounding(egui::Rounding::same(4.0));
 
-                if ui.add(eye_btn).on_hover_text(if is_vis { "Görüntüyü Gizle (Mute)" } else { "Görüntüyü Göster" }).clicked() {
+                if ui
+                    .add(eye_btn)
+                    .on_hover_text(if is_vis {
+                        "Görüntüyü Gizle (Mute)"
+                    } else {
+                        "Görüntüyü Göster"
+                    })
+                    .clicked()
+                {
                     action = Some(TrackHeaderAction::ToggleMute);
                 }
 
@@ -161,17 +181,21 @@ pub fn render_track_header(
                     )
                 };
 
-                let lock_btn = Button::new(
-                    RichText::new("🔒")
-                        .size(11.0)
-                        .color(lock_text),
-                )
-                .min_size(Vec2::new(26.0, 24.0))
-                .fill(lock_bg)
-                .stroke(lock_stroke)
-                .rounding(egui::Rounding::same(4.0));
+                let lock_btn = Button::new(RichText::new("🔒").size(11.0).color(lock_text))
+                    .min_size(Vec2::new(26.0, 24.0))
+                    .fill(lock_bg)
+                    .stroke(lock_stroke)
+                    .rounding(egui::Rounding::same(4.0));
 
-                if ui.add(lock_btn).on_hover_text(if track.locked { "Kanal Kilidini Kaldır" } else { "Kanalı Kilitle (Lock)" }).clicked() {
+                if ui
+                    .add(lock_btn)
+                    .on_hover_text(if track.locked {
+                        "Kanal Kilidini Kaldır"
+                    } else {
+                        "Kanalı Kilitle (Lock)"
+                    })
+                    .clicked()
+                {
                     action = Some(TrackHeaderAction::ToggleLock);
                 }
 
@@ -199,18 +223,21 @@ pub fn render_track_header(
                     )
                 };
 
-                let m_btn = Button::new(
-                    RichText::new("M")
-                        .size(10.5)
-                        .color(m_text)
-                        .strong(),
-                )
-                .min_size(Vec2::new(24.0, 24.0))
-                .fill(m_bg)
-                .stroke(m_stroke)
-                .rounding(egui::Rounding::same(4.0));
+                let m_btn = Button::new(RichText::new("M").size(10.5).color(m_text).strong())
+                    .min_size(Vec2::new(24.0, 24.0))
+                    .fill(m_bg)
+                    .stroke(m_stroke)
+                    .rounding(egui::Rounding::same(4.0));
 
-                if ui.add(m_btn).on_hover_text(if track.muted { "Sesi Aç" } else { "Sesi Kapat (Mute)" }).clicked() {
+                if ui
+                    .add(m_btn)
+                    .on_hover_text(if track.muted {
+                        "Sesi Aç"
+                    } else {
+                        "Sesi Kapat (Mute)"
+                    })
+                    .clicked()
+                {
                     action = Some(TrackHeaderAction::ToggleMute);
                 }
 
@@ -229,18 +256,21 @@ pub fn render_track_header(
                     )
                 };
 
-                let s_btn = Button::new(
-                    RichText::new("S")
-                        .size(10.5)
-                        .color(s_text)
-                        .strong(),
-                )
-                .min_size(Vec2::new(24.0, 24.0))
-                .fill(s_bg)
-                .stroke(s_stroke)
-                .rounding(egui::Rounding::same(4.0));
+                let s_btn = Button::new(RichText::new("S").size(10.5).color(s_text).strong())
+                    .min_size(Vec2::new(24.0, 24.0))
+                    .fill(s_bg)
+                    .stroke(s_stroke)
+                    .rounding(egui::Rounding::same(4.0));
 
-                if ui.add(s_btn).on_hover_text(if track.solo { "Solo Kapat" } else { "Tek Başına Dinle (Solo)" }).clicked() {
+                if ui
+                    .add(s_btn)
+                    .on_hover_text(if track.solo {
+                        "Solo Kapat"
+                    } else {
+                        "Tek Başına Dinle (Solo)"
+                    })
+                    .clicked()
+                {
                     action = Some(TrackHeaderAction::ToggleSolo);
                 }
 
@@ -259,17 +289,21 @@ pub fn render_track_header(
                     )
                 };
 
-                let lock_btn = Button::new(
-                    RichText::new("🔒")
-                        .size(10.5)
-                        .color(lock_text),
-                )
-                .min_size(Vec2::new(24.0, 24.0))
-                .fill(lock_bg)
-                .stroke(lock_stroke)
-                .rounding(egui::Rounding::same(4.0));
+                let lock_btn = Button::new(RichText::new("🔒").size(10.5).color(lock_text))
+                    .min_size(Vec2::new(24.0, 24.0))
+                    .fill(lock_bg)
+                    .stroke(lock_stroke)
+                    .rounding(egui::Rounding::same(4.0));
 
-                if ui.add(lock_btn).on_hover_text(if track.locked { "Kanal Kilidini Kaldır" } else { "Kanalı Kilitle (Lock)" }).clicked() {
+                if ui
+                    .add(lock_btn)
+                    .on_hover_text(if track.locked {
+                        "Kanal Kilidini Kaldır"
+                    } else {
+                        "Kanalı Kilitle (Lock)"
+                    })
+                    .clicked()
+                {
                     action = Some(TrackHeaderAction::ToggleLock);
                 }
 
@@ -289,15 +323,11 @@ pub fn render_track_header(
                 };
 
                 let vo_icon = if is_recording_vo { "⏹" } else { "🎤" };
-                let vo_btn = Button::new(
-                    RichText::new(vo_icon)
-                        .size(10.5)
-                        .color(vo_text),
-                )
-                .min_size(Vec2::new(24.0, 24.0))
-                .fill(vo_bg)
-                .stroke(vo_stroke)
-                .rounding(egui::Rounding::same(4.0));
+                let vo_btn = Button::new(RichText::new(vo_icon).size(10.5).color(vo_text))
+                    .min_size(Vec2::new(24.0, 24.0))
+                    .fill(vo_bg)
+                    .stroke(vo_stroke)
+                    .rounding(egui::Rounding::same(4.0));
 
                 let vo_tip = if is_recording_vo {
                     "Ses Kaydını Durdur (Voiceover)"
@@ -325,7 +355,9 @@ pub fn render_track_header(
                 if vol_resp.double_clicked() {
                     action = Some(TrackHeaderAction::VolumeChanged(1.0));
                 }
-                vol_resp.on_hover_text("Kanal Ses Seviyesi (%)\nSürükleyerek ayarlayın, çift tık: %100");
+                vol_resp.on_hover_text(
+                    "Kanal Ses Seviyesi (%)\nSürükleyerek ayarlayın, çift tık: %100",
+                );
             }
         }
     });
@@ -333,12 +365,20 @@ pub fn render_track_header(
     response.context_menu(|ui| {
         ui.label(RichText::new(&track.name).strong());
         ui.separator();
-        let mute_label = if track.muted { "Sesi/Görüntüyü Aç" } else { "Sesi/Görüntüyü Kapat" };
+        let mute_label = if track.muted {
+            "Sesi/Görüntüyü Aç"
+        } else {
+            "Sesi/Görüntüyü Kapat"
+        };
         if ui.button(mute_label).clicked() {
             action = Some(TrackHeaderAction::ToggleMute);
             ui.close_menu();
         }
-        let lock_label = if track.locked { "Kilidi Kaldır" } else { "Kanalı Kilitle" };
+        let lock_label = if track.locked {
+            "Kilidi Kaldır"
+        } else {
+            "Kanalı Kilitle"
+        };
         if ui.button(lock_label).clicked() {
             action = Some(TrackHeaderAction::ToggleLock);
             ui.close_menu();
@@ -356,7 +396,10 @@ pub fn render_track_header(
             ui.close_menu();
         }
         ui.separator();
-        if ui.button(RichText::new("Kanalı Sil").color(Color32::from_rgb(0xef, 0x44, 0x44))).clicked() {
+        if ui
+            .button(RichText::new("Kanalı Sil").color(Color32::from_rgb(0xef, 0x44, 0x44)))
+            .clicked()
+        {
             action = Some(TrackHeaderAction::DeleteTrack);
             ui.close_menu();
         }

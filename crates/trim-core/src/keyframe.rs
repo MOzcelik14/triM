@@ -12,7 +12,6 @@ pub enum Interpolation {
     EaseInOut,
 }
 
-
 impl std::fmt::Display for Interpolation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -51,7 +50,11 @@ pub fn interpolate_keyframes(keyframes: &[Keyframe], time: f64, default_value: f
     }
 
     let mut sorted = keyframes.to_vec();
-    sorted.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     if time <= sorted[0].time {
         return sorted[0].value;

@@ -74,7 +74,11 @@ pub fn parse_srt(content: &str) -> Result<Vec<SubtitleEntry>, String> {
     let blocks = normalized.split("\n\n");
 
     for block in blocks {
-        let lines: Vec<&str> = block.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+        let lines: Vec<&str> = block
+            .lines()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty())
+            .collect();
         if lines.is_empty() {
             continue;
         }
@@ -151,13 +155,20 @@ pub fn parse_vtt(content: &str) -> Result<Vec<SubtitleEntry>, String> {
 pub fn export_srt(entries: &[SubtitleEntry]) -> String {
     let mut out = String::new();
     let mut sorted = entries.to_vec();
-    sorted.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| {
+        a.start_time
+            .partial_cmp(&b.start_time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     for (i, entry) in sorted.iter().enumerate() {
         let idx = i + 1;
         let start_str = format_seconds_to_srt_timestamp(entry.start_time);
         let end_str = format_seconds_to_srt_timestamp(entry.end_time);
-        out.push_str(&format!("{}\n{} --> {}\n{}\n\n", idx, start_str, end_str, entry.text));
+        out.push_str(&format!(
+            "{}\n{} --> {}\n{}\n\n",
+            idx, start_str, end_str, entry.text
+        ));
     }
 
     out
@@ -169,7 +180,11 @@ pub fn subtitle_entries_to_clips(entries: &[SubtitleEntry], default_font_size: f
         .iter()
         .map(|entry| {
             let mut clip = Clip::new("", entry.start_time, entry.end_time);
-            clip.name = format!("Altyazı #{}: {}", entry.index, entry.text.chars().take(20).collect::<String>());
+            clip.name = format!(
+                "Altyazı #{}: {}",
+                entry.index,
+                entry.text.chars().take(20).collect::<String>()
+            );
             clip.fade_in = 0.05;
             clip.fade_out = 0.05;
             clip.text_overlay = Some(TextOverlay {
@@ -192,10 +207,18 @@ pub fn clips_to_subtitle_entries(clips: &[Clip]) -> Vec<SubtitleEntry> {
     let mut entries = Vec::new();
     let mut sorted: Vec<&Clip> = clips
         .iter()
-        .filter(|c| c.text_overlay.as_ref().is_some_and(|t| !t.content.trim().is_empty()))
+        .filter(|c| {
+            c.text_overlay
+                .as_ref()
+                .is_some_and(|t| !t.content.trim().is_empty())
+        })
         .collect();
 
-    sorted.sort_by(|a, b| a.timeline_in.partial_cmp(&b.timeline_in).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| {
+        a.timeline_in
+            .partial_cmp(&b.timeline_in)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     for (i, c) in sorted.iter().enumerate() {
         if let Some(txt) = &c.text_overlay {
@@ -268,7 +291,10 @@ mod tests {
         assert_eq!(clips.len(), 2);
         assert_eq!(clips[0].timeline_in, 0.0);
         assert_eq!(clips[0].duration(), 3.0);
-        assert_eq!(clips[0].text_overlay.as_ref().unwrap().content, "Birinci baslik");
+        assert_eq!(
+            clips[0].text_overlay.as_ref().unwrap().content,
+            "Birinci baslik"
+        );
 
         let roundtrip_entries = clips_to_subtitle_entries(&clips);
         assert_eq!(roundtrip_entries.len(), 2);

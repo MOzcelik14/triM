@@ -17,7 +17,10 @@ fn main() -> Result<(), eframe::Error> {
                 return Ok(());
             }
             "--help" | "-h" => {
-                println!("triM. v{} - Profesyonel Masaüstü Video Düzenleyici (Rust NLE)", env!("CARGO_PKG_VERSION"));
+                println!(
+                    "triM. v{} - Profesyonel Masaüstü Video Düzenleyici (Rust NLE)",
+                    env!("CARGO_PKG_VERSION")
+                );
                 println!("\nKullanım: trim [DOSYA]");
                 println!("\nSeçenekler:");
                 println!("  -v, --version    Sürüm bilgisini göster");
@@ -28,7 +31,10 @@ fn main() -> Result<(), eframe::Error> {
         }
     }
 
-    log::info!("Starting triM. v{} (Rust Desktop NLE)...", env!("CARGO_PKG_VERSION"));
+    log::info!(
+        "Starting triM. v{} (Rust Desktop NLE)...",
+        env!("CARGO_PKG_VERSION")
+    );
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("triM.")
@@ -89,7 +95,9 @@ fn main() -> Result<(), eframe::Error> {
                         if let Ok(entries) = trim_core::parse_srt(&content) {
                             let clips = trim_core::subtitle_entries_to_clips(&entries, 48.0);
                             let target_track_id = app.project.timeline.add_new_video_track();
-                            if let Some(tr) = app.project.timeline.get_track_by_id_mut(&target_track_id) {
+                            if let Some(tr) =
+                                app.project.timeline.get_track_by_id_mut(&target_track_id)
+                            {
                                 tr.name = "V2 (Altyazı)".to_string();
                                 for clip in clips {
                                     tr.add_clip(clip);
@@ -104,9 +112,13 @@ fn main() -> Result<(), eframe::Error> {
             }
             if std::env::args().any(|arg| arg == "--select-first") {
                 app.active_left_tab = trim_ui::LeftPanelTab::Effects;
-                if let Some((t_id, c_id)) = app.project.timeline.tracks.iter().find_map(|t| {
-                    t.clips.first().map(|c| (t.id.clone(), c.id.clone()))
-                }) {
+                if let Some((t_id, c_id)) = app
+                    .project
+                    .timeline
+                    .tracks
+                    .iter()
+                    .find_map(|t| t.clips.first().map(|c| (t.id.clone(), c.id.clone())))
+                {
                     app.canvas_state.selected_clip_pairs = vec![(t_id, c_id)];
                     app.current_time = 1.0;
                 }

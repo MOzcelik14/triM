@@ -92,20 +92,32 @@ mod tests {
     fn test_config_dir_ends_with_trim() {
         let cfg = config_dir();
         let s = cfg.to_string_lossy().to_lowercase();
-        assert!(s.contains("trim"), "Expected path to contain 'trim', got {:?}", cfg);
+        assert!(
+            s.contains("trim"),
+            "Expected path to contain 'trim', got {:?}",
+            cfg
+        );
     }
 
     #[test]
     fn test_cache_dir_ends_with_trim() {
         let cache = cache_dir();
         let s = cache.to_string_lossy().to_lowercase();
-        assert!(s.contains("trim"), "Expected path to contain 'trim', got {:?}", cache);
+        assert!(
+            s.contains("trim"),
+            "Expected path to contain 'trim', got {:?}",
+            cache
+        );
     }
 
     #[test]
     fn test_videos_dir() {
         let v = videos_dir();
         let s = v.to_string_lossy();
-        assert!(s.ends_with("Videos"), "Expected path to end with 'Videos', got {:?}", v);
+        assert!(
+            s.ends_with("Videos"),
+            "Expected path to end with 'Videos', got {:?}",
+            v
+        );
     }
 }

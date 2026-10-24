@@ -35,7 +35,14 @@ pub enum SpeedDialogAction {
 }
 
 impl SpeedDialog {
-    pub fn open(&mut self, track_id: impl Into<String>, clip_id: impl Into<String>, current_speed: f64, reverse: bool, duration: f64) {
+    pub fn open(
+        &mut self,
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        current_speed: f64,
+        reverse: bool,
+        duration: f64,
+    ) {
         self.track_id = track_id.into();
         self.clip_id = clip_id.into();
         self.speed = current_speed;
@@ -60,7 +67,12 @@ impl SpeedDialog {
 
                 ui.horizontal(|ui| {
                     ui.label("Hız Çarpanı:");
-                    ui.add(DragValue::new(&mut self.speed).speed(0.1).range(0.1..=10.0).suffix("x"));
+                    ui.add(
+                        DragValue::new(&mut self.speed)
+                            .speed(0.1)
+                            .range(0.1..=10.0)
+                            .suffix("x"),
+                    );
                 });
 
                 ui.horizontal(|ui| {
@@ -84,16 +96,20 @@ impl SpeedDialog {
                 ui.add_space(8.0);
                 let new_dur = (self.original_duration / self.speed).max(0.04);
                 ui.label(
-                    RichText::new(format!("Yeni Süre: {:.2}s  (Eski: {:.2}s)", new_dur, self.original_duration))
-                        .color(Color32::from_rgb(0xa0, 0xa0, 0xb0))
-                        .size(11.0),
+                    RichText::new(format!(
+                        "Yeni Süre: {:.2}s  (Eski: {:.2}s)",
+                        new_dur, self.original_duration
+                    ))
+                    .color(Color32::from_rgb(0xa0, 0xa0, 0xb0))
+                    .size(11.0),
                 );
 
                 ui.add_space(12.0);
 
                 ui.horizontal(|ui| {
-                    let btn_apply = Button::new(RichText::new("Uygula").color(Color32::WHITE).strong())
-                        .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
+                    let btn_apply =
+                        Button::new(RichText::new("Uygula").color(Color32::WHITE).strong())
+                            .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
 
                     if ui.add(btn_apply).clicked() {
                         action = Some(SpeedDialogAction::Apply {

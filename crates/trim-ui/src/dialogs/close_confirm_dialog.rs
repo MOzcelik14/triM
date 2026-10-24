@@ -1,7 +1,7 @@
 //! Unsaved changes confirmation dialog for safe exit and project transitions.
 
-use std::path::PathBuf;
 use egui::{Button, Color32, Key, RichText, Window};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PendingCloseAction {
@@ -53,10 +53,15 @@ impl CloseConfirmDialog {
         let title = match &pending {
             PendingCloseAction::ExitApp => "Çıkmadan Önce Kaydet",
             PendingCloseAction::NewProject => "Yeni Projeye Geçmeden Önce Kaydet",
-            PendingCloseAction::OpenProject | PendingCloseAction::OpenPath(_) => "Farklı Proje Açmadan Önce Kaydet",
+            PendingCloseAction::OpenProject | PendingCloseAction::OpenPath(_) => {
+                "Farklı Proje Açmadan Önce Kaydet"
+            }
         };
 
-        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::new("close_confirm_backdrop")));
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Middle,
+            egui::Id::new("close_confirm_backdrop"),
+        ));
         painter.rect_filled(ctx.screen_rect(), 0.0, Color32::from_black_alpha(160));
 
         Window::new(title)
@@ -114,4 +119,3 @@ impl CloseConfirmDialog {
         result
     }
 }
-

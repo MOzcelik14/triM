@@ -23,13 +23,19 @@ pub fn render_time_ruler(
     let ruler_width = avail_width.max(total_width);
     let ruler_height = 26.0;
 
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(ruler_width, ruler_height), Sense::click_and_drag());
+    let (rect, response) = ui.allocate_exact_size(
+        Vec2::new(ruler_width, ruler_height),
+        Sense::click_and_drag(),
+    );
     let painter = ui.painter_at(rect);
 
     // Ruler background
     painter.rect_filled(rect, 0.0, Color32::from_rgb(0x18, 0x18, 0x1c));
     painter.line_segment(
-        [Pos2::new(rect.left(), rect.bottom()), Pos2::new(rect.right(), rect.bottom())],
+        [
+            Pos2::new(rect.left(), rect.bottom()),
+            Pos2::new(rect.right(), rect.bottom()),
+        ],
         Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x30)),
     );
 
@@ -53,11 +59,15 @@ pub fn render_time_ruler(
     while t <= end_sec as f64 {
         let x = rect.left() + (t as f32 * pixels_per_second);
         if x >= rect.left() && x <= rect.right() {
-            let is_major = (t.round() - t).abs() < 1e-4 && (t.round() as u64).is_multiple_of((tick_interval as u64 * 2).max(1));
+            let is_major = (t.round() - t).abs() < 1e-4
+                && (t.round() as u64).is_multiple_of((tick_interval as u64 * 2).max(1));
             let tick_h = if is_major { 10.0 } else { 5.0 };
 
             painter.line_segment(
-                [Pos2::new(x, rect.bottom() - tick_h), Pos2::new(x, rect.bottom())],
+                [
+                    Pos2::new(x, rect.bottom() - tick_h),
+                    Pos2::new(x, rect.bottom()),
+                ],
                 Stroke::new(1.0_f32, Color32::from_rgb(0x40, 0x40, 0x4c)),
             );
 
@@ -92,13 +102,26 @@ pub fn render_time_ruler(
                 Pos2::new(mx, my + sz),
                 Pos2::new(mx - sz, my),
             ];
-            painter.add(egui::Shape::convex_polygon(diamond, m_color, Stroke::new(1.0_f32, Color32::from_rgb(0x10, 0x10, 0x14))));
+            painter.add(egui::Shape::convex_polygon(
+                diamond,
+                m_color,
+                Stroke::new(1.0_f32, Color32::from_rgb(0x10, 0x10, 0x14)),
+            ));
 
             if let Some(mouse_pos) = response.hover_pos() {
                 if (mouse_pos.x - mx).abs() <= 6.0 && (mouse_pos.y - my).abs() <= 8.0 {
                     let tc = seconds_to_timecode(marker.time, fps);
-                    let name = if marker.name.is_empty() { "İşaretçi" } else { &marker.name };
-                    egui::show_tooltip_text(ui.ctx(), ui.layer_id(), response.id, format!("{} ({})", name, tc));
+                    let name = if marker.name.is_empty() {
+                        "İşaretçi"
+                    } else {
+                        &marker.name
+                    };
+                    egui::show_tooltip_text(
+                        ui.ctx(),
+                        ui.layer_id(),
+                        response.id,
+                        format!("{} ({})", name, tc),
+                    );
 
                     if ui.input(|i| i.pointer.primary_clicked()) {
                         action = Some(RulerAction::MarkerClicked(marker.id.clone()));

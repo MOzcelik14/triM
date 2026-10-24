@@ -37,7 +37,11 @@ impl UndoStack {
         Self::default()
     }
 
-    pub fn push(&mut self, mut command: Box<dyn Command>, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+    pub fn push(
+        &mut self,
+        mut command: Box<dyn Command>,
+        timeline: &mut TimelineModel,
+    ) -> Result<(), CommandError> {
         command.execute(timeline)?;
         self.undo_stack.push(command);
         self.redo_stack.clear();
@@ -98,7 +102,6 @@ impl UndoStack {
 mod tests {
     use super::*;
     use trim_core::clip::Clip;
-    
 
     #[test]
     fn test_add_and_remove_clip_command() {
@@ -110,7 +113,9 @@ mod tests {
         let clip_id = clip.id.clone();
 
         // 1. Add Clip
-        stack.push(Box::new(AddClipCommand::new(&track_id, clip)), &mut tl).unwrap();
+        stack
+            .push(Box::new(AddClipCommand::new(&track_id, clip)), &mut tl)
+            .unwrap();
         assert_eq!(tl.tracks[0].clips.len(), 1);
 
         // Undo
@@ -122,7 +127,12 @@ mod tests {
         assert_eq!(tl.tracks[0].clips.len(), 1);
 
         // 2. Remove Clip
-        stack.push(Box::new(RemoveClipCommand::new(&track_id, &clip_id)), &mut tl).unwrap();
+        stack
+            .push(
+                Box::new(RemoveClipCommand::new(&track_id, &clip_id)),
+                &mut tl,
+            )
+            .unwrap();
         assert_eq!(tl.tracks[0].clips.len(), 0);
 
         // Undo Remove
@@ -137,15 +147,30 @@ mod tests {
 
         let track_id = tl.tracks[0].id.clone();
         let mut clip = Clip::new("m1", 0.0, 10.0);
-        clip.add_keyframe("opacity", 2.0, 0.5, trim_core::keyframe::Interpolation::Linear);
-        clip.add_keyframe("opacity", 7.0, 0.9, trim_core::keyframe::Interpolation::Linear);
+        clip.add_keyframe(
+            "opacity",
+            2.0,
+            0.5,
+            trim_core::keyframe::Interpolation::Linear,
+        );
+        clip.add_keyframe(
+            "opacity",
+            7.0,
+            0.9,
+            trim_core::keyframe::Interpolation::Linear,
+        );
         clip.fade_in = 1.0;
         clip.fade_out = 1.5;
         let clip_id = clip.id.clone();
         tl.tracks[0].add_clip(clip);
 
         // Split at 4.0s
-        stack.push(Box::new(SplitClipCommand::new(&track_id, &clip_id, 4.0)), &mut tl).unwrap();
+        stack
+            .push(
+                Box::new(SplitClipCommand::new(&track_id, &clip_id, 4.0)),
+                &mut tl,
+            )
+            .unwrap();
         assert_eq!(tl.tracks[0].clips.len(), 2);
         assert_eq!(tl.tracks[0].clips[0].timeline_out, 4.0);
         assert_eq!(tl.tracks[0].clips[1].timeline_in, 4.0);
@@ -167,7 +192,14 @@ mod tests {
         assert!(stack.undo(&mut tl).unwrap());
         assert_eq!(tl.tracks[0].clips.len(), 1);
         assert_eq!(tl.tracks[0].clips[0].duration(), 10.0);
-        assert_eq!(tl.tracks[0].clips[0].keyframes.get("opacity").unwrap().len(), 2);
+        assert_eq!(
+            tl.tracks[0].clips[0]
+                .keyframes
+                .get("opacity")
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -183,7 +215,12 @@ mod tests {
         tl.tracks[0].add_clip(c2);
 
         // Ripple delete c1 (dur = 3.0s)
-        stack.push(Box::new(RippleDeleteCommand::new(&track_id, &c1_id)), &mut tl).unwrap();
+        stack
+            .push(
+                Box::new(RippleDeleteCommand::new(&track_id, &c1_id)),
+                &mut tl,
+            )
+            .unwrap();
         assert_eq!(tl.tracks[0].clips.len(), 1);
         // c2 should be shifted left from 5.0 to 2.0
         assert_eq!(tl.tracks[0].clips[0].timeline_in, 2.0);
@@ -207,7 +244,12 @@ mod tests {
         tl.tracks[0].add_clip(clip);
 
         // Change speed to 2.0x
-        stack.push(Box::new(ChangeClipSpeedCommand::new(&track_id, &clip_id, 2.0, true)), &mut tl).unwrap();
+        stack
+            .push(
+                Box::new(ChangeClipSpeedCommand::new(&track_id, &clip_id, 2.0, true)),
+                &mut tl,
+            )
+            .unwrap();
         let c = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
         assert_eq!(c.speed, 2.0);
         assert!(c.reverse);
@@ -221,7 +263,12 @@ mod tests {
         assert!((c.duration() - 4.0).abs() < 1e-3);
 
         // Slow down to 0.5x -> duration should stretch to 8.0s
-        stack.push(Box::new(ChangeClipSpeedCommand::new(&track_id, &clip_id, 0.5, false)), &mut tl).unwrap();
+        stack
+            .push(
+                Box::new(ChangeClipSpeedCommand::new(&track_id, &clip_id, 0.5, false)),
+                &mut tl,
+            )
+            .unwrap();
         let c = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
         assert_eq!(c.speed, 0.5);
         assert!(!c.reverse);
@@ -278,7 +325,9 @@ mod tests {
         let tr_id = new_track.id.clone();
 
         // Add track at index 0
-        stack.push(Box::new(AddTrackCommand::new(new_track, 0)), &mut tl).unwrap();
+        stack
+            .push(Box::new(AddTrackCommand::new(new_track, 0)), &mut tl)
+            .unwrap();
         assert_eq!(tl.tracks.len(), 3);
         assert_eq!(tl.tracks[0].name, "V2");
 
@@ -291,7 +340,9 @@ mod tests {
         assert_eq!(tl.tracks.len(), 3);
 
         // Remove track
-        stack.push(Box::new(RemoveTrackCommand::new(&tr_id)), &mut tl).unwrap();
+        stack
+            .push(Box::new(RemoveTrackCommand::new(&tr_id)), &mut tl)
+            .unwrap();
         assert_eq!(tl.tracks.len(), 2);
 
         // Undo Remove -> restored
@@ -313,7 +364,11 @@ mod tests {
         assert_eq!(tl.tracks[0].clips.len(), 1);
 
         // Split at 2.5 and 7.0
-        let cmd = Box::new(BatchSplitClipCommand::new(&track_id, &clip_id, vec![2.5, 7.0]));
+        let cmd = Box::new(BatchSplitClipCommand::new(
+            &track_id,
+            &clip_id,
+            vec![2.5, 7.0],
+        ));
         stack.push(cmd, &mut tl).unwrap();
 
         // Should now have 3 clips: [0.0..2.5], [2.5..7.0], [7.0..10.0]
@@ -352,7 +407,11 @@ mod tests {
 
         // Suppose silence is between 3.0 and 6.0. Speech intervals are [0.0..3.0] and [6.0..10.0]
         let speech_intervals = vec![(0.0, 3.0), (6.0, 10.0)];
-        let cmd = Box::new(AutoSilenceCutCommand::new(&track_id, &clip_id, speech_intervals));
+        let cmd = Box::new(AutoSilenceCutCommand::new(
+            &track_id,
+            &clip_id,
+            speech_intervals,
+        ));
         stack.push(cmd, &mut tl).unwrap();
 
         // Original clip of 10s replaced by 3s + 4s = 7s.
@@ -399,12 +458,23 @@ mod tests {
         tl.tracks[1].add_clip(c_audio);
 
         // 1. Link them together
-        let pairs = vec![(v1_id.clone(), cv_id.clone()), (a1_id.clone(), ca_id.clone())];
+        let pairs = vec![
+            (v1_id.clone(), cv_id.clone()),
+            (a1_id.clone(), ca_id.clone()),
+        ];
         let link_cmd = Box::new(LinkClipsCommand::new(pairs.clone()));
         stack.push(link_cmd, &mut tl).unwrap();
 
-        let gid_v = tl.tracks[0].get_clip_by_id(&cv_id).unwrap().linked_group_id.clone();
-        let gid_a = tl.tracks[1].get_clip_by_id(&ca_id).unwrap().linked_group_id.clone();
+        let gid_v = tl.tracks[0]
+            .get_clip_by_id(&cv_id)
+            .unwrap()
+            .linked_group_id
+            .clone();
+        let gid_a = tl.tracks[1]
+            .get_clip_by_id(&ca_id)
+            .unwrap()
+            .linked_group_id
+            .clone();
         assert!(gid_v.is_some());
         assert_eq!(gid_v, gid_a);
 
@@ -412,8 +482,16 @@ mod tests {
         let unlink_cmd = Box::new(UnlinkClipsCommand::new(pairs));
         stack.push(unlink_cmd, &mut tl).unwrap();
 
-        assert!(tl.tracks[0].get_clip_by_id(&cv_id).unwrap().linked_group_id.is_none());
-        assert!(tl.tracks[1].get_clip_by_id(&ca_id).unwrap().linked_group_id.is_none());
+        assert!(tl.tracks[0]
+            .get_clip_by_id(&cv_id)
+            .unwrap()
+            .linked_group_id
+            .is_none());
+        assert!(tl.tracks[1]
+            .get_clip_by_id(&ca_id)
+            .unwrap()
+            .linked_group_id
+            .is_none());
 
         // Undo Unlink
         assert!(stack.undo(&mut tl).unwrap());
@@ -424,7 +502,10 @@ mod tests {
 
         // Undo Link
         assert!(stack.undo(&mut tl).unwrap());
-        assert!(tl.tracks[0].get_clip_by_id(&cv_id).unwrap().linked_group_id.is_none());
+        assert!(tl.tracks[0]
+            .get_clip_by_id(&cv_id)
+            .unwrap()
+            .linked_group_id
+            .is_none());
     }
 }
-

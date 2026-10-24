@@ -15,7 +15,6 @@ pub enum MediaType {
     Unknown,
 }
 
-
 impl std::fmt::Display for MediaType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -101,11 +100,15 @@ impl MediaItem {
     }
 
     pub fn has_video(&self) -> bool {
-        self.media_type == MediaType::Video || self.media_type == MediaType::Image || (!self.video_codec.is_empty() && self.width > 0)
+        self.media_type == MediaType::Video
+            || self.media_type == MediaType::Image
+            || (!self.video_codec.is_empty() && self.width > 0)
     }
 
     pub fn has_audio(&self) -> bool {
-        self.media_type == MediaType::Audio || !self.audio_codec.is_empty() || self.audio_channels > 0
+        self.media_type == MediaType::Audio
+            || !self.audio_codec.is_empty()
+            || self.audio_channels > 0
     }
 
     /// Resolves either the proxy file path (if enabled and file exists) or original full-res media path.
@@ -155,4 +158,3 @@ mod tests {
         assert_eq!(item.resolved_playback_path(true), "/raw/4k_video.mp4");
     }
 }
-

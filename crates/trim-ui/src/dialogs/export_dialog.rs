@@ -27,11 +27,20 @@ impl Default for ExportDialog {
     fn default() -> Self {
         let home = trim_core::paths::home_dir();
         let default_out = if home.join("Videos").is_dir() {
-            home.join("Videos").join("cikti.mp4").to_string_lossy().to_string()
+            home.join("Videos")
+                .join("cikti.mp4")
+                .to_string_lossy()
+                .to_string()
         } else if home.join("Masaüstü").is_dir() {
-            home.join("Masaüstü").join("cikti.mp4").to_string_lossy().to_string()
+            home.join("Masaüstü")
+                .join("cikti.mp4")
+                .to_string_lossy()
+                .to_string()
         } else if home.join("Desktop").is_dir() {
-            home.join("Desktop").join("cikti.mp4").to_string_lossy().to_string()
+            home.join("Desktop")
+                .join("cikti.mp4")
+                .to_string_lossy()
+                .to_string()
         } else {
             home.join("cikti.mp4").to_string_lossy().to_string()
         };
@@ -101,43 +110,47 @@ impl ExportDialog {
                 if !self.is_exporting {
                     ui.horizontal(|ui| {
                         // Left: Preset Selector Column (Width: 230px, strictly vertical layout)
-                        ui.allocate_ui_with_layout(Vec2::new(230.0, 370.0), egui::Layout::top_down(egui::Align::Min), |ui| {
-                            ui.group(|ui| {
-                                ui.vertical(|ui| {
-                                    ui.set_width(216.0);
-                                    ui.strong("Hazır Profiller");
-                                    ui.add_space(6.0);
+                        ui.allocate_ui_with_layout(
+                            Vec2::new(230.0, 370.0),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                ui.group(|ui| {
+                                    ui.vertical(|ui| {
+                                        ui.set_width(216.0);
+                                        ui.strong("Hazır Profiller");
+                                        ui.add_space(6.0);
 
-                                    for (idx, p) in self.presets.iter().enumerate() {
-                                        let is_sel = self.selected_preset_idx == idx;
-                                        let text_color = if is_sel {
-                                            Color32::WHITE
-                                        } else {
-                                            Color32::from_rgb(0xd0, 0xd0, 0xdc)
-                                        };
-                                        let btn = egui::SelectableLabel::new(
-                                            is_sel,
-                                            RichText::new(&p.name).size(12.0).color(text_color),
-                                        );
-                                        if ui.add_sized([210.0, 26.0], btn).clicked() {
-                                            self.selected_preset_idx = idx;
-                                            if let Some(w) = p.width {
-                                                self.custom_width = w;
+                                        for (idx, p) in self.presets.iter().enumerate() {
+                                            let is_sel = self.selected_preset_idx == idx;
+                                            let text_color = if is_sel {
+                                                Color32::WHITE
+                                            } else {
+                                                Color32::from_rgb(0xd0, 0xd0, 0xdc)
+                                            };
+                                            let btn = egui::SelectableLabel::new(
+                                                is_sel,
+                                                RichText::new(&p.name).size(12.0).color(text_color),
+                                            );
+                                            if ui.add_sized([210.0, 26.0], btn).clicked() {
+                                                self.selected_preset_idx = idx;
+                                                if let Some(w) = p.width {
+                                                    self.custom_width = w;
+                                                }
+                                                if let Some(h) = p.height {
+                                                    self.custom_height = h;
+                                                }
+                                                if let Some(f) = p.fps {
+                                                    self.custom_fps = f;
+                                                }
+                                                self.custom_crf = p.crf;
+                                                self.loudness_norm = p.loudness_norm;
                                             }
-                                            if let Some(h) = p.height {
-                                                self.custom_height = h;
-                                            }
-                                            if let Some(f) = p.fps {
-                                                self.custom_fps = f;
-                                            }
-                                            self.custom_crf = p.crf;
-                                            self.loudness_norm = p.loudness_norm;
+                                            ui.add_space(2.0);
                                         }
-                                        ui.add_space(2.0);
-                                    }
+                                    });
                                 });
-                            });
-                        });
+                            },
+                        );
 
                         ui.separator();
 
@@ -153,15 +166,36 @@ impl ExportDialog {
 
                                     ui.horizontal(|ui| {
                                         ui.label("Format:");
-                                        if ui.selectable_label(self.custom_width == 1920 && self.custom_height == 1080, "16:9").clicked() {
+                                        if ui
+                                            .selectable_label(
+                                                self.custom_width == 1920
+                                                    && self.custom_height == 1080,
+                                                "16:9",
+                                            )
+                                            .clicked()
+                                        {
                                             self.custom_width = 1920;
                                             self.custom_height = 1080;
                                         }
-                                        if ui.selectable_label(self.custom_width == 1080 && self.custom_height == 1920, "9:16 Dikey").clicked() {
+                                        if ui
+                                            .selectable_label(
+                                                self.custom_width == 1080
+                                                    && self.custom_height == 1920,
+                                                "9:16 Dikey",
+                                            )
+                                            .clicked()
+                                        {
                                             self.custom_width = 1080;
                                             self.custom_height = 1920;
                                         }
-                                        if ui.selectable_label(self.custom_width == 1080 && self.custom_height == 1080, "1:1 Kare").clicked() {
+                                        if ui
+                                            .selectable_label(
+                                                self.custom_width == 1080
+                                                    && self.custom_height == 1080,
+                                                "1:1 Kare",
+                                            )
+                                            .clicked()
+                                        {
                                             self.custom_width = 1080;
                                             self.custom_height = 1080;
                                         }
@@ -169,14 +203,24 @@ impl ExportDialog {
 
                                     ui.horizontal(|ui| {
                                         ui.label("Çözünürlük:");
-                                        ui.add(egui::DragValue::new(&mut self.custom_width).range(320..=7680));
+                                        ui.add(
+                                            egui::DragValue::new(&mut self.custom_width)
+                                                .range(320..=7680),
+                                        );
                                         ui.label("x");
-                                        ui.add(egui::DragValue::new(&mut self.custom_height).range(240..=4320));
+                                        ui.add(
+                                            egui::DragValue::new(&mut self.custom_height)
+                                                .range(240..=4320),
+                                        );
                                     });
 
                                     ui.horizontal(|ui| {
                                         ui.label("Kare Hızı (FPS):");
-                                        ui.add(egui::DragValue::new(&mut self.custom_fps).range(12.0..=120.0).suffix(" fps"));
+                                        ui.add(
+                                            egui::DragValue::new(&mut self.custom_fps)
+                                                .range(12.0..=120.0)
+                                                .suffix(" fps"),
+                                        );
                                     });
 
                                     ui.horizontal(|ui| {
@@ -189,7 +233,11 @@ impl ExportDialog {
                                         } else {
                                             "Kompakt"
                                         };
-                                        ui.label(RichText::new(qual_label).size(10.5).color(Color32::from_rgb(0x38, 0xa0, 0xf0)));
+                                        ui.label(
+                                            RichText::new(qual_label)
+                                                .size(10.5)
+                                                .color(Color32::from_rgb(0x38, 0xa0, 0xf0)),
+                                        );
                                     });
 
                                     let detected_enc = detect_available_encoders();
@@ -198,20 +246,44 @@ impl ExportDialog {
                                         egui::ComboBox::from_id_salt("hw_accel_combo")
                                             .selected_text(self.hw_accel.short_label())
                                             .show_ui(ui, |ui| {
-                                                ui.selectable_value(&mut self.hw_accel, HardwareAccel::Auto, "Otomatik (En Hızlı GPU)");
+                                                ui.selectable_value(
+                                                    &mut self.hw_accel,
+                                                    HardwareAccel::Auto,
+                                                    "Otomatik (En Hızlı GPU)",
+                                                );
                                                 if detected_enc.has_nvidia_nvenc() {
-                                                    ui.selectable_value(&mut self.hw_accel, HardwareAccel::Nvenc, "NVIDIA NVENC (GPU)");
+                                                    ui.selectable_value(
+                                                        &mut self.hw_accel,
+                                                        HardwareAccel::Nvenc,
+                                                        "NVIDIA NVENC (GPU)",
+                                                    );
                                                 }
                                                 if detected_enc.has_intel_qsv() {
-                                                    ui.selectable_value(&mut self.hw_accel, HardwareAccel::Qsv, "Intel QuickSync (QSV)");
+                                                    ui.selectable_value(
+                                                        &mut self.hw_accel,
+                                                        HardwareAccel::Qsv,
+                                                        "Intel QuickSync (QSV)",
+                                                    );
                                                 }
                                                 if detected_enc.has_vaapi() {
-                                                    ui.selectable_value(&mut self.hw_accel, HardwareAccel::Vaapi, "Linux VAAPI");
+                                                    ui.selectable_value(
+                                                        &mut self.hw_accel,
+                                                        HardwareAccel::Vaapi,
+                                                        "Linux VAAPI",
+                                                    );
                                                 }
                                                 if detected_enc.has_amd_amf() {
-                                                    ui.selectable_value(&mut self.hw_accel, HardwareAccel::Amf, "AMD AMF (GPU)");
+                                                    ui.selectable_value(
+                                                        &mut self.hw_accel,
+                                                        HardwareAccel::Amf,
+                                                        "AMD AMF (GPU)",
+                                                    );
                                                 }
-                                                ui.selectable_value(&mut self.hw_accel, HardwareAccel::Cpu, "İşlemci (CPU x264/x265)");
+                                                ui.selectable_value(
+                                                    &mut self.hw_accel,
+                                                    HardwareAccel::Cpu,
+                                                    "İşlemci (CPU x264/x265)",
+                                                );
                                             });
                                     });
 
@@ -226,11 +298,21 @@ impl ExportDialog {
                                     } else {
                                         "ℹ️ Donanım hızlandırma bulunamadı, CPU kullanılacak"
                                     };
-                                    ui.label(RichText::new(badge_text).size(10.0).color(if detected_enc.any_hardware() { Color32::from_rgb(0x3d, 0xdc, 0x84) } else { Color32::from_rgb(0x90, 0x90, 0xa0) }));
+                                    ui.label(RichText::new(badge_text).size(10.0).color(
+                                        if detected_enc.any_hardware() {
+                                            Color32::from_rgb(0x3d, 0xdc, 0x84)
+                                        } else {
+                                            Color32::from_rgb(0x90, 0x90, 0xa0)
+                                        },
+                                    ));
 
                                     ui.horizontal(|ui| {
                                         ui.label("Video Kodeki:");
-                                        ui.label(RichText::new(&curr_preset.video_codec).strong().color(Color32::from_rgb(0xe0, 0x7a, 0x38)));
+                                        ui.label(
+                                            RichText::new(&curr_preset.video_codec)
+                                                .strong()
+                                                .color(Color32::from_rgb(0xe0, 0x7a, 0x38)),
+                                        );
                                     });
                                 });
 
@@ -243,7 +325,13 @@ impl ExportDialog {
 
                                     ui.horizontal(|ui| {
                                         ui.label("Ses Kodeki:");
-                                        ui.label(RichText::new(format!("{} @ {}", curr_preset.audio_codec, curr_preset.audio_bitrate)).color(Color32::from_rgb(0x3d, 0xdc, 0x84)));
+                                        ui.label(
+                                            RichText::new(format!(
+                                                "{} @ {}",
+                                                curr_preset.audio_codec, curr_preset.audio_bitrate
+                                            ))
+                                            .color(Color32::from_rgb(0x3d, 0xdc, 0x84)),
+                                        );
                                     });
 
                                     ui.horizontal(|ui| {
@@ -252,7 +340,11 @@ impl ExportDialog {
                                             .selected_text(self.loudness_norm.label())
                                             .show_ui(ui, |ui| {
                                                 for norm in LoudnessNorm::ALL {
-                                                    ui.selectable_value(&mut self.loudness_norm, *norm, norm.label());
+                                                    ui.selectable_value(
+                                                        &mut self.loudness_norm,
+                                                        *norm,
+                                                        norm.label(),
+                                                    );
                                                 }
                                             });
                                     });
@@ -264,11 +356,27 @@ impl ExportDialog {
                                         20..=24 => 7.0,
                                         _ => 3.5,
                                     };
-                                    let est_mb = (approx_mbps * (self.custom_width as f64 * self.custom_height as f64 / (1920.0 * 1080.0)) * self.timeline_duration / 8.0).max(0.5);
+                                    let est_mb = (approx_mbps
+                                        * (self.custom_width as f64 * self.custom_height as f64
+                                            / (1920.0 * 1080.0))
+                                        * self.timeline_duration
+                                        / 8.0)
+                                        .max(0.5);
                                     ui.horizontal(|ui| {
                                         ui.label("Tahmini Boyut:");
-                                        ui.label(RichText::new(format!("~{:.1} MB", est_mb)).strong().color(Color32::from_rgb(0x38, 0xa0, 0xf0)));
-                                        ui.label(RichText::new(format!("({:.1} sn)", self.timeline_duration)).size(10.0).color(Color32::from_rgb(0x80, 0x80, 0x90)));
+                                        ui.label(
+                                            RichText::new(format!("~{:.1} MB", est_mb))
+                                                .strong()
+                                                .color(Color32::from_rgb(0x38, 0xa0, 0xf0)),
+                                        );
+                                        ui.label(
+                                            RichText::new(format!(
+                                                "({:.1} sn)",
+                                                self.timeline_duration
+                                            ))
+                                            .size(10.0)
+                                            .color(Color32::from_rgb(0x80, 0x80, 0x90)),
+                                        );
                                     });
                                 });
 
@@ -286,7 +394,8 @@ impl ExportDialog {
                                                 .add_filter("QuickTime MOV", &["mov"])
                                                 .save_file()
                                             {
-                                                self.output_path = path.to_string_lossy().to_string();
+                                                self.output_path =
+                                                    path.to_string_lossy().to_string();
                                             }
                                         }
                                     });
@@ -298,9 +407,14 @@ impl ExportDialog {
                     ui.add_space(12.0);
 
                     ui.horizontal(|ui| {
-                        let btn_start = Button::new(RichText::new("Dışa Aktarmayı Başlat").color(Color32::WHITE).size(13.0).strong())
-                            .fill(Color32::from_rgb(0xe0, 0x7a, 0x38))
-                            .min_size(Vec2::new(180.0, 30.0));
+                        let btn_start = Button::new(
+                            RichText::new("Dışa Aktarmayı Başlat")
+                                .color(Color32::WHITE)
+                                .size(13.0)
+                                .strong(),
+                        )
+                        .fill(Color32::from_rgb(0xe0, 0x7a, 0x38))
+                        .min_size(Vec2::new(180.0, 30.0));
 
                         if ui.add(btn_start).clicked() {
                             let mut preset = self.presets[self.selected_preset_idx].clone();
@@ -313,7 +427,10 @@ impl ExportDialog {
 
                             self.is_exporting = true;
                             self.progress = 0.0;
-                            action = Some(ExportDialogAction::StartExport(preset, self.output_path.clone()));
+                            action = Some(ExportDialogAction::StartExport(
+                                preset,
+                                self.output_path.clone(),
+                            ));
                         }
 
                         if ui.button("Kapat").clicked() {
@@ -326,16 +443,29 @@ impl ExportDialog {
                         ui.set_width(550.0);
                         ui.strong("Dışa Aktarma Devam Ediyor");
                         ui.add_space(8.0);
-                        ui.add(ProgressBar::new(self.progress / 100.0).text(format!("{:.1}%", self.progress)));
+                        ui.add(
+                            ProgressBar::new(self.progress / 100.0)
+                                .text(format!("{:.1}%", self.progress)),
+                        );
                         ui.add_space(8.0);
-                        ui.label(RichText::new(&self.status_text).size(12.0).color(Color32::from_rgb(0xa0, 0xa0, 0xb8)));
+                        ui.label(
+                            RichText::new(&self.status_text)
+                                .size(12.0)
+                                .color(Color32::from_rgb(0xa0, 0xa0, 0xb8)),
+                        );
 
                         if self.progress >= 99.9 {
                             ui.add_space(8.0);
-                            ui.label(RichText::new("✅ Dışa aktarma başarıyla tamamlandı!").color(Color32::from_rgb(0x3d, 0xdc, 0x84)).strong());
+                            ui.label(
+                                RichText::new("✅ Dışa aktarma başarıyla tamamlandı!")
+                                    .color(Color32::from_rgb(0x3d, 0xdc, 0x84))
+                                    .strong(),
+                            );
                             ui.add_space(6.0);
                             if ui.button("📁 Dosyayı Klasörde Göster").clicked() {
-                                action = Some(ExportDialogAction::OpenOutputFolder(self.output_path.clone()));
+                                action = Some(ExportDialogAction::OpenOutputFolder(
+                                    self.output_path.clone(),
+                                ));
                             }
                         }
                     });
@@ -343,7 +473,13 @@ impl ExportDialog {
                     ui.add_space(14.0);
 
                     if self.progress < 99.9 {
-                        if ui.button(RichText::new("İptal Et").color(Color32::from_rgb(0xe0, 0x50, 0x50))).clicked() {
+                        if ui
+                            .button(
+                                RichText::new("İptal Et")
+                                    .color(Color32::from_rgb(0xe0, 0x50, 0x50)),
+                            )
+                            .clicked()
+                        {
                             action = Some(ExportDialogAction::CancelExport);
                         }
                     } else if ui.button("Kapat").clicked() {

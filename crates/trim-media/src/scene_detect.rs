@@ -28,12 +28,19 @@ pub fn detect_scene_changes(
     cmd.arg("-i")
         .arg(video_path)
         .arg("-vf")
-        .arg(format!("select='gt(scene\\,{:.2})',metadata=print:file=-", thresh))
+        .arg(format!(
+            "select='gt(scene\\,{:.2})',metadata=print:file=-",
+            thresh
+        ))
         .arg("-f")
         .arg("null")
         .arg("-");
 
-    log::info!("Running scene detection on {}: {:?}", video_path.display(), cmd);
+    log::info!(
+        "Running scene detection on {}: {:?}",
+        video_path.display(),
+        cmd
+    );
 
     let output = cmd
         .output()
@@ -46,7 +53,11 @@ pub fn detect_scene_changes(
     let combined = format!("{}\n{}", stdout_str, stderr_str);
     let cuts = parse_scene_cut_timestamps(&combined, source_in);
 
-    log::info!("Detected {} scene changes in {}", cuts.len(), video_path.display());
+    log::info!(
+        "Detected {} scene changes in {}",
+        cuts.len(),
+        video_path.display()
+    );
     Ok(cuts)
 }
 

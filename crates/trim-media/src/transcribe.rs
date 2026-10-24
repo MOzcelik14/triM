@@ -14,7 +14,12 @@ pub fn find_whisper_executable() -> Option<PathBuf> {
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(exe_dir) = current_exe.parent() {
             let candidates = if cfg!(windows) {
-                vec!["whisper-cli.exe", "whisper.exe", "main.exe", "whisper-cpp.exe"]
+                vec![
+                    "whisper-cli.exe",
+                    "whisper.exe",
+                    "main.exe",
+                    "whisper-cpp.exe",
+                ]
             } else {
                 vec!["whisper-cli", "whisper.cpp", "main", "whisper"]
             };
@@ -66,7 +71,9 @@ pub fn extract_audio_for_whisper(media_path: &Path, output_wav: &Path) -> Result
         .arg("pcm_s16le")
         .arg(output_wav);
 
-    let status = cmd.status().map_err(|e| format!("FFmpeg ses ayıklama hatası: {}", e))?;
+    let status = cmd
+        .status()
+        .map_err(|e| format!("FFmpeg ses ayıklama hatası: {}", e))?;
     if !status.success() {
         return Err("FFmpeg 16kHz mono ses ayıklama başarısız oldu".to_string());
     }
@@ -95,7 +102,11 @@ pub fn run_whisper_transcription(
     let mut cmd = Command::new(whisper_bin);
     crate::ffmpeg::apply_no_window(&mut cmd);
 
-    if bin_name.contains("cli") || bin_name.contains("cpp") || bin_name == "main" || bin_name == "main.exe" {
+    if bin_name.contains("cli")
+        || bin_name.contains("cpp")
+        || bin_name == "main"
+        || bin_name == "main.exe"
+    {
         // whisper.cpp / whisper-cli syntax:
         // whisper-cli -m <model> -f <audio.wav> --output-srt -of <out_prefix> -l <lang>
         cmd.arg("-m").arg(model_path);
@@ -121,7 +132,9 @@ pub fn run_whisper_transcription(
         }
     }
 
-    let output = cmd.output().map_err(|e| format!("Whisper çalıştırılamadı: {}", e))?;
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Whisper çalıştırılamadı: {}", e))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("Whisper işlem hatası: {}", stderr));
@@ -144,7 +157,8 @@ pub fn run_whisper_transcription(
         found.ok_or_else(|| "Whisper tarafından SRT dosyası üretilemedi".to_string())?
     };
 
-    let entries = parse_srt(&srt_content).map_err(|e| format!("Altyazı ayrıştırma hatası: {}", e))?;
+    let entries =
+        parse_srt(&srt_content).map_err(|e| format!("Altyazı ayrıştırma hatası: {}", e))?;
     Ok(entries)
 }
 
@@ -168,10 +182,16 @@ Yerel whisper ile yapay zeka altyazıları hazır.
         assert_eq!(entries[0].index, 1);
         assert!((entries[0].start_time - 1.0).abs() < 1e-4);
         assert!((entries[0].end_time - 3.5).abs() < 1e-4);
-        assert_eq!(entries[0].text, "Merhaba triM kullanıcıları, bugün video kurguluyoruz.");
+        assert_eq!(
+            entries[0].text,
+            "Merhaba triM kullanıcıları, bugün video kurguluyoruz."
+        );
 
         assert_eq!(entries[1].index, 2);
         assert!((entries[1].start_time - 3.8).abs() < 1e-4);
-        assert_eq!(entries[1].text, "Yerel whisper ile yapay zeka altyazıları hazır.");
+        assert_eq!(
+            entries[1].text,
+            "Yerel whisper ile yapay zeka altyazıları hazır."
+        );
     }
 }

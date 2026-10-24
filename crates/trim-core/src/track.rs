@@ -15,7 +15,6 @@ pub enum TrackType {
     Audio,
 }
 
-
 impl std::fmt::Display for TrackType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -111,12 +110,17 @@ impl Track {
     }
 
     pub fn find_clip_at_mut(&mut self, time: f64) -> Option<&mut Clip> {
-        self.clips.iter_mut().find(|c| c.contains_timeline_time(time))
+        self.clips
+            .iter_mut()
+            .find(|c| c.contains_timeline_time(time))
     }
 
     pub fn sort_clips(&mut self) {
-        self.clips
-            .sort_by(|a, b| a.timeline_in.partial_cmp(&b.timeline_in).unwrap_or(std::cmp::Ordering::Equal));
+        self.clips.sort_by(|a, b| {
+            a.timeline_in
+                .partial_cmp(&b.timeline_in)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
 }
 

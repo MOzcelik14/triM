@@ -17,10 +17,10 @@ pub enum LeftPanelTab {
 
 pub enum MediaBinAction {
     ImportRequested,
-    AddToTimeline(String),         // media_id
-    OpenInSourceMonitor(String),   // media_id
-    GenerateProxy(String),         // media_id
-    DeleteMedia(String),           // media_id
+    AddToTimeline(String),       // media_id
+    OpenInSourceMonitor(String), // media_id
+    GenerateProxy(String),       // media_id
+    DeleteMedia(String),         // media_id
 }
 
 pub fn render_media_bin(
@@ -34,31 +34,70 @@ pub fn render_media_bin(
 ) -> Option<MediaBinAction> {
     let mut action = None;
 
-
     // 2. Sub-Toolbar: Search Input + View Mode Switcher + Zoom Slider
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
-        ui.label(RichText::new("Ara:").size(11.0).color(Color32::from_rgb(0x80, 0x80, 0x90)));
+        ui.label(
+            RichText::new("Ara:")
+                .size(11.0)
+                .color(Color32::from_rgb(0x80, 0x80, 0x90)),
+        );
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if *is_grid_view {
-                ui.add_sized([44.0, 16.0], egui::Slider::new(thumb_size, 70.0..=160.0).show_value(false))
-                    .on_hover_text("Küçük Resim Boyutu");
+                ui.add_sized(
+                    [44.0, 16.0],
+                    egui::Slider::new(thumb_size, 70.0..=160.0).show_value(false),
+                )
+                .on_hover_text("Küçük Resim Boyutu");
             }
 
-            let list_btn = Button::new(RichText::new("LST").size(10.0).strong().color(if !*is_grid_view { Color32::WHITE } else { Color32::from_rgb(0x70, 0x70, 0x80) }))
-                .fill(if !*is_grid_view { Color32::from_rgb(0x28, 0x5a, 0x9e) } else { Color32::from_rgb(0x1a, 0x1a, 0x20) });
-            if ui.add_sized([28.0, 18.0], list_btn).on_hover_text("Liste Görünümü").clicked() {
+            let list_btn = Button::new(RichText::new("LST").size(10.0).strong().color(
+                if !*is_grid_view {
+                    Color32::WHITE
+                } else {
+                    Color32::from_rgb(0x70, 0x70, 0x80)
+                },
+            ))
+            .fill(if !*is_grid_view {
+                Color32::from_rgb(0x28, 0x5a, 0x9e)
+            } else {
+                Color32::from_rgb(0x1a, 0x1a, 0x20)
+            });
+            if ui
+                .add_sized([28.0, 18.0], list_btn)
+                .on_hover_text("Liste Görünümü")
+                .clicked()
+            {
                 *is_grid_view = false;
             }
 
-            let grid_btn = Button::new(RichText::new("GRD").size(10.0).strong().color(if *is_grid_view { Color32::WHITE } else { Color32::from_rgb(0x70, 0x70, 0x80) }))
-                .fill(if *is_grid_view { Color32::from_rgb(0x28, 0x5a, 0x9e) } else { Color32::from_rgb(0x1a, 0x1a, 0x20) });
-            if ui.add_sized([28.0, 18.0], grid_btn).on_hover_text("Izgara / Küçük Resim Görünümü").clicked() {
+            let grid_btn = Button::new(RichText::new("GRD").size(10.0).strong().color(
+                if *is_grid_view {
+                    Color32::WHITE
+                } else {
+                    Color32::from_rgb(0x70, 0x70, 0x80)
+                },
+            ))
+            .fill(if *is_grid_view {
+                Color32::from_rgb(0x28, 0x5a, 0x9e)
+            } else {
+                Color32::from_rgb(0x1a, 0x1a, 0x20)
+            });
+            if ui
+                .add_sized([28.0, 18.0], grid_btn)
+                .on_hover_text("Izgara / Küçük Resim Görünümü")
+                .clicked()
+            {
                 *is_grid_view = true;
             }
 
-            if !search_query.is_empty() && ui.add_sized([16.0, 18.0], Button::new("×")).on_hover_text("Aramayı temizle").clicked() {
+            if !search_query.is_empty()
+                && ui
+                    .add_sized([16.0, 18.0], Button::new("×"))
+                    .on_hover_text("Aramayı temizle")
+                    .clicked()
+            {
                 search_query.clear();
             }
 
@@ -88,8 +127,12 @@ pub fn render_media_bin(
                     .size(11.0),
             );
             ui.add_space(14.0);
-            let btn_imp = Button::new(RichText::new("+ Medya Ekle").size(12.0).color(Color32::WHITE))
-                .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
+            let btn_imp = Button::new(
+                RichText::new("+ Medya Ekle")
+                    .size(12.0)
+                    .color(Color32::WHITE),
+            )
+            .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
             if ui.add(btn_imp).clicked() {
                 action = Some(MediaBinAction::ImportRequested);
             }
@@ -137,7 +180,8 @@ pub fn render_media_bin(
 
                 for (m_id, item) in filtered_items {
                     let is_selected = selected_media_id.as_deref() == Some(m_id.as_str());
-                    let (card_rect, card_resp) = ui.allocate_exact_size(Vec2::new(card_w, card_h), Sense::click_and_drag());
+                    let (card_rect, card_resp) =
+                        ui.allocate_exact_size(Vec2::new(card_w, card_h), Sense::click_and_drag());
                     let painter = ui.painter_at(card_rect);
 
                     // Card background
@@ -155,7 +199,11 @@ pub fn render_media_bin(
                         3.0,
                         Stroke::new(
                             if is_selected { 1.5_f32 } else { 1.0_f32 },
-                            if is_selected { Color32::from_rgb(0x38, 0x88, 0xe8) } else { Color32::from_rgb(0x2a, 0x2a, 0x34) },
+                            if is_selected {
+                                Color32::from_rgb(0x38, 0x88, 0xe8)
+                            } else {
+                                Color32::from_rgb(0x2a, 0x2a, 0x34)
+                            },
                         ),
                     );
 
@@ -195,23 +243,51 @@ pub fn render_media_bin(
                         MediaType::Image => ("IMG", Color32::from_rgb(0x9e, 0x5a, 0x28)),
                         MediaType::Unknown => ("DOS", Color32::from_rgb(0x40, 0x40, 0x48)),
                     };
-                    let badge_rect = Rect::from_min_size(Pos2::new(thumb_rect.left() + 3.0, thumb_rect.top() + 3.0), Vec2::new(22.0, 13.0));
+                    let badge_rect = Rect::from_min_size(
+                        Pos2::new(thumb_rect.left() + 3.0, thumb_rect.top() + 3.0),
+                        Vec2::new(22.0, 13.0),
+                    );
                     painter.rect_filled(badge_rect, 2.0, badge_bg);
-                    painter.text(badge_rect.center(), egui::Align2::CENTER_CENTER, type_code, egui::FontId::monospace(8.5), Color32::WHITE);
+                    painter.text(
+                        badge_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        type_code,
+                        egui::FontId::monospace(8.5),
+                        Color32::WHITE,
+                    );
 
                     // Duration badge overlay at bottom right corner of thumbnail
                     let dur_sec = item.duration;
                     let dur_str = if dur_sec >= 3600.0 {
-                        format!("{:02}:{:02}:{:02}", (dur_sec / 3600.0) as u32, ((dur_sec % 3600.0) / 60.0) as u32, (dur_sec % 60.0) as u32)
+                        format!(
+                            "{:02}:{:02}:{:02}",
+                            (dur_sec / 3600.0) as u32,
+                            ((dur_sec % 3600.0) / 60.0) as u32,
+                            (dur_sec % 60.0) as u32
+                        )
                     } else {
-                        format!("{:02}:{:02}", (dur_sec / 60.0) as u32, (dur_sec % 60.0) as u32)
+                        format!(
+                            "{:02}:{:02}",
+                            (dur_sec / 60.0) as u32,
+                            (dur_sec % 60.0) as u32
+                        )
                     };
                     let dur_badge_rect = Rect::from_min_max(
                         Pos2::new(thumb_rect.right() - 42.0, thumb_rect.bottom() - 14.0),
                         Pos2::new(thumb_rect.right() - 2.0, thumb_rect.bottom() - 2.0),
                     );
-                    painter.rect_filled(dur_badge_rect, 2.0, Color32::from_rgba_premultiplied(0, 0, 0, 200));
-                    painter.text(dur_badge_rect.center(), egui::Align2::CENTER_CENTER, dur_str, egui::FontId::monospace(8.5), Color32::WHITE);
+                    painter.rect_filled(
+                        dur_badge_rect,
+                        2.0,
+                        Color32::from_rgba_premultiplied(0, 0, 0, 200),
+                    );
+                    painter.text(
+                        dur_badge_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        dur_str,
+                        egui::FontId::monospace(8.5),
+                        Color32::WHITE,
+                    );
 
                     // Name label below thumbnail (truncated if needed)
                     let text_y = thumb_rect.bottom() + 3.0;
@@ -297,7 +373,10 @@ pub fn render_media_bin(
             for (m_id, item) in filtered_items {
                 let is_selected = selected_media_id.as_deref() == Some(m_id.as_str());
                 let item_height = 36.0;
-                let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), item_height), Sense::click_and_drag());
+                let (rect, resp) = ui.allocate_exact_size(
+                    Vec2::new(ui.available_width(), item_height),
+                    Sense::click_and_drag(),
+                );
                 let painter = ui.painter_at(rect);
 
                 let bg = if is_selected {
@@ -310,7 +389,11 @@ pub fn render_media_bin(
 
                 painter.rect_filled(rect, 2.0, bg);
                 if is_selected {
-                    painter.rect_stroke(rect, 2.0, Stroke::new(1.0_f32, Color32::from_rgb(0x38, 0x88, 0xe8)));
+                    painter.rect_stroke(
+                        rect,
+                        2.0,
+                        Stroke::new(1.0_f32, Color32::from_rgb(0x38, 0x88, 0xe8)),
+                    );
                 }
 
                 // Type Badge Pill
@@ -320,9 +403,18 @@ pub fn render_media_bin(
                     MediaType::Image => ("IMG", Color32::from_rgb(0x9e, 0x5a, 0x28)),
                     MediaType::Unknown => ("DOS", Color32::from_rgb(0x40, 0x40, 0x48)),
                 };
-                let pill_rect = Rect::from_center_size(egui::pos2(rect.left() + 18.0, rect.center().y), Vec2::new(24.0, 14.0));
+                let pill_rect = Rect::from_center_size(
+                    egui::pos2(rect.left() + 18.0, rect.center().y),
+                    Vec2::new(24.0, 14.0),
+                );
                 painter.rect_filled(pill_rect, 2.0, badge_bg);
-                painter.text(pill_rect.center(), egui::Align2::CENTER_CENTER, type_code, egui::FontId::monospace(8.5), Color32::WHITE);
+                painter.text(
+                    pill_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    type_code,
+                    egui::FontId::monospace(8.5),
+                    Color32::WHITE,
+                );
 
                 // Name
                 painter.text(

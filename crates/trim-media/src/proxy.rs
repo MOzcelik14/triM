@@ -37,7 +37,9 @@ pub fn generate_proxy<P: AsRef<Path>, Q: AsRef<Path>>(
         &out_str,
     ]);
 
-    let output = cmd.output().map_err(|e| format!("FFmpeg proxy başlatılamadı: {}", e))?;
+    let output = cmd
+        .output()
+        .map_err(|e| format!("FFmpeg proxy başlatılamadı: {}", e))?;
     if !output.status.success() {
         let err = String::from_utf8_lossy(&output.stderr);
         return Err(format!("Proxy oluşturma hatası: {}", err.trim()));

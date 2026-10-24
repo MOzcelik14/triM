@@ -143,10 +143,7 @@ impl TimelineModel {
     }
 
     pub fn duration(&self) -> f64 {
-        self.tracks
-            .iter()
-            .map(|t| t.duration())
-            .fold(0.0, f64::max)
+        self.tracks.iter().map(|t| t.duration()).fold(0.0, f64::max)
     }
 
     pub fn add_track(&mut self, track: Track) {
@@ -157,7 +154,11 @@ impl TimelineModel {
         let max_idx = self
             .get_video_tracks()
             .iter()
-            .filter_map(|t| t.name.strip_prefix('V').and_then(|s| s.parse::<usize>().ok()))
+            .filter_map(|t| {
+                t.name
+                    .strip_prefix('V')
+                    .and_then(|s| s.parse::<usize>().ok())
+            })
             .max()
             .unwrap_or(0);
         let track = Track::new(format!("V{}", max_idx + 1), TrackType::Video);
@@ -171,7 +172,11 @@ impl TimelineModel {
         let max_idx = self
             .get_audio_tracks()
             .iter()
-            .filter_map(|t| t.name.strip_prefix('A').and_then(|s| s.parse::<usize>().ok()))
+            .filter_map(|t| {
+                t.name
+                    .strip_prefix('A')
+                    .and_then(|s| s.parse::<usize>().ok())
+            })
             .max()
             .unwrap_or(0);
         let track = Track::new(format!("A{}", max_idx + 1), TrackType::Audio);
@@ -182,8 +187,15 @@ impl TimelineModel {
     }
 
     pub fn remove_track_safe(&mut self, track_id: &str) -> Result<Track, &'static str> {
-        let track_type = self.get_track_by_id(track_id).map(|t| t.track_type).ok_or("Kanal bulunamadı")?;
-        let count = self.tracks.iter().filter(|t| t.track_type == track_type).count();
+        let track_type = self
+            .get_track_by_id(track_id)
+            .map(|t| t.track_type)
+            .ok_or("Kanal bulunamadı")?;
+        let count = self
+            .tracks
+            .iter()
+            .filter(|t| t.track_type == track_type)
+            .count();
         if count <= 1 {
             return Err("Son kalan kanal silinemez");
         }
@@ -207,27 +219,43 @@ impl TimelineModel {
     }
 
     pub fn get_video_tracks(&self) -> Vec<&Track> {
-        self.tracks.iter().filter(|t| t.track_type == TrackType::Video).collect()
+        self.tracks
+            .iter()
+            .filter(|t| t.track_type == TrackType::Video)
+            .collect()
     }
 
     pub fn get_video_tracks_mut(&mut self) -> Vec<&mut Track> {
-        self.tracks.iter_mut().filter(|t| t.track_type == TrackType::Video).collect()
+        self.tracks
+            .iter_mut()
+            .filter(|t| t.track_type == TrackType::Video)
+            .collect()
     }
 
     pub fn get_audio_tracks(&self) -> Vec<&Track> {
-        self.tracks.iter().filter(|t| t.track_type == TrackType::Audio).collect()
+        self.tracks
+            .iter()
+            .filter(|t| t.track_type == TrackType::Audio)
+            .collect()
     }
 
     pub fn get_audio_tracks_mut(&mut self) -> Vec<&mut Track> {
-        self.tracks.iter_mut().filter(|t| t.track_type == TrackType::Audio).collect()
+        self.tracks
+            .iter_mut()
+            .filter(|t| t.track_type == TrackType::Audio)
+            .collect()
     }
 
     pub fn find_track_for_clip(&self, clip_id: &str) -> Option<&Track> {
-        self.tracks.iter().find(|t| t.get_clip_by_id(clip_id).is_some())
+        self.tracks
+            .iter()
+            .find(|t| t.get_clip_by_id(clip_id).is_some())
     }
 
     pub fn find_track_for_clip_mut(&mut self, clip_id: &str) -> Option<&mut Track> {
-        self.tracks.iter_mut().find(|t| t.get_clip_by_id(clip_id).is_some())
+        self.tracks
+            .iter_mut()
+            .find(|t| t.get_clip_by_id(clip_id).is_some())
     }
 
     pub fn find_clip_by_id(&self, clip_id: &str) -> Option<(&Track, &Clip)> {
@@ -239,11 +267,19 @@ impl TimelineModel {
         None
     }
 
-    pub fn add_marker(&mut self, time: f64, name: impl Into<String>, color: impl Into<String>) -> Marker {
+    pub fn add_marker(
+        &mut self,
+        time: f64,
+        name: impl Into<String>,
+        color: impl Into<String>,
+    ) -> Marker {
         let marker = Marker::with_details(time, name, color);
         self.markers.push(marker.clone());
-        self.markers
-            .sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+        self.markers.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         marker
     }
 
@@ -262,7 +298,12 @@ impl TimelineModel {
     }
 
     /// Snaps a timestamp magnetically to 0.0, clip boundaries, or markers.
-    pub fn snap_time(&self, target_time: f64, threshold: Option<f64>, ignore_clip_id: Option<&str>) -> f64 {
+    pub fn snap_time(
+        &self,
+        target_time: f64,
+        threshold: Option<f64>,
+        ignore_clip_id: Option<&str>,
+    ) -> f64 {
         if !self.snap_enabled {
             return target_time;
         }

@@ -158,9 +158,14 @@ impl WelcomeDialog {
                             ui.add_space(12.0);
 
                             let (_, w, h, fps) = formats[self.selected_preset_idx];
-                            let new_btn = Button::new(RichText::new("+ Projeyi Başlat").size(13.0).strong().color(Color32::WHITE))
-                                .min_size(Vec2::new(260.0, 32.0))
-                                .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
+                            let new_btn = Button::new(
+                                RichText::new("+ Projeyi Başlat")
+                                    .size(13.0)
+                                    .strong()
+                                    .color(Color32::WHITE),
+                            )
+                            .min_size(Vec2::new(260.0, 32.0))
+                            .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
 
                             if ui.add(new_btn).clicked() {
                                 action = Some(WelcomeAction::CreateNewProject {
@@ -173,9 +178,13 @@ impl WelcomeDialog {
                             }
 
                             ui.add_space(6.0);
-                            let open_btn = Button::new(RichText::new("Var Olan Projeyi Aç...").size(12.0).color(Color32::WHITE))
-                                .min_size(Vec2::new(260.0, 28.0))
-                                .fill(Color32::from_rgb(0x28, 0x5a, 0x9e));
+                            let open_btn = Button::new(
+                                RichText::new("Var Olan Projeyi Aç...")
+                                    .size(12.0)
+                                    .color(Color32::WHITE),
+                            )
+                            .min_size(Vec2::new(260.0, 28.0))
+                            .fill(Color32::from_rgb(0x28, 0x5a, 0x9e));
 
                             if ui.add(open_btn).clicked() {
                                 action = Some(WelcomeAction::OpenProjectRequested);
@@ -192,19 +201,32 @@ impl WelcomeDialog {
                             ui.add_space(8.0);
                             ui.horizontal(|ui| {
                                 ui.strong("Son Kullanılan Projeler");
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if ui.button("Doğrudan Başla").on_hover_text("Karşılama ekranını kapat ve boş projeye geç").clicked() {
-                                        action = Some(WelcomeAction::Close);
-                                        self.is_open = false;
-                                    }
-                                });
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if ui
+                                            .button("Doğrudan Başla")
+                                            .on_hover_text(
+                                                "Karşılama ekranını kapat ve boş projeye geç",
+                                            )
+                                            .clicked()
+                                        {
+                                            action = Some(WelcomeAction::Close);
+                                            self.is_open = false;
+                                        }
+                                    },
+                                );
                             });
                             ui.add_space(4.0);
 
                             if self.recent_projects.is_empty() {
                                 ui.vertical_centered(|ui| {
                                     ui.add_space(40.0);
-                                    ui.label(RichText::new("Henüz son kullanılan proje yok").color(Color32::from_rgb(0x70, 0x70, 0x80)).size(11.5));
+                                    ui.label(
+                                        RichText::new("Henüz son kullanılan proje yok")
+                                            .color(Color32::from_rgb(0x70, 0x70, 0x80))
+                                            .size(11.5),
+                                    );
                                 });
                             } else {
                                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -213,19 +235,40 @@ impl WelcomeDialog {
                                         ui.group(|ui| {
                                             ui.horizontal(|ui| {
                                                 ui.vertical(|ui| {
-                                                    let btn = Button::new(RichText::new(&p.name).size(12.5).strong().color(Color32::WHITE))
-                                                        .fill(Color32::TRANSPARENT);
+                                                    let btn = Button::new(
+                                                        RichText::new(&p.name)
+                                                            .size(12.5)
+                                                            .strong()
+                                                            .color(Color32::WHITE),
+                                                    )
+                                                    .fill(Color32::TRANSPARENT);
                                                     if ui.add(btn).clicked() {
-                                                        action = Some(WelcomeAction::OpenRecentProject(p.path.clone()));
+                                                        action =
+                                                            Some(WelcomeAction::OpenRecentProject(
+                                                                p.path.clone(),
+                                                            ));
                                                         self.is_open = false;
                                                     }
-                                                    ui.label(RichText::new(&p.path).size(9.5).color(Color32::from_rgb(0x80, 0x80, 0x95)));
+                                                    ui.label(
+                                                        RichText::new(&p.path).size(9.5).color(
+                                                            Color32::from_rgb(0x80, 0x80, 0x95),
+                                                        ),
+                                                    );
                                                 });
-                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                    if ui.button("×").on_hover_text("Listeden kaldır").clicked() {
-                                                        to_remove = Some(idx);
-                                                    }
-                                                });
+                                                ui.with_layout(
+                                                    egui::Layout::right_to_left(
+                                                        egui::Align::Center,
+                                                    ),
+                                                    |ui| {
+                                                        if ui
+                                                            .button("×")
+                                                            .on_hover_text("Listeden kaldır")
+                                                            .clicked()
+                                                        {
+                                                            to_remove = Some(idx);
+                                                        }
+                                                    },
+                                                );
                                             });
                                         });
                                         ui.add_space(2.0);

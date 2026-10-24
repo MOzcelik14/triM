@@ -20,11 +20,7 @@ pub enum CaptureSource {
 }
 
 impl CaptureSource {
-    pub const ALL: &'static [Self] = &[
-        Self::ScreenAndMic,
-        Self::ScreenOnly,
-        Self::WebcamOnly,
-    ];
+    pub const ALL: &'static [Self] = &[Self::ScreenAndMic, Self::ScreenOnly, Self::WebcamOnly];
 
     pub fn label(&self) -> &'static str {
         match self {

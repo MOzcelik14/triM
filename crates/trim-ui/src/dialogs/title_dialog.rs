@@ -91,21 +91,42 @@ impl TitleDialog {
                 ui.group(|ui| {
                     ui.strong("Şablon & Konumlandırma");
                     ui.horizontal_wrapped(|ui| {
-                        if ui.selectable_label(self.position == TitlePosition::Center, "Orta Başlık").clicked() {
+                        if ui
+                            .selectable_label(self.position == TitlePosition::Center, "Orta Başlık")
+                            .clicked()
+                        {
                             self.position = TitlePosition::Center;
                             self.has_box = false;
                         }
-                        if ui.selectable_label(self.position == TitlePosition::LowerThird, "Alt Üçte Bir (Lower Third)").clicked() {
+                        if ui
+                            .selectable_label(
+                                self.position == TitlePosition::LowerThird,
+                                "Alt Üçte Bir (Lower Third)",
+                            )
+                            .clicked()
+                        {
                             self.position = TitlePosition::LowerThird;
                             self.has_box = true;
                             self.font_size = 42;
                         }
-                        if ui.selectable_label(self.position == TitlePosition::Subtitle, "Altyazı (Subtitle)").clicked() {
+                        if ui
+                            .selectable_label(
+                                self.position == TitlePosition::Subtitle,
+                                "Altyazı (Subtitle)",
+                            )
+                            .clicked()
+                        {
                             self.position = TitlePosition::Subtitle;
                             self.has_box = true;
                             self.font_size = 36;
                         }
-                        if ui.selectable_label(self.position == TitlePosition::TopHeader, "Üst Başlık").clicked() {
+                        if ui
+                            .selectable_label(
+                                self.position == TitlePosition::TopHeader,
+                                "Üst Başlık",
+                            )
+                            .clicked()
+                        {
                             self.position = TitlePosition::TopHeader;
                             self.has_box = false;
                         }
@@ -123,11 +144,19 @@ impl TitleDialog {
 
                     ui.horizontal(|ui| {
                         ui.label("Klip Süresi:");
-                        ui.add(DragValue::new(&mut self.duration).speed(0.1).range(0.5..=60.0).suffix(" s"));
+                        ui.add(
+                            DragValue::new(&mut self.duration)
+                                .speed(0.1)
+                                .range(0.5..=60.0)
+                                .suffix(" s"),
+                        );
                     });
 
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut self.has_shadow, "Kontur / Gölge (Her zemin için okunabilirlik)");
+                        ui.checkbox(
+                            &mut self.has_shadow,
+                            "Kontur / Gölge (Her zemin için okunabilirlik)",
+                        );
                     });
 
                     ui.horizontal(|ui| {
@@ -138,8 +167,12 @@ impl TitleDialog {
                 ui.add_space(12.0);
 
                 ui.horizontal(|ui| {
-                    let btn_create = Button::new(RichText::new("Zaman Çizgisine Ekle (Şeffaf Katman)").color(Color32::WHITE).strong())
-                        .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
+                    let btn_create = Button::new(
+                        RichText::new("Zaman Çizgisine Ekle (Şeffaf Katman)")
+                            .color(Color32::WHITE)
+                            .strong(),
+                    )
+                    .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
 
                     if ui.add(btn_create).clicked() {
                         let eff_bg = if self.has_box {

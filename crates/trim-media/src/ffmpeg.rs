@@ -69,6 +69,113 @@ pub fn ffplay_cmd() -> Command {
     create_command("ffplay")
 }
 
+/// RAII process guard that guarantees spawned child processes are cleanly killed
+/// and reaped on drop, preventing zombie or orphan background processes.
+#[derive(Debug)]
+pub struct ChildGuard {
+    child: Option<std::process::Child>,
+    exit_status: Option<std::process::ExitStatus>,
+}
+
+impl ChildGuard {
+    pub fn new(child: std::process::Child) -> Self {
+        Self {
+            child: Some(child),
+            exit_status: None,
+        }
+    }
+
+    pub fn spawn(cmd: &mut Command) -> std::io::Result<Self> {
+        let child = cmd.spawn()?;
+        Ok(Self::new(child))
+    }
+
+    pub fn take_stdin(&mut self) -> Option<std::process::ChildStdin> {
+        self.child.as_mut().and_then(|c| c.stdin.take())
+    }
+
+    pub fn take_stdout(&mut self) -> Option<std::process::ChildStdout> {
+        self.child.as_mut().and_then(|c| c.stdout.take())
+    }
+
+    pub fn take_stderr(&mut self) -> Option<std::process::ChildStderr> {
+        self.child.as_mut().and_then(|c| c.stderr.take())
+    }
+
+    pub fn kill(&mut self) -> std::io::Result<()> {
+        if let Some(mut c) = self.child.take() {
+            let res = c.kill();
+            if let Ok(st) = c.wait() {
+                self.exit_status = Some(st);
+            }
+            res
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        if let Some(st) = self.exit_status {
+            return Ok(st);
+        }
+        if let Some(mut c) = self.child.take() {
+            let st = c.wait()?;
+            self.exit_status = Some(st);
+            Ok(st)
+        } else {
+            Err(std::io::Error::other(
+                "Process has already exited or been reaped",
+            ))
+        }
+    }
+
+    pub fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+        if let Some(st) = self.exit_status {
+            return Ok(Some(st));
+        }
+        if let Some(ref mut c) = self.child {
+            let st_opt = c.try_wait()?;
+            if let Some(st) = st_opt {
+                self.exit_status = Some(st);
+                self.child = None;
+            }
+            Ok(st_opt)
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn into_inner(mut self) -> Option<std::process::Child> {
+        self.child.take()
+    }
+}
+
+impl std::ops::Deref for ChildGuard {
+    type Target = std::process::Child;
+    fn deref(&self) -> &Self::Target {
+        self.child
+            .as_ref()
+            .expect("Child process was already consumed")
+    }
+}
+
+impl std::ops::DerefMut for ChildGuard {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.child
+            .as_mut()
+            .expect("Child process was already consumed")
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if let Some(mut c) = self.child.take() {
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
+}
+
 /// Hardware video encoders detected on the system's FFmpeg installation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct AvailableEncoders {
@@ -137,7 +244,8 @@ pub fn detect_available_encoders() -> AvailableEncoders {
 
             if text.contains("h264_nvenc") && is_encoder_functional("h264_nvenc") {
                 encoders.h264_nvenc = true;
-                encoders.hevc_nvenc = text.contains("hevc_nvenc") && is_encoder_functional("hevc_nvenc");
+                encoders.hevc_nvenc =
+                    text.contains("hevc_nvenc") && is_encoder_functional("hevc_nvenc");
             }
             if text.contains("h264_qsv") && is_encoder_functional("h264_qsv") {
                 encoders.h264_qsv = true;
@@ -145,7 +253,8 @@ pub fn detect_available_encoders() -> AvailableEncoders {
             }
             if text.contains("h264_vaapi") && is_encoder_functional("h264_vaapi") {
                 encoders.h264_vaapi = true;
-                encoders.hevc_vaapi = text.contains("hevc_vaapi") && is_encoder_functional("hevc_vaapi");
+                encoders.hevc_vaapi =
+                    text.contains("hevc_vaapi") && is_encoder_functional("hevc_vaapi");
             }
             if text.contains("h264_amf") && is_encoder_functional("h264_amf") {
                 encoders.h264_amf = true;
@@ -170,5 +279,23 @@ mod tests {
     fn test_resolve_binary_fallback() {
         let p = resolve_binary_path("custom_tool_xyz");
         assert_eq!(p, PathBuf::from("custom_tool_xyz"));
+    }
+
+    #[test]
+    fn test_child_guard_lifecycle() {
+        let mut cmd = if cfg!(windows) {
+            let mut c = Command::new("cmd");
+            c.args(["/c", "timeout /t 5"]);
+            c
+        } else {
+            let mut c = Command::new("sleep");
+            c.arg("5");
+            c
+        };
+        if let Ok(mut guard) = ChildGuard::spawn(&mut cmd) {
+            assert!(guard.try_wait().unwrap().is_none());
+            assert!(guard.kill().is_ok());
+            assert!(guard.try_wait().unwrap().is_some());
+        }
     }
 }

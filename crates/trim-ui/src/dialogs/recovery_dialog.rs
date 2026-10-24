@@ -36,9 +36,11 @@ impl RecoveryDialog {
                 ui.add_space(4.0);
 
                 ui.label(
-                    RichText::new("Önceki oturumdan kaydedilmemiş otomatik bir kurtarma dosyası bulundu.")
-                        .color(Color32::from_rgb(0xe0, 0x7a, 0x38))
-                        .strong(),
+                    RichText::new(
+                        "Önceki oturumdan kaydedilmemiş otomatik bir kurtarma dosyası bulundu.",
+                    )
+                    .color(Color32::from_rgb(0xe0, 0x7a, 0x38))
+                    .strong(),
                 );
 
                 ui.add_space(4.0);
@@ -47,8 +49,9 @@ impl RecoveryDialog {
                 ui.add_space(14.0);
 
                 ui.horizontal(|ui| {
-                    let btn_restore = Button::new(RichText::new("Geri Yükle").color(Color32::WHITE).strong())
-                        .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
+                    let btn_restore =
+                        Button::new(RichText::new("Geri Yükle").color(Color32::WHITE).strong())
+                            .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
 
                     if ui.add(btn_restore).clicked() {
                         action = Some(RecoveryAction::Restore(path.clone()));
