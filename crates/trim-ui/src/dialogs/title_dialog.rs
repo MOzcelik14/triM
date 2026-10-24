@@ -1,6 +1,7 @@
-//! Synthetic title and text generator dialog modal.
+//! Synthetic title and text generator dialog modal with motion graphics & lower thirds support.
 
 use egui::{Button, Color32, DragValue, RichText, Slider, Window};
+use trim_core::clip::MotionTitleStyle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TitlePosition {
@@ -25,6 +26,7 @@ impl TitlePosition {
 pub struct TitleDialog {
     pub is_open: bool,
     pub text: String,
+    pub subtitle_text: String,
     pub font_size: u32,
     pub text_color: [u8; 3],
     pub bg_color: [u8; 4],
@@ -32,6 +34,7 @@ pub struct TitleDialog {
     pub has_shadow: bool,
     pub has_box: bool,
     pub duration: f64,
+    pub motion_style: MotionTitleStyle,
 }
 
 impl Default for TitleDialog {
@@ -39,6 +42,7 @@ impl Default for TitleDialog {
         Self {
             is_open: false,
             text: "Başlık Metni".to_string(),
+            subtitle_text: "Açıklama / Ünvan".to_string(),
             font_size: 54,
             text_color: [255, 255, 255],
             bg_color: [0, 0, 0, 0], // Transparent default
@@ -46,6 +50,7 @@ impl Default for TitleDialog {
             has_shadow: true,
             has_box: false,
             duration: 5.0,
+            motion_style: MotionTitleStyle::None,
         }
     }
 }
@@ -59,6 +64,8 @@ pub enum TitleDialogAction {
         position: String,
         has_shadow: bool,
         duration: f64,
+        motion_style: MotionTitleStyle,
+        subtitle_text: Option<String>,
     },
 }
 
@@ -77,19 +84,64 @@ impl TitleDialog {
         Window::new("Yeni Başlık / Metin Klibi Ekle")
             .collapsible(false)
             .resizable(false)
-            .default_width(420.0)
+            .default_width(450.0)
             .show(ctx, |ui| {
                 ui.add_space(4.0);
 
+                // 1. Motion Style / Animation Presets
                 ui.group(|ui| {
-                    ui.strong("Metin İçeriği");
-                    ui.text_edit_multiline(&mut self.text);
+                    ui.strong("Animasyon Şablonu (Motion Preset)");
+                    ui.horizontal_wrapped(|ui| {
+                        for style in MotionTitleStyle::ALL {
+                            let is_selected = self.motion_style == *style;
+                            if ui.selectable_label(is_selected, style.label()).clicked() {
+                                self.motion_style = *style;
+                                match style {
+                                    MotionTitleStyle::LowerThird => {
+                                        self.position = TitlePosition::LowerThird;
+                                        self.has_box = true;
+                                        self.font_size = 44;
+                                    }
+                                    MotionTitleStyle::Ticker => {
+                                        self.position = TitlePosition::Subtitle;
+                                        self.has_box = true;
+                                        self.font_size = 38;
+                                    }
+                                    MotionTitleStyle::CinematicZoom => {
+                                        self.position = TitlePosition::Center;
+                                        self.has_shadow = true;
+                                    }
+                                    MotionTitleStyle::Typewriter => {
+                                        self.has_shadow = true;
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    });
                 });
 
                 ui.add_space(6.0);
 
+                // 2. Text Content (Main Title & Subtitle for Lower Thirds)
                 ui.group(|ui| {
-                    ui.strong("Şablon & Konumlandırma");
+                    if self.motion_style == MotionTitleStyle::LowerThird {
+                        ui.strong("Ana İsim / Başlık:");
+                        ui.text_edit_singleline(&mut self.text);
+                        ui.add_space(4.0);
+                        ui.strong("Alt Başlık / Ünvan / Açıklama:");
+                        ui.text_edit_singleline(&mut self.subtitle_text);
+                    } else {
+                        ui.strong("Metin İçeriği");
+                        ui.text_edit_multiline(&mut self.text);
+                    }
+                });
+
+                ui.add_space(6.0);
+
+                // 3. Positioning
+                ui.group(|ui| {
+                    ui.strong("Konumlandırma");
                     ui.horizontal_wrapped(|ui| {
                         if ui
                             .selectable_label(self.position == TitlePosition::Center, "Orta Başlık")
@@ -135,6 +187,7 @@ impl TitleDialog {
 
                 ui.add_space(6.0);
 
+                // 4. Formatting & Styling
                 ui.group(|ui| {
                     ui.strong("Biçimlendirme & Stil");
                     ui.horizontal(|ui| {
@@ -181,6 +234,14 @@ impl TitleDialog {
                             [0, 0, 0, 0] // 100% transparent
                         };
 
+                        let sub = if self.motion_style == MotionTitleStyle::LowerThird
+                            && !self.subtitle_text.trim().is_empty()
+                        {
+                            Some(self.subtitle_text.trim().to_string())
+                        } else {
+                            None
+                        };
+
                         action = Some(TitleDialogAction::CreateTitle {
                             text: self.text.clone(),
                             font_size: self.font_size,
@@ -189,6 +250,8 @@ impl TitleDialog {
                             position: self.position.as_str().to_string(),
                             has_shadow: self.has_shadow,
                             duration: self.duration,
+                            motion_style: self.motion_style,
+                            subtitle_text: sub,
                         });
                         self.is_open = false;
                     }

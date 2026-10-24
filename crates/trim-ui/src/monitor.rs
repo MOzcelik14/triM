@@ -45,6 +45,8 @@ pub struct ActiveTextOverlay {
     pub caption_style: trim_core::clip::CaptionStyle,
     pub highlight_color: Color32,
     pub progress: f32,
+    pub motion_style: trim_core::clip::MotionTitleStyle,
+    pub subtitle_text: Option<String>,
 }
 
 impl Default for ActiveTextOverlay {
@@ -61,6 +63,8 @@ impl Default for ActiveTextOverlay {
             caption_style: trim_core::clip::CaptionStyle::Standard,
             highlight_color: Color32::from_rgb(255, 230, 0),
             progress: 0.0,
+            motion_style: trim_core::clip::MotionTitleStyle::None,
+            subtitle_text: None,
         }
     }
 }
@@ -401,68 +405,18 @@ impl<'a> MonitorWidget<'a> {
                 );
             }
 
-            let text_rect = match ov.caption_style {
-                trim_core::clip::CaptionStyle::PopUpBouncy => {
-                    let bounce = 1.0 + 0.18 * (1.0 - (ov.progress * 2.0 - 1.0).abs()).max(0.0);
-                    let pop_font = egui::FontId::proportional(scaled_font_size * bounce);
-                    let galley =
-                        painter.layout_no_wrap(ov.text.clone(), pop_font, ov.highlight_color);
-                    let tr = egui::Align2::CENTER_CENTER
-                        .anchor_size(Pos2::new(target_x, target_y), galley.size());
+            let text_rect = match ov.motion_style {
+                trim_core::clip::MotionTitleStyle::Typewriter => {
+                    let total_chars = ov.text.chars().count();
+                    let type_prog = (ov.progress / 0.75).clamp(0.0, 1.0);
+                    let visible_count = (type_prog * total_chars as f32).ceil() as usize;
+                    let mut display_text: String = ov.text.chars().take(visible_count).collect();
+                    let blink = ((ov.progress * 12.0) as u32).is_multiple_of(2);
+                    if blink && type_prog < 1.0 {
+                        display_text.push('▎');
+                    }
 
-                    if let Some(bg_col) = ov.bg_color {
-                        let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
-                        painter.rect_filled(tr.expand(pad), 6.0, bg_col);
-                    }
-                    if ov.has_shadow {
-                        painter.galley(
-                            tr.min + Vec2::new(2.0, 2.0),
-                            galley.clone(),
-                            Color32::from_black_alpha((180.0 * ov.alpha) as u8),
-                        );
-                    }
-                    painter.galley(tr.min, galley, ov.highlight_color);
-                    tr
-                }
-                trim_core::clip::CaptionStyle::WordHighlightYellow
-                | trim_core::clip::CaptionStyle::WordHighlightNeon => {
-                    let hl_col =
-                        if ov.caption_style == trim_core::clip::CaptionStyle::WordHighlightYellow {
-                            Color32::from_rgb(255, 230, 0)
-                        } else {
-                            Color32::from_rgb(0, 255, 102)
-                        };
-
-                    let mut job = egui::text::LayoutJob::default();
-                    for (i, word) in words.iter().enumerate() {
-                        let col = if i == active_idx { hl_col } else { final_col };
-                        let f = if i == active_idx {
-                            egui::FontId::proportional(scaled_font_size * 1.08)
-                        } else {
-                            font.clone()
-                        };
-                        job.append(
-                            word,
-                            0.0,
-                            egui::TextFormat {
-                                font_id: f,
-                                color: col,
-                                ..Default::default()
-                            },
-                        );
-                        if i + 1 < words.len() {
-                            job.append(
-                                " ",
-                                0.0,
-                                egui::TextFormat {
-                                    font_id: font.clone(),
-                                    color: final_col,
-                                    ..Default::default()
-                                },
-                            );
-                        }
-                    }
-                    let galley = painter.layout_job(job);
+                    let galley = painter.layout_no_wrap(display_text, font, final_col);
                     let tr = egui::Align2::CENTER_CENTER
                         .anchor_size(Pos2::new(target_x, target_y), galley.size());
 
@@ -480,44 +434,282 @@ impl<'a> MonitorWidget<'a> {
                     painter.galley(tr.min, galley, final_col);
                     tr
                 }
-                trim_core::clip::CaptionStyle::BoxBackground
-                | trim_core::clip::CaptionStyle::Standard => {
-                    let galley = painter.layout_no_wrap(ov.text.clone(), font, final_col);
+                trim_core::clip::MotionTitleStyle::LowerThird => {
+                    let slide_factor = (ov.progress * 4.0).clamp(0.0, 1.0);
+                    let ease_in = 1.0 - (1.0 - slide_factor).powi(3);
+                    let slide_offset_x = (1.0 - ease_in) * -120.0;
+                    let cur_x = target_x + slide_offset_x;
+
+                    let main_font = egui::FontId::proportional(scaled_font_size * 1.05);
+                    let main_galley = painter.layout_no_wrap(ov.text.clone(), main_font, final_col);
+
+                    let sub_str = ov.subtitle_text.clone().unwrap_or_default();
+                    let sub_font = egui::FontId::proportional(scaled_font_size * 0.70);
+                    let sub_col = Color32::from_rgba_premultiplied(
+                        (210.0 * ov.alpha) as u8,
+                        (220.0 * ov.alpha) as u8,
+                        (235.0 * ov.alpha) as u8,
+                        (255.0 * ov.alpha) as u8,
+                    );
+                    let sub_galley = painter.layout_no_wrap(sub_str.clone(), sub_font, sub_col);
+
+                    let has_sub = !sub_str.is_empty();
+                    let content_w = main_galley.size().x.max(sub_galley.size().x) + 26.0;
+                    let content_h = if has_sub {
+                        main_galley.size().y + sub_galley.size().y + 10.0
+                    } else {
+                        main_galley.size().y + 12.0
+                    };
+
+                    let box_rect = Rect::from_min_size(
+                        Pos2::new(cur_x, target_y - content_h * 0.5),
+                        Vec2::new(content_w, content_h),
+                    );
+
+                    let bg_box = ov
+                        .bg_color
+                        .unwrap_or(Color32::from_rgba_unmultiplied(16, 20, 30, 220));
+                    painter.rect_filled(box_rect, 4.0, bg_box);
+
+                    let bar_w = 4.0 * (frame_rect.height() / 1080.0).max(1.0);
+                    let bar_rect = Rect::from_min_max(
+                        box_rect.min,
+                        Pos2::new(box_rect.left() + bar_w, box_rect.bottom()),
+                    );
+                    painter.rect_filled(bar_rect, 2.0, ov.highlight_color);
+
+                    let text_left = box_rect.left() + bar_w + 8.0;
+                    let main_pos = Pos2::new(text_left, box_rect.top() + 4.0);
+                    if ov.has_shadow {
+                        painter.galley(
+                            main_pos + Vec2::new(1.5, 1.5),
+                            main_galley.clone(),
+                            Color32::from_black_alpha((180.0 * ov.alpha) as u8),
+                        );
+                    }
+                    painter.galley(main_pos, main_galley, final_col);
+
+                    if has_sub {
+                        let sub_pos =
+                            Pos2::new(text_left, box_rect.bottom() - sub_galley.size().y - 4.0);
+                        painter.galley(sub_pos, sub_galley, sub_col);
+                    }
+
+                    box_rect
+                }
+                trim_core::clip::MotionTitleStyle::CinematicZoom => {
+                    let zoom = 0.94 + 0.10 * ov.progress;
+                    let zoom_font = egui::FontId::proportional(scaled_font_size * zoom);
+                    let galley = painter.layout_no_wrap(ov.text.clone(), zoom_font, final_col);
                     let tr = egui::Align2::CENTER_CENTER
                         .anchor_size(Pos2::new(target_x, target_y), galley.size());
 
                     if let Some(bg_col) = ov.bg_color {
-                        let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
-                        let mut box_col = bg_col;
-                        if ov.alpha < 0.999 {
-                            box_col = Color32::from_rgba_premultiplied(
-                                (box_col.r() as f32 * ov.alpha) as u8,
-                                (box_col.g() as f32 * ov.alpha) as u8,
-                                (box_col.b() as f32 * ov.alpha) as u8,
-                                (box_col.a() as f32 * ov.alpha) as u8,
-                            );
-                        }
-                        painter.rect_filled(tr.expand(pad), 4.0, box_col);
-                    } else if ov.caption_style == trim_core::clip::CaptionStyle::BoxBackground {
-                        let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
-                        painter.rect_filled(
-                            tr.expand(pad),
-                            4.0,
-                            Color32::from_rgba_unmultiplied(0, 0, 0, 180),
-                        );
+                        let pad = 8.0 * (frame_rect.height() / 1080.0).max(0.5);
+                        painter.rect_filled(tr.expand(pad), 6.0, bg_col);
                     }
-
                     if ov.has_shadow {
-                        let shadow_offset = Vec2::new(2.0, 2.0);
                         painter.galley(
-                            tr.min + shadow_offset,
+                            tr.min + Vec2::new(2.5, 2.5),
                             galley.clone(),
-                            Color32::from_black_alpha((160.0 * ov.alpha) as u8),
+                            Color32::from_black_alpha((180.0 * ov.alpha) as u8),
                         );
                     }
                     painter.galley(tr.min, galley, final_col);
                     tr
                 }
+                trim_core::clip::MotionTitleStyle::Ticker => {
+                    let galley = painter.layout_no_wrap(ov.text.clone(), font.clone(), final_col);
+                    let text_w = galley.size().x;
+                    let scroll_distance = frame_rect.width() + text_w;
+                    let cur_x = frame_rect.right() - (ov.progress * scroll_distance);
+                    let bar_h = (scaled_font_size * 1.6).max(28.0);
+                    let bar_rect = Rect::from_min_max(
+                        Pos2::new(frame_rect.left(), target_y - bar_h * 0.5),
+                        Pos2::new(frame_rect.right(), target_y + bar_h * 0.5),
+                    );
+
+                    let banner_bg = ov
+                        .bg_color
+                        .unwrap_or(Color32::from_rgba_unmultiplied(12, 14, 20, 230));
+                    painter.rect_filled(bar_rect, 0.0, banner_bg);
+
+                    let badge_w = 70.0 * (frame_rect.height() / 1080.0).max(0.6);
+                    let badge_rect = Rect::from_min_max(
+                        bar_rect.min,
+                        Pos2::new(bar_rect.left() + badge_w, bar_rect.bottom()),
+                    );
+                    painter.rect_filled(badge_rect, 0.0, Color32::from_rgb(220, 38, 38));
+                    painter.text(
+                        badge_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "BİLGİ",
+                        egui::FontId::proportional(scaled_font_size * 0.75),
+                        Color32::WHITE,
+                    );
+
+                    let text_pos = Pos2::new(cur_x, target_y - galley.size().y * 0.5);
+                    painter
+                        .with_clip_rect(bar_rect)
+                        .galley(text_pos, galley, final_col);
+                    bar_rect
+                }
+                trim_core::clip::MotionTitleStyle::BoxReveal => {
+                    let galley = painter.layout_no_wrap(ov.text.clone(), font, final_col);
+                    let tr = egui::Align2::CENTER_CENTER
+                        .anchor_size(Pos2::new(target_x, target_y), galley.size());
+
+                    let pad = 8.0 * (frame_rect.height() / 1080.0).max(0.5);
+                    let full_box = tr.expand(pad);
+
+                    let unfold = (ov.progress * 3.0).clamp(0.0, 1.0);
+                    let ease_w = full_box.width() * unfold;
+                    let animated_box = Rect::from_center_size(
+                        full_box.center(),
+                        Vec2::new(ease_w, full_box.height()),
+                    );
+
+                    let bg_col = ov
+                        .bg_color
+                        .unwrap_or(Color32::from_rgba_unmultiplied(20, 24, 34, 230));
+                    painter.rect_filled(animated_box, 4.0, bg_col);
+                    painter.rect_stroke(
+                        animated_box,
+                        4.0,
+                        Stroke::new(1.5_f32, ov.highlight_color),
+                    );
+
+                    if unfold >= 0.7 {
+                        let text_alpha = ((unfold - 0.7) / 0.3 * ov.alpha).clamp(0.0, 1.0);
+                        let text_col = Color32::from_rgba_premultiplied(
+                            (final_col.r() as f32 * text_alpha) as u8,
+                            (final_col.g() as f32 * text_alpha) as u8,
+                            (final_col.b() as f32 * text_alpha) as u8,
+                            (final_col.a() as f32 * text_alpha) as u8,
+                        );
+                        painter.galley(tr.min, galley, text_col);
+                    }
+                    full_box
+                }
+                trim_core::clip::MotionTitleStyle::None => match ov.caption_style {
+                    trim_core::clip::CaptionStyle::PopUpBouncy => {
+                        let bounce = 1.0 + 0.18 * (1.0 - (ov.progress * 2.0 - 1.0).abs()).max(0.0);
+                        let pop_font = egui::FontId::proportional(scaled_font_size * bounce);
+                        let galley =
+                            painter.layout_no_wrap(ov.text.clone(), pop_font, ov.highlight_color);
+                        let tr = egui::Align2::CENTER_CENTER
+                            .anchor_size(Pos2::new(target_x, target_y), galley.size());
+
+                        if let Some(bg_col) = ov.bg_color {
+                            let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
+                            painter.rect_filled(tr.expand(pad), 6.0, bg_col);
+                        }
+                        if ov.has_shadow {
+                            painter.galley(
+                                tr.min + Vec2::new(2.0, 2.0),
+                                galley.clone(),
+                                Color32::from_black_alpha((180.0 * ov.alpha) as u8),
+                            );
+                        }
+                        painter.galley(tr.min, galley, ov.highlight_color);
+                        tr
+                    }
+                    trim_core::clip::CaptionStyle::WordHighlightYellow
+                    | trim_core::clip::CaptionStyle::WordHighlightNeon => {
+                        let hl_col = if ov.caption_style
+                            == trim_core::clip::CaptionStyle::WordHighlightYellow
+                        {
+                            Color32::from_rgb(255, 230, 0)
+                        } else {
+                            Color32::from_rgb(0, 255, 102)
+                        };
+
+                        let mut job = egui::text::LayoutJob::default();
+                        for (i, word) in words.iter().enumerate() {
+                            let col = if i == active_idx { hl_col } else { final_col };
+                            let f = if i == active_idx {
+                                egui::FontId::proportional(scaled_font_size * 1.08)
+                            } else {
+                                font.clone()
+                            };
+                            job.append(
+                                word,
+                                0.0,
+                                egui::TextFormat {
+                                    font_id: f,
+                                    color: col,
+                                    ..Default::default()
+                                },
+                            );
+                            if i + 1 < words.len() {
+                                job.append(
+                                    " ",
+                                    0.0,
+                                    egui::TextFormat {
+                                        font_id: font.clone(),
+                                        color: final_col,
+                                        ..Default::default()
+                                    },
+                                );
+                            }
+                        }
+                        let galley = painter.layout_job(job);
+                        let tr = egui::Align2::CENTER_CENTER
+                            .anchor_size(Pos2::new(target_x, target_y), galley.size());
+
+                        if let Some(bg_col) = ov.bg_color {
+                            let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
+                            painter.rect_filled(tr.expand(pad), 4.0, bg_col);
+                        }
+                        if ov.has_shadow {
+                            painter.galley(
+                                tr.min + Vec2::new(2.0, 2.0),
+                                galley.clone(),
+                                Color32::from_black_alpha((180.0 * ov.alpha) as u8),
+                            );
+                        }
+                        painter.galley(tr.min, galley, final_col);
+                        tr
+                    }
+                    trim_core::clip::CaptionStyle::BoxBackground
+                    | trim_core::clip::CaptionStyle::Standard => {
+                        let galley = painter.layout_no_wrap(ov.text.clone(), font, final_col);
+                        let tr = egui::Align2::CENTER_CENTER
+                            .anchor_size(Pos2::new(target_x, target_y), galley.size());
+
+                        if let Some(bg_col) = ov.bg_color {
+                            let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
+                            let mut box_col = bg_col;
+                            if ov.alpha < 0.999 {
+                                box_col = Color32::from_rgba_premultiplied(
+                                    (box_col.r() as f32 * ov.alpha) as u8,
+                                    (box_col.g() as f32 * ov.alpha) as u8,
+                                    (box_col.b() as f32 * ov.alpha) as u8,
+                                    (box_col.a() as f32 * ov.alpha) as u8,
+                                );
+                            }
+                            painter.rect_filled(tr.expand(pad), 4.0, box_col);
+                        } else if ov.caption_style == trim_core::clip::CaptionStyle::BoxBackground {
+                            let pad = 6.0 * (frame_rect.height() / 1080.0).max(0.5);
+                            painter.rect_filled(
+                                tr.expand(pad),
+                                4.0,
+                                Color32::from_rgba_unmultiplied(0, 0, 0, 180),
+                            );
+                        }
+
+                        if ov.has_shadow {
+                            let shadow_offset = Vec2::new(2.0, 2.0);
+                            painter.galley(
+                                tr.min + shadow_offset,
+                                galley.clone(),
+                                Color32::from_black_alpha((160.0 * ov.alpha) as u8),
+                            );
+                        }
+                        painter.galley(tr.min, galley, final_col);
+                        tr
+                    }
+                },
             };
 
             if is_type_tool && self.mode == MonitorMode::Program {

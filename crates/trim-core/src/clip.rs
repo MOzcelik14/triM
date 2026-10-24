@@ -100,6 +100,40 @@ impl CaptionStyle {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum MotionTitleStyle {
+    #[default]
+    None,
+    Typewriter,
+    LowerThird,
+    CinematicZoom,
+    Ticker,
+    BoxReveal,
+}
+
+impl MotionTitleStyle {
+    pub const ALL: &'static [Self] = &[
+        Self::None,
+        Self::Typewriter,
+        Self::LowerThird,
+        Self::CinematicZoom,
+        Self::Ticker,
+        Self::BoxReveal,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::None => "Statik Metin",
+            Self::Typewriter => "⌨️ Daktilo (Harf Harf)",
+            Self::LowerThird => "👤 Alt Bant (Lower Third)",
+            Self::CinematicZoom => "🎬 Sinematik Büyüme (Fade & Zoom)",
+            Self::Ticker => "📰 Kayan Yazı (Haber Şeridi)",
+            Self::BoxReveal => "📦 Kutulu Açılış (Box Reveal)",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ColorLabel {
     #[default]
     None,
@@ -332,6 +366,10 @@ pub struct TextOverlay {
     pub caption_style: CaptionStyle,
     #[serde(default = "default_highlight_color")]
     pub highlight_color: [u8; 4],
+    #[serde(default)]
+    pub motion_style: MotionTitleStyle,
+    #[serde(default)]
+    pub subtitle_text: Option<String>,
 }
 
 fn default_font_size() -> f32 {
@@ -365,6 +403,8 @@ impl Default for TextOverlay {
             has_shadow: true,
             caption_style: CaptionStyle::Standard,
             highlight_color: default_highlight_color(),
+            motion_style: MotionTitleStyle::None,
+            subtitle_text: None,
         }
     }
 }
@@ -856,5 +896,30 @@ mod tests {
         let json = serde_json::to_string(&c).expect("serialize clip");
         let decoded: Clip = serde_json::from_str(&json).expect("deserialize clip");
         assert_eq!(decoded.color_label, ColorLabel::Orange);
+    }
+
+    #[test]
+    fn test_motion_title_serialization_roundtrip() {
+        let mut overlay = TextOverlay::default();
+        assert_eq!(overlay.motion_style, MotionTitleStyle::None);
+        assert_eq!(overlay.subtitle_text, None);
+
+        overlay.content = "Ahmet Yılmaz".to_string();
+        overlay.subtitle_text = Some("Baş Kurgucu / Director".to_string());
+        overlay.motion_style = MotionTitleStyle::LowerThird;
+
+        let clip = Clip {
+            text_overlay: Some(overlay),
+            ..Default::default()
+        };
+
+        let json = serde_json::to_string(&clip).expect("serialize clip with motion title");
+        let decoded: Clip =
+            serde_json::from_str(&json).expect("deserialize clip with motion title");
+
+        let ov = decoded.text_overlay.unwrap();
+        assert_eq!(ov.content, "Ahmet Yılmaz");
+        assert_eq!(ov.subtitle_text.as_deref(), Some("Baş Kurgucu / Director"));
+        assert_eq!(ov.motion_style, MotionTitleStyle::LowerThird);
     }
 }

@@ -7,7 +7,7 @@ use egui::{
 };
 use trim_core::clip::{
     AudioEqPreset, AudioVisualizerConfig, CaptionStyle, ChromaKeyConfig, Clip, ColorLabel,
-    ColorWheelsConfig, LutPreset, PanZoomPreset, TextOverlay, VisualizerStyle,
+    ColorWheelsConfig, LutPreset, MotionTitleStyle, PanZoomPreset, TextOverlay, VisualizerStyle,
 };
 use trim_core::keyframe::Interpolation;
 use trim_core::media::MediaType;
@@ -1502,6 +1502,39 @@ fn render_titler_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
                         *action = Some(InspectorAction::ClipModified);
                     }
                 });
+
+                prop_row(ui, "Animasyon", |ui| {
+                    egui::ComboBox::from_id_salt("motion_style_combo")
+                        .selected_text(txt.motion_style.label())
+                        .width(ui.available_width().max(110.0))
+                        .show_ui(ui, |ui| {
+                            for style in MotionTitleStyle::ALL {
+                                if ui
+                                    .selectable_value(&mut txt.motion_style, *style, style.label())
+                                    .clicked()
+                                {
+                                    *action = Some(InspectorAction::ClipModified);
+                                }
+                            }
+                        });
+                });
+
+                if txt.motion_style == MotionTitleStyle::LowerThird {
+                    prop_row(ui, "Alt Başlık", |ui| {
+                        let mut sub = txt.subtitle_text.clone().unwrap_or_default();
+                        if ui
+                            .add(TextEdit::singleline(&mut sub).hint_text("Ünvan / Açıklama"))
+                            .changed()
+                        {
+                            txt.subtitle_text = if sub.trim().is_empty() {
+                                None
+                            } else {
+                                Some(sub)
+                            };
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                    });
+                }
 
                 prop_row(ui, "Altyazı Stili", |ui| {
                     egui::ComboBox::from_id_salt("caption_style_combo")

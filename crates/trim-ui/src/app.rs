@@ -400,6 +400,8 @@ impl TrimApp {
                         caption_style: txt.caption_style,
                         highlight_color,
                         progress,
+                        motion_style: txt.motion_style,
+                        subtitle_text: txt.subtitle_text.clone(),
                     });
                 }
             }
@@ -2624,6 +2626,8 @@ impl eframe::App for TrimApp {
                     position,
                     has_shadow,
                     duration,
+                    motion_style,
+                    subtitle_text,
                 } => {
                     if let Some(out_png) = generate_title_image(
                         &text,
@@ -2730,7 +2734,10 @@ impl eframe::App for TrimApp {
                                         } else {
                                             None
                                         },
-                                        pos_x: 0.5,
+                                        pos_x: match position.as_str() {
+                                            "lower_third" => 0.08,
+                                            _ => 0.50,
+                                        },
                                         pos_y: match position.as_str() {
                                             "lower_third" => 0.80,
                                             "subtitle" => 0.87,
@@ -2738,8 +2745,18 @@ impl eframe::App for TrimApp {
                                             _ => 0.50,
                                         },
                                         has_shadow,
+                                        motion_style,
+                                        subtitle_text,
                                         ..Default::default()
                                     });
+                                    if motion_style
+                                        == trim_core::clip::MotionTitleStyle::CinematicZoom
+                                        || motion_style
+                                            == trim_core::clip::MotionTitleStyle::LowerThird
+                                    {
+                                        clip.fade_in = 0.5;
+                                        clip.fade_out = 0.5;
+                                    }
                                     let cmd = Box::new(AddClipCommand::new(target_track_id, clip));
                                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                     self.project.mark_dirty();

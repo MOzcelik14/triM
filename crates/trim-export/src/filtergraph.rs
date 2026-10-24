@@ -14,7 +14,7 @@
 //!   summed with `amix`, anchored to timeline time.
 
 use crate::presets::{ExportPreset, HardwareAccel};
-use trim_core::clip::{Clip, LutPreset};
+use trim_core::clip::{Clip, LutPreset, MotionTitleStyle};
 use trim_core::keyframe::{Interpolation, Keyframe};
 use trim_core::media::{MediaItem, MediaType};
 use trim_core::project::Project;
@@ -326,12 +326,33 @@ impl TimelineExporter {
                     bg[2],
                     bg[3] as f32 / 255.0
                 )
+            } else if txt.motion_style == MotionTitleStyle::LowerThird {
+                ":box=1:boxcolor=0x0f172a@0.85:boxborderw=10".to_string()
             } else {
                 String::new()
             };
             f.push(format!(
                 "drawtext=text='{sanitized}':fontsize={font_size}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
             ));
+
+            if let Some(sub) = &txt.subtitle_text {
+                if !sub.trim().is_empty() {
+                    let sub_sanitized = sub
+                        .replace('\\', "\\\\")
+                        .replace('\'', "\\'")
+                        .replace(':', "\\:")
+                        .replace('%', "\\%");
+                    let sub_size = ((font_size as f64 * 0.58).round().max(8.0)) as u32;
+                    let sub_y = format!(
+                        "(h-text_h)*{:.3}+{:.0}",
+                        txt.pos_y.clamp(0.0, 1.0),
+                        font_size as f64 * 1.25
+                    );
+                    f.push(format!(
+                        "drawtext=text='{sub_sanitized}':fontsize={sub_size}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}"
+                    ));
+                }
+            }
         }
 
         f.push(format!("setpts=PTS+{:.6}/TB", clip.timeline_in));
@@ -1195,6 +1216,53 @@ mod tests {
         assert!(
             fg.contains("shadowx=2"),
             "filtergraph should contain shadow: {fg}"
+        );
+    }
+
+    #[test]
+    fn test_lower_third_drawtext_generation() {
+        use trim_core::clip::{MotionTitleStyle, TextOverlay};
+
+        let mut proj = Project::new("LowerThirdTest");
+        let mut v = MediaItem::new("/tmp/fake_lt.mp4");
+        v.media_type = MediaType::Video;
+        let vid_id = v.id.clone();
+        proj.add_media(v);
+
+        let mut c = Clip::new(&vid_id, 0.0, 5.0);
+        c.text_overlay = Some(TextOverlay {
+            content: "Jane Doe".to_string(),
+            motion_style: MotionTitleStyle::LowerThird,
+            subtitle_text: Some("Yönetmen".to_string()),
+            font_size: 40.0,
+            text_color: [255, 255, 255, 255],
+            pos_x: 0.08,
+            pos_y: 0.82,
+            has_shadow: true,
+            ..Default::default()
+        });
+        proj.timeline.tracks[0].add_clip(c);
+
+        let preset = ExportPreset::default();
+        let (cmd, _) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out.mp4").unwrap();
+        let fg = cmd
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd[idx + 1])
+            .unwrap();
+
+        assert!(
+            fg.contains("drawtext=text='Jane Doe'"),
+            "filtergraph should contain main title: {fg}"
+        );
+        assert!(
+            fg.contains("drawtext=text='Yönetmen'"),
+            "filtergraph should contain subtitle: {fg}"
+        );
+        assert!(
+            fg.contains("boxcolor=0x0f172a@0.85"),
+            "filtergraph should contain lower third box: {fg}"
         );
     }
 
