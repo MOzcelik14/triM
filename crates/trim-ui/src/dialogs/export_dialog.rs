@@ -1,10 +1,22 @@
 //! Modern NLE Export Video Studio dialog modal with presets, custom resolution/codecs, and progress.
 
 use crate::file_dialog::{FileDialogBridge, FileDialogConfig, FileDialogRequest};
-use egui::{Button, Color32, ProgressBar, RichText, Slider, Vec2, Window};
+use egui::{
+    Align2, Area, Button, Color32, DragValue, Frame, Id, Layout, Margin, Order, Pos2, ProgressBar,
+    RichText, Rounding, ScrollArea, Sense, Shadow, Slider, Stroke, TextEdit, Ui, Vec2, Window,
+};
 use trim_core::project::Project;
+use trim_core::time::seconds_to_timecode;
 use trim_export::presets::{get_default_presets, ExportPreset, HardwareAccel, LoudnessNorm};
 use trim_media::detect_available_encoders;
+
+const MODAL_BG: Color32 = Color32::from_rgb(0x13, 0x15, 0x1c);
+const CARD_BG: Color32 = Color32::from_rgb(0x17, 0x19, 0x22);
+const CARD_BORDER: Color32 = Color32::from_rgb(0x27, 0x2b, 0x38);
+const ACCENT_AMBER: Color32 = Color32::from_rgb(0xe0, 0x7a, 0x38);
+const ACCENT_BLUE: Color32 = Color32::from_rgb(0x38, 0x7a, 0xe0);
+const ACCENT_TEAL: Color32 = Color32::from_rgb(0x2d, 0xb8, 0x9a);
+const TEXT_MUTED: Color32 = Color32::from_rgb(0x8a, 0x92, 0xa6);
 
 #[derive(Debug, Clone)]
 pub struct ExportDialog {
@@ -23,6 +35,9 @@ pub struct ExportDialog {
     pub loudness_norm: LoudnessNorm,
     pub timeline_duration: f64,
     pub file_dialog_bridge: FileDialogBridge,
+    pub timeline_native_width: u32,
+    pub timeline_native_height: u32,
+    pub timeline_native_fps: f64,
 }
 
 impl Default for ExportDialog {
@@ -70,6 +85,9 @@ impl Default for ExportDialog {
             loudness_norm: first_norm,
             timeline_duration: 10.0,
             file_dialog_bridge: FileDialogBridge::default(),
+            timeline_native_width: 1920,
+            timeline_native_height: 1080,
+            timeline_native_fps: 30.0,
         }
     }
 }
@@ -82,6 +100,10 @@ pub enum ExportDialogAction {
 
 impl ExportDialog {
     pub fn open(&mut self, project: &Project) {
+        self.timeline_native_width = project.timeline.width;
+        self.timeline_native_height = project.timeline.height;
+        self.timeline_native_fps = project.timeline.fps;
+
         self.custom_width = project.timeline.width;
         self.custom_height = project.timeline.height;
         self.custom_fps = project.timeline.fps;
@@ -108,405 +130,830 @@ impl ExportDialog {
             return None;
         }
 
+        // Escape closes when not currently rendering
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && !self.is_exporting {
+            self.is_open = false;
+            return None;
+        }
+
+        if self.is_exporting {
+            ctx.request_repaint();
+        }
+
+        // Full-screen modal backdrop dimmer & input blocker
+        let screen_rect = ctx.screen_rect();
+        Area::new(Id::new("export_modal_backdrop"))
+            .order(Order::Middle)
+            .fixed_pos(Pos2::ZERO)
+            .show(ctx, |ui| {
+                let (rect, _) = ui.allocate_exact_size(screen_rect.size(), Sense::click_and_drag());
+                ui.painter()
+                    .rect_filled(rect, 0.0, Color32::from_black_alpha(175));
+            });
+
         let mut action = None;
 
-        Window::new("Videoyu Dışa Aktar")
+        let modal_frame = Frame::window(&ctx.style())
+            .fill(MODAL_BG)
+            .rounding(Rounding::same(12.0))
+            .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+            .inner_margin(Margin::symmetric(20.0, 18.0))
+            .shadow(Shadow {
+                offset: Vec2::new(0.0, 16.0),
+                blur: 40.0,
+                spread: 4.0,
+                color: Color32::from_black_alpha(190),
+            });
+
+        Window::new("triM. - Videoyu Dışa Aktar")
+            .title_bar(false)
             .collapsible(false)
             .resizable(false)
-            .default_size(Vec2::new(620.0, 460.0))
+            .order(Order::Foreground)
+            .fixed_size(Vec2::new(760.0, 520.0))
+            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .frame(modal_frame)
             .show(ctx, |ui| {
-                if self.is_exporting {
-                    ctx.request_repaint();
-                }
-                ui.add_space(4.0);
+                // Header Bar
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("🎬").size(18.0));
+                    ui.add_space(2.0);
+                    ui.label(
+                        RichText::new("Videoyu Dışa Aktar")
+                            .size(16.0)
+                            .strong()
+                            .color(Color32::WHITE),
+                    );
+                    ui.add_space(6.0);
+                    Frame::none()
+                        .fill(Color32::from_rgba_unmultiplied(0xe0, 0x7a, 0x38, 30))
+                        .stroke(Stroke::new(1.0_f32, ACCENT_AMBER))
+                        .rounding(Rounding::same(4.0))
+                        .inner_margin(Margin::symmetric(6.0, 2.0))
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new("RENDER STUDIO")
+                                    .size(9.5)
+                                    .strong()
+                                    .color(Color32::from_rgb(0xf2, 0x9b, 0x5e)),
+                            );
+                        });
+
+                    ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                        if !self.is_exporting {
+                            let close_btn = Button::new(
+                                RichText::new("✕")
+                                    .size(13.0)
+                                    .color(Color32::from_rgb(0x8a, 0x92, 0xa6)),
+                            )
+                            .fill(Color32::TRANSPARENT)
+                            .stroke(Stroke::NONE);
+                            if ui.add(close_btn).on_hover_text("Kapat (ESC)").clicked() {
+                                self.is_open = false;
+                            }
+                        }
+                    });
+                });
+
+                ui.add_space(10.0);
 
                 if !self.is_exporting {
+                    // Two-Column Layout: Left Presets (250px), Right Details (470px)
                     ui.horizontal(|ui| {
-                        // Left: Preset Selector Column (Width: 230px, strictly vertical layout)
-                        ui.allocate_ui_with_layout(
-                            Vec2::new(230.0, 370.0),
-                            egui::Layout::top_down(egui::Align::Min),
-                            |ui| {
-                                ui.group(|ui| {
-                                    ui.vertical(|ui| {
-                                        ui.set_width(216.0);
-                                        ui.strong("Hazır Profiller");
-                                        ui.add_space(6.0);
+                        // =========================================================
+                        // LEFT COLUMN: Presets Library
+                        // =========================================================
+                        let left_w = 260.0;
+                        let content_h = 415.0;
 
-                                        for (idx, p) in self.presets.iter().enumerate() {
-                                            let is_sel = self.selected_preset_idx == idx;
-                                            let text_color = if is_sel {
-                                                Color32::WHITE
-                                            } else {
-                                                Color32::from_rgb(0xd0, 0xd0, 0xdc)
-                                            };
-                                            let btn = egui::SelectableLabel::new(
-                                                is_sel,
-                                                RichText::new(&p.name).size(12.0).color(text_color),
+                        ui.allocate_ui_with_layout(
+                            Vec2::new(left_w, content_h),
+                            Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                Frame::none()
+                                    .fill(CARD_BG)
+                                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                                    .rounding(Rounding::same(8.0))
+                                    .inner_margin(Margin::symmetric(10.0, 10.0))
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                RichText::new("Hazır Profiller")
+                                                    .size(12.0)
+                                                    .strong()
+                                                    .color(Color32::WHITE),
                                             );
-                                            if ui.add_sized([210.0, 26.0], btn).clicked() {
-                                                self.selected_preset_idx = idx;
-                                                if let Some(w) = p.width {
-                                                    self.custom_width = w;
+                                            ui.with_layout(
+                                                Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    ui.label(
+                                                        RichText::new(format!(
+                                                            "{} profil",
+                                                            self.presets.len()
+                                                        ))
+                                                        .size(10.5)
+                                                        .color(TEXT_MUTED),
+                                                    );
+                                                },
+                                            );
+                                        });
+
+                                        ui.add_space(8.0);
+
+                                        ScrollArea::vertical()
+                                            .max_height(365.0)
+                                            .auto_shrink([false, false])
+                                            .show(ui, |ui| {
+                                                ui.spacing_mut().item_spacing.y = 5.0;
+                                                for (idx, p) in self.presets.iter().enumerate() {
+                                                    let is_sel = self.selected_preset_idx == idx;
+                                                    let (icon, tag, short_name) =
+                                                        get_preset_metadata(&p.name);
+
+                                                    let card_frame = Frame::none()
+                                                        .fill(if is_sel {
+                                                            Color32::from_rgb(0x22, 0x27, 0x36)
+                                                        } else {
+                                                            Color32::from_rgb(0x13, 0x15, 0x1d)
+                                                        })
+                                                        .stroke(Stroke::new(
+                                                            1.0_f32,
+                                                            if is_sel {
+                                                                ACCENT_AMBER
+                                                            } else {
+                                                                Color32::from_rgb(0x1e, 0x21, 0x2c)
+                                                            },
+                                                        ))
+                                                        .rounding(Rounding::same(6.0))
+                                                        .inner_margin(Margin::symmetric(9.0, 7.0));
+
+                                                    let resp = card_frame.show(ui, |ui| {
+                                                        ui.horizontal(|ui| {
+                                                            ui.label(RichText::new(icon).size(15.0));
+                                                            ui.vertical(|ui| {
+                                                                ui.label(
+                                                                    RichText::new(short_name)
+                                                                        .size(11.5)
+                                                                        .strong()
+                                                                        .color(if is_sel {
+                                                                            Color32::WHITE
+                                                                        } else {
+                                                                            Color32::from_rgb(0xd8, 0xde, 0xec)
+                                                                        }),
+                                                                );
+                                                                let dim_str = match (p.width, p.height) {
+                                                                    (Some(w), Some(h)) => format!("{}×{}", w, h),
+                                                                    _ => "Orijinal Sekans".to_string(),
+                                                                };
+                                                                ui.label(
+                                                                    RichText::new(format!(
+                                                                        "{} · {}",
+                                                                        dim_str, p.video_codec
+                                                                    ))
+                                                                    .size(10.0)
+                                                                    .color(TEXT_MUTED),
+                                                                );
+                                                            });
+                                                            ui.with_layout(
+                                                                Layout::right_to_left(egui::Align::Center),
+                                                                |ui| {
+                                                                    render_tag_pill(ui, tag, is_sel);
+                                                                },
+                                                            );
+                                                        });
+                                                    });
+
+                                                    if resp.response.interact(Sense::click()).clicked() {
+                                                        self.selected_preset_idx = idx;
+                                                        if let Some(w) = p.width {
+                                                            self.custom_width = w;
+                                                        } else {
+                                                            self.custom_width = self.timeline_native_width;
+                                                        }
+                                                        if let Some(h) = p.height {
+                                                            self.custom_height = h;
+                                                        } else {
+                                                            self.custom_height = self.timeline_native_height;
+                                                        }
+                                                        if let Some(f) = p.fps {
+                                                            self.custom_fps = f;
+                                                        } else {
+                                                            self.custom_fps = self.timeline_native_fps;
+                                                        }
+                                                        self.custom_crf = p.crf;
+                                                        self.loudness_norm = p.loudness_norm;
+                                                    }
                                                 }
-                                                if let Some(h) = p.height {
-                                                    self.custom_height = h;
-                                                }
-                                                if let Some(f) = p.fps {
-                                                    self.custom_fps = f;
-                                                }
-                                                self.custom_crf = p.crf;
-                                                self.loudness_norm = p.loudness_norm;
-                                            }
-                                            ui.add_space(2.0);
-                                        }
+                                            });
                                     });
-                                });
                             },
                         );
 
-                        ui.separator();
+                        ui.add_space(6.0);
 
-                        // Right: Detailed Settings and Parameters (Width: 320px)
-                        ui.allocate_ui(Vec2::new(320.0, 360.0), |ui| {
-                            ui.vertical(|ui| {
+                        // =========================================================
+                        // RIGHT COLUMN: Parameters & Settings (455px)
+                        // =========================================================
+                        let right_w = 450.0;
+                        ui.allocate_ui_with_layout(
+                            Vec2::new(right_w, content_h),
+                            Layout::top_down(egui::Align::Min),
+                            |ui| {
                                 let curr_preset = &self.presets[self.selected_preset_idx];
 
-                                ui.group(|ui| {
-                                    ui.set_width(310.0);
-                                    ui.strong("Video Parametreleri");
-                                    ui.add_space(4.0);
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Format:");
-                                        if ui
-                                            .selectable_label(
-                                                self.custom_width == 1920
-                                                    && self.custom_height == 1080,
-                                                "16:9",
-                                            )
-                                            .clicked()
-                                        {
-                                            self.custom_width = 1920;
-                                            self.custom_height = 1080;
-                                        }
-                                        if ui
-                                            .selectable_label(
-                                                self.custom_width == 1080
-                                                    && self.custom_height == 1920,
-                                                "9:16 Dikey",
-                                            )
-                                            .clicked()
-                                        {
-                                            self.custom_width = 1080;
-                                            self.custom_height = 1920;
-                                        }
-                                        if ui
-                                            .selectable_label(
-                                                self.custom_width == 1080
-                                                    && self.custom_height == 1080,
-                                                "1:1 Kare",
-                                            )
-                                            .clicked()
-                                        {
-                                            self.custom_width = 1080;
-                                            self.custom_height = 1080;
-                                        }
-                                    });
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Çözünürlük:");
-                                        ui.add(
-                                            egui::DragValue::new(&mut self.custom_width)
-                                                .range(320..=7680),
-                                        );
-                                        ui.label("x");
-                                        ui.add(
-                                            egui::DragValue::new(&mut self.custom_height)
-                                                .range(240..=4320),
-                                        );
-                                    });
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Kare Hızı (FPS):");
-                                        ui.add(
-                                            egui::DragValue::new(&mut self.custom_fps)
-                                                .range(12.0..=120.0)
-                                                .suffix(" fps"),
-                                        );
-                                    });
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Kalite (CRF):");
-                                        ui.add(Slider::new(&mut self.custom_crf, 10..=35).text(""));
-                                        let qual_label = if self.custom_crf <= 16 {
-                                            "Ultra"
-                                        } else if self.custom_crf <= 22 {
-                                            "Yüksek"
-                                        } else {
-                                            "Kompakt"
-                                        };
-                                        ui.label(
-                                            RichText::new(qual_label)
-                                                .size(10.5)
-                                                .color(Color32::from_rgb(0x38, 0xa0, 0xf0)),
-                                        );
-                                    });
-
-                                    let detected_enc = detect_available_encoders();
-                                    ui.horizontal(|ui| {
-                                        ui.label("Hızlandırıcı (GPU):");
-                                        egui::ComboBox::from_id_salt("hw_accel_combo")
-                                            .selected_text(self.hw_accel.short_label())
-                                            .show_ui(ui, |ui| {
-                                                ui.selectable_value(
-                                                    &mut self.hw_accel,
-                                                    HardwareAccel::Auto,
-                                                    "Otomatik (En Hızlı GPU)",
-                                                );
-                                                if detected_enc.has_nvidia_nvenc() {
-                                                    ui.selectable_value(
-                                                        &mut self.hw_accel,
-                                                        HardwareAccel::Nvenc,
-                                                        "NVIDIA NVENC (GPU)",
-                                                    );
-                                                }
-                                                if detected_enc.has_intel_qsv() {
-                                                    ui.selectable_value(
-                                                        &mut self.hw_accel,
-                                                        HardwareAccel::Qsv,
-                                                        "Intel QuickSync (QSV)",
-                                                    );
-                                                }
-                                                if detected_enc.has_vaapi() {
-                                                    ui.selectable_value(
-                                                        &mut self.hw_accel,
-                                                        HardwareAccel::Vaapi,
-                                                        "Linux VAAPI",
-                                                    );
-                                                }
-                                                if detected_enc.has_amd_amf() {
-                                                    ui.selectable_value(
-                                                        &mut self.hw_accel,
-                                                        HardwareAccel::Amf,
-                                                        "AMD AMF (GPU)",
-                                                    );
-                                                }
-                                                ui.selectable_value(
-                                                    &mut self.hw_accel,
-                                                    HardwareAccel::Cpu,
-                                                    "İşlemci (CPU x264/x265)",
-                                                );
-                                            });
-                                    });
-
-                                    let badge_text = if detected_enc.has_nvidia_nvenc() {
-                                        "⚡ NVIDIA NVENC Donanım Hızlandırma Algılandı"
-                                    } else if detected_enc.has_intel_qsv() {
-                                        "⚡ Intel QuickSync Donanım Hızlandırma Algılandı"
-                                    } else if detected_enc.has_vaapi() {
-                                        "⚡ Linux VAAPI Donanım Hızlandırma Algılandı"
-                                    } else if detected_enc.has_amd_amf() {
-                                        "⚡ AMD AMF Donanım Hızlandırma Algılandı"
-                                    } else {
-                                        "ℹ️ Donanım hızlandırma bulunamadı, CPU kullanılacak"
-                                    };
-                                    ui.label(RichText::new(badge_text).size(10.0).color(
-                                        if detected_enc.any_hardware() {
-                                            Color32::from_rgb(0x3d, 0xdc, 0x84)
-                                        } else {
-                                            Color32::from_rgb(0x90, 0x90, 0xa0)
-                                        },
-                                    ));
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Video Kodeki:");
-                                        ui.label(
-                                            RichText::new(&curr_preset.video_codec)
-                                                .strong()
-                                                .color(Color32::from_rgb(0xe0, 0x7a, 0x38)),
-                                        );
-                                    });
-                                });
-
-                                ui.add_space(4.0);
-
-                                ui.group(|ui| {
-                                    ui.set_width(310.0);
-                                    ui.strong("Ses & Tahmini Boyut");
-                                    ui.add_space(2.0);
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Ses Kodeki:");
-                                        ui.label(
-                                            RichText::new(format!(
-                                                "{} @ {}",
-                                                curr_preset.audio_codec, curr_preset.audio_bitrate
-                                            ))
-                                            .color(Color32::from_rgb(0x3d, 0xdc, 0x84)),
-                                        );
-                                    });
-
-                                    ui.horizontal(|ui| {
-                                        ui.label("Normalizasyon:");
-                                        egui::ComboBox::from_id_salt("loudness_norm_select")
-                                            .selected_text(self.loudness_norm.label())
-                                            .show_ui(ui, |ui| {
-                                                for norm in LoudnessNorm::ALL {
-                                                    ui.selectable_value(
-                                                        &mut self.loudness_norm,
-                                                        *norm,
-                                                        norm.label(),
-                                                    );
-                                                }
-                                            });
-                                    });
-
-                                    // Approximate size calculation: (crf-dependent bitrate + audio bitrate) * duration
-                                    let approx_mbps = match self.custom_crf {
-                                        0..=15 => 25.0,
-                                        16..=19 => 14.0,
-                                        20..=24 => 7.0,
-                                        _ => 3.5,
-                                    };
-                                    let est_mb = (approx_mbps
-                                        * (self.custom_width as f64 * self.custom_height as f64
-                                            / (1920.0 * 1080.0))
-                                        * self.timeline_duration
-                                        / 8.0)
-                                        .max(0.5);
-                                    ui.horizontal(|ui| {
-                                        ui.label("Tahmini Boyut:");
-                                        ui.label(
-                                            RichText::new(format!("~{:.1} MB", est_mb))
-                                                .strong()
-                                                .color(Color32::from_rgb(0x38, 0xa0, 0xf0)),
-                                        );
-                                        ui.label(
-                                            RichText::new(format!(
-                                                "({:.1} sn)",
-                                                self.timeline_duration
-                                            ))
-                                            .size(10.0)
-                                            .color(Color32::from_rgb(0x80, 0x80, 0x90)),
-                                        );
-                                    });
-                                });
-
-                                ui.add_space(4.0);
-
-                                ui.group(|ui| {
-                                    ui.set_width(310.0);
-                                    ui.strong("Çıktı Dosyası Yolu");
-                                    ui.horizontal(|ui| {
-                                        ui.text_edit_singleline(&mut self.output_path);
-                                        let browse_enabled = !self.file_dialog_bridge.is_pending();
-                                        if ui
-                                            .add_enabled(browse_enabled, Button::new("Gözat..."))
-                                            .clicked()
-                                        {
-                                            let config = FileDialogConfig::save_file(
-                                                "Çıktı Dosyası Seç",
-                                                Some("cikti.mp4".to_string()),
-                                            )
-                                            .add_filter("MP4 Video", &["mp4"])
-                                            .add_filter("QuickTime MOV", &["mov"]);
-                                            self.file_dialog_bridge.open(
-                                                FileDialogRequest::SelectExportOutput,
-                                                config,
+                                // Card 1: Video Parameters
+                                Frame::none()
+                                    .fill(CARD_BG)
+                                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                                    .rounding(Rounding::same(8.0))
+                                    .inner_margin(Margin::symmetric(12.0, 10.0))
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("🎞").size(12.0).color(ACCENT_AMBER));
+                                            ui.label(
+                                                RichText::new("Video Parametreleri")
+                                                    .size(11.5)
+                                                    .strong()
+                                                    .color(Color32::WHITE),
                                             );
-                                        }
+                                            ui.with_layout(
+                                                Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    render_chip(
+                                                        ui,
+                                                        &curr_preset.video_codec,
+                                                        Color32::from_rgb(0xe0, 0x7a, 0x38),
+                                                    );
+                                                },
+                                            );
+                                        });
+
+                                        ui.add_space(6.0);
+
+                                        // Format Quick Switcher Pills
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("Hızlı Format:").size(11.0).color(TEXT_MUTED));
+                                            for (lbl, target_w, target_h) in [
+                                                ("16:9 Yatay", 1920, 1080),
+                                                ("9:16 Dikey", 1080, 1920),
+                                                ("1:1 Kare", 1080, 1080),
+                                                ("21:9 Sinema", 2560, 1080),
+                                            ] {
+                                                let is_match = self.custom_width == target_w && self.custom_height == target_h;
+                                                let pill = Button::new(
+                                                    RichText::new(lbl)
+                                                        .size(10.0)
+                                                        .strong()
+                                                        .color(if is_match { Color32::WHITE } else { TEXT_MUTED }),
+                                                )
+                                                .fill(if is_match { ACCENT_AMBER } else { Color32::from_rgb(0x1f, 0x22, 0x2e) })
+                                                .rounding(Rounding::same(4.0));
+                                                if ui.add(pill).clicked() {
+                                                    self.custom_width = target_w;
+                                                    self.custom_height = target_h;
+                                                }
+                                            }
+                                        });
+
+                                        ui.add_space(4.0);
+
+                                        // Resolution & Native Reset
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("Çözünürlük:").size(11.0).color(TEXT_MUTED));
+                                            ui.add(
+                                                DragValue::new(&mut self.custom_width)
+                                                    .range(320..=7680)
+                                                    .speed(2.0)
+                                                    .suffix(" px"),
+                                            );
+                                            ui.label(RichText::new("×").size(11.0).color(TEXT_MUTED));
+                                            ui.add(
+                                                DragValue::new(&mut self.custom_height)
+                                                    .range(240..=4320)
+                                                    .speed(2.0)
+                                                    .suffix(" px"),
+                                            );
+
+                                            if (self.custom_width != self.timeline_native_width
+                                                || self.custom_height != self.timeline_native_height)
+                                                && ui
+                                                    .add(
+                                                        Button::new(
+                                                            RichText::new("↺ Sekanstan Al")
+                                                                .size(10.0)
+                                                                .color(Color32::from_rgb(0xc0, 0xca, 0xe0)),
+                                                        )
+                                                        .fill(Color32::from_rgb(0x22, 0x26, 0x34))
+                                                        .rounding(Rounding::same(4.0)),
+                                                    )
+                                                    .on_hover_text(format!(
+                                                        "Zaman çizgisi çözünürlüğüne ({}) geri dön",
+                                                        self.timeline_native_width
+                                                    ))
+                                                    .clicked()
+                                            {
+                                                self.custom_width = self.timeline_native_width;
+                                                self.custom_height = self.timeline_native_height;
+                                                self.custom_fps = self.timeline_native_fps;
+                                            }
+                                        });
+
+                                        ui.add_space(4.0);
+
+                                        // FPS Row + Quick Presets
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("Kare Hızı:").size(11.0).color(TEXT_MUTED));
+                                            ui.add(
+                                                DragValue::new(&mut self.custom_fps)
+                                                    .range(12.0..=120.0)
+                                                    .speed(0.5)
+                                                    .suffix(" fps"),
+                                            );
+                                            for fps_val in [24.0, 30.0, 60.0] {
+                                                let is_fps = (self.custom_fps - fps_val).abs() < 0.05;
+                                                let pill = Button::new(
+                                                    RichText::new(format!("{:.0}", fps_val))
+                                                        .size(10.0)
+                                                        .strong()
+                                                        .color(if is_fps { Color32::WHITE } else { TEXT_MUTED }),
+                                                )
+                                                .fill(if is_fps { ACCENT_BLUE } else { Color32::from_rgb(0x1f, 0x22, 0x2e) })
+                                                .rounding(Rounding::same(4.0));
+                                                if ui.add(pill).clicked() {
+                                                    self.custom_fps = fps_val;
+                                                }
+                                            }
+                                        });
+
+                                        ui.add_space(4.0);
+
+                                        // Quality (CRF) Slider
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("Kalite (CRF):").size(11.0).color(TEXT_MUTED));
+                                            ui.add(
+                                                Slider::new(&mut self.custom_crf, 10..=35)
+                                                    .show_value(true)
+                                                    .trailing_fill(true),
+                                            );
+                                            let (qual_label, qual_col) = if self.custom_crf <= 15 {
+                                                ("Kayıpsıza Yakın", Color32::from_rgb(0x2d, 0xb8, 0x9a))
+                                            } else if self.custom_crf <= 20 {
+                                                ("Yüksek Kalite", Color32::from_rgb(0x38, 0xa0, 0xf0))
+                                            } else if self.custom_crf <= 25 {
+                                                ("Dengeli", Color32::from_rgb(0xf2, 0x9b, 0x5e))
+                                            } else {
+                                                ("Kompakt", Color32::from_rgb(0xa0, 0xa0, 0xb0))
+                                            };
+                                            render_chip(ui, qual_label, qual_col);
+                                        });
+
+                                        ui.add_space(4.0);
+
+                                        // Hardware Acceleration (GPU)
+                                        let detected_enc = detect_available_encoders();
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("Donanım (GPU):").size(11.0).color(TEXT_MUTED));
+                                            egui::ComboBox::from_id_salt("hw_accel_combo")
+                                                .selected_text(self.hw_accel.short_label())
+                                                .show_ui(ui, |ui| {
+                                                    ui.selectable_value(
+                                                        &mut self.hw_accel,
+                                                        HardwareAccel::Auto,
+                                                        "Otomatik (En Hızlı Donanım GPU)",
+                                                    );
+                                                    if detected_enc.has_nvidia_nvenc() {
+                                                        ui.selectable_value(
+                                                            &mut self.hw_accel,
+                                                            HardwareAccel::Nvenc,
+                                                            "NVIDIA NVENC (GPU)",
+                                                        );
+                                                    }
+                                                    if detected_enc.has_intel_qsv() {
+                                                        ui.selectable_value(
+                                                            &mut self.hw_accel,
+                                                            HardwareAccel::Qsv,
+                                                            "Intel QuickSync (QSV)",
+                                                        );
+                                                    }
+                                                    if detected_enc.has_vaapi() {
+                                                        ui.selectable_value(
+                                                            &mut self.hw_accel,
+                                                            HardwareAccel::Vaapi,
+                                                            "Linux VAAPI",
+                                                        );
+                                                    }
+                                                    if detected_enc.has_amd_amf() {
+                                                        ui.selectable_value(
+                                                            &mut self.hw_accel,
+                                                            HardwareAccel::Amf,
+                                                            "AMD AMF (GPU)",
+                                                        );
+                                                    }
+                                                    ui.selectable_value(
+                                                        &mut self.hw_accel,
+                                                        HardwareAccel::Cpu,
+                                                        "Yazılım / İşlemci (CPU x264/x265)",
+                                                    );
+                                                });
+
+                                            let (badge_text, badge_col) = if detected_enc.has_nvidia_nvenc() {
+                                                ("⚡ NVENC Donanım Aktif", Color32::from_rgb(0x3d, 0xdc, 0x84))
+                                            } else if detected_enc.has_intel_qsv() {
+                                                ("⚡ QuickSync Aktif", Color32::from_rgb(0x38, 0xa0, 0xf0))
+                                            } else if detected_enc.has_vaapi() {
+                                                ("⚡ VAAPI Aktif", Color32::from_rgb(0x3d, 0xdc, 0x84))
+                                            } else if detected_enc.has_amd_amf() {
+                                                ("⚡ AMD AMF Aktif", Color32::from_rgb(0xe0, 0x50, 0x50))
+                                            } else {
+                                                ("CPU Yazılım", Color32::from_rgb(0x8a, 0x92, 0xa6))
+                                            };
+                                            render_chip(ui, badge_text, badge_col);
+                                        });
                                     });
-                                });
-                            });
-                        });
+
+                                ui.add_space(6.0);
+
+                                // Card 2: Audio & Smart Normalization
+                                Frame::none()
+                                    .fill(CARD_BG)
+                                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                                    .rounding(Rounding::same(8.0))
+                                    .inner_margin(Margin::symmetric(12.0, 9.0))
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("🔊").size(12.0).color(ACCENT_TEAL));
+                                            ui.label(
+                                                RichText::new("Ses & Normalizasyon")
+                                                    .size(11.5)
+                                                    .strong()
+                                                    .color(Color32::WHITE),
+                                            );
+                                            ui.with_layout(
+                                                Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    render_chip(
+                                                        ui,
+                                                        &format!("{} @ {}", curr_preset.audio_codec, curr_preset.audio_bitrate),
+                                                        ACCENT_TEAL,
+                                                    );
+                                                },
+                                            );
+                                        });
+
+                                        ui.add_space(5.0);
+
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("Normalizasyon:").size(11.0).color(TEXT_MUTED));
+                                            egui::ComboBox::from_id_salt("loudness_norm_select")
+                                                .selected_text(self.loudness_norm.label())
+                                                .width(260.0)
+                                                .show_ui(ui, |ui| {
+                                                    for norm in LoudnessNorm::ALL {
+                                                        ui.selectable_value(
+                                                            &mut self.loudness_norm,
+                                                            *norm,
+                                                            norm.label(),
+                                                        );
+                                                    }
+                                                });
+                                        });
+                                    });
+
+                                ui.add_space(6.0);
+
+                                // Card 3: Output Destination & Estimated Size
+                                Frame::none()
+                                    .fill(CARD_BG)
+                                    .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                                    .rounding(Rounding::same(8.0))
+                                    .inner_margin(Margin::symmetric(12.0, 9.0))
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label(RichText::new("📁").size(12.0).color(ACCENT_BLUE));
+                                            ui.label(
+                                                RichText::new("Çıktı Dosyası")
+                                                    .size(11.5)
+                                                    .strong()
+                                                    .color(Color32::WHITE),
+                                            );
+
+                                            // Size calculation
+                                            let is_prores = curr_preset.video_codec.contains("prores");
+                                            let approx_mbps = if is_prores {
+                                                147.0
+                                            } else {
+                                                match self.custom_crf {
+                                                    0..=15 => 28.0,
+                                                    16..=19 => 14.0,
+                                                    20..=24 => 7.0,
+                                                    _ => 3.5,
+                                                }
+                                            };
+                                            let est_mb = (approx_mbps
+                                                * (self.custom_width as f64 * self.custom_height as f64
+                                                    / (1920.0 * 1080.0))
+                                                * (self.custom_fps / 30.0).clamp(0.5, 2.0)
+                                                * self.timeline_duration
+                                                / 8.0)
+                                                .max(0.2);
+
+                                            ui.with_layout(
+                                                Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    render_chip(
+                                                        ui,
+                                                        &format!("~{:.1} MB", est_mb),
+                                                        Color32::from_rgb(0x38, 0xa0, 0xf0),
+                                                    );
+                                                    let tc = seconds_to_timecode(self.timeline_duration, self.custom_fps);
+                                                    render_chip(ui, &tc, TEXT_MUTED);
+                                                },
+                                            );
+                                        });
+
+                                        ui.add_space(5.0);
+
+                                        ui.horizontal(|ui| {
+                                            ui.add(
+                                                TextEdit::singleline(&mut self.output_path)
+                                                    .desired_width(ui.available_width() - 85.0),
+                                            );
+                                            let browse_enabled = !self.file_dialog_bridge.is_pending();
+                                            if ui
+                                                .add_enabled(
+                                                    browse_enabled,
+                                                    Button::new(
+                                                        RichText::new("📁 Gözat...")
+                                                            .size(11.0)
+                                                            .color(Color32::WHITE),
+                                                    )
+                                                    .fill(Color32::from_rgb(0x23, 0x28, 0x38))
+                                                    .rounding(Rounding::same(5.0)),
+                                                )
+                                                .clicked()
+                                            {
+                                                let config = FileDialogConfig::save_file(
+                                                    "Çıktı Dosyası Seç",
+                                                    Some("cikti.mp4".to_string()),
+                                                )
+                                                .add_filter("MP4 Video", &["mp4"])
+                                                .add_filter("QuickTime MOV", &["mov"]);
+                                                self.file_dialog_bridge.open(
+                                                    FileDialogRequest::SelectExportOutput,
+                                                    config,
+                                                );
+                                            }
+                                        });
+                                    });
+                            },
+                        );
                     });
 
                     ui.add_space(12.0);
 
+                    // =========================================================
+                    // BOTTOM ACTION BAR
+                    // =========================================================
                     ui.horizontal(|ui| {
-                        let btn_start = Button::new(
-                            RichText::new("Dışa Aktarmayı Başlat")
-                                .color(Color32::WHITE)
-                                .size(13.0)
-                                .strong(),
-                        )
-                        .fill(Color32::from_rgb(0xe0, 0x7a, 0x38))
-                        .min_size(Vec2::new(180.0, 30.0));
-
-                        if ui.add(btn_start).clicked() {
-                            let mut preset = self.presets[self.selected_preset_idx].clone();
-                            preset.width = Some(self.custom_width);
-                            preset.height = Some(self.custom_height);
-                            preset.fps = Some(self.custom_fps);
-                            preset.crf = self.custom_crf;
-                            preset.hw_accel = self.hw_accel;
-                            preset.loudness_norm = self.loudness_norm;
-
-                            self.is_exporting = true;
-                            self.progress = 0.0;
-                            action = Some(ExportDialogAction::StartExport(
-                                preset,
-                                self.output_path.clone(),
-                            ));
-                        }
-
-                        if ui.button("Kapat").clicked() {
-                            self.is_open = false;
-                        }
-                    });
-                } else {
-                    // Export In Progress View
-                    ui.group(|ui| {
-                        ui.set_width(550.0);
-                        ui.strong("Dışa Aktarma Devam Ediyor");
-                        ui.add_space(8.0);
-                        ui.add(
-                            ProgressBar::new(self.progress / 100.0)
-                                .text(format!("{:.1}%", self.progress)),
-                        );
-                        ui.add_space(8.0);
                         ui.label(
-                            RichText::new(&self.status_text)
-                                .size(12.0)
-                                .color(Color32::from_rgb(0xa0, 0xa0, 0xb8)),
+                            RichText::new("Tip: Donanım hızlandırma aktifken render süresi 5 kata kadar hızlanır.")
+                                .size(10.5)
+                                .color(TEXT_MUTED),
                         );
 
-                        if self.progress >= 99.9 {
-                            ui.add_space(8.0);
-                            ui.label(
-                                RichText::new("✅ Dışa aktarma başarıyla tamamlandı!")
-                                    .color(Color32::from_rgb(0x3d, 0xdc, 0x84))
+                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                            let btn_start = Button::new(
+                                RichText::new("🎬  Dışa Aktarmayı Başlat")
+                                    .color(Color32::WHITE)
+                                    .size(12.5)
                                     .strong(),
-                            );
-                            ui.add_space(6.0);
-                            if ui.button("📁 Dosyayı Klasörde Göster").clicked() {
-                                action = Some(ExportDialogAction::OpenOutputFolder(
+                            )
+                            .fill(ACCENT_AMBER)
+                            .rounding(Rounding::same(6.0))
+                            .min_size(Vec2::new(195.0, 32.0));
+
+                            if ui.add(btn_start).clicked() {
+                                let mut preset = self.presets[self.selected_preset_idx].clone();
+                                preset.width = Some(self.custom_width);
+                                preset.height = Some(self.custom_height);
+                                preset.fps = Some(self.custom_fps);
+                                preset.crf = self.custom_crf;
+                                preset.hw_accel = self.hw_accel;
+                                preset.loudness_norm = self.loudness_norm;
+
+                                self.is_exporting = true;
+                                self.progress = 0.0;
+                                action = Some(ExportDialogAction::StartExport(
+                                    preset,
                                     self.output_path.clone(),
                                 ));
                             }
-                        }
-                    });
 
-                    ui.add_space(14.0);
+                            ui.add_space(6.0);
 
-                    if self.progress < 99.9 {
-                        if ui
-                            .button(
-                                RichText::new("İptal Et")
-                                    .color(Color32::from_rgb(0xe0, 0x50, 0x50)),
+                            let btn_close = Button::new(
+                                RichText::new("Vazgeç")
+                                    .size(11.5)
+                                    .color(Color32::from_rgb(0xc0, 0xc6, 0xd8)),
                             )
-                            .clicked()
-                        {
-                            action = Some(ExportDialogAction::CancelExport);
-                        }
-                    } else if ui.button("Kapat").clicked() {
-                        self.is_open = false;
-                        self.is_exporting = false;
-                    }
+                            .fill(Color32::from_rgb(0x1a, 0x1d, 0x27))
+                            .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                            .rounding(Rounding::same(6.0))
+                            .min_size(Vec2::new(85.0, 32.0));
+
+                            if ui.add(btn_close).clicked() {
+                                self.is_open = false;
+                            }
+                        });
+                    });
+                } else {
+                    // =========================================================
+                    // EXPORT IN PROGRESS VIEW (Modern Dashboard)
+                    // =========================================================
+                    ui.add_space(20.0);
+                    Frame::none()
+                        .fill(CARD_BG)
+                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                        .rounding(Rounding::same(10.0))
+                        .inner_margin(Margin::symmetric(24.0, 24.0))
+                        .show(ui, |ui| {
+                            ui.vertical_centered(|ui| {
+                                let is_done = self.progress >= 99.9;
+
+                                if is_done {
+                                    ui.label(RichText::new("🎉").size(34.0));
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        RichText::new("Dışa Aktarma Başarıyla Tamamlandı!")
+                                            .size(16.0)
+                                            .strong()
+                                            .color(Color32::from_rgb(0x3d, 0xdc, 0x84)),
+                                    );
+                                } else {
+                                    ui.label(RichText::new("⚡").size(28.0).color(ACCENT_AMBER));
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        RichText::new("Video Dışa Aktarılıyor...")
+                                            .size(15.0)
+                                            .strong()
+                                            .color(Color32::WHITE),
+                                    );
+                                }
+
+                                ui.add_space(12.0);
+
+                                // Big percentage readout
+                                ui.label(
+                                    RichText::new(format!("{:.1}%", self.progress))
+                                        .size(36.0)
+                                        .strong()
+                                        .color(if is_done {
+                                            Color32::from_rgb(0x3d, 0xdc, 0x84)
+                                        } else {
+                                            ACCENT_AMBER
+                                        }),
+                                );
+
+                                ui.add_space(10.0);
+
+                                ui.add(
+                                    ProgressBar::new(self.progress / 100.0)
+                                        .desired_width(520.0)
+                                        .desired_height(14.0)
+                                        .show_percentage(),
+                                );
+
+                                ui.add_space(12.0);
+
+                                ui.label(
+                                    RichText::new(&self.status_text)
+                                        .size(12.0)
+                                        .color(Color32::from_rgb(0xa0, 0xa8, 0xbe)),
+                                );
+
+                                ui.add_space(8.0);
+
+                                ui.label(
+                                    RichText::new(format!("Hedef: {}", self.output_path))
+                                        .size(10.5)
+                                        .color(TEXT_MUTED),
+                                );
+
+                                ui.add_space(20.0);
+
+                                if is_done {
+                                    ui.horizontal(|ui| {
+                                        let btn_folder = Button::new(
+                                            RichText::new("📁  Dosyayı Klasörde Göster")
+                                                .size(12.0)
+                                                .color(Color32::WHITE)
+                                                .strong(),
+                                        )
+                                        .fill(Color32::from_rgb(0x28, 0x30, 0x44))
+                                        .stroke(Stroke::new(1.0_f32, ACCENT_BLUE))
+                                        .rounding(Rounding::same(6.0))
+                                        .min_size(Vec2::new(190.0, 34.0));
+
+                                        if ui.add(btn_folder).clicked() {
+                                            action = Some(ExportDialogAction::OpenOutputFolder(
+                                                self.output_path.clone(),
+                                            ));
+                                        }
+
+                                        ui.add_space(8.0);
+
+                                        let btn_done = Button::new(
+                                            RichText::new("Tamamlandı")
+                                                .size(12.0)
+                                                .color(Color32::WHITE)
+                                                .strong(),
+                                        )
+                                        .fill(Color32::from_rgb(0x23, 0x7a, 0x48))
+                                        .rounding(Rounding::same(6.0))
+                                        .min_size(Vec2::new(130.0, 34.0));
+
+                                        if ui.add(btn_done).clicked() {
+                                            self.is_open = false;
+                                            self.is_exporting = false;
+                                        }
+                                    });
+                                } else {
+                                    let btn_cancel = Button::new(
+                                        RichText::new("İptal Et")
+                                            .size(11.5)
+                                            .color(Color32::from_rgb(0xf0, 0x70, 0x70)),
+                                    )
+                                    .fill(Color32::from_rgb(0x28, 0x18, 0x1e))
+                                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x60, 0x24, 0x2c)))
+                                    .rounding(Rounding::same(6.0))
+                                    .min_size(Vec2::new(110.0, 30.0));
+
+                                    if ui.add(btn_cancel).clicked() {
+                                        action = Some(ExportDialogAction::CancelExport);
+                                    }
+                                }
+                            });
+                        });
                 }
             });
 
         action
     }
+}
+
+fn get_preset_metadata(name: &str) -> (&'static str, &'static str, &'static str) {
+    if name.contains("YouTube") {
+        ("🖥", "1080p", "YouTube 1080p")
+    } else if name.contains("720p") {
+        ("⚡", "Hızlı", "Hızlı Web 720p")
+    } else if name.contains("Kaynak") {
+        ("🎞", "Kaynak", "Kaynak ile Eşleşen")
+    } else if name.contains("4K") {
+        ("🎬", "4K UHD", "4K UHD Sinematik")
+    } else if name.contains("TikTok") || name.contains("Reels") {
+        ("📱", "9:16", "Shorts / Reels")
+    } else if name.contains("HEVC") || name.contains("H.265") {
+        ("📦", "H.265", "HEVC / H.265")
+    } else if name.contains("ProRes") {
+        ("💎", "Master", "Apple ProRes 422")
+    } else {
+        ("🎬", "Özel", "Özel Profil")
+    }
+}
+
+fn render_tag_pill(ui: &mut Ui, tag: &str, is_selected: bool) {
+    let (bg, fg) = if is_selected {
+        (
+            Color32::from_rgba_unmultiplied(0xe0, 0x7a, 0x38, 40),
+            Color32::from_rgb(0xf2, 0x9b, 0x5e),
+        )
+    } else {
+        (
+            Color32::from_rgb(0x1a, 0x1d, 0x26),
+            Color32::from_rgb(0x8a, 0x92, 0xa6),
+        )
+    };
+    Frame::none()
+        .fill(bg)
+        .rounding(Rounding::same(4.0))
+        .inner_margin(Margin::symmetric(6.0, 2.0))
+        .show(ui, |ui| {
+            ui.label(RichText::new(tag).size(9.5).strong().color(fg));
+        });
+}
+
+fn render_chip(ui: &mut Ui, text: &str, color: Color32) {
+    Frame::none()
+        .fill(Color32::from_rgba_unmultiplied(
+            color.r(),
+            color.g(),
+            color.b(),
+            32,
+        ))
+        .stroke(Stroke::new(1.0_f32, color))
+        .rounding(Rounding::same(4.0))
+        .inner_margin(Margin::symmetric(6.0, 2.0))
+        .show(ui, |ui| {
+            ui.label(RichText::new(text).size(9.5).strong().color(color));
+        });
 }
