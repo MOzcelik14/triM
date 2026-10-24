@@ -55,6 +55,8 @@ pub struct MediaItem {
     pub date_added: f64,
     #[serde(default)]
     pub proxy_path: Option<String>,
+    #[serde(default)]
+    pub bin_id: Option<String>,
 }
 
 impl Default for MediaItem {
@@ -75,6 +77,7 @@ impl Default for MediaItem {
             file_size_bytes: 0,
             date_added: 0.0,
             proxy_path: None,
+            bin_id: None,
         }
     }
 }

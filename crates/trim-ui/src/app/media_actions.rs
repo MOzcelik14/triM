@@ -133,7 +133,7 @@ impl TrimApp {
 
     pub fn import_media_file<P: AsRef<std::path::Path>>(&mut self, path: P) {
         match FFprobeAnalyzer::analyze(path) {
-            Ok(item) => {
+            Ok(mut item) => {
                 let name = item.name.clone();
                 let file_path = item.file_path.clone();
                 let has_audio = item.media_type == MediaType::Audio || item.audio_channels > 0;
@@ -165,6 +165,7 @@ impl TrimApp {
                     }
                 }
 
+                item.bin_id = self.media_bin_current_bin.clone();
                 self.project.add_media(item);
                 if has_audio {
                     self.audio_mixer.preload_audio_async(&file_path);

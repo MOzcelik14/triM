@@ -48,6 +48,24 @@ impl Default for ProjectSettings {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MediaBinFolder {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub color_rgb: Option<[u8; 3]>,
+}
+
+impl MediaBinFolder {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.into(),
+            color_rgb: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
     #[serde(default = "default_format")]
     pub format: String,
@@ -57,6 +75,8 @@ pub struct Project {
     pub settings: ProjectSettings,
     #[serde(default)]
     pub media_pool: HashMap<String, MediaItem>,
+    #[serde(default)]
+    pub bins: Vec<MediaBinFolder>,
     #[serde(default)]
     pub timeline: TimelineModel,
     #[serde(skip)]
@@ -79,6 +99,7 @@ impl Default for Project {
             version: 1,
             settings: ProjectSettings::default(),
             media_pool: HashMap::new(),
+            bins: Vec::new(),
             timeline: TimelineModel::default(),
             file_path: None,
             is_dirty: false,
@@ -120,6 +141,47 @@ impl Project {
 
     pub fn get_media_mut(&mut self, media_id: &str) -> Option<&mut MediaItem> {
         self.media_pool.get_mut(media_id)
+    }
+
+    pub fn add_bin(&mut self, name: impl Into<String>) -> String {
+        let folder = MediaBinFolder::new(name);
+        let id = folder.id.clone();
+        self.bins.push(folder);
+        self.mark_dirty();
+        id
+    }
+
+    pub fn remove_bin(&mut self, bin_id: &str) -> Option<MediaBinFolder> {
+        if let Some(idx) = self.bins.iter().position(|b| b.id == bin_id) {
+            let removed = self.bins.remove(idx);
+            for item in self.media_pool.values_mut() {
+                if item.bin_id.as_deref() == Some(bin_id) {
+                    item.bin_id = None;
+                }
+            }
+            self.mark_dirty();
+            Some(removed)
+        } else {
+            None
+        }
+    }
+
+    pub fn rename_bin(&mut self, bin_id: &str, new_name: impl Into<String>) -> bool {
+        if let Some(bin) = self.bins.iter_mut().find(|b| b.id == bin_id) {
+            bin.name = new_name.into();
+            self.mark_dirty();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn get_bin(&self, bin_id: &str) -> Option<&MediaBinFolder> {
+        self.bins.iter().find(|b| b.id == bin_id)
+    }
+
+    pub fn get_bin_mut(&mut self, bin_id: &str) -> Option<&mut MediaBinFolder> {
+        self.bins.iter_mut().find(|b| b.id == bin_id)
     }
 
     pub fn set_resolution(&mut self, width: u32, height: u32) {
@@ -280,5 +342,46 @@ mod tests {
         assert_eq!(proj.timeline.width, 1280);
         assert_eq!(proj.timeline.height, 720);
         assert_eq!(proj.settings.fps, 24.0);
+    }
+
+    #[test]
+    fn test_media_bin_folder_crud_and_serialization() {
+        let mut proj = Project::default();
+        let bin_id = proj.add_bin("Röportajlar");
+        assert_eq!(proj.bins.len(), 1);
+        assert_eq!(proj.bins[0].name, "Röportajlar");
+
+        let item = MediaItem {
+            id: "media-1".to_string(),
+            bin_id: Some(bin_id.clone()),
+            ..Default::default()
+        };
+        proj.add_media(item);
+
+        assert_eq!(
+            proj.get_media("media-1").unwrap().bin_id.as_deref(),
+            Some(bin_id.as_str())
+        );
+
+        // Rename bin
+        assert!(proj.rename_bin(&bin_id, "B-Roll"));
+        assert_eq!(proj.get_bin(&bin_id).unwrap().name, "B-Roll");
+
+        // Serialize and deserialize
+        let json = proj.to_json().unwrap();
+        let loaded = Project::from_json(&json).unwrap();
+        assert_eq!(loaded.bins.len(), 1);
+        assert_eq!(loaded.bins[0].name, "B-Roll");
+        assert_eq!(
+            loaded.get_media("media-1").unwrap().bin_id.as_deref(),
+            Some(bin_id.as_str())
+        );
+
+        // Delete bin moves contained items to root (bin_id = None)
+        let mut proj2 = loaded;
+        let removed = proj2.remove_bin(&bin_id);
+        assert!(removed.is_some());
+        assert_eq!(proj2.bins.len(), 0);
+        assert_eq!(proj2.get_media("media-1").unwrap().bin_id, None);
     }
 }

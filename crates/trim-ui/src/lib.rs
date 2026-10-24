@@ -625,4 +625,74 @@ mod tests {
         assert!(app.snap_enabled);
         assert!(app.project.timeline.snap_enabled);
     }
+
+    #[test]
+    fn test_media_bin_bins_and_filters_navigation() {
+        use crate::media_bin::MediaFilterType;
+        use trim_core::media::{MediaItem, MediaType};
+
+        let mut app = TrimApp::default();
+        assert!(app.media_bin_current_bin.is_none());
+        assert_eq!(app.media_bin_filter, MediaFilterType::All);
+
+        // Add bins
+        let bin1 = app.project.add_bin("Röportajlar");
+        let bin2 = app.project.add_bin("Müzikler");
+        assert_eq!(app.project.bins.len(), 2);
+
+        // Add media items
+        let video_item = MediaItem {
+            id: "v1".to_string(),
+            name: "interview.mp4".to_string(),
+            media_type: MediaType::Video,
+            bin_id: Some(bin1.clone()),
+            ..Default::default()
+        };
+        app.project.add_media(video_item);
+
+        let audio_item = MediaItem {
+            id: "a1".to_string(),
+            name: "bgm.mp3".to_string(),
+            media_type: MediaType::Audio,
+            bin_id: Some(bin2.clone()),
+            ..Default::default()
+        };
+        app.project.add_media(audio_item);
+
+        let root_img = MediaItem {
+            id: "img1".to_string(),
+            name: "logo.png".to_string(),
+            media_type: MediaType::Image,
+            bin_id: None,
+            ..Default::default()
+        };
+        app.project.add_media(root_img);
+
+        // Navigation into bin1
+        app.media_bin_current_bin = Some(bin1.clone());
+        assert_eq!(app.media_bin_current_bin.as_deref(), Some(bin1.as_str()));
+
+        // Move root_img into bin1
+        if let Some(item) = app.project.get_media_mut("img1") {
+            item.bin_id = Some(bin1.clone());
+        }
+        assert_eq!(
+            app.project.get_media("img1").unwrap().bin_id.as_deref(),
+            Some(bin1.as_str())
+        );
+
+        // Filter chips switch
+        app.media_bin_filter = MediaFilterType::Video;
+        assert_eq!(app.media_bin_filter, MediaFilterType::Video);
+
+        // Removing bin1 moves contained items (v1, img1) back to root
+        app.project.remove_bin(&bin1);
+        if app.media_bin_current_bin.as_deref() == Some(&bin1) {
+            app.media_bin_current_bin = None;
+        }
+        assert!(app.media_bin_current_bin.is_none());
+        assert_eq!(app.project.bins.len(), 1);
+        assert_eq!(app.project.get_media("v1").unwrap().bin_id, None);
+        assert_eq!(app.project.get_media("img1").unwrap().bin_id, None);
+    }
 }

@@ -4,7 +4,7 @@ use crate::canvas::{render_timeline_canvas, CanvasAction, TimelineCanvasState};
 use crate::dialogs::*;
 use crate::file_dialog::FileDialogBridge;
 use crate::inspector::{render_inspector_panel, InspectorAction};
-use crate::media_bin::{render_media_bin, LeftPanelTab, MediaBinAction};
+use crate::media_bin::{render_media_bin, LeftPanelTab, MediaBinAction, MediaFilterType};
 use crate::monitor::{ActiveTextOverlay, MonitorAction, MonitorMode, MonitorWidget};
 use crate::ruler::{render_time_ruler, RulerAction};
 use crate::shortcuts::ShortcutProfile;
@@ -61,6 +61,18 @@ pub struct SourceMonitorState {
     pub decoder: trim_media::AsyncFrameDecoder,
 }
 
+#[derive(Debug, Clone)]
+pub enum BinDialogMode {
+    Create,
+    Rename(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct BinDialogState {
+    pub mode: BinDialogMode,
+    pub name_input: String,
+}
+
 pub struct TrimApp {
     pub project: Project,
     pub undo_stack: UndoStack,
@@ -93,7 +105,10 @@ pub struct TrimApp {
     pub media_bin_search: String,
     pub media_bin_is_grid: bool,
     pub media_bin_thumb_size: f32,
+    pub media_bin_current_bin: Option<String>,
+    pub media_bin_filter: MediaFilterType,
     pub media_bin_textures: HashMap<String, TextureHandle>,
+    pub bin_dialog: Option<BinDialogState>,
 
     pub export_dialog: ExportDialog,
     pub speed_dialog: SpeedDialog,
@@ -178,7 +193,10 @@ impl Default for TrimApp {
             media_bin_search: String::new(),
             media_bin_is_grid: true,
             media_bin_thumb_size: 105.0,
+            media_bin_current_bin: None,
+            media_bin_filter: MediaFilterType::All,
             media_bin_textures: HashMap::new(),
+            bin_dialog: None,
             export_dialog: ExportDialog::default(),
             speed_dialog: SpeedDialog::default(),
             silence_dialog: SilenceDialog::default(),
@@ -2209,6 +2227,8 @@ impl eframe::App for TrimApp {
                             &mut self.media_bin_search,
                             &mut self.media_bin_is_grid,
                             &mut self.media_bin_thumb_size,
+                            &self.media_bin_current_bin,
+                            &mut self.media_bin_filter,
                             &self.media_bin_textures,
                         ) {
                             match act {
@@ -2392,6 +2412,50 @@ impl eframe::App for TrimApp {
                                 }
                                 MediaBinAction::GenerateProxy(m_id) => {
                                     self.generate_proxy_for_media(&m_id);
+                                }
+                                MediaBinAction::CreateBinPrompt => {
+                                    self.bin_dialog = Some(BinDialogState {
+                                        mode: BinDialogMode::Create,
+                                        name_input: "Yeni Klasör".to_string(),
+                                    });
+                                }
+                                MediaBinAction::RenameBinPrompt(bin_id) => {
+                                    let current_name = self
+                                        .project
+                                        .get_bin(&bin_id)
+                                        .map(|b| b.name.clone())
+                                        .unwrap_or_default();
+                                    self.bin_dialog = Some(BinDialogState {
+                                        mode: BinDialogMode::Rename(bin_id),
+                                        name_input: current_name,
+                                    });
+                                }
+                                MediaBinAction::DeleteBin(bin_id) => {
+                                    if let Some(removed) = self.project.remove_bin(&bin_id) {
+                                        if self.media_bin_current_bin.as_deref() == Some(&bin_id) {
+                                            self.media_bin_current_bin = None;
+                                        }
+                                        self.status_message = format!(
+                                            "'{}' klasörü silindi (içindekiler ana havuza aktarıldı)",
+                                            removed.name
+                                        );
+                                    }
+                                }
+                                MediaBinAction::EnterBin(bin_id) => {
+                                    self.media_bin_current_bin = bin_id;
+                                }
+                                MediaBinAction::MoveToBin { media_id, bin_id } => {
+                                    if let Some(item) = self.project.get_media_mut(&media_id) {
+                                        item.bin_id = bin_id.clone();
+                                        self.project.mark_dirty();
+                                        let target_name = bin_id
+                                            .as_deref()
+                                            .and_then(|id| self.project.get_bin(id))
+                                            .map(|b| b.name.as_str())
+                                            .unwrap_or("Ana Havuz");
+                                        self.status_message =
+                                            format!("Medya '{}' klasörüne taşındı", target_name);
+                                    }
                                 }
                             }
                         }
@@ -3187,6 +3251,116 @@ impl eframe::App for TrimApp {
                         });
                     });
                 });
+        }
+
+        if let Some(mut state) = self.bin_dialog.clone() {
+            let mut close_dialog = false;
+            let mut commit_dialog = false;
+
+            let (title, confirm_text) = match &state.mode {
+                BinDialogMode::Create => ("📁 Yeni Medya Klasörü (Bin)", "Oluştur"),
+                BinDialogMode::Rename(_) => ("📁 Klasörü Yeniden Adlandır", "Kaydet"),
+            };
+
+            let modal_frame = egui::Frame::none()
+                .fill(Color32::from_rgb(0x16, 0x18, 0x22))
+                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x38, 0x3e, 0x54)))
+                .rounding(egui::Rounding::same(8.0))
+                .inner_margin(egui::Margin::same(16.0));
+
+            egui::Window::new("bin_modal_window")
+                .title_bar(false)
+                .collapsible(false)
+                .resizable(false)
+                .order(egui::Order::Foreground)
+                .fixed_size(Vec2::new(320.0, 140.0))
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                .frame(modal_frame)
+                .show(ctx, |ui| {
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new(title)
+                                .size(14.0)
+                                .strong()
+                                .color(Color32::from_rgb(0xf5, 0x9e, 0x0b)),
+                        );
+                        ui.add_space(10.0);
+
+                        ui.label(
+                            RichText::new("Klasör Adı:")
+                                .size(11.0)
+                                .color(Color32::from_rgb(0x94, 0xa3, 0xb8)),
+                        );
+                        let text_resp = ui.add(
+                            egui::TextEdit::singleline(&mut state.name_input)
+                                .desired_width(ui.available_width()),
+                        );
+                        if text_resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                            commit_dialog = true;
+                        }
+
+                        ui.add_space(14.0);
+                        ui.horizontal(|ui| {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let ok_btn = Button::new(
+                                        RichText::new(confirm_text)
+                                            .size(11.5)
+                                            .strong()
+                                            .color(Color32::WHITE),
+                                    )
+                                    .fill(Color32::from_rgb(0x25, 0x63, 0xeb))
+                                    .min_size(Vec2::new(75.0, 26.0))
+                                    .rounding(egui::Rounding::same(4.0));
+
+                                    if ui.add(ok_btn).clicked() {
+                                        commit_dialog = true;
+                                    }
+
+                                    let cancel_btn = Button::new(
+                                        RichText::new("İptal")
+                                            .size(11.5)
+                                            .color(Color32::from_rgb(0x94, 0xa3, 0xb8)),
+                                    )
+                                    .fill(Color32::from_rgb(0x22, 0x25, 0x32))
+                                    .min_size(Vec2::new(65.0, 26.0))
+                                    .rounding(egui::Rounding::same(4.0));
+
+                                    if ui.add(cancel_btn).clicked()
+                                        || ui.input(|i| i.key_pressed(Key::Escape))
+                                    {
+                                        close_dialog = true;
+                                    }
+                                },
+                            );
+                        });
+                    });
+                });
+
+            if commit_dialog {
+                let trimmed = state.name_input.trim();
+                if !trimmed.is_empty() {
+                    match state.mode {
+                        BinDialogMode::Create => {
+                            let bin_id = self.project.add_bin(trimmed);
+                            self.media_bin_current_bin = Some(bin_id);
+                            self.status_message = format!("'{}' klasörü oluşturuldu", trimmed);
+                        }
+                        BinDialogMode::Rename(bin_id) => {
+                            self.project.rename_bin(&bin_id, trimmed);
+                            self.status_message =
+                                format!("Klasör '{}' olarak yeniden adlandırıldı", trimmed);
+                        }
+                    }
+                    self.project.mark_dirty();
+                }
+                self.bin_dialog = None;
+            } else if close_dialog {
+                self.bin_dialog = None;
+            } else {
+                self.bin_dialog = Some(state);
+            }
         }
     }
 }
