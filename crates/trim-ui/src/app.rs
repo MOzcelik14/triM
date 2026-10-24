@@ -989,6 +989,10 @@ impl eframe::App for TrimApp {
                         self.prompt_import_media();
                         ui.close_menu();
                     }
+                    if ui.button("Projeyi İçe Aktar (FCPXML / EDL)...").clicked() {
+                        self.import_interchange_dialog();
+                        ui.close_menu();
+                    }
                     if ui
                         .button("Altyazı Dosyası İçe Aktar (.srt, .vtt)...")
                         .clicked()

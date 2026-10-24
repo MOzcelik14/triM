@@ -83,6 +83,7 @@ pub enum FileDialogRequest {
     ExportFcpxml {
         xml_text: String,
     },
+    ImportInterchange,
     ImportMedia,
     SelectExportOutput,
     SelectCustomLut {

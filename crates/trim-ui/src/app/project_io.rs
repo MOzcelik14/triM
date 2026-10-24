@@ -269,6 +269,72 @@ impl TrimApp {
             .open(FileDialogRequest::ExportFcpxml { xml_text }, config);
     }
 
+    pub fn import_interchange_dialog(&mut self) {
+        let config = FileDialogConfig::pick_file("Projeyi İçe Aktar (FCPXML / EDL)")
+            .add_filter("NLE Değişim Dosyaları (*.xml, *.edl)", &["xml", "edl"])
+            .add_filter("Final Cut Pro XML (*.xml)", &["xml"])
+            .add_filter("CMX 3600 EDL (*.edl)", &["edl"]);
+        self.file_dialog_bridge
+            .open(FileDialogRequest::ImportInterchange, config);
+    }
+
+    pub fn import_interchange_from_path(&mut self, path: &std::path::Path) {
+        match std::fs::read_to_string(path) {
+            Ok(content) => {
+                let file_name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("import.xml");
+                match trim_export::import_interchange(&content, file_name) {
+                    Ok(imported_project) => {
+                        self.project = imported_project;
+                        self.undo_stack.clear();
+                        self.last_saved_undo_len = 0;
+                        self.canvas_state.selected_clip_pairs.clear();
+                        self.current_time = 0.0;
+                        self.media_bin_textures.clear();
+                        self.video_engine.clear_cache();
+                        self.audio_mixer.clear_cache();
+                        self.audio_player.stop();
+                        self.is_playing = false;
+                        self.monitor_texture = None;
+                        self.monitor_gpu_texture_id = None;
+                        self.source_state.media_id = None;
+                        self.source_state.texture = None;
+                        self.source_state.is_playing = false;
+                        self.resolve_default_target_tracks();
+                        self.autosave_mgr.cleanup(&self.project);
+                        for item in self.project.media_pool.values() {
+                            if item.media_type == MediaType::Audio || item.audio_channels > 0 {
+                                self.audio_mixer.preload_audio_async(&item.file_path);
+                            }
+                        }
+                        self.welcome_dialog.close();
+                        let clip_count: usize = self
+                            .project
+                            .timeline
+                            .tracks
+                            .iter()
+                            .map(|t| t.clips.len())
+                            .sum();
+                        self.status_message = format!(
+                            "Proje başarıyla içe aktarıldı: {} kanal, {} klip ({})",
+                            self.project.timeline.tracks.len(),
+                            clip_count,
+                            file_name
+                        );
+                    }
+                    Err(e) => {
+                        self.status_message = format!("İçe aktarma hatası: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                self.status_message = format!("Dosya okunamadı: {}", e);
+            }
+        }
+    }
+
     /// Non-blocking poll of any active background OS file dialog.
     pub fn poll_file_dialogs(&mut self, ctx: &egui::Context) {
         let Some(resp) = self.file_dialog_bridge.poll() else {
@@ -365,6 +431,9 @@ impl TrimApp {
                     self.status_message = format!("FCPXML kayıt hatası: {}", e);
                 }
             },
+            FileDialogRequest::ImportInterchange => {
+                self.import_interchange_from_path(&path);
+            }
             FileDialogRequest::ImportMedia => {
                 self.import_media_file(path);
             }
