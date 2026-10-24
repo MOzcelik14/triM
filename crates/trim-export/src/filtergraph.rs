@@ -190,7 +190,7 @@ impl TimelineExporter {
 
         if let Some(lut_path) = &clip.custom_lut_path {
             if !lut_path.trim().is_empty() {
-                let sanitized = lut_path.replace('\\', "/").replace('\'', "\\'");
+                let sanitized = trim_core::paths::normalize_filtergraph_path(lut_path.trim());
                 f.push(format!("lut3d=file='{sanitized}'"));
             }
         } else {
@@ -585,13 +585,13 @@ impl TimelineExporter {
         }
         if let Some(target_lufs) = preset.loudness_norm.target_lufs() {
             mix.push_str(&format!(
-                "amix=inputs={}:duration=first:dropout_transition=0:normalize=0[mixa];[mixa]loudnorm=I={:.1}:LRA=11:TP=-1.5[outa]",
+                "amix=inputs={}:duration=first:dropout_transition=0:normalize=0[mixa];[mixa]alimiter=limit=0.988553:attack=1:release=75:level=disabled[lima];[lima]loudnorm=I={:.1}:LRA=11:TP=-1.5[outa]",
                 audio_labels.len() + 1,
                 target_lufs
             ));
         } else {
             mix.push_str(&format!(
-                "amix=inputs={}:duration=first:dropout_transition=0:normalize=0[outa]",
+                "amix=inputs={}:duration=first:dropout_transition=0:normalize=0[mixa];[mixa]alimiter=limit=0.988553:attack=1:release=75:level=disabled[outa]",
                 audio_labels.len() + 1
             ));
         }
@@ -938,8 +938,7 @@ mod tests {
     /// available on the machine.
     #[test]
     fn test_ffmpeg_end_to_end_render() {
-        use std::process::Command;
-        if Command::new("ffmpeg").arg("-version").output().is_err() {
+        if trim_media::ffmpeg_cmd().arg("-version").output().is_err() {
             eprintln!("ffmpeg not available, skipping");
             return;
         }
@@ -948,7 +947,7 @@ mod tests {
         let img = dir.path().join("logo.png");
         let aud = dir.path().join("tone.wav");
         let ok = |args: &[&str]| {
-            Command::new("ffmpeg")
+            trim_media::ffmpeg_cmd()
                 .args(["-v", "error", "-y"])
                 .args(args)
                 .status()
@@ -1041,14 +1040,17 @@ mod tests {
         };
         let (cmd, dur) =
             TimelineExporter::build_export_pipeline(&proj, &preset, out.to_str().unwrap()).unwrap();
-        let output = Command::new(&cmd[0]).args(&cmd[1..]).output().unwrap();
+        let output = trim_media::create_command(&cmd[0])
+            .args(&cmd[1..])
+            .output()
+            .unwrap();
         assert!(
             output.status.success(),
             "ffmpeg failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
 
-        let probe = Command::new("ffprobe")
+        let probe = trim_media::ffprobe_cmd()
             .args([
                 "-v",
                 "error",
@@ -1199,7 +1201,7 @@ mod tests {
             "should generate teal & orange filter: {fg1}"
         );
 
-        // Now test custom cube file
+        // Now test custom cube file (Unix path)
         proj.timeline.tracks[0].clips[0].custom_lut_path =
             Some("/path/to/cinematic.cube".to_string());
         let (cmd2, _) =
@@ -1212,6 +1214,21 @@ mod tests {
         assert!(
             fg2.contains("lut3d=file='/path/to/cinematic.cube'"),
             "should generate lut3d filter: {fg2}"
+        );
+
+        // Test Windows custom cube file path with drive letter and backslashes
+        proj.timeline.tracks[0].clips[0].custom_lut_path =
+            Some(r"C:\Users\Editor\LUTs\cinematic.cube".to_string());
+        let (cmd3, _) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out3.mp4").unwrap();
+        let fg3 = cmd3
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd3[idx + 1])
+            .unwrap();
+        assert!(
+            fg3.contains("lut3d=file='C\\:/Users/Editor/LUTs/cinematic.cube'"),
+            "should escape Windows drive colon and backslashes in lut3d filter: {fg3}"
         );
     }
 }

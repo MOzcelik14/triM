@@ -26,7 +26,7 @@ set -euo pipefail
 # ------------------------------------------------------------------------------
 APP_NAME="triM."
 APP_ID="io.github.mozcelik14.triM"
-VERSION="1.0.0"
+VERSION="1.0.1"
 REPO_OWNER="MOzcelik14"
 REPO_NAME="triM"
 GITHUB_REPO="https://github.com/${REPO_OWNER}/${REPO_NAME}"

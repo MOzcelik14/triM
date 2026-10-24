@@ -1,13 +1,13 @@
-//! Audio decoding, multi-track PCM mixing, and dual VU meter RMS level analysis.
+//! Audio decoding, multi-track PCM mixing, lookahead brickwall limiting, and dual VU meter RMS level analysis.
 
+pub use crate::dsp::limiter::LookaheadLimiter;
 use std::io::{Read, Write};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
+use std::sync::{Arc, RwLock};
 use trim_core::lru::LruCache;
 use trim_core::media::MediaType;
 use trim_core::project::Project;
-
-use std::sync::{Arc, RwLock};
 
 pub const SAMPLE_RATE: u32 = 48000;
 pub const MAX_PCM_CACHE_BYTES: usize = 512 * 1024 * 1024; // 512 MB hard cap
@@ -18,6 +18,10 @@ pub type PcmCache = Arc<RwLock<LruCache<String, PcmAudioBuffer>>>;
 #[derive(Clone)]
 pub struct AudioMixer {
     pcm_cache: PcmCache,
+    pub limiter: LookaheadLimiter,
+    last_mixed_end_time: Option<f64>,
+    mix_scratch: Vec<[f32; 2]>,
+    prime_scratch: Vec<[f32; 2]>,
 }
 
 impl Default for AudioMixer {
@@ -28,14 +32,37 @@ impl Default for AudioMixer {
 
 impl std::fmt::Debug for AudioMixer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("AudioMixer").finish_non_exhaustive()
+        f.debug_struct("AudioMixer")
+            .field("limiter", &self.limiter)
+            .finish_non_exhaustive()
     }
 }
 
 impl AudioMixer {
     pub fn new() -> Self {
+        let limiter = LookaheadLimiter::new(SAMPLE_RATE);
+        let lookahead_len = limiter.lookahead_samples();
         Self {
             pcm_cache: Arc::new(RwLock::new(LruCache::with_byte_limit(MAX_PCM_CACHE_BYTES))),
+            limiter,
+            last_mixed_end_time: None,
+            // Pre-allocate 1 second (48,000 stereo frames) to avoid hot-path allocations during playback ticks
+            mix_scratch: vec![[0.0, 0.0]; SAMPLE_RATE as usize],
+            prime_scratch: vec![[0.0, 0.0]; lookahead_len],
+        }
+    }
+
+    /// Resets the master lookahead limiter state and continuity tracking (e.g., on pause or seek).
+    pub fn reset_limiter(&mut self) {
+        self.limiter.reset();
+        self.last_mixed_end_time = None;
+    }
+
+    /// Inserts pre-decoded PCM stereo frames directly into the bounded cache (used by tests and synth generators).
+    pub fn insert_cached_pcm(&self, key: impl Into<String>, pcm: Vec<[i16; 2]>) {
+        let size_bytes = pcm.len() * 4;
+        if let Ok(mut c) = self.pcm_cache.write() {
+            c.insert_with_size(key.into(), Some(Arc::new(pcm)), size_bytes);
         }
     }
 
@@ -78,25 +105,17 @@ impl AudioMixer {
         pcm
     }
 
-    /// Renders and mixes multi-track PCM audio for the interval [t_start, t_end].
-    /// Returns `(interleaved_samples_i16, left_dbfs, right_dbfs)`.
-    pub fn render_audio_interval(
-        &mut self,
-        project: &Project,
-        t_start: f64,
-        t_end: f64,
-    ) -> (Vec<i16>, f32, f32) {
-        if t_end <= t_start {
-            return (Vec::new(), -60.0, -60.0);
+    /// Sums raw normalized `f32` (`-1.0..=1.0` nominal per track) stereo samples for `[w_start, w_end]`
+    /// into `out` with zero heap allocations in the mixing loop.
+    fn mix_raw_window(&self, project: &Project, w_start: f64, w_end: f64, out: &mut [[f32; 2]]) {
+        out.fill([0.0, 0.0]);
+        let num_samples = out.len();
+        if num_samples == 0 || w_end <= w_start {
+            return;
         }
 
-        let num_samples = ((t_end - t_start) * SAMPLE_RATE as f64).round() as usize;
-        if num_samples == 0 {
-            return (Vec::new(), -60.0, -60.0);
-        }
-
-        let mut mixed: Vec<[f32; 2]> = vec![[0.0, 0.0]; num_samples];
         let has_solo = project.timeline.tracks.iter().any(|t| t.solo);
+        let inv_i16 = 1.0_f32 / 32768.0_f32;
 
         for track in &project.timeline.tracks {
             if track.muted {
@@ -111,7 +130,7 @@ impl AudioMixer {
                 if clip.muted {
                     continue;
                 }
-                if clip.timeline_out <= t_start || clip.timeline_in >= t_end {
+                if clip.timeline_out <= w_start || clip.timeline_in >= w_end {
                     continue;
                 }
 
@@ -133,14 +152,16 @@ impl AudioMixer {
                     continue;
                 }
 
-                let overlap_start = t_start.max(clip.timeline_in);
-                let overlap_end = t_end.min(clip.timeline_out);
+                let overlap_start = w_start.max(clip.timeline_in);
+                let overlap_end = w_end.min(clip.timeline_out);
                 if overlap_end <= overlap_start {
                     continue;
                 }
 
-                let dst_start = ((overlap_start - t_start) * SAMPLE_RATE as f64).round() as usize;
-                let dst_end = ((overlap_end - t_start) * SAMPLE_RATE as f64).round() as usize;
+                let dst_start = ((overlap_start - w_start) * SAMPLE_RATE as f64).round() as usize;
+                let dst_end = ((overlap_end - w_start) * SAMPLE_RATE as f64)
+                    .round()
+                    .min(num_samples as f64) as usize;
                 let chunk_len = dst_end.saturating_sub(dst_start);
                 if chunk_len == 0 {
                     continue;
@@ -165,45 +186,40 @@ impl AudioMixer {
                     continue;
                 }
 
-                let mut source_chunk: Vec<[f32; 2]> = pcm[c_min..c_max]
-                    .iter()
-                    .map(|&[l, r]| [l as f32, r as f32])
-                    .collect();
-
-                if clip.reverse {
-                    source_chunk.reverse();
-                }
-
-                // Resample if length differs due to speed or rounding
-                let resampled_chunk: Vec<[f32; 2]> = if source_chunk.len() == chunk_len {
-                    source_chunk
-                } else if source_chunk.len() >= 2 && chunk_len >= 2 {
-                    let mut res = Vec::with_capacity(chunk_len);
-                    let step = (source_chunk.len() - 1) as f64 / (chunk_len - 1) as f64;
-                    for k in 0..chunk_len {
-                        let idx = (k as f64 * step).min((source_chunk.len() - 1) as f64);
-                        let i0 = idx.floor() as usize;
-                        let i1 = (i0 + 1).min(source_chunk.len() - 1);
-                        let frac = (idx - i0 as f64) as f32;
-                        let l = source_chunk[i0][0]
-                            + (source_chunk[i1][0] - source_chunk[i0][0]) * frac;
-                        let r = source_chunk[i0][1]
-                            + (source_chunk[i1][1] - source_chunk[i0][1]) * frac;
-                        res.push([l, r]);
-                    }
-                    res
-                } else {
-                    vec![source_chunk.first().copied().unwrap_or([0.0, 0.0]); chunk_len]
-                };
-
+                let src_len = c_max - c_min;
                 let eff_vol = (clip.volume as f32) * track_vol;
                 let has_fade = clip.fade_in > 0.0 || clip.fade_out > 0.0;
+                let step = if src_len >= 2 && chunk_len >= 2 {
+                    (src_len - 1) as f64 / (chunk_len - 1) as f64
+                } else {
+                    0.0
+                };
 
-                for (k, &[l, r]) in resampled_chunk.iter().enumerate() {
+                for k in 0..chunk_len {
                     let dst_idx = dst_start + k;
-                    if dst_idx >= mixed.len() {
+                    if dst_idx >= num_samples {
                         break;
                     }
+
+                    let (l, r) = if src_len >= 2 && chunk_len >= 2 {
+                        let rel = (k as f64 * step).min((src_len - 1) as f64);
+                        let eff_rel = if clip.reverse {
+                            (src_len - 1) as f64 - rel
+                        } else {
+                            rel
+                        };
+                        let i0_rel = (eff_rel.floor() as usize).min(src_len - 1);
+                        let i1_rel = (i0_rel + 1).min(src_len - 1);
+                        let frac = (eff_rel - i0_rel as f64) as f32;
+                        let s0 = pcm[c_min + i0_rel];
+                        let s1 = pcm[c_min + i1_rel];
+                        let l_val = (s0[0] as f32 + (s1[0] as f32 - s0[0] as f32) * frac) * inv_i16;
+                        let r_val = (s0[1] as f32 + (s1[1] as f32 - s0[1] as f32) * frac) * inv_i16;
+                        (l_val, r_val)
+                    } else {
+                        let s = pcm[c_min];
+                        (s[0] as f32 * inv_i16, s[1] as f32 * inv_i16)
+                    };
 
                     let gain = if has_fade {
                         let cur_t = overlap_start + (k as f64 / SAMPLE_RATE as f64);
@@ -222,25 +238,102 @@ impl AudioMixer {
                         eff_vol
                     };
 
-                    mixed[dst_idx][0] += l * gain;
-                    mixed[dst_idx][1] += r * gain;
+                    out[dst_idx][0] += l * gain;
+                    out[dst_idx][1] += r * gain;
                 }
             }
         }
+    }
 
-        // Clip to i16 and calculate RMS
+    /// Mixes multi-track audio for `[t_start, t_end]` and processes it through the persistent
+    /// stereo-linked `LookaheadLimiter` with 5 ms lookahead compensation so output frames remain
+    /// sample-aligned to `[t_start, t_end]` (zero AV sync drift).
+    pub fn mix_timeline_chunk(
+        &mut self,
+        project: &Project,
+        t_start: f64,
+        t_end: f64,
+    ) -> &[[f32; 2]] {
+        if t_end <= t_start {
+            return &[];
+        }
+
+        let num_samples = ((t_end - t_start) * SAMPLE_RATE as f64).round() as usize;
+        if num_samples == 0 {
+            return &[];
+        }
+
+        if self.mix_scratch.len() < num_samples {
+            self.mix_scratch.resize(num_samples, [0.0, 0.0]);
+        }
+
+        let lookahead_samples = self.limiter.lookahead_samples();
+        let lookahead_sec = lookahead_samples as f64 / SAMPLE_RATE as f64;
+
+        let is_contiguous = self
+            .last_mixed_end_time
+            .is_some_and(|last_t| (t_start - last_t).abs() < 1e-3);
+
+        if !is_contiguous {
+            if self.prime_scratch.len() != lookahead_samples {
+                self.prime_scratch.resize(lookahead_samples, [0.0, 0.0]);
+            }
+            // Prime lookahead buffer with [t_start, t_start + 5ms]
+            let mut prime_buf = std::mem::take(&mut self.prime_scratch);
+            self.mix_raw_window(
+                project,
+                t_start,
+                t_start + lookahead_sec,
+                &mut prime_buf[..lookahead_samples],
+            );
+            self.limiter.prime(&prime_buf[..lookahead_samples]);
+            self.prime_scratch = prime_buf;
+        }
+
+        // Mix the lookahead-shifted window [t_start + 5ms, t_end + 5ms] and push through limiter.
+        // The limiter's 5ms delay line outputs the exact time-aligned [t_start, t_end] samples.
+        let mut scratch = std::mem::take(&mut self.mix_scratch);
+        self.mix_raw_window(
+            project,
+            t_start + lookahead_sec,
+            t_end + lookahead_sec,
+            &mut scratch[..num_samples],
+        );
+        self.limiter
+            .process_buffer_in_place(&mut scratch[..num_samples]);
+        self.mix_scratch = scratch;
+        self.last_mixed_end_time = Some(t_end);
+
+        &self.mix_scratch[..num_samples]
+    }
+
+    /// Renders and mixes multi-track PCM audio for the interval `[t_start, t_end]`
+    /// through the master `LookaheadLimiter`.
+    /// Returns `(interleaved_samples_i16, left_dbfs, right_dbfs)`.
+    pub fn render_audio_interval(
+        &mut self,
+        project: &Project,
+        t_start: f64,
+        t_end: f64,
+    ) -> (Vec<i16>, f32, f32) {
+        let limited = self.mix_timeline_chunk(project, t_start, t_end);
+        let num_samples = limited.len();
+        if num_samples == 0 {
+            return (Vec::new(), -60.0, -60.0);
+        }
+
         let mut interleaved = Vec::with_capacity(num_samples * 2);
-        let mut sum_sq_l = 0.0f64;
-        let mut sum_sq_r = 0.0f64;
+        let mut sum_sq_l = 0.0_f64;
+        let mut sum_sq_r = 0.0_f64;
 
-        for &[l, r] in &mixed {
-            let cl_l = l.clamp(-32768.0, 32767.0) as i16;
-            let cl_r = r.clamp(-32768.0, 32767.0) as i16;
+        for &[l, r] in limited {
+            let cl_l = (l * 32767.0).round().clamp(-32768.0, 32767.0) as i16;
+            let cl_r = (r * 32767.0).round().clamp(-32768.0, 32767.0) as i16;
             interleaved.push(cl_l);
             interleaved.push(cl_r);
 
-            let norm_l = cl_l as f64 / 32768.0;
-            let norm_r = cl_r as f64 / 32768.0;
+            let norm_l = l as f64;
+            let norm_r = r as f64;
             sum_sq_l += norm_l * norm_l;
             sum_sq_r += norm_r * norm_r;
         }
@@ -249,13 +342,13 @@ impl AudioMixer {
         let rms_r = (sum_sq_r / num_samples as f64).sqrt();
 
         let db_l = if rms_l > 1e-4 {
-            (-60.0f32).max((20.0 * (rms_l as f32).log10()).min(0.0))
+            (-60.0_f32).max((20.0 * (rms_l as f32).log10()).min(0.0))
         } else {
             -60.0
         };
 
         let db_r = if rms_r > 1e-4 {
-            (-60.0f32).max((20.0 * (rms_r as f32).log10()).min(0.0))
+            (-60.0_f32).max((20.0 * (rms_r as f32).log10()).min(0.0))
         } else {
             -60.0
         };
@@ -267,6 +360,7 @@ impl AudioMixer {
         if let Ok(mut c) = self.pcm_cache.write() {
             c.clear();
         }
+        self.reset_limiter();
     }
 }
 
@@ -313,9 +407,12 @@ fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
     Some(pcm)
 }
 
-/// Linux native audio stream player writing 48kHz 16-bit stereo PCM via PipeWire/ALSA.
+/// Cross-platform audio stream player writing 48kHz 16-bit stereo PCM.
+/// - Linux: PipeWire (`pw-cat`) -> PulseAudio (`paplay`) -> ALSA (`aplay`) -> `ffplay`
+/// - Windows: `ffplay.exe` (`CREATE_NO_WINDOW`, low-delay WASAPI/DirectSound output) with silent fallback
 pub struct AudioStreamPlayer {
     child: Option<crate::ffmpeg::ChildGuard>,
+    backend_unavailable: bool,
 }
 
 impl Default for AudioStreamPlayer {
@@ -326,98 +423,128 @@ impl Default for AudioStreamPlayer {
 
 impl AudioStreamPlayer {
     pub fn new() -> Self {
-        Self { child: None }
+        Self {
+            child: None,
+            backend_unavailable: false,
+        }
     }
 
-    fn ensure_started(&mut self) -> Option<&mut std::process::ChildStdin> {
-        if self.child.is_none() {
-            let spawned = if cfg!(windows) {
-                // Windows: ffplay with CREATE_NO_WINDOW
-                crate::ffmpeg::ChildGuard::spawn(
-                    crate::ffmpeg::ffplay_cmd()
-                        .args([
-                            "-nodisp",
-                            "-autoexit",
-                            "-loglevel",
-                            "quiet",
-                            "-f",
-                            "s16le",
-                            "-ar",
-                            "48000",
-                            "-ac",
-                            "2",
-                            "-i",
-                            "-",
-                        ])
-                        .stdin(Stdio::piped())
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null()),
-                )
-            } else {
-                // Linux: PipeWire pw-cat (20ms) -> ALSA aplay -> ffplay
-                let mut pw_cmd = Command::new("pw-cat");
-                pw_cmd
+    #[cfg(target_os = "windows")]
+    fn spawn_platform_player() -> std::io::Result<crate::ffmpeg::ChildGuard> {
+        let mut ffplay = crate::ffmpeg::ffplay_cmd();
+        ffplay
+            .args([
+                "-nodisp",
+                "-autoexit",
+                "-loglevel",
+                "quiet",
+                "-fflags",
+                "nobuffer",
+                "-flags",
+                "low_delay",
+                "-f",
+                "s16le",
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
+                "-i",
+                "pipe:0",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        crate::ffmpeg::ChildGuard::spawn(&mut ffplay)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn spawn_platform_player() -> std::io::Result<crate::ffmpeg::ChildGuard> {
+        let mut pw_cmd = crate::ffmpeg::create_command("pw-cat");
+        pw_cmd
+            .args([
+                "-p",
+                "--format=s16",
+                "--rate=48000",
+                "--channels=2",
+                "--latency=20ms",
+                "-",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
+        crate::ffmpeg::ChildGuard::spawn(&mut pw_cmd)
+            .or_else(|_| {
+                let mut paplay_cmd = crate::ffmpeg::create_command("paplay");
+                paplay_cmd
                     .args([
-                        "-p",
-                        "--format=s16",
+                        "--raw",
+                        "--format=s16le",
                         "--rate=48000",
                         "--channels=2",
-                        "--latency=20ms",
+                        "--latency-msec=25",
+                    ])
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
+                crate::ffmpeg::ChildGuard::spawn(&mut paplay_cmd)
+            })
+            .or_else(|_| {
+                let mut aplay_cmd = crate::ffmpeg::create_command("aplay");
+                aplay_cmd
+                    .args([
+                        "-q",
+                        "-t",
+                        "raw",
+                        "-c",
+                        "2",
+                        "-f",
+                        "S16_LE",
+                        "-r",
+                        "48000",
+                        "--buffer-time=25000",
+                        "--period-time=5000",
                         "-",
                     ])
                     .stdin(Stdio::piped())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null());
+                crate::ffmpeg::ChildGuard::spawn(&mut aplay_cmd)
+            })
+            .or_else(|_| {
+                let mut ffplay = crate::ffmpeg::ffplay_cmd();
+                ffplay
+                    .args([
+                        "-nodisp",
+                        "-autoexit",
+                        "-loglevel",
+                        "quiet",
+                        "-f",
+                        "s16le",
+                        "-ar",
+                        "48000",
+                        "-ac",
+                        "2",
+                        "-i",
+                        "-",
+                    ])
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null());
+                crate::ffmpeg::ChildGuard::spawn(&mut ffplay)
+            })
+    }
 
-                crate::ffmpeg::ChildGuard::spawn(&mut pw_cmd)
-                    .or_else(|_| {
-                        let mut aplay_cmd = Command::new("aplay");
-                        aplay_cmd
-                            .args([
-                                "-q",
-                                "-t",
-                                "raw",
-                                "-c",
-                                "2",
-                                "-f",
-                                "S16_LE",
-                                "-r",
-                                "48000",
-                                "--buffer-time=25000",
-                                "--period-time=5000",
-                                "-",
-                            ])
-                            .stdin(Stdio::piped())
-                            .stdout(Stdio::null())
-                            .stderr(Stdio::null());
-                        crate::ffmpeg::ChildGuard::spawn(&mut aplay_cmd)
-                    })
-                    .or_else(|_| {
-                        let mut ffplay = crate::ffmpeg::ffplay_cmd();
-                        ffplay
-                            .args([
-                                "-nodisp",
-                                "-autoexit",
-                                "-loglevel",
-                                "quiet",
-                                "-f",
-                                "s16le",
-                                "-ar",
-                                "48000",
-                                "-ac",
-                                "2",
-                                "-i",
-                                "-",
-                            ])
-                            .stdin(Stdio::piped())
-                            .stdout(Stdio::null())
-                            .stderr(Stdio::null());
-                        crate::ffmpeg::ChildGuard::spawn(&mut ffplay)
-                    })
-            };
-
-            if let Ok(c) = spawned {
-                self.child = Some(c);
+    fn ensure_started(&mut self) -> Option<&mut std::process::ChildStdin> {
+        if self.child.is_none() && !self.backend_unavailable {
+            match Self::spawn_platform_player() {
+                Ok(c) => {
+                    self.child = Some(c);
+                }
+                Err(_) => {
+                    // Prevent repeated process-spawn attempts during the same playback session
+                    self.backend_unavailable = true;
+                }
             }
         }
 
@@ -426,6 +553,7 @@ impl AudioStreamPlayer {
 
     /// Pre-spawns audio output process to eliminate startup delay upon clicking play.
     pub fn prepare(&mut self) {
+        self.backend_unavailable = false;
         let _ = self.ensure_started();
     }
 
@@ -449,6 +577,7 @@ impl AudioStreamPlayer {
 
     /// Stops audio playback immediately and kills the child audio process.
     pub fn stop(&mut self) {
+        self.backend_unavailable = false;
         if let Some(mut c) = self.child.take() {
             let _ = c.kill();
         }
@@ -464,6 +593,10 @@ impl Drop for AudioStreamPlayer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::f32::consts::TAU;
+    use trim_core::clip::Clip;
+    use trim_core::media::MediaItem;
+    use trim_core::track::{Track, TrackType};
 
     #[test]
     fn test_audio_mixer_empty_timeline() {
@@ -526,6 +659,69 @@ mod tests {
             assert!(cache.contains_key(&"file2.wav".to_string()));
             assert!(cache.contains_key(&"file3.wav".to_string()));
             assert_eq!(cache.total_bytes(), 320 * 1024 * 1024);
+        }
+    }
+
+    #[test]
+    fn test_audio_mixer_multitrack_overdrive_brickwall_limited() {
+        let mut mixer = AudioMixer::new();
+        let ceiling = mixer.limiter.ceiling();
+
+        // Create a synthetic 0 dBFS stereo sine wave (L = 1.0, R = 0.5) of 0.2s (9600 frames)
+        let pcm_frames: Vec<[i16; 2]> = (0..9600)
+            .map(|i| {
+                let s = (TAU * 440.0 * (i as f32 / SAMPLE_RATE as f32)).sin();
+                [(s * 32767.0) as i16, (s * 16383.5) as i16]
+            })
+            .collect();
+
+        let fake_path = "/tmp/synthetic_overdrive_test.wav";
+        mixer.insert_cached_pcm(fake_path, pcm_frames);
+
+        let mut project = Project::new("OverdriveTest");
+        let mut media = MediaItem::new(fake_path);
+        media.media_type = MediaType::Audio;
+        media.duration = 0.2;
+        let media_id = media.id.clone();
+        project.add_media(media);
+
+        // Add 2 full-scale audio tracks (summing to +6 dBFS = 2.0x overdrive on Left, 1.0x on Right)
+        project.timeline.tracks.clear();
+        for idx in 0..2 {
+            let mut tr = Track::new(format!("A{}", idx + 1), TrackType::Audio);
+            tr.add_clip(Clip::new(&media_id, 0.0, 0.2));
+            project.timeline.add_track(tr);
+        }
+
+        // Mix in two contiguous 50ms chunks to verify seamless lookahead continuity and AV sync
+        let chunk1 = mixer.mix_timeline_chunk(&project, 0.0, 0.05).to_vec();
+        let chunk2 = mixer.mix_timeline_chunk(&project, 0.05, 0.10).to_vec();
+
+        for frame in chunk1.iter().chain(chunk2.iter()) {
+            let peak = frame[0].abs().max(frame[1].abs());
+            assert!(
+                peak <= ceiling + 1e-5,
+                "Mixed peak {} exceeded -0.1 dBFS ceiling {}",
+                peak,
+                ceiling
+            );
+            // Verify 2:1 Left/Right stereo balance is preserved under gain reduction
+            assert!(
+                (frame[0] - 2.0 * frame[1]).abs() < 1e-3,
+                "Stereo balance distorted: L={}, R={}",
+                frame[0],
+                frame[1],
+            );
+            if frame[0].abs() > 0.05 {
+                let ratio = frame[0] / frame[1];
+                assert!(
+                    (ratio - 2.0).abs() < 5e-3,
+                    "Stereo balance distorted: L={}, R={}, ratio={}",
+                    frame[0],
+                    frame[1],
+                    ratio
+                );
+            }
         }
     }
 }

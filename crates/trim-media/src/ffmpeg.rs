@@ -11,15 +11,31 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-/// Applies Windows-specific process creation flags to suppress console windows.
+/// Windows `CREATE_NO_WINDOW` process creation flag (`0x08000000`).
+pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Applies Windows-specific process creation flags (`CREATE_NO_WINDOW`) to suppress console windows.
 pub fn apply_no_window(cmd: &mut Command) -> &mut Command {
-    #[cfg(windows)]
+    #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
     cmd
+}
+
+/// Returns the platform-appropriate executable filename (e.g., `ffmpeg.exe` on Windows, `ffmpeg` on Unix).
+pub fn executable_filename(name: &str) -> String {
+    let trimmed = name.trim();
+    if cfg!(target_os = "windows")
+        && !trimmed.to_ascii_lowercase().ends_with(".exe")
+        && !trimmed.contains('\\')
+        && !trimmed.contains('/')
+    {
+        format!("{}.exe", trimmed)
+    } else {
+        trimmed.to_string()
+    }
 }
 
 /// Creates a `Command` for the requested tool (`ffmpeg`, `ffprobe`, `ffplay`),
@@ -33,25 +49,57 @@ pub fn create_command(name: &str) -> Command {
 }
 
 /// Resolves binary location, checking:
-/// 1. Next to the running executable (`./ffmpeg.exe` or `./ffmpeg`)
-/// 2. In system PATH as fallback
-fn resolve_binary_path(name: &str) -> PathBuf {
+/// 1. Environment overrides (`TRIM_FFMPEG_PATH`, `TRIM_FFPROBE_PATH`, `TRIM_FFPLAY_PATH`)
+/// 2. Next to the running executable (`./ffmpeg.exe`, `./bin/ffmpeg.exe` or `./ffmpeg`)
+/// 3. Windows `%LOCALAPPDATA%\triM\bin\<name>.exe`
+/// 4. In system PATH (`ffmpeg.exe` on Windows, `ffmpeg` on Unix)
+pub fn resolve_binary_path(name: &str) -> PathBuf {
+    let env_key = match name.trim_end_matches(".exe") {
+        "ffmpeg" => Some("TRIM_FFMPEG_PATH"),
+        "ffprobe" => Some("TRIM_FFPROBE_PATH"),
+        "ffplay" => Some("TRIM_FFPLAY_PATH"),
+        _ => None,
+    };
+    if let Some(key) = env_key {
+        if let Ok(val) = std::env::var(key) {
+            let p = PathBuf::from(val.trim());
+            if p.is_file() {
+                return p;
+            }
+        }
+    }
+
+    let exe_name = executable_filename(name);
+
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(exe_dir) = current_exe.parent() {
-            if cfg!(windows) {
-                let candidate = exe_dir.join(format!("{}.exe", name));
-                if candidate.is_file() {
-                    return candidate;
-                }
-            } else {
-                let candidate = exe_dir.join(name);
+            let direct = exe_dir.join(&exe_name);
+            if direct.is_file() {
+                return direct;
+            }
+            let sub_bin = exe_dir.join("bin").join(&exe_name);
+            if sub_bin.is_file() {
+                return sub_bin;
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
+            if !localappdata.is_empty() {
+                let candidate = PathBuf::from(localappdata)
+                    .join("triM")
+                    .join("bin")
+                    .join(&exe_name);
                 if candidate.is_file() {
                     return candidate;
                 }
             }
         }
     }
-    PathBuf::from(name)
+
+    PathBuf::from(exe_name)
 }
 
 /// Creates a `Command` for `ffmpeg`.
@@ -70,7 +118,8 @@ pub fn ffplay_cmd() -> Command {
 }
 
 /// RAII process guard that guarantees spawned child processes are cleanly killed
-/// and reaped on drop, preventing zombie or orphan background processes.
+/// and reaped on drop via `std::process::Child::kill()` + `.wait()`, preventing
+/// zombie or orphan background processes across Linux, Windows, and macOS.
 #[derive(Debug)]
 pub struct ChildGuard {
     child: Option<std::process::Child>,
@@ -86,6 +135,7 @@ impl ChildGuard {
     }
 
     pub fn spawn(cmd: &mut Command) -> std::io::Result<Self> {
+        apply_no_window(cmd);
         let child = cmd.spawn()?;
         Ok(Self::new(child))
     }
@@ -104,11 +154,17 @@ impl ChildGuard {
 
     pub fn kill(&mut self) -> std::io::Result<()> {
         if let Some(mut c) = self.child.take() {
-            let res = c.kill();
+            // Drop stdin first so pipe-reading processes (like ffmpeg/ffplay) can terminate
+            let _ = c.stdin.take();
+            if let Ok(Some(st)) = c.try_wait() {
+                self.exit_status = Some(st);
+                return Ok(());
+            }
+            let _ = c.kill();
             if let Ok(st) = c.wait() {
                 self.exit_status = Some(st);
             }
-            res
+            Ok(())
         } else {
             Ok(())
         }
@@ -170,6 +226,7 @@ impl std::ops::DerefMut for ChildGuard {
 impl Drop for ChildGuard {
     fn drop(&mut self) {
         if let Some(mut c) = self.child.take() {
+            let _ = c.stdin.take();
             let _ = c.kill();
             let _ = c.wait();
         }
@@ -272,20 +329,27 @@ mod tests {
     #[test]
     fn test_create_command_basic() {
         let cmd = create_command("ffmpeg");
-        assert!(cmd.get_program().to_string_lossy().contains("ffmpeg"));
+        let prog = cmd.get_program().to_string_lossy().to_lowercase();
+        assert!(prog.contains("ffmpeg"));
+        #[cfg(target_os = "windows")]
+        assert!(prog.ends_with(".exe"));
     }
 
     #[test]
     fn test_resolve_binary_fallback() {
         let p = resolve_binary_path("custom_tool_xyz");
-        assert_eq!(p, PathBuf::from("custom_tool_xyz"));
+        if cfg!(target_os = "windows") {
+            assert_eq!(p, PathBuf::from("custom_tool_xyz.exe"));
+        } else {
+            assert_eq!(p, PathBuf::from("custom_tool_xyz"));
+        }
     }
 
     #[test]
     fn test_child_guard_lifecycle() {
-        let mut cmd = if cfg!(windows) {
-            let mut c = Command::new("cmd");
-            c.args(["/c", "timeout /t 5"]);
+        let mut cmd = if cfg!(target_os = "windows") {
+            let mut c = Command::new("ping");
+            c.args(["-n", "6", "127.0.0.1"]);
             c
         } else {
             let mut c = Command::new("sleep");

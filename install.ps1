@@ -30,7 +30,7 @@ $ErrorActionPreference = "Stop"
 # Version & Metadata
 # ------------------------------------------------------------------------------
 $AppName = "triM."
-$Version = "1.0.0"
+$Version = "1.0.1"
 $RepoOwner = "MOzcelik14"
 $RepoName = "triM"
 $GitHubRepo = "https://github.com/$RepoOwner/$RepoName"

@@ -69,6 +69,7 @@ pub struct MonitorWidget<'a> {
     pub mode: MonitorMode,
     pub title: &'a str,
     pub texture: Option<&'a TextureHandle>,
+    pub custom_texture_id: Option<egui::TextureId>,
     pub has_content: bool,
     pub aspect_ratio: f32,
     pub current_time: f64,
@@ -111,6 +112,7 @@ impl<'a> MonitorWidget<'a> {
             mode,
             title,
             texture,
+            custom_texture_id: None,
             has_content,
             aspect_ratio: if aspect_ratio > 0.1 {
                 aspect_ratio
@@ -133,6 +135,11 @@ impl<'a> MonitorWidget<'a> {
             active_tool: None,
             inline_text_edit: None,
         }
+    }
+
+    pub fn custom_texture_id(mut self, id: Option<egui::TextureId>) -> Self {
+        self.custom_texture_id = id;
+        self
     }
 
     pub fn safe_zones(mut self, enabled: bool) -> Self {
@@ -287,9 +294,12 @@ impl<'a> MonitorWidget<'a> {
                 }
             }
             draw_button(&painter, r_import, "+ Medya İçe Aktar", true);
-        } else if let Some(tex) = self.texture {
+        } else if let Some(tex_id) = self
+            .custom_texture_id
+            .or_else(|| self.texture.map(|t| t.id()))
+        {
             painter.image(
-                tex.id(),
+                tex_id,
                 frame_rect,
                 Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
                 Color32::WHITE,
@@ -701,6 +711,26 @@ impl<'a> MonitorWidget<'a> {
                         .size(11.0)
                         .color(Color32::from_rgb(0x90, 0x90, 0xa0)),
                 );
+
+                if self.is_playing && (self.playback_speed - 1.0).abs() > 0.01 {
+                    let speed_label = if self.playback_speed > 0.0 {
+                        format!(">> {:.0}x", self.playback_speed)
+                    } else {
+                        format!("<< {:.0}x", self.playback_speed.abs())
+                    };
+                    let speed_color = if self.playback_speed > 0.0 {
+                        Color32::from_rgb(0x50, 0xd0, 0x70)
+                    } else {
+                        Color32::from_rgb(0xe0, 0x9a, 0x38)
+                    };
+                    ui.label(
+                        RichText::new(speed_label)
+                            .monospace()
+                            .size(11.0)
+                            .strong()
+                            .color(speed_color),
+                    );
+                }
 
                 ui.add_space(8.0);
                 ui.separator();

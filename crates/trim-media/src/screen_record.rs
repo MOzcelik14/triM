@@ -171,9 +171,20 @@ impl ScreenRecorder {
 
             if !exited {
                 let _ = c.kill();
+                let _ = c.wait();
             }
         }
 
         Ok(elapsed)
+    }
+}
+
+impl Drop for ScreenRecorder {
+    fn drop(&mut self) {
+        if let Some(mut c) = self.child.take() {
+            let _ = c.stdin.take();
+            let _ = c.kill();
+            let _ = c.wait();
+        }
     }
 }

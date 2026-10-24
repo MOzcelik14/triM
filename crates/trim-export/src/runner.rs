@@ -4,7 +4,7 @@ use crate::filtergraph::TimelineExporter;
 use crate::presets::ExportPreset;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
@@ -67,12 +67,7 @@ impl ExportRunner {
                 return;
             }
 
-            let mut cmd = Command::new(&cmd_args[0]);
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                cmd.creation_flags(0x0800_0000);
-            }
+            let mut cmd = trim_media::create_command(&cmd_args[0]);
             let mut child = match cmd
                 .args(&cmd_args[1..])
                 .stdout(Stdio::piped())

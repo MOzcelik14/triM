@@ -4,6 +4,8 @@ pub mod app;
 pub mod canvas;
 pub mod color_wheel;
 pub mod dialogs;
+pub mod file_dialog;
+pub mod gpu_compositor;
 pub mod inspector;
 pub mod media_bin;
 pub mod monitor;
@@ -17,6 +19,10 @@ pub mod vu_meter;
 
 pub use app::TrimApp;
 pub use canvas::TimelineCanvasState;
+pub use file_dialog::{
+    FileDialogBridge, FileDialogConfig, FileDialogMode, FileDialogRequest, FileDialogResponse,
+};
+pub use gpu_compositor::{GpuCompositor, LayerUniforms, GPU_PREVIEW_SCALE};
 pub use media_bin::LeftPanelTab;
 pub use shortcuts::ShortcutProfile;
 pub use theme::setup_theme;
@@ -502,5 +508,114 @@ mod tests {
         app.resolve_default_target_tracks();
         assert_eq!(app.target_video_track, "");
         assert_eq!(app.target_audio_track, "");
+    }
+
+    #[test]
+    fn test_file_dialog_bridge_async_lifecycle_and_duplicate_guard() {
+        use std::path::PathBuf;
+        use std::sync::{Arc, Barrier};
+
+        let mut bridge = FileDialogBridge::new();
+        assert!(!bridge.is_pending());
+        assert!(bridge.poll().is_none());
+
+        let barrier = Arc::new(Barrier::new(2));
+        let b_clone = Arc::clone(&barrier);
+
+        let started = bridge.open_with_runner(FileDialogRequest::OpenProject, move || {
+            b_clone.wait();
+            Some(PathBuf::from("/tmp/test_project.trim"))
+        });
+        assert!(started);
+        assert!(bridge.is_pending());
+
+        // Duplicate invocation while pending must be rejected
+        let duplicate = bridge.open_with_runner(FileDialogRequest::ImportMedia, || {
+            Some(PathBuf::from("/tmp/other.mp4"))
+        });
+        assert!(!duplicate);
+
+        // Release worker thread
+        barrier.wait();
+
+        let mut received = None;
+        for _ in 0..100 {
+            if let Some(resp) = bridge.poll() {
+                received = Some(resp);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+
+        let resp = received.expect("Should receive FileDialogResponse from background thread");
+        assert_eq!(resp.request, FileDialogRequest::OpenProject);
+        assert_eq!(resp.path, Some(PathBuf::from("/tmp/test_project.trim")));
+        assert!(!bridge.is_pending());
+    }
+
+    #[test]
+    fn test_jkl_shuttle_and_snap_toggle() {
+        let mut app = TrimApp::default();
+        assert!(!app.is_playing);
+        assert_eq!(app.playback_speed, 1.0);
+
+        // Consecutive L presses: 1x -> 2x -> 4x -> 8x -> 8x
+        app.shuttle_forward();
+        assert!(app.is_playing);
+        assert_eq!(app.playback_speed, 1.0);
+
+        app.shuttle_forward();
+        assert!(app.is_playing);
+        assert_eq!(app.playback_speed, 2.0);
+
+        app.shuttle_forward();
+        assert_eq!(app.playback_speed, 4.0);
+
+        app.shuttle_forward();
+        assert_eq!(app.playback_speed, 8.0);
+
+        app.shuttle_forward();
+        assert_eq!(app.playback_speed, 8.0);
+
+        // Consecutive J presses: -1x -> -2x -> -4x -> -8x -> -8x
+        app.shuttle_reverse();
+        assert!(app.is_playing);
+        assert_eq!(app.playback_speed, -1.0);
+
+        app.shuttle_reverse();
+        assert_eq!(app.playback_speed, -2.0);
+
+        app.shuttle_reverse();
+        assert_eq!(app.playback_speed, -4.0);
+
+        app.shuttle_reverse();
+        assert_eq!(app.playback_speed, -8.0);
+
+        app.shuttle_reverse();
+        assert_eq!(app.playback_speed, -8.0);
+
+        // K (shuttle_stop) pauses immediately and resets speed to 1.0
+        app.shuttle_stop();
+        assert!(!app.is_playing);
+        assert_eq!(app.playback_speed, 1.0);
+
+        // Space (toggle_play) plays at 1.0x and pauses back
+        app.playback_speed = 4.0;
+        app.toggle_play();
+        assert!(app.is_playing);
+        assert_eq!(app.playback_speed, 1.0);
+        app.toggle_play();
+        assert!(!app.is_playing);
+        assert_eq!(app.playback_speed, 1.0);
+
+        // Magnetic snapping toggle synchronizes TrimApp and TimelineModel
+        assert!(app.snap_enabled);
+        assert!(app.project.timeline.snap_enabled);
+        app.toggle_snap();
+        assert!(!app.snap_enabled);
+        assert!(!app.project.timeline.snap_enabled);
+        app.toggle_snap();
+        assert!(app.snap_enabled);
+        assert!(app.project.timeline.snap_enabled);
     }
 }

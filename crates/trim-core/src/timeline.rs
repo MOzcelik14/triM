@@ -309,38 +309,142 @@ impl TimelineModel {
         }
 
         let thresh = threshold.unwrap_or(self.snap_threshold);
-        let mut snap_points = vec![0.0];
-
-        // Add clip boundaries
-        for track in &self.tracks {
-            for clip in &track.clips {
-                if let Some(ignore_id) = ignore_clip_id {
-                    if clip.id == ignore_id {
-                        continue;
-                    }
-                }
-                snap_points.push(clip.timeline_in);
-                snap_points.push(clip.timeline_out);
-            }
-        }
-
-        // Add markers
-        for marker in &self.markers {
-            snap_points.push(marker.time);
-        }
-
         let mut closest_point = target_time;
         let mut min_dist = thresh;
 
-        for pt in snap_points {
+        let mut check_point = |pt: f64| {
             let dist = (pt - target_time).abs();
             if dist < min_dist {
                 min_dist = dist;
                 closest_point = pt;
             }
+        };
+
+        check_point(0.0);
+
+        for track in &self.tracks {
+            for clip in &track.clips {
+                if ignore_clip_id == Some(clip.id.as_str()) {
+                    continue;
+                }
+                check_point(clip.timeline_in);
+                check_point(clip.timeline_out);
+            }
+        }
+
+        for marker in &self.markers {
+            check_point(marker.time);
         }
 
         closest_point
+    }
+
+    /// Snaps a single timestamp magnetically to `0.0`, `playhead_time`, neighbor clip boundaries, or markers.
+    /// Returns `(snapped_time, matched_snap_point)`. Zero heap allocations.
+    pub fn snap_time_with_playhead(
+        &self,
+        target_time: f64,
+        playhead_time: f64,
+        threshold: Option<f64>,
+        ignore_clip_id: Option<&str>,
+    ) -> (f64, Option<f64>) {
+        if !self.snap_enabled {
+            return (target_time, None);
+        }
+
+        let thresh = threshold.unwrap_or(self.snap_threshold);
+        let mut matched: Option<f64> = None;
+        let mut min_dist = thresh;
+
+        let mut check_point = |pt: f64| {
+            let dist = (pt - target_time).abs();
+            if dist < min_dist {
+                min_dist = dist;
+                matched = Some(pt);
+            }
+        };
+
+        check_point(0.0);
+        check_point(playhead_time.max(0.0));
+
+        for track in &self.tracks {
+            for clip in &track.clips {
+                if ignore_clip_id == Some(clip.id.as_str()) {
+                    continue;
+                }
+                check_point(clip.timeline_in);
+                check_point(clip.timeline_out);
+            }
+        }
+
+        for marker in &self.markers {
+            check_point(marker.time);
+        }
+
+        match matched {
+            Some(pt) => (pt, Some(pt)),
+            None => (target_time, None),
+        }
+    }
+
+    /// Snaps a moving clip's start (`target_in`) OR end (`target_in + duration`) to `0.0`,
+    /// `playhead_time`, neighbor clip boundaries, or timeline markers.
+    /// Returns `(snapped_in, matched_snap_point)`. Zero heap allocations.
+    pub fn snap_clip_bounds(
+        &self,
+        target_in: f64,
+        duration: f64,
+        playhead_time: f64,
+        threshold: Option<f64>,
+        ignore_clip_id: Option<&str>,
+    ) -> (f64, Option<f64>) {
+        if !self.snap_enabled {
+            return (target_in, None);
+        }
+
+        let thresh = threshold.unwrap_or(self.snap_threshold);
+        let dur = duration.max(0.0);
+        let target_out = target_in + dur;
+
+        let mut best_in = target_in;
+        let mut matched_point: Option<f64> = None;
+        let mut min_dist = thresh;
+
+        let mut check_point = |pt: f64| {
+            let dist_in = (pt - target_in).abs();
+            if dist_in < min_dist {
+                min_dist = dist_in;
+                best_in = pt.max(0.0);
+                matched_point = Some(pt);
+            }
+            if dur > 0.0 && pt >= dur {
+                let dist_out = (pt - target_out).abs();
+                if dist_out < min_dist {
+                    min_dist = dist_out;
+                    best_in = (pt - dur).max(0.0);
+                    matched_point = Some(pt);
+                }
+            }
+        };
+
+        check_point(0.0);
+        check_point(playhead_time.max(0.0));
+
+        for track in &self.tracks {
+            for clip in &track.clips {
+                if ignore_clip_id == Some(clip.id.as_str()) {
+                    continue;
+                }
+                check_point(clip.timeline_in);
+                check_point(clip.timeline_out);
+            }
+        }
+
+        for marker in &self.markers {
+            check_point(marker.time);
+        }
+
+        (best_in, matched_point)
     }
 
     /// Returns visible video clips at `time` in bottom-to-top order (V1, V2, ...).
@@ -416,6 +520,44 @@ mod tests {
         assert_eq!(tl.snap_time(8.07, None, None), 8.0);
         // Far away from snap points
         assert_eq!(tl.snap_time(3.5, None, None), 3.5);
+    }
+
+    #[test]
+    fn test_magnetic_snapping_playhead_and_clip_tail() {
+        let mut tl = TimelineModel::default();
+        let c1 = Clip::new("m1", 2.0, 5.0);
+        let c2 = Clip::new("m2", 10.0, 14.0);
+        let c2_id = c2.id.clone();
+        tl.tracks[0].add_clip(c1);
+        tl.tracks[0].add_clip(c2);
+        tl.add_marker(8.0, "Beat", "#E07A38");
+
+        // 1. Snap clip tail (target_in = 3.92, dur = 4.0 -> target_out = 7.92) to marker at 8.0
+        let (snapped_in, pt) = tl.snap_clip_bounds(3.92, 4.0, 12.0, Some(0.15), Some(&c2_id));
+        assert!((snapped_in - 4.0).abs() < 1e-6);
+        assert_eq!(pt, Some(8.0));
+
+        // 2. Snap clip head (target_in = 5.08, dur = 4.0) to neighbor clip out at 5.0
+        let (snapped_in2, pt2) = tl.snap_clip_bounds(5.08, 4.0, 12.0, Some(0.15), Some(&c2_id));
+        assert!((snapped_in2 - 5.0).abs() < 1e-6);
+        assert_eq!(pt2, Some(5.0));
+
+        // 3. Snap clip tail (target_in = 7.91, dur = 4.0 -> target_out = 11.91) to playhead at 12.0
+        let (snapped_in3, pt3) = tl.snap_clip_bounds(7.91, 4.0, 12.0, Some(0.15), Some(&c2_id));
+        assert!((snapped_in3 - 8.0).abs() < 1e-6);
+        assert_eq!(pt3, Some(12.0));
+
+        // 4. Razor cut time snapping to playhead (6.5)
+        let (cut_t, cut_pt) = tl.snap_time_with_playhead(6.42, 6.5, Some(0.15), Some(&c2_id));
+        assert!((cut_t - 6.5).abs() < 1e-6);
+        assert_eq!(cut_pt, Some(6.5));
+
+        // 5. Disabled snapping returns raw coordinates
+        tl.snap_enabled = false;
+        let (unsnapped_in, unsnapped_pt) =
+            tl.snap_clip_bounds(3.92, 4.0, 12.0, Some(0.15), Some(&c2_id));
+        assert!((unsnapped_in - 3.92).abs() < 1e-6);
+        assert_eq!(unsnapped_pt, None);
     }
 
     #[test]

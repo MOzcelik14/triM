@@ -31,35 +31,38 @@ jobs:
     name: Cargo check and tests
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config build-essential libasound2-dev libx11-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev ffmpeg
+          sudo apt-get install -y --no-install-recommends pkg-config build-essential libasound2-dev libpipewire-0.3-dev libx11-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev ffmpeg
       - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-      - name: Check
-        run: cargo check --workspace --locked
-      - name: Test
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo registry and target directory
+        uses: Swatinem/rust-cache@v2
+      - name: Test workspace
         run: cargo test --workspace --locked
       - name: Shell syntax
         run: bash -n scripts/package-linux.sh
 
   windows-check:
-    name: Windows cargo check
+    name: Windows cargo check, test, and release build
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo registry and target directory
+        uses: Swatinem/rust-cache@v2
       - name: Check Windows workspace
         run: cargo check --workspace --locked
+      - name: Test Windows workspace
+        run: cargo test --workspace --locked
+      - name: Build Windows release binary
+        run: cargo build --workspace --release --locked
+
 

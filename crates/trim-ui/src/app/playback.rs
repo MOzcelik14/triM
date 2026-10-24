@@ -10,18 +10,26 @@ impl TrimApp {
         if self.is_playing {
             self.pause();
         } else {
+            self.playback_speed = 1.0;
             self.play();
         }
     }
 
     pub fn play(&mut self) {
-        if self.current_time >= self.project.timeline.duration()
-            && self.project.timeline.duration() > 0.0
-        {
-            self.current_time = 0.0;
+        let dur = self.project.timeline.duration();
+        if dur > 0.0 {
+            if self.playback_speed >= 0.0 && self.current_time >= dur {
+                self.current_time = 0.0;
+            } else if self.playback_speed < 0.0 && self.current_time <= 0.0 {
+                self.current_time = dur;
+            }
         }
         self.is_playing = true;
-        self.audio_player.prepare();
+        if (self.playback_speed - 1.0).abs() < 0.01 {
+            self.audio_player.prepare();
+        } else {
+            self.audio_player.stop();
+        }
         self.clock_start = Some(Instant::now());
         self.clock_start_time = self.current_time;
     }
@@ -35,7 +43,23 @@ impl TrimApp {
         self.clock_start = None;
         self.video_engine.streamer.stop();
         self.audio_player.stop();
+        self.audio_mixer.reset_limiter();
         self.vu_state.reset();
+    }
+
+    pub fn shuttle_stop(&mut self) {
+        self.pause();
+        self.status_message = "Duraklatıldı (1x)".to_string();
+    }
+
+    pub fn toggle_snap(&mut self) {
+        self.snap_enabled = !self.snap_enabled;
+        self.project.timeline.snap_enabled = self.snap_enabled;
+        self.status_message = if self.snap_enabled {
+            "Mıknatıs / Yapışma (N): Açık".to_string()
+        } else {
+            "Mıknatıs / Yapışma (N): Kapalı".to_string()
+        };
     }
 
     pub fn stop(&mut self) {
@@ -46,6 +70,7 @@ impl TrimApp {
     pub fn seek(&mut self, time: f64) {
         self.video_engine.streamer.stop();
         self.audio_player.stop();
+        self.audio_mixer.reset_limiter();
         let dur = self.project.timeline.duration();
         self.current_time = time.clamp(0.0, dur.max(0.0));
         if self.is_playing {
@@ -73,9 +98,13 @@ impl TrimApp {
                 .copied()
                 .unwrap_or(8.0);
             self.playback_speed = next;
+            if (self.playback_speed - 1.0).abs() >= 0.01 {
+                self.audio_player.stop();
+            }
             self.clock_start = Some(Instant::now());
             self.clock_start_time = self.current_time;
         }
+        self.status_message = format!("İleri Sarma: {:.0}x", self.playback_speed);
     }
 
     pub fn shuttle_reverse(&mut self) {
@@ -90,9 +119,11 @@ impl TrimApp {
                 .copied()
                 .unwrap_or(-8.0);
             self.playback_speed = next;
+            self.audio_player.stop();
             self.clock_start = Some(Instant::now());
             self.clock_start_time = self.current_time;
         }
+        self.status_message = format!("Geri Sarma: {:.0}x", self.playback_speed);
     }
 
     pub fn update_playback_tick(&mut self) {
@@ -125,7 +156,31 @@ impl TrimApp {
         self.vu_state.tick_decay();
     }
 
-    pub fn update_monitor_frame(&mut self, ctx: &egui::Context) {
+    pub fn update_monitor_frame(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        if let Some(compositor) = &mut self.gpu_compositor {
+            let layers = self.video_engine.collect_timeline_layers(
+                &self.project,
+                self.current_time,
+                self.is_playing,
+            );
+            if layers.is_empty() {
+                self.monitor_gpu_texture_id = None;
+                self.monitor_texture = None;
+                self.last_rendered_monitor_frame = None;
+                return;
+            }
+            if let Some(tex_id) =
+                compositor.render_layers(&self.project, &layers, self.current_time, frame)
+            {
+                self.monitor_gpu_texture_id = Some(tex_id);
+                self.monitor_texture = None;
+                return;
+            }
+            log::warn!("GPU Compositor çalışma zamanı hatası; CPU fallback moduna geçiliyor.");
+            self.gpu_compositor = None;
+        }
+
+        self.monitor_gpu_texture_id = None;
         let frame_opt = self.video_engine.render_timeline_frame(
             &self.project,
             self.current_time,

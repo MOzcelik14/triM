@@ -1,6 +1,7 @@
 //! Media pool ingestion, 720p proxy generation, voiceover recording, and smart AI/video cuts.
 
 use crate::app::{ActiveVoiceover, TrimApp};
+use crate::file_dialog::{FileDialogConfig, FileDialogRequest};
 use egui::{ColorImage, TextureOptions};
 use std::sync::mpsc::channel;
 use trim_commands::{AddClipCommand, MoveMultipleClipsCommand};
@@ -156,18 +157,21 @@ impl TrimApp {
     }
 
     pub fn prompt_import_media(&mut self) {
-        if let Some(path) = rfd::FileDialog::new()
-            .set_title("Medya Dosyası Seç")
-            .add_filter(
-                "Tüm Medya Dosyaları",
-                &[
-                    "mp4", "mov", "mkv", "webm", "mp3", "wav", "aac", "png", "jpg", "jpeg",
-                ],
-            )
-            .pick_file()
-        {
-            self.import_media_file(path);
-        }
+        let config = FileDialogConfig::pick_file("Medya Dosyası Seç").add_filter(
+            "Tüm Medya Dosyaları",
+            &[
+                "mp4", "mov", "mkv", "webm", "mp3", "wav", "aac", "png", "jpg", "jpeg",
+            ],
+        );
+        self.file_dialog_bridge
+            .open(FileDialogRequest::ImportMedia, config);
+    }
+
+    pub fn prompt_custom_lut(&mut self, clip_id: String) {
+        let config = FileDialogConfig::pick_file("3D LUT Dosyası Seç (.cube)")
+            .add_filter("3D LUT (.cube)", &["cube"]);
+        self.file_dialog_bridge
+            .open(FileDialogRequest::SelectCustomLut { clip_id }, config);
     }
 
     pub fn update_media_bin_thumbnails(&mut self, ctx: &egui::Context) {

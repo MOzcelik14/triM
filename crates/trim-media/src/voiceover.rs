@@ -187,6 +187,16 @@ impl VoiceoverRecorder {
     }
 }
 
+impl Drop for VoiceoverRecorder {
+    fn drop(&mut self) {
+        if let Some(mut c) = self.child.take() {
+            let _ = c.stdin.take();
+            let _ = c.kill();
+            let _ = c.wait();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

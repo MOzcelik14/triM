@@ -30,48 +30,51 @@ jobs:
     name: Rust workspace tests
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="20"
-          sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="20" pkg-config build-essential libasound2-dev libx11-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev ffmpeg
-      - name: Use current stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-      - name: Check Rust workspace
-        run: cargo check --workspace --locked
-      - name: Run Rust tests
+          sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout="20" \
+            pkg-config build-essential libasound2-dev libpipewire-0.3-dev libx11-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev ffmpeg
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo registry and target directory
+        uses: Swatinem/rust-cache@v2
+      - name: Run Rust workspace tests
         run: cargo test --workspace --locked
 
   deb-appimage:
-    name: Ubuntu build · deb + AppImage
+    name: Ubuntu build · deb + AppImage + tar.gz
     needs: rust-tests
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Install packaging requirements
         run: |
           sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout="20"
-          sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout="20" pkg-config build-essential libasound2-dev libx11-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev ffmpeg curl file desktop-file-utils xvfb xauth libxcb-cursor0 libxkbcommon-x11-0 libegl1 mesa-utils
-      - name: Use current stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+          sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 -o Acquire::http::Timeout="20" \
+            pkg-config build-essential libasound2-dev libpipewire-0.3-dev libx11-dev libgl1-mesa-dev libxkbcommon-dev libwayland-dev ffmpeg curl file desktop-file-utils xvfb xauth libxcb-cursor0 libxkbcommon-x11-0 libegl1 mesa-utils ca-certificates python3
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo registry and target directory
+        uses: Swatinem/rust-cache@v2
       - name: Build optimized native executable
         run: cargo build --locked --release -p trim-app
       - name: Build Debian package
         run: bash scripts/package-linux.sh deb
       - name: Build AppImage
         run: bash scripts/package-linux.sh appimage
-      - name: Validate Debian package and release outputs
+      - name: Build portable Linux tarball
+        run: bash scripts/package-linux.sh tarball
+      - name: Validate Debian, AppImage, and portable tarball outputs
         run: |
           test "$(find dist -name '*.deb' | wc -l)" -eq 1
           test "$(find dist -name '*.AppImage' | wc -l)" -eq 1
+          test "$(find dist -name '*.tar.gz' | wc -l)" -eq 1
           dpkg-deb -f dist/*.deb Package Version Architecture
           test -x target/release/trim
           bash -n scripts/package-linux.sh
@@ -101,6 +104,7 @@ jobs:
           path: |
             dist/*.deb
             dist/*.AppImage
+            dist/*.tar.gz
           if-no-files-found: error
           retention-days: 30
 
@@ -112,8 +116,8 @@ jobs:
     steps:
       - name: Install native build and packaging tools
         run: |
-          dnf install -y git gcc gcc-c++ make pkgconf-pkg-config alsa-lib-devel libX11-devel mesa-libGL-devel libxkbcommon-devel wayland-devel ffmpeg-free rpm-build curl ca-certificates rust cargo
-      - uses: actions/checkout@v6
+          dnf install -y git gcc gcc-c++ make pkgconf-pkg-config alsa-lib-devel pipewire-devel libX11-devel mesa-libGL-devel libxkbcommon-devel wayland-devel ffmpeg-free rpm-build curl ca-certificates python3 rust cargo
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Build Rust binary on Fedora
@@ -136,29 +140,55 @@ jobs:
     needs: rust-tests
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Use current stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Cache Cargo registry and target directory
+        uses: Swatinem/rust-cache@v2
+      - name: Check Windows workspace
+        run: cargo check --workspace --locked
+      - name: Test Windows workspace
+        run: cargo test --workspace --locked
       - name: Build Windows binary
         run: cargo build --locked --release -p trim-app
       - name: Package Windows ZIP
         shell: pwsh
         run: |
-          $ver = "${{ github.ref_name }}"
-          if ([string]::IsNullOrEmpty($ver) -or $ver -notlike "v*") {
-            $ver = "v1.0.0"
+          $rawVer = "${{ github.ref_name }}"
+          if ([string]::IsNullOrEmpty($rawVer) -or $rawVer -notlike "v*") {
+            $ver = "1.0.1"
+          } else {
+            $ver = $rawVer.TrimStart('v')
           }
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           $stage = Join-Path $env:TEMP "trim-stage"
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $stage "bin") -Force | Out-Null
           Copy-Item -Path "target\release\trim.exe" -Destination $stage -Force
           Copy-Item -Path "resources" -Destination $stage -Recurse -Force
           Copy-Item -Path "README.md" -Destination $stage -Force
           Copy-Item -Path "install.ps1" -Destination $stage -Force
+          $runtimeNotes = @"
+          triM. v$ver (Windows x86_64 MSVC)
+          ===================================
+          Calisma Zamani Bagimliliklari (FFmpeg / FFprobe / FFplay):
+          1. Sistem geneli kurulum (Onerilen):
+             winget install Gyan.FFmpeg
+          2. Tasinabilir (Portable) kurulum:
+             ffmpeg.exe, ffprobe.exe ve ffplay.exe dosyalarini dogrudan trim.exe yanina
+             veya altindaki .\bin\ klasorune kopyalayin.
+             triM. calisma zamaninda sirasiyla su konumlari otomatik tarar:
+             - TRIM_FFMPEG_PATH / TRIM_FFPROBE_PATH / TRIM_FFPLAY_PATH ortam degiskenleri
+             - <uygulama_dizini>\ffmpeg.exe ve <uygulama_dizini>\bin\ffmpeg.exe
+             - %LOCALAPPDATA%\triM\bin\ffmpeg.exe
+             - Sistem PATH degiskeni
+          "@
+          Set-Content -Path (Join-Path $stage "WINDOWS_RUNTIME.txt") -Value $runtimeNotes -Encoding UTF8
           Compress-Archive -Path "$stage\*" -DestinationPath "dist\triM-$ver-windows-x86_64.zip" -Force
           Remove-Item -Recurse -Force $stage
       - uses: actions/upload-artifact@v4
@@ -188,18 +218,21 @@ jobs:
           test "$(find dist -maxdepth 1 -name '*.deb' | wc -l)" -eq 1
           test "$(find dist -maxdepth 1 -name '*.rpm' | wc -l)" -eq 1
           test "$(find dist -maxdepth 1 -name '*.AppImage' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 1
           test "$(find dist -maxdepth 1 -name '*.zip' | wc -l)" -eq 1
-          (cd dist && sha256sum -- *.deb *.rpm *.AppImage *.zip > SHA256SUMS.txt)
+          (cd dist && sha256sum -- *.deb *.rpm *.AppImage *.tar.gz *.zip > SHA256SUMS.txt)
           cat dist/SHA256SUMS.txt
       - name: Create or update release with all packages
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/*.deb
             dist/*.rpm
             dist/*.AppImage
+            dist/*.tar.gz
             dist/*.zip
             dist/SHA256SUMS.txt
           fail_on_unmatched_files: true
           generate_release_notes: true
+
 

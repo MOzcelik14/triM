@@ -1,5 +1,6 @@
 //! Modern NLE Export Video Studio dialog modal with presets, custom resolution/codecs, and progress.
 
+use crate::file_dialog::{FileDialogBridge, FileDialogConfig, FileDialogRequest};
 use egui::{Button, Color32, ProgressBar, RichText, Slider, Vec2, Window};
 use trim_core::project::Project;
 use trim_export::presets::{get_default_presets, ExportPreset, HardwareAccel, LoudnessNorm};
@@ -21,6 +22,7 @@ pub struct ExportDialog {
     pub hw_accel: HardwareAccel,
     pub loudness_norm: LoudnessNorm,
     pub timeline_duration: f64,
+    pub file_dialog_bridge: FileDialogBridge,
 }
 
 impl Default for ExportDialog {
@@ -67,6 +69,7 @@ impl Default for ExportDialog {
             hw_accel: HardwareAccel::Auto,
             loudness_norm: first_norm,
             timeline_duration: 10.0,
+            file_dialog_bridge: FileDialogBridge::default(),
         }
     }
 }
@@ -91,6 +94,16 @@ impl ExportDialog {
     }
 
     pub fn show(&mut self, ctx: &egui::Context) -> Option<ExportDialogAction> {
+        if let Some(resp) = self.file_dialog_bridge.poll() {
+            if let Some(path) = resp.path {
+                self.output_path = path.to_string_lossy().to_string();
+            }
+            ctx.request_repaint();
+        }
+        if self.file_dialog_bridge.is_pending() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        }
+
         if !self.is_open {
             return None;
         }
@@ -387,16 +400,21 @@ impl ExportDialog {
                                     ui.strong("Çıktı Dosyası Yolu");
                                     ui.horizontal(|ui| {
                                         ui.text_edit_singleline(&mut self.output_path);
-                                        if ui.button("Gözat...").clicked() {
-                                            if let Some(path) = rfd::FileDialog::new()
-                                                .set_file_name("cikti.mp4")
-                                                .add_filter("MP4 Video", &["mp4"])
-                                                .add_filter("QuickTime MOV", &["mov"])
-                                                .save_file()
-                                            {
-                                                self.output_path =
-                                                    path.to_string_lossy().to_string();
-                                            }
+                                        let browse_enabled = !self.file_dialog_bridge.is_pending();
+                                        if ui
+                                            .add_enabled(browse_enabled, Button::new("Gözat..."))
+                                            .clicked()
+                                        {
+                                            let config = FileDialogConfig::save_file(
+                                                "Çıktı Dosyası Seç",
+                                                Some("cikti.mp4".to_string()),
+                                            )
+                                            .add_filter("MP4 Video", &["mp4"])
+                                            .add_filter("QuickTime MOV", &["mov"]);
+                                            self.file_dialog_bridge.open(
+                                                FileDialogRequest::SelectExportOutput,
+                                                config,
+                                            );
                                         }
                                     });
                                 });

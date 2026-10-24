@@ -60,14 +60,37 @@ pub fn load_project<P: AsRef<Path>>(path: P) -> Result<Project, ProjectError> {
     project.file_path = Some(p.to_string_lossy().to_string());
     project.is_dirty = false;
 
-    // Resolve relative media paths relative to the project file directory
+    // Normalize media and LUT paths across Unix/Windows separators and resolve relative paths
     if let Some(parent) = p.parent() {
         for item in project.media_pool.values_mut() {
-            let p_item = Path::new(&item.file_path);
-            if p_item.is_relative() {
-                let abs_path = parent.join(p_item);
+            let norm_item = trim_core::paths::normalize_path(&item.file_path);
+            if norm_item.is_relative() {
+                let abs_path = parent.join(&norm_item);
                 if abs_path.exists() {
                     item.file_path = abs_path.to_string_lossy().to_string();
+                } else {
+                    item.file_path = norm_item.to_string_lossy().to_string();
+                }
+            } else {
+                item.file_path = norm_item.to_string_lossy().to_string();
+            }
+            if let Some(proxy) = &mut item.proxy_path {
+                let norm_proxy = trim_core::paths::normalize_path(&*proxy);
+                *proxy = norm_proxy.to_string_lossy().to_string();
+            }
+        }
+        for track in &mut project.timeline.tracks {
+            for clip in &mut track.clips {
+                if let Some(lut) = &mut clip.custom_lut_path {
+                    let norm_lut = trim_core::paths::normalize_path(&*lut);
+                    if norm_lut.is_relative() {
+                        let abs_lut = parent.join(&norm_lut);
+                        if abs_lut.exists() {
+                            *lut = abs_lut.to_string_lossy().to_string();
+                            continue;
+                        }
+                    }
+                    *lut = norm_lut.to_string_lossy().to_string();
                 }
             }
         }

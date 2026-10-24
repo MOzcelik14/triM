@@ -23,6 +23,7 @@ pub enum DragMode {
 }
 
 pub const TRACK_TOP_PADDING: f32 = 0.0;
+pub const SNAP_THRESHOLD_PX: f32 = 10.0;
 
 #[derive(Debug, Clone)]
 pub struct TimelineCanvasState {
@@ -655,12 +656,19 @@ pub fn render_timeline_canvas(
 
     // 6. Drag-and-drop payload from Media Bin onto Canvas
     let pointer = ui.input(|i| i.pointer.clone());
+    let snap_thresh =
+        ((SNAP_THRESHOLD_PX / state.pixels_per_second.max(1.0)) as f64).clamp(0.02, 0.25);
 
     if let Some(payload) = response.dnd_release_payload::<String>() {
         let media_id = (*payload).clone();
         if let Some(pos) = pointer.interact_pos() {
             let drop_time = ((pos.x - rect.left()) / state.pixels_per_second).max(0.0) as f64;
-            let snapped_time = project.timeline.snap_time(drop_time, Some(0.1), None);
+            let (snapped_time, _) = project.timeline.snap_time_with_playhead(
+                drop_time,
+                current_time,
+                Some(snap_thresh),
+                None,
+            );
 
             // Find target track under mouse Y
             let mut target_track_id = None;
@@ -754,7 +762,7 @@ pub fn render_timeline_canvas(
         }
     }
 
-    // Razor Hover Guide line
+    // Razor Hover Guide line (with magnetic snapping to playhead, neighbor clips, and markers)
     if state.active_tool == EditTool::Razor {
         if let Some(hover_pos) = pointer.hover_pos() {
             if rect.contains(hover_pos) {
@@ -762,8 +770,14 @@ pub fn render_timeline_canvas(
                     if let Some(tr) = project.timeline.get_track_by_id(&tr_id) {
                         if !tr.locked {
                             if let Some(cl) = tr.get_clip_by_id(&cl_id) {
-                                let cut_t =
+                                let raw_cut_t =
                                     ((hover_pos.x - rect.left()) / state.pixels_per_second) as f64;
+                                let (cut_t, snap_pt) = project.timeline.snap_time_with_playhead(
+                                    raw_cut_t,
+                                    current_time,
+                                    Some(snap_thresh),
+                                    Some(&cl_id),
+                                );
                                 if cut_t > cl.timeline_in + 0.04 && cut_t < cl.timeline_out - 0.04 {
                                     let t_idx = project
                                         .timeline
@@ -772,7 +786,19 @@ pub fn render_timeline_canvas(
                                         .position(|t| t.id == tr_id)
                                         .unwrap_or(0);
                                     let (ty, track_h) = track_offsets[t_idx];
-                                    let cx = hover_pos.x;
+                                    let cx = rect.left() + (cut_t as f32 * state.pixels_per_second);
+                                    if snap_pt.is_some() {
+                                        painter.line_segment(
+                                            [
+                                                Pos2::new(cx, rect.top()),
+                                                Pos2::new(cx, rect.bottom()),
+                                            ],
+                                            Stroke::new(
+                                                1.5_f32,
+                                                Color32::from_rgb(0xff, 0xff, 0xff),
+                                            ),
+                                        );
+                                    }
                                     painter.line_segment(
                                         [Pos2::new(cx, ty), Pos2::new(cx, ty + track_h)],
                                         Stroke::new(2.0_f32, Color32::from_rgb(0xff, 0x48, 0x48)),
@@ -814,8 +840,14 @@ pub fn render_timeline_canvas(
                         if let Some(tr) = project.timeline.get_track_by_id(&tr_id) {
                             if !tr.locked {
                                 if let Some(cl) = tr.get_clip_by_id(&cl_id) {
-                                    let cut_t =
+                                    let raw_cut_t =
                                         ((pos.x - rect.left()) / state.pixels_per_second) as f64;
+                                    let (cut_t, _) = project.timeline.snap_time_with_playhead(
+                                        raw_cut_t,
+                                        current_time,
+                                        Some(snap_thresh),
+                                        Some(&cl_id),
+                                    );
                                     if cut_t > cl.timeline_in + 0.04
                                         && cut_t < cl.timeline_out - 0.04
                                     {
@@ -835,7 +867,9 @@ pub fn render_timeline_canvas(
                 EditTool::Type => {
                     let clicked_t =
                         ((pos.x - rect.left()) / state.pixels_per_second).max(0.0) as f64;
-                    let snapped_t = project.timeline.snap_time(clicked_t, Some(0.1), None);
+                    let snapped_t = project
+                        .timeline
+                        .snap_time(clicked_t, Some(snap_thresh), None);
                     if let Some((tr_id, cl_id, _)) = find_clip_at_pos(project, state, rect, pos) {
                         state.selected_clip_pairs = vec![(tr_id, cl_id)];
                     }
@@ -967,7 +1001,9 @@ pub fn render_timeline_canvas(
                     state.drag_mode = DragMode::Scrub;
                     let clicked_t =
                         ((pos.x - rect.left()) / state.pixels_per_second).max(0.0) as f64;
-                    let snapped_t = project.timeline.snap_time(clicked_t, Some(0.1), None);
+                    let snapped_t = project
+                        .timeline
+                        .snap_time(clicked_t, Some(snap_thresh), None);
                     action = Some(CanvasAction::Seek(snapped_t));
                 }
             }
@@ -1005,25 +1041,25 @@ pub fn render_timeline_canvas(
                 }
                 DragMode::Scrub => {
                     let t = ((pos.x - rect.left()) / state.pixels_per_second).max(0.0) as f64;
-                    let snapped = project.timeline.snap_time(t, Some(0.1), None);
+                    let snapped = project.timeline.snap_time(t, Some(snap_thresh), None);
                     action = Some(CanvasAction::Seek(snapped));
                 }
                 DragMode::Move => {
                     if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id)
                     {
                         let target_in = (state.drag_orig_in + dt).max(0.0);
-                        let snapped_in =
-                            project
-                                .timeline
-                                .snap_time(target_in, Some(0.1), Some(cl_id));
+                        let clip_dur = (state.drag_orig_out - state.drag_orig_in).max(0.0);
+                        let (snapped_in, snap_pt) = project.timeline.snap_clip_bounds(
+                            target_in,
+                            clip_dur,
+                            current_time,
+                            Some(snap_thresh),
+                            Some(cl_id),
+                        );
                         let actual_dt = snapped_in - state.drag_orig_in;
 
-                        if (snapped_in - target_in).abs() > 1e-4 {
-                            state.snap_guide_x =
-                                Some(rect.left() + (snapped_in as f32 * state.pixels_per_second));
-                        } else {
-                            state.snap_guide_x = None;
-                        }
+                        state.snap_guide_x =
+                            snap_pt.map(|pt| rect.left() + (pt as f32 * state.pixels_per_second));
 
                         // Determine target track under cursor Y (matching track type, unlocked)
                         if let Some(orig_tr) = project.timeline.get_track_by_id(tr_id) {
@@ -1060,10 +1096,14 @@ pub fn render_timeline_canvas(
                     if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id)
                     {
                         let target_in = (state.drag_orig_in + dt).max(0.0);
-                        let snapped_in =
-                            project
-                                .timeline
-                                .snap_time(target_in, Some(0.1), Some(cl_id));
+                        let (snapped_in, snap_pt) = project.timeline.snap_time_with_playhead(
+                            target_in,
+                            current_time,
+                            Some(snap_thresh),
+                            Some(cl_id),
+                        );
+                        state.snap_guide_x =
+                            snap_pt.map(|pt| rect.left() + (pt as f32 * state.pixels_per_second));
                         if let Some(tr) = project.timeline.get_track_by_id_mut(tr_id) {
                             if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
                                 cl.trim_in(snapped_in);
@@ -1075,10 +1115,14 @@ pub fn render_timeline_canvas(
                     if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id)
                     {
                         let target_out = (state.drag_orig_out + dt).max(state.drag_orig_in + 0.04);
-                        let snapped_out =
-                            project
-                                .timeline
-                                .snap_time(target_out, Some(0.1), Some(cl_id));
+                        let (snapped_out, snap_pt) = project.timeline.snap_time_with_playhead(
+                            target_out,
+                            current_time,
+                            Some(snap_thresh),
+                            Some(cl_id),
+                        );
+                        state.snap_guide_x =
+                            snap_pt.map(|pt| rect.left() + (pt as f32 * state.pixels_per_second));
                         if let Some(tr) = project.timeline.get_track_by_id_mut(tr_id) {
                             if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
                                 cl.trim_out(snapped_out);

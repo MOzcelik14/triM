@@ -2,6 +2,7 @@
 
 use crate::canvas::{render_timeline_canvas, CanvasAction, TimelineCanvasState};
 use crate::dialogs::*;
+use crate::file_dialog::FileDialogBridge;
 use crate::inspector::{render_inspector_panel, InspectorAction};
 use crate::media_bin::{render_media_bin, LeftPanelTab, MediaBinAction};
 use crate::monitor::{ActiveTextOverlay, MonitorAction, MonitorMode, MonitorWidget};
@@ -109,6 +110,8 @@ pub struct TrimApp {
     pub export_rx: Option<Receiver<ExportMessage>>,
 
     pub monitor_texture: Option<TextureHandle>,
+    pub monitor_gpu_texture_id: Option<egui::TextureId>,
+    pub gpu_compositor: Option<crate::gpu_compositor::GpuCompositor>,
     pub last_rendered_monitor_frame: Option<std::sync::Arc<image::RgbaImage>>,
     pub selected_media_id: Option<String>,
     pub status_message: String,
@@ -125,6 +128,7 @@ pub struct TrimApp {
     pub close_confirm_dialog: CloseConfirmDialog,
     pub confirmed_exit: bool,
     pub last_saved_undo_len: usize,
+    pub file_dialog_bridge: FileDialogBridge,
 }
 
 impl Default for TrimApp {
@@ -188,6 +192,8 @@ impl Default for TrimApp {
             export_runner: ExportRunner::default(),
             export_rx: None,
             monitor_texture: None,
+            monitor_gpu_texture_id: None,
+            gpu_compositor: None,
             last_rendered_monitor_frame: None,
             selected_media_id: None,
             status_message: "Hazır".to_string(),
@@ -204,6 +210,7 @@ impl Default for TrimApp {
             close_confirm_dialog: CloseConfirmDialog::default(),
             confirmed_exit: false,
             last_saved_undo_len: 0,
+            file_dialog_bridge: FileDialogBridge::default(),
         }
     }
 }
@@ -211,7 +218,13 @@ impl Default for TrimApp {
 impl TrimApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         setup_theme(&cc.egui_ctx);
-        let mut app = Self::default();
+        let mut app = Self {
+            gpu_compositor: cc
+                .gl
+                .as_ref()
+                .and_then(|gl| crate::gpu_compositor::GpuCompositor::new(gl.clone())),
+            ..Self::default()
+        };
 
         // Check crash recovery
         if let Some(rec_path) = app.autosave_mgr.check_recovery(&app.project) {
@@ -404,6 +417,7 @@ impl TrimApp {
             prog_label.as_deref(),
             self.video_engine.is_decoding_seek,
         )
+        .custom_texture_id(self.monitor_gpu_texture_id)
         .safe_zones(self.show_safe_zones)
         .aspect_ratio_preset(Some(self.project.timeline.aspect_ratio()))
         .text_overlays(active_text_overlays)
@@ -468,7 +482,7 @@ impl TrimApp {
 }
 
 impl eframe::App for TrimApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // Intercept window close request if there are unsaved changes
         if ctx.input(|i| i.viewport().close_requested()) && !self.confirmed_exit {
             if self.has_unsaved_changes() || self.close_confirm_dialog.is_open {
@@ -484,7 +498,7 @@ impl eframe::App for TrimApp {
         }
 
         self.update_playback_tick();
-        self.update_monitor_frame(ctx);
+        self.update_monitor_frame(ctx, frame);
         self.update_source_monitor_frame(ctx);
         self.update_media_bin_thumbnails(ctx);
 
@@ -508,6 +522,9 @@ impl eframe::App for TrimApp {
             let _ = self.autosave_mgr.save_snapshot(&self.project);
             self.last_autosave = Instant::now();
         }
+
+        // Poll background OS file dialogs non-blockingly
+        self.poll_file_dialogs(ctx);
 
         // Check background export messages
         let mut export_finished = false;
@@ -806,10 +823,16 @@ impl eframe::App for TrimApp {
                     self.seek(0.0);
                 } else if i.key_pressed(Key::End) {
                     self.seek(self.project.timeline.duration());
+                } else if !i.modifiers.ctrl
+                    && (i.key_pressed(Key::N)
+                        || (i.key_pressed(Key::S)
+                            && self.shortcut_profile != ShortcutProfile::TrimDefault))
+                {
+                    self.toggle_snap();
                 } else if i.key_pressed(Key::J) && !i.modifiers.ctrl {
                     self.shuttle_reverse();
                 } else if i.key_pressed(Key::K) && !i.modifiers.ctrl {
-                    self.pause();
+                    self.shuttle_stop();
                 } else if i.key_pressed(Key::L) && !i.modifiers.ctrl {
                     self.shuttle_forward();
                 } else if (i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(Key::Z))
@@ -1098,7 +1121,7 @@ impl eframe::App for TrimApp {
                     }
                     if ui
                         .button(format!(
-                            "Manyetik Yapışma: {}",
+                            "Manyetik Yapışma (N): {}",
                             if self.snap_enabled {
                                 "Açık"
                             } else {
@@ -1107,7 +1130,7 @@ impl eframe::App for TrimApp {
                         ))
                         .clicked()
                     {
-                        self.snap_enabled = !self.snap_enabled;
+                        self.toggle_snap();
                         ui.close_menu();
                     }
                     ui.separator();
@@ -1366,10 +1389,10 @@ impl eframe::App for TrimApp {
                     });
                     if ui
                         .add(snap_btn)
-                        .on_hover_text("Mıknatıs / Hizalama (Snapping)")
+                        .on_hover_text("Mıknatıs / Hizalama (Snapping - N)")
                         .clicked()
                     {
-                        self.snap_enabled = !self.snap_enabled;
+                        self.toggle_snap();
                     }
 
                     if ui
@@ -1718,6 +1741,7 @@ impl eframe::App for TrimApp {
                                 }
 
                                 self.canvas_state.active_tool = self.current_edit_tool;
+                                self.project.timeline.snap_enabled = self.snap_enabled;
                                 let (_canvas_resp, canvas_act) = render_timeline_canvas(
                                     ui,
                                     &mut self.project,
@@ -2248,6 +2272,9 @@ impl eframe::App for TrimApp {
                                 InspectorAction::ExportSubtitles => {
                                     self.export_subtitles_dialog();
                                 }
+                                InspectorAction::SelectCustomLut(clip_id) => {
+                                    self.prompt_custom_lut(clip_id);
+                                }
                             }
                         }
                     }
@@ -2615,30 +2642,12 @@ impl eframe::App for TrimApp {
         if let Some(act) = self.close_confirm_dialog.show(ctx) {
             match act {
                 CloseConfirmAction::SaveAndProceed(pending) => {
-                    if self.save_project_dialog() {
-                        match pending {
-                            PendingCloseAction::ExitApp => {
-                                self.confirmed_exit = true;
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                            }
-                            PendingCloseAction::NewProject => self.reset_to_new_project(),
-                            PendingCloseAction::OpenProject => self.open_project_dialog(),
-                            PendingCloseAction::OpenPath(path) => self.open_path(&path),
-                        }
-                    }
+                    self.save_project_and_proceed(ctx, pending);
                 }
                 CloseConfirmAction::DiscardAndProceed(pending) => {
                     self.project.is_dirty = false;
                     self.last_saved_undo_len = self.undo_stack.len();
-                    match pending {
-                        PendingCloseAction::ExitApp => {
-                            self.confirmed_exit = true;
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                        }
-                        PendingCloseAction::NewProject => self.reset_to_new_project(),
-                        PendingCloseAction::OpenProject => self.open_project_dialog(),
-                        PendingCloseAction::OpenPath(path) => self.open_path(&path),
-                    }
+                    self.execute_pending_close_action(ctx, pending);
                 }
                 CloseConfirmAction::Cancel => {}
             }

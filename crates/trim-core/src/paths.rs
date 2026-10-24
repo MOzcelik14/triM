@@ -78,6 +78,32 @@ pub fn videos_dir() -> PathBuf {
     videos
 }
 
+/// Normalizes mixed Unix (`/`) and Windows (`\`) path separators into the host OS path format.
+pub fn normalize_path<P: AsRef<std::path::Path>>(path: P) -> PathBuf {
+    let raw = path.as_ref().to_string_lossy();
+    if cfg!(target_os = "windows") {
+        PathBuf::from(raw.replace('/', "\\"))
+    } else {
+        PathBuf::from(raw.replace('\\', "/"))
+    }
+}
+
+/// Formats a filesystem path for safe embedding inside an FFmpeg filtergraph option (e.g., `lut3d=file='...'`).
+/// Converts Windows backslashes (`\`) to forward slashes (`/`) and escapes colons (`:`) and single quotes (`'`)
+/// so Windows drive letters (`C:/...`) are not misinterpreted as FFmpeg filter option delimiters.
+pub fn normalize_filtergraph_path<P: AsRef<std::path::Path>>(path: P) -> String {
+    let forward = path.as_ref().to_string_lossy().replace('\\', "/");
+    let mut out = String::with_capacity(forward.len() + 4);
+    for ch in forward.chars() {
+        match ch {
+            ':' => out.push_str("\\:"),
+            '\'' => out.push_str("\\'"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,5 +145,24 @@ mod tests {
             "Expected path to end with 'Videos', got {:?}",
             v
         );
+    }
+
+    #[test]
+    fn test_normalize_path_and_filtergraph_escaping() {
+        let win_lut = r"C:\Users\editor\LUTs\cinematic_warm.cube";
+        let escaped = normalize_filtergraph_path(win_lut);
+        assert_eq!(escaped, "C\\:/Users/editor/LUTs/cinematic_warm.cube");
+
+        let unix_lut = "/home/editor/luts/ film's_lut.cube";
+        let escaped_unix = normalize_filtergraph_path(unix_lut);
+        assert_eq!(escaped_unix, "/home/editor/luts/ film\\'s_lut.cube");
+
+        let rel_mixed = r"media\clip_01.mp4";
+        let norm = normalize_path(rel_mixed);
+        if cfg!(target_os = "windows") {
+            assert_eq!(norm, PathBuf::from(r"media\clip_01.mp4"));
+        } else {
+            assert_eq!(norm, PathBuf::from("media/clip_01.mp4"));
+        }
     }
 }

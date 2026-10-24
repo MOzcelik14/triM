@@ -17,6 +17,7 @@ pub enum InspectorAction {
     TriggerTranscribe,
     ImportSubtitles,
     ExportSubtitles,
+    SelectCustomLut(String),
 }
 
 pub fn render_inspector_panel(
@@ -395,7 +396,7 @@ fn render_color_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
 
         property_row(ui, "Özel .cube LUT:", |ui| {
             if let Some(p) = &clip.custom_lut_path {
-                let fname = std::path::Path::new(p)
+                let fname = trim_core::paths::normalize_path(p)
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| p.clone());
@@ -412,14 +413,7 @@ fn render_color_group(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
                 .button(RichText::new("Dosya Seç (.cube)...").size(11.0))
                 .clicked()
             {
-                if let Some(path) = rfd::FileDialog::new()
-                    .set_title("3D LUT Dosyası Seç (.cube)")
-                    .add_filter("3D LUT (.cube)", &["cube"])
-                    .pick_file()
-                {
-                    clip.custom_lut_path = Some(path.to_string_lossy().to_string());
-                    *action = Some(InspectorAction::ClipModified);
-                }
+                *action = Some(InspectorAction::SelectCustomLut(clip.id.clone()));
             }
         });
 

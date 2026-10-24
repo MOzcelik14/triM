@@ -42,6 +42,9 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Cache Cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -49,7 +52,41 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Run workspace unit and integration tests
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
 
       - name: Build release binaries
-        run: cargo build --workspace --release
+        run: cargo build --workspace --release --locked
+
+      - name: Validate Linux packaging script syntax
+        run: bash -n scripts/package-linux.sh
+
+  windows-ci:
+    name: Windows MSVC Check, Test, and Release Build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Rust stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+
+      - name: Cache Cargo registry and build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check Windows workspace compilation
+        run: cargo check --workspace --locked
+
+      - name: Run Clippy linter on Windows target
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run Windows workspace unit and integration tests
+        run: cargo test --workspace --locked
+
+      - name: Build Windows release binary
+        run: cargo build --workspace --release --locked
+

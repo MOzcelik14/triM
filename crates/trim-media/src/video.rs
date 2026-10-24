@@ -521,6 +521,92 @@ impl AsyncFrameDecoder {
     }
 }
 
+/// Decoded raw frame and clip metadata for a single visible timeline track layer.
+#[derive(Clone, Debug)]
+pub struct CompositorLayer {
+    pub clip: Clip,
+    pub frame: Arc<RgbaImage>,
+}
+
+/// Parsed 3D `.cube` LUT unwrapped into a 2D RGBA8 strip texture of dimensions `(size * size, size)`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CubeLut3D {
+    pub size: u32,
+    pub rgba_strip: Vec<u8>,
+}
+
+pub fn parse_cube_lut_str(content: &str) -> Option<CubeLut3D> {
+    let mut size: Option<u32> = None;
+    let mut triplets: Vec<[f32; 3]> = Vec::new();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("TITLE") {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("LUT_3D_SIZE") {
+            let n: u32 = rest.split_whitespace().next()?.parse().ok()?;
+            if !(2..=64).contains(&n) {
+                return None;
+            }
+            size = Some(n);
+            triplets.reserve((n * n * n) as usize);
+            continue;
+        }
+        if trimmed.starts_with("DOMAIN_MIN")
+            || trimmed.starts_with("DOMAIN_MAX")
+            || trimmed.starts_with("LUT_1D_SIZE")
+        {
+            continue;
+        }
+
+        let mut parts = trimmed.split_whitespace();
+        if let (Some(rs), Some(gs), Some(bs)) = (parts.next(), parts.next(), parts.next()) {
+            if let (Ok(r), Ok(g), Ok(b)) = (rs.parse::<f32>(), gs.parse::<f32>(), bs.parse::<f32>())
+            {
+                triplets.push([r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)]);
+            }
+        }
+    }
+
+    let n = size?;
+    let expected = (n * n * n) as usize;
+    if triplets.len() < expected {
+        return None;
+    }
+
+    let width = (n * n) as usize;
+    let height = n as usize;
+    let mut rgba_strip = vec![255u8; width * height * 4];
+
+    for b in 0..height {
+        for g in 0..height {
+            for r in 0..height {
+                let src_idx = b * height * height + g * height + r;
+                let dst_x = b * height + r;
+                let dst_y = g;
+                let dst_idx = (dst_y * width + dst_x) * 4;
+                let rgb = triplets[src_idx];
+                rgba_strip[dst_idx] = (rgb[0] * 255.0).round() as u8;
+                rgba_strip[dst_idx + 1] = (rgb[1] * 255.0).round() as u8;
+                rgba_strip[dst_idx + 2] = (rgb[2] * 255.0).round() as u8;
+                rgba_strip[dst_idx + 3] = 255;
+            }
+        }
+    }
+
+    Some(CubeLut3D {
+        size: n,
+        rgba_strip,
+    })
+}
+
+pub fn parse_cube_lut_file<P: AsRef<Path>>(path: P) -> Option<CubeLut3D> {
+    let norm = trim_core::paths::normalize_path(path);
+    let content = std::fs::read_to_string(norm).ok()?;
+    parse_cube_lut_str(&content)
+}
+
 /// High-level video playback and composite rendering engine.
 pub struct VideoEngine {
     pub streamer: PlaybackStreamer,
@@ -575,6 +661,154 @@ impl VideoEngine {
             }
         }
         self.image_cache.get(&p_str).cloned()
+    }
+
+    /// Decodes and collects all visible video/image layers at `timeline_time` without CPU pixel compositing.
+    /// Used by the OpenGL (`glow`) FBO shader compositor to upload raw frames directly to GPU textures.
+    pub fn collect_timeline_layers(
+        &mut self,
+        project: &Project,
+        timeline_time: f64,
+        is_playing: bool,
+    ) -> Vec<CompositorLayer> {
+        let (canvas_w, canvas_h) =
+            calculate_preview_size(project.timeline.width, project.timeline.height);
+
+        let visible_clips = project.timeline.get_visible_video_clips_at(timeline_time);
+        if visible_clips.is_empty() {
+            self.streamer.stop();
+            self.last_rendered_frame = None;
+            self.last_raw_source_frame = None;
+            if self.is_decoding_seek {
+                self.async_decoder.latest_req_id += 1;
+                self.is_decoding_seek = false;
+            }
+            let _ = self.async_decoder.poll_result();
+            return Vec::new();
+        }
+
+        if let Some(res) = self.async_decoder.poll_result() {
+            if res.id == self.async_decoder.latest_req_id {
+                self.is_decoding_seek = false;
+                if let Some(frame) = res.frame {
+                    let key = (res.path.clone(), (res.time * 30.0).round() as u64);
+                    if let Ok(mut cache) = self.frame_cache.write() {
+                        cache.insert(key, frame.clone());
+                    }
+                    self.last_raw_source_frame = Some(frame);
+                }
+            }
+        }
+
+        let mut layers = Vec::with_capacity(visible_clips.len());
+
+        for (_track, clip) in visible_clips {
+            let media_item = match project.get_media(&clip.media_id) {
+                Some(m) => m,
+                None => continue,
+            };
+
+            let frame_img = match media_item.media_type {
+                MediaType::Image => {
+                    if self.is_decoding_seek {
+                        self.async_decoder.latest_req_id += 1;
+                        self.is_decoding_seek = false;
+                    }
+                    let is_title_card = media_item.file_path.contains("titles");
+                    if clip.text_overlay.is_some() && is_title_card {
+                        Some(Arc::new(ImageBuffer::from_pixel(
+                            canvas_w,
+                            canvas_h,
+                            Rgba([0, 0, 0, 0]),
+                        )))
+                    } else {
+                        self.get_image(&media_item.file_path)
+                    }
+                }
+                _ => {
+                    let eff_path = media_item.resolved_playback_path(self.use_proxies);
+                    let src_t = clip.map_timeline_to_source(timeline_time);
+                    let ts_key = (src_t * 30.0).round() as u64;
+                    let key = (eff_path.to_string(), ts_key);
+
+                    let streamer_frame = if is_playing {
+                        if self.streamer.active_clip_id() == Some(&clip.id) {
+                            if self.streamer.should_restart(src_t, clip.reverse) {
+                                self.streamer.start(
+                                    &clip.id,
+                                    eff_path,
+                                    src_t,
+                                    project.timeline.fps,
+                                    clip.reverse,
+                                    clip.source_in,
+                                );
+                            }
+                            self.streamer.get_frame_for_time(src_t)
+                        } else if !self.streamer.is_active() {
+                            self.streamer.start(
+                                &clip.id,
+                                eff_path,
+                                src_t,
+                                project.timeline.fps,
+                                clip.reverse,
+                                clip.source_in,
+                            );
+                            self.streamer.get_frame_for_time(src_t)
+                        } else {
+                            None
+                        }
+                    } else {
+                        if self.streamer.is_active() {
+                            self.streamer.stop();
+                        }
+                        None
+                    };
+
+                    if let Some(sf) = streamer_frame {
+                        self.last_raw_source_frame = Some(sf.clone());
+                        Some(sf)
+                    } else {
+                        let cached = self
+                            .frame_cache
+                            .write()
+                            .ok()
+                            .and_then(|mut c| c.get(&key).cloned());
+                        if let Some(c) = cached {
+                            self.last_raw_source_frame = Some(c.clone());
+                            self.is_decoding_seek = false;
+                            Some(c)
+                        } else if self.last_raw_source_frame.is_none() {
+                            if let Some(frame) = decode_frame_raw(eff_path, src_t) {
+                                let arc = Arc::new(frame);
+                                if let Ok(mut cache) = self.frame_cache.write() {
+                                    cache.insert(key, arc.clone());
+                                }
+                                self.last_raw_source_frame = Some(arc.clone());
+                                self.is_decoding_seek = false;
+                                Some(arc)
+                            } else {
+                                None
+                            }
+                        } else {
+                            if !self.is_decoding_seek {
+                                self.async_decoder.request_seek(eff_path, src_t);
+                                self.is_decoding_seek = true;
+                            }
+                            self.last_raw_source_frame.clone()
+                        }
+                    }
+                }
+            };
+
+            if let Some(frame) = frame_img {
+                layers.push(CompositorLayer {
+                    clip: clip.clone(),
+                    frame,
+                });
+            }
+        }
+
+        layers
     }
 
     /// Primary timeline rendering entry point with zero UI lag.
@@ -1739,5 +1973,90 @@ mod tests {
                 assert!(cache.get(&key).is_some(), "Key {} should be in cache", i);
             }
         }
+    }
+
+    #[test]
+    fn test_parse_cube_lut_str_unwraps_3d_strip() {
+        let cube_content = "\
+# Test 2x2x2 3D LUT
+TITLE \"UnitTestLUT\"
+LUT_3D_SIZE 2
+0.0 0.0 0.0
+1.0 0.0 0.0
+0.0 1.0 0.0
+1.0 1.0 0.0
+0.0 0.0 1.0
+1.0 0.0 1.0
+0.0 1.0 1.0
+1.0 1.0 1.0
+";
+        let lut = parse_cube_lut_str(cube_content).expect("Should parse valid 2x2x2 .cube LUT");
+        assert_eq!(lut.size, 2);
+        // 2x2x2 = 8 RGBA texels = 32 bytes
+        assert_eq!(lut.rgba_strip.len(), 32);
+        // Entry 0: (0,0,0) -> [0, 0, 0, 255]
+        assert_eq!(&lut.rgba_strip[0..4], &[0, 0, 0, 255]);
+        // Entry 1: (1,0,0) -> [255, 0, 0, 255]
+        assert_eq!(&lut.rgba_strip[4..8], &[255, 0, 0, 255]);
+        // Entry 7: (1,1,1) -> [255, 255, 255, 255]
+        assert_eq!(&lut.rgba_strip[28..32], &[255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn test_collect_timeline_layers_multitrack_order() {
+        use tempfile::tempdir;
+        use trim_core::clip::Clip;
+        use trim_core::media::MediaItem;
+        use trim_core::project::Project;
+
+        let dir = tempdir().unwrap();
+        let img1_path = dir.path().join("layer1.png");
+        let img2_path = dir.path().join("layer2.png");
+        RgbaImage::from_pixel(16, 16, Rgba([255, 0, 0, 255]))
+            .save(&img1_path)
+            .unwrap();
+        RgbaImage::from_pixel(16, 16, Rgba([0, 255, 0, 255]))
+            .save(&img2_path)
+            .unwrap();
+
+        let mut project = Project::default();
+        let mut m1 = MediaItem::new(&img1_path);
+        m1.media_type = MediaType::Image;
+        let m1_id = m1.id.clone();
+        project.add_media(m1);
+
+        let mut m2 = MediaItem::new(&img2_path);
+        m2.media_type = MediaType::Image;
+        let m2_id = m2.id.clone();
+        project.add_media(m2);
+
+        let v1_id = project
+            .timeline
+            .get_video_tracks()
+            .first()
+            .unwrap()
+            .id
+            .clone();
+        let v2_track = trim_core::track::Track::new("V2", trim_core::track::TrackType::Video);
+        let v2_id = v2_track.id.clone();
+        project.timeline.add_track(v2_track);
+
+        project
+            .timeline
+            .get_track_by_id_mut(&v1_id)
+            .unwrap()
+            .add_clip(Clip::new(&m1_id, 0.0, 5.0));
+        project
+            .timeline
+            .get_track_by_id_mut(&v2_id)
+            .unwrap()
+            .add_clip(Clip::new(&m2_id, 0.0, 5.0));
+
+        let mut engine = VideoEngine::new();
+        let layers = engine.collect_timeline_layers(&project, 1.0, false);
+        assert_eq!(layers.len(), 2);
+        // Bottom track (V1) comes first, top track (V2) comes second for alpha blending
+        assert_eq!(layers[0].clip.media_id, m1_id);
+        assert_eq!(layers[1].clip.media_id, m2_id);
     }
 }
