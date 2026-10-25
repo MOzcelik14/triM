@@ -1,15 +1,15 @@
-# triM
+# triM.
 
 [![Version](https://img.shields.io/badge/version-1.1.2-blue.svg)](Cargo.toml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey.svg)](#system-requirements)
-[![CI](https://github.com/MOzcelik14/triM/actions/workflows/ci.yml/badge.svg)](https://github.com/MOzcelik14/triM/actions)
+[![CI](https://github.com/MOzcelik14/triM./actions/workflows/ci.yml/badge.svg)](https://github.com/MOzcelik14/triM./actions)
 
-[Türkçe README için tıklayın](README.tr.md) · [Keyboard Shortcuts](docs/SHORTCUTS.md) · [Website](https://mozcelik14.github.io/triM)
+[Türkçe README için tıklayın](README.tr.md) · [Keyboard Shortcuts](docs/SHORTCUTS.md) · [Website](https://mozcelik14.github.io/triM.)
 
-triM is a native, lightweight non-linear video editor written in Rust with `egui`, using system FFmpeg for media decoding and encoding.
+triM. is a native, lightweight non-linear video editor written in Rust with `egui`, using system FFmpeg for media decoding and encoding.
 
-![triM Workspace](docs/assets/screenshots/workspace.png)
+![triM. Workspace](docs/assets/screenshots/workspace.png)
 
 ---
 
@@ -17,7 +17,7 @@ triM is a native, lightweight non-linear video editor written in Rust with `egui
 
 Most existing video editing software either requires hundreds of megabytes of disk space or runs inside a web browser runtime (Electron), leading to high memory overhead. For personal editing projects, I wanted a tool that starts quickly, has no external cloud or account dependencies, relies on local tools (FFmpeg, PipeWire), and keeps resource usage low.
 
-I built triM to serve that need. The user interface is rendered using `egui` and `eframe` over OpenGL, while video and audio decoding tasks are delegated to `ffmpeg` and `ffprobe` processes. The compiled release binary is approximately 13 MB.
+I built triM. to serve that need. The user interface is rendered using `egui` and `eframe` over OpenGL, while video and audio decoding tasks are delegated to `ffmpeg` and `ffprobe` processes. The compiled release binary is approximately 13 MB.
 
 ---
 
@@ -73,21 +73,21 @@ I built triM to serve that need. The user interface is rendered using `egui` and
 - **Linux Audio Output:** PipeWire (`pw-cat`), PulseAudio (`paplay`), or ALSA (`aplay`)
 
 ### Pre-built Binaries
-Download `.deb`, `.rpm`, `.AppImage` (Linux) or `.zip` (Windows) packages from [GitHub Releases](https://github.com/MOzcelik14/triM/releases).
+Download `.deb`, `.rpm`, `.AppImage` (Linux) or `.zip` (Windows) packages from [GitHub Releases](https://github.com/MOzcelik14/triM./releases).
 
 One-line installation on Linux:
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM./master/install.sh | bash
 ```
 
 ### Building From Source
 Requires Rust 1.80+ toolchain:
 
 ```bash
-git clone https://github.com/MOzcelik14/triM.git
-cd triM
-cargo build --release -p trim-app
-install -m 0755 target/release/trim ~/.local/bin/trim
+git clone https://github.com/MOzcelik14/triM..git
+cd triM.
+cargo build --release -p triM.-app
+install -m 0755 target/release/triM. ~/.local/bin/triM.
 ```
 
 ---
@@ -97,8 +97,8 @@ install -m 0755 target/release/trim ~/.local/bin/trim
 Launch the editor or pass a project file:
 
 ```bash
-trim
-trim /path/to/project.trim
+triM.
+triM. /path/to/project.triM.
 ```
 
 ### Primary Shortcuts
@@ -124,16 +124,16 @@ See [docs/SHORTCUTS.md](docs/SHORTCUTS.md) for the full shortcut list.
 The project is structured as 8 distinct Cargo workspace crates:
 
 ```
-triM/
+triM./
 ├── crates/
-│   ├── trim-core/       # Domain models, timecode math, clips, tracks, and projects
-│   ├── trim-commands/   # Reversible Command implementations and Undo/Redo stack
-│   ├── trim-timeline/   # Editing, slicing, and split algorithms
-│   ├── trim-project/    # Disk serialization (.trim), autosave, and crash recovery
-│   ├── trim-media/      # FFmpeg process supervision, frame streaming, and audio mixing
-│   ├── trim-export/     # FFmpeg filtergraph generation, EDL, and FCPXML writers
-│   ├── trim-ui/         # Immediate-mode egui canvas, monitors, and inspector
-│   └── trim-app/        # Executable binary entry point
+│   ├── triM.-core/       # Domain models, timecode math, clips, tracks, and projects
+│   ├── triM.-commands/   # Reversible Command implementations and Undo/Redo stack
+│   ├── triM.-timeline/   # Editing, slicing, and split algorithms
+│   ├── triM.-project/    # Disk serialization (.triM.), autosave, and crash recovery
+│   ├── triM.-media/      # FFmpeg process supervision, frame streaming, and audio mixing
+│   ├── triM.-export/     # FFmpeg filtergraph generation, EDL, and FCPXML writers
+│   ├── triM.-ui/         # Immediate-mode egui canvas, monitors, and inspector
+│   └── triM.-app/        # Executable binary entry point
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for details on the threading model, memory limits, and subprocess lifecycle guards.
@@ -143,7 +143,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for details on the threading model, memor
 ## Known Limitations
 
 1. **Preview Resolution:** The real-time timeline preview decodes and composites frames on the CPU at a fixed 640x360 resolution before uploading them as OpenGL textures. Heavy compositions with multiple overlapping video layers and active effects will consume CPU time during preview.
-2. **Subprocess Media Architecture:** Instead of dynamically linking C libraries (`libavcodec`), triM calls FFmpeg as isolated child processes (`ChildGuard`). This choice keeps the UI process stable and avoids codec memory crashes, but uncached seeking on long-GOP files may introduce a 15-40 ms startup delay. Using proxy mode addresses this during editing.
+2. **Subprocess Media Architecture:** Instead of dynamically linking C libraries (`libavcodec`), triM. calls FFmpeg as isolated child processes (`ChildGuard`). This choice keeps the UI process stable and avoids codec memory crashes, but uncached seeking on long-GOP files may introduce a 15-40 ms startup delay. Using proxy mode addresses this during editing.
 3. **Platform Scope:** Microphone voiceover recording and screen capture are implemented specifically for Linux (PulseAudio/ALSA and x11grab). On Windows, audio playback is handled through low-delay `ffplay`; direct microphone input is not yet supported natively on Windows.
 4. **Color Depth:** The preview pipeline operates in 8-bit sRGB. 10-bit HDR source media is converted to 8-bit during preview.
 
