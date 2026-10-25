@@ -62,7 +62,7 @@
 ### 2.2. "Sesi Ayır" (Detach Audio) Komutunda Kanal Eşleştirme Hatası
 * **Konum**: [`crates/trim-commands/src/commands.rs:782-791`](file:///home/mozcelik/Projeler/triM/crates/trim-commands/src/commands.rs#L782-L791)
 * **Koşul & Etki**: Kullanıcı V2 veya V3 kanalındaki bir klibe sağ tıklayıp "Sesi Ayır" dediğinde, komut klibin bulunduğu video kanalını (`self.video_track_id`) göz ardı etmekte ve daima ilk ses kanalını (`timeline.get_audio_tracks().first()`, yani A1) seçmektedir. V2'deki bir klibin sesi A2 yerine A1'e bindirilmekte ve A1'deki mevcut kliplerle çakışmaktadır.
-* **Durum**: **[Doğrulandı]**
+* **Durum**: **[Düzeltildi (Grup 2)]** (`find_or_create_corresponding_audio_track` ile V1->A1, V2->A2 kanal eşleştirmesi sağlandı)
 * **Önerilen Düzeltme**: `timeline.find_or_create_corresponding_audio_track(&self.video_track_id)` çağrılarak video kanalının sıra numarasına denk gelen ses kanalı (V1->A1, V2->A2) hedeflenmelidir.
 
 ---
@@ -70,7 +70,7 @@
 ### 2.3. Klip Bölme ve Sesi Ayırma Eylemlerinde Undo/Redo UUID Kararsızlığı
 * **Konum**: [`crates/trim-commands/src/commands.rs:411, 524, 793`](file:///home/mozcelik/Projeler/triM/crates/trim-commands/src/commands.rs#L411)
 * **Koşul & Etki**: `SplitClipCommand`, `BatchSplitClipCommand` ve `DetachAudioCommand` komutlarının `execute()` fonksiyonunda yeni klip ID'si her seferinde `uuid::Uuid::new_v4().to_string()` ile dinamik üretilmektedir. Kullanıcı işlemi geri alıp (Undo) tekrar yinelediğinde (Redo), klip yepyeni bir ID kazanmaktadır. Bu durum zaman çizgisindeki seçimleri, bağlı grupları ve bu klibe referans veren diğer komut yığınlarını bozar.
-* **Durum**: **[Doğrulandı]**
+* **Durum**: **[Düzeltildi (Grup 2)]** (Üretilen ID komut struct'ında saklanarak Redo anında korundu)
 * **Önerilen Düzeltme**: Üretilen yeni klip ID'si ilk çalıştırmada komut nesnesinin içinde (`Option<String>`) saklanmalı; Redo sırasında `unwrap_or_else(Uuid::new_v4)` mantığıyla önceki ID yeniden kullanılmalıdır.
 
 ---
