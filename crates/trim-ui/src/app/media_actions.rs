@@ -185,12 +185,38 @@ impl TrimApp {
     }
 
     pub fn prompt_import_media(&mut self) {
-        let config = FileDialogConfig::pick_file("Medya Dosyası Seç").add_filter(
-            "Tüm Medya Dosyaları",
-            &[
-                "mp4", "mov", "mkv", "webm", "mp3", "wav", "aac", "png", "jpg", "jpeg",
-            ],
-        );
+        let config = FileDialogConfig::pick_file("Medya Dosyası Seç")
+            .add_filter(
+                "Tüm Desteklenen Medyalar",
+                &[
+                    "mp4", "MP4", "mov", "MOV", "mkv", "MKV", "webm", "WEBM", "m4v", "M4V", "avi",
+                    "AVI", "ts", "TS", "mts", "MTS", "m2ts", "M2TS", "mp3", "MP3", "wav", "WAV",
+                    "aac", "AAC", "flac", "FLAC", "ogg", "OGG", "m4a", "M4A", "png", "PNG", "jpg",
+                    "JPG", "jpeg", "JPEG", "webp", "WEBP", "bmp", "BMP", "tiff", "TIFF", "gif",
+                    "GIF",
+                ],
+            )
+            .add_filter(
+                "Video Dosyaları (*.mov, *.mp4, *.mkv...)",
+                &[
+                    "mov", "MOV", "mp4", "MP4", "mkv", "MKV", "webm", "WEBM", "m4v", "M4V", "avi",
+                    "AVI", "ts", "TS", "mts", "MTS", "m2ts", "M2TS",
+                ],
+            )
+            .add_filter(
+                "Ses Dosyaları (*.mp3, *.wav, *.aac...)",
+                &[
+                    "mp3", "MP3", "wav", "WAV", "aac", "AAC", "flac", "FLAC", "ogg", "OGG", "m4a",
+                    "M4A",
+                ],
+            )
+            .add_filter(
+                "Görseller (*.png, *.jpg, *.jpeg...)",
+                &[
+                    "png", "PNG", "jpg", "JPG", "jpeg", "JPEG", "webp", "WEBP", "bmp", "BMP",
+                    "tiff", "TIFF",
+                ],
+            );
         self.file_dialog_bridge
             .open(FileDialogRequest::ImportMedia, config);
     }
