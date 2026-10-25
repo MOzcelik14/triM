@@ -26,7 +26,7 @@ set -euo pipefail
 # ------------------------------------------------------------------------------
 APP_NAME="triM."
 APP_ID="io.github.mozcelik14.triM"
-VERSION="1.1.1"
+VERSION="1.1.2"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" 2>/dev/null && pwd || true)"
 if [[ -n "${SCRIPT_DIR}" && -f "${SCRIPT_DIR}/Cargo.toml" ]]; then
     DETECTED_VER="$(grep -m1 '^version = ' "${SCRIPT_DIR}/Cargo.toml" | cut -d '"' -f2 || true)"

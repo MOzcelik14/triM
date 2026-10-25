@@ -56,6 +56,16 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.1.2" date="2026-10-25">
+      <description>
+        <p>triM. v1.1.2 - Timeline Track Overflow and Vertical Scrolling Fix:</p>
+        <ul>
+          <li>Smooth Vertical Scrolling: Added synchronized bidirectional vertical scrolling for track headers and timeline canvas when adding multiple video/audio tracks.</li>
+          <li>Timeline Panel Sizing: Fixed panel splitter resizing constraints, preventing unwanted vertical panel expansion when adding tracks.</li>
+          <li>Pinned Timeline Ruler: The timeline ruler and playhead remain securely pinned at the top while scrolling vertically through tracks.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.1.1" date="2026-10-25">
       <description>
         <p>triM. v1.1.1 - Multi-track Audio-Video Auto-Pairing and Enhanced Camera Media Support:</p>
