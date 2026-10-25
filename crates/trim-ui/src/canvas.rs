@@ -390,7 +390,33 @@ pub fn render_timeline_canvas(
                     }
                 }
             };
-            painter.rect_filled(clip_rect, 4.0, base_color);
+
+            let is_offline = match project.get_media(&clip.media_id) {
+                Some(m) => !std::path::Path::new(&m.file_path).exists(),
+                None => clip.text_overlay.is_none(),
+            };
+
+            let fill_color = if is_offline {
+                Color32::from_rgb(0x42, 0x16, 0x1a)
+            } else {
+                base_color
+            };
+            painter.rect_filled(clip_rect, 4.0, fill_color);
+
+            if is_offline {
+                let mut x = clip_rect.left() - clip_rect.height();
+                while x < clip_rect.right() {
+                    let p1 = Pos2::new(x.max(clip_rect.left()), clip_rect.bottom());
+                    let p2 = Pos2::new((x + clip_rect.height()).min(clip_rect.right()), clip_rect.top());
+                    if p2.x > clip_rect.left() && p1.x < clip_rect.right() {
+                        painter.line_segment(
+                            [p1, p2],
+                            Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(230, 50, 50, 60)),
+                        );
+                    }
+                    x += 14.0;
+                }
+            }
 
             // Colored top accent stripe if label is set
             if let Some([r, g, b]) = clip.color_label.color_rgb() {
@@ -651,7 +677,9 @@ pub fn render_timeline_canvas(
             );
 
             // Clip border
-            let border_stroke = if is_sel {
+            let border_stroke = if is_offline {
+                Stroke::new(2.0_f32, Color32::from_rgb(0xe0, 0x38, 0x38))
+            } else if is_sel {
                 Stroke::new(2.0_f32, COLOR_AMBER)
             } else {
                 Stroke::new(1.0_f32, Color32::from_rgb(0x38, 0x38, 0x48))
@@ -747,10 +775,12 @@ pub fn render_timeline_canvas(
             } else {
                 ""
             };
+            let offline_badge = if is_offline { " [!] ÇEVRİMDIŞI" } else { "" };
             let title_str = format!(
-                "{}{}{}{}{}{}  [{:.2}s]{}",
+                "{}{}{}{}{}{}{}  [{:.2}s]{}",
                 title_prefix,
                 clip.name,
+                offline_badge,
                 lock_badge,
                 link_badge,
                 trans_badge,

@@ -996,7 +996,7 @@ mod tests {
         let mut clip = trim_core::clip::Clip::new("m1", 0.0, 5.0);
         clip.id = "clip_original".to_string();
         clip.source_in = 1.0;
-        let _ = app.project.timeline.get_track_by_id_mut(&v1_id).unwrap().add_clip(clip);
+        app.project.timeline.get_track_by_id_mut(&v1_id).unwrap().add_clip(clip);
 
         assert_eq!(app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(), 1);
 
@@ -1088,6 +1088,46 @@ mod tests {
         let redone_clip = app.project.timeline.get_track_by_id(&v1_id).unwrap().get_clip_by_id(&clip_id).unwrap();
         assert_eq!(redone_clip.source_in, 5.0);
         assert_eq!(redone_clip.source_out, Some(10.0));
+    }
+
+    #[test]
+    fn test_relink_dialog_and_relink_actions() {
+        use crate::dialogs::relink_dialog::RelinkDialogAction;
+        use trim_core::media::MediaItem;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let intro_file = temp_dir.path().join("camera_intro.mp4");
+        std::fs::write(&intro_file, b"sample raw footage").unwrap();
+
+        let mut app = TrimApp::default();
+        let missing_item = MediaItem {
+            id: "m_offline_1".to_string(),
+            name: "camera_intro.mp4".to_string(),
+            file_path: "/missing/folder/camera_intro.mp4".to_string(),
+            ..Default::default()
+        };
+        app.project.add_media(missing_item);
+
+        // Open relink dialog
+        app.relink_dialog.open(&app.project);
+        assert!(app.relink_dialog.is_open);
+        assert_eq!(app.relink_dialog.offline_items.len(), 1);
+        assert_eq!(app.relink_dialog.offline_items[0].media_id, "m_offline_1");
+
+        // Relink from folder
+        let relinked_count = app.project.relink_media_from_folder(temp_dir.path());
+        assert_eq!(relinked_count, 1);
+
+        // Refresh dialog
+        app.relink_dialog.refresh(&app.project);
+        assert!(app.relink_dialog.offline_items.is_empty());
+
+        // Test rendering UI with egui context
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            let action = app.relink_dialog.show(ctx);
+            assert!(action.is_none() || matches!(action, Some(RelinkDialogAction::Close)));
+        });
     }
 }
 

@@ -122,6 +122,7 @@ pub struct TrimApp {
     pub audio_mixer_dialog: AudioMixerDialog,
     pub welcome_dialog: WelcomeDialog,
     pub shortcuts_dialog: ShortcutsDialog,
+    pub relink_dialog: RelinkDialog,
     pub autosave_mgr: AutosaveManager,
 
     pub export_runner: ExportRunner,
@@ -210,6 +211,7 @@ impl Default for TrimApp {
             audio_mixer_dialog: AudioMixerDialog::default(),
             welcome_dialog: WelcomeDialog::default(),
             shortcuts_dialog: ShortcutsDialog::default(),
+            relink_dialog: RelinkDialog::default(),
             autosave_mgr: AutosaveManager::default(),
             export_runner: ExportRunner::default(),
             export_rx: None,
@@ -1019,6 +1021,13 @@ impl eframe::App for TrimApp {
                     ui.separator();
                     if ui.button("Medya İçe Aktar... (Ctrl+I)").clicked() {
                         self.prompt_import_media();
+                        ui.close_menu();
+                    }
+                    if ui
+                        .button("Çevrimdışı Medyaları Yeniden Bağla (Relink)...")
+                        .clicked()
+                    {
+                        self.relink_dialog.open(&self.project);
                         ui.close_menu();
                     }
                     if ui.button("Projeyi İçe Aktar (FCPXML / EDL)...").clicked() {
@@ -2737,6 +2746,21 @@ impl eframe::App for TrimApp {
                     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
                     let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
                 }
+            }
+        }
+
+        if let Some(act) = self.relink_dialog.show(ctx) {
+            match act {
+                RelinkDialogAction::PickFolder => {
+                    self.relink_folder_dialog();
+                }
+                RelinkDialogAction::PickSingleMedia { media_id } => {
+                    self.relink_single_media_dialog(media_id);
+                }
+                RelinkDialogAction::Refresh => {
+                    self.relink_dialog.refresh(&self.project);
+                }
+                RelinkDialogAction::Close => {}
             }
         }
 

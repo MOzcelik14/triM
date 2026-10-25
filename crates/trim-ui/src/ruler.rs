@@ -9,6 +9,7 @@ pub enum RulerAction {
     MarkerClicked(String), // marker_id
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_time_ruler(
     ui: &mut Ui,
     pixels_per_second: f32,

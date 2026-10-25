@@ -806,8 +806,10 @@ mod tests {
         assert_eq!(c.pos_x, 50.0);
 
         // 2. Color Wheels Command
-        let mut wheels = ColorWheelsConfig::default();
-        wheels.lift = [0.1, 0.2, 0.3];
+        let wheels = ColorWheelsConfig {
+            lift: [0.1, 0.2, 0.3],
+            ..Default::default()
+        };
         let cw_cmd = Box::new(SetClipColorWheelsCommand::new(&v1_id, &clip_id, None, Some(wheels.clone())));
         stack.push(cw_cmd, &mut tl).unwrap();
         assert_eq!(tl.tracks[0].get_clip_by_id(&clip_id).unwrap().color_wheels, Some(wheels));

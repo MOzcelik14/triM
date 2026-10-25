@@ -45,7 +45,17 @@ impl TrimApp {
                     }
                 }
                 self.welcome_dialog.close();
-                self.status_message = format!("Proje yüklendi: {:?}", path);
+                let offline = self.project.get_offline_media_ids();
+                if !offline.is_empty() {
+                    self.status_message = format!(
+                        "Proje yüklendi: {:?} ({} adet çevrimdışı medya tespit edildi)",
+                        path,
+                        offline.len()
+                    );
+                    self.relink_dialog.open(&self.project);
+                } else {
+                    self.status_message = format!("Proje yüklendi: {:?}", path);
+                }
             }
             Err(e) => {
                 self.status_message = format!("Proje yüklenemedi: {}", e);
@@ -450,7 +460,55 @@ impl TrimApp {
                     }
                 }
             }
+            FileDialogRequest::RelinkFolder => {
+                let count = self.project.relink_media_from_folder(&path);
+                if count > 0 {
+                    self.video_engine.clear_cache();
+                    self.audio_mixer.clear_cache();
+                    self.last_rendered_dirty = true;
+                    self.status_message =
+                        format!("{} medya dosyası başarıyla yeniden bağlandı.", count);
+                    self.relink_dialog.refresh(&self.project);
+                } else {
+                    self.status_message =
+                        "Seçilen klasörde eşleşen çevrimdışı medya bulunamadı.".to_string();
+                }
+            }
+            FileDialogRequest::RelinkSingleMedia { media_id } => {
+                let name = if let Some(item) = self.project.get_media_mut(&media_id) {
+                    item.file_path = path.to_string_lossy().to_string();
+                    Some(item.name.clone())
+                } else {
+                    None
+                };
+                if let Some(media_name) = name {
+                    self.project.mark_dirty();
+                    self.video_engine.clear_cache();
+                    self.audio_mixer.clear_cache();
+                    self.last_rendered_dirty = true;
+                    self.status_message = format!("Medya yeniden bağlandı: {}", media_name);
+                    self.relink_dialog.refresh(&self.project);
+                }
+            }
         }
+    }
+
+    pub fn relink_folder_dialog(&mut self) {
+        let config = FileDialogConfig::pick_folder("Medyaları Yeniden Bağlamak İçin Klasör Seçin");
+        self.file_dialog_bridge
+            .open(FileDialogRequest::RelinkFolder, config);
+    }
+
+    pub fn relink_single_media_dialog(&mut self, media_id: impl Into<String>) {
+        let media_id = media_id.into();
+        let title = if let Some(m) = self.project.get_media(&media_id) {
+            format!("'{}' İçin Dosya Seçin", m.name)
+        } else {
+            "Medya Dosyası Seçin".to_string()
+        };
+        let config = FileDialogConfig::pick_file(title);
+        self.file_dialog_bridge
+            .open(FileDialogRequest::RelinkSingleMedia { media_id }, config);
     }
 
     pub fn reset_to_new_project(&mut self) {

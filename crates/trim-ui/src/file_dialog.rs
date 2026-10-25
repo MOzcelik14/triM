@@ -89,6 +89,10 @@ pub enum FileDialogRequest {
     SelectCustomLut {
         clip_id: String,
     },
+    RelinkFolder,
+    RelinkSingleMedia {
+        media_id: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

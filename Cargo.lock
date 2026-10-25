@@ -3164,6 +3164,7 @@ dependencies = [
  "image",
  "log",
  "rfd",
+ "tempfile",
  "trim-commands",
  "trim-core",
  "trim-export",

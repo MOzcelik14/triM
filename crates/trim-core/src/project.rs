@@ -200,6 +200,73 @@ impl Project {
         }
     }
 
+    /// Returns media IDs for all media items whose file does not exist on disk.
+    pub fn get_offline_media_ids(&self) -> Vec<String> {
+        self.media_pool
+            .iter()
+            .filter_map(|(id, item)| {
+                let path = std::path::Path::new(&item.file_path);
+                if !path.exists() {
+                    Some(id.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Automatically scans the target directory and relinks any offline media matching filenames.
+    /// Returns the number of successfully relinked media items.
+    pub fn relink_media_from_folder(&mut self, folder: &std::path::Path) -> usize {
+        if !folder.is_dir() {
+            return 0;
+        }
+
+        let mut available_files: HashMap<String, std::path::PathBuf> = HashMap::new();
+        if let Ok(entries) = std::fs::read_dir(folder) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                        available_files.insert(name.to_lowercase(), p);
+                    }
+                } else if p.is_dir() {
+                    if let Ok(sub) = std::fs::read_dir(&p) {
+                        for sub_entry in sub.flatten() {
+                            let sub_p = sub_entry.path();
+                            if sub_p.is_file() {
+                                if let Some(name) = sub_p.file_name().and_then(|n| n.to_str()) {
+                                    available_files.insert(name.to_lowercase(), sub_p);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut relinked_count = 0;
+        for item in self.media_pool.values_mut() {
+            if !std::path::Path::new(&item.file_path).exists() {
+                let item_filename = std::path::Path::new(&item.file_path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&item.name)
+                    .to_lowercase();
+
+                if let Some(new_path) = available_files.get(&item_filename) {
+                    item.file_path = new_path.to_string_lossy().to_string();
+                    relinked_count += 1;
+                }
+            }
+        }
+
+        if relinked_count > 0 {
+            self.mark_dirty();
+        }
+        relinked_count
+    }
+
     pub fn sync_settings_from_timeline(&mut self) {
         if self.timeline.width > 0 && self.timeline.height > 0 {
             self.settings.width = self.timeline.width;
@@ -384,4 +451,44 @@ mod tests {
         assert_eq!(proj2.bins.len(), 0);
         assert_eq!(proj2.get_media("media-1").unwrap().bin_id, None);
     }
+
+    #[test]
+    fn test_offline_media_detection_and_relink() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let existing_file = temp_dir.path().join("intro.mp4");
+        std::fs::write(&existing_file, b"video data").unwrap();
+
+        let mut proj = Project::default();
+        let m1 = MediaItem {
+            id: "m1".to_string(),
+            name: "intro.mp4".to_string(),
+            file_path: "/nonexistent/path/intro.mp4".to_string(),
+            ..Default::default()
+        };
+        let m2 = MediaItem {
+            id: "m2".to_string(),
+            name: "outro.mp4".to_string(),
+            file_path: "/still/missing/outro.mp4".to_string(),
+            ..Default::default()
+        };
+        proj.add_media(m1);
+        proj.add_media(m2);
+
+        // Both are offline
+        let offline = proj.get_offline_media_ids();
+        assert_eq!(offline.len(), 2);
+
+        // Relink from temp_dir
+        let count = proj.relink_media_from_folder(temp_dir.path());
+        assert_eq!(count, 1);
+
+        // Now m1 is online, m2 remains offline
+        let offline_after = proj.get_offline_media_ids();
+        assert_eq!(offline_after.len(), 1);
+        assert_eq!(offline_after[0], "m2");
+
+        let relinked_m1 = proj.get_media("m1").unwrap();
+        assert_eq!(relinked_m1.file_path, existing_file.to_string_lossy().to_string());
+    }
 }
+
