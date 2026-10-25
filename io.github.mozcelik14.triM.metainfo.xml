@@ -28,28 +28,28 @@
   <url type="vcs-browser">https://github.com/MOzcelik14/triM</url>
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/trim_workspace.png</image>
-      <caption>triM. Multi-track Timeline and Workspace</caption>
+      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/workspace.png</image>
+      <caption>triM Multi-track Timeline and Workspace</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/trim_subtitles_smart_cut.png</image>
-      <caption>Subtitle Suite and Smart Scene Cut Detection</caption>
+      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/color_grading.png</image>
+      <caption>3-Way Color Wheels and Tone Grading</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/trim_vertical_safezones.png</image>
+      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/vertical_9_16.png</image>
       <caption>9:16 Vertical Shorts/Reels Canvas with Safe Zones</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/trim_audio_eq.png</image>
-      <caption>Multi-channel Audio Mixer and Equalizer Controls</caption>
+      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/audio_mixer.png</image>
+      <caption>Multi-channel Audio Mixer and VU Meters</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/trim_shortcuts_profiles.png</image>
-      <caption>Multi-NLE Keyboard Shortcut Profiles</caption>
+      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/shortcuts.png</image>
+      <caption>Keyboard Shortcut Profiles and Reference</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/trim_export_loudness.png</image>
-      <caption>GPU Hardware-Accelerated Export Studio and Loudness Normalization</caption>
+      <image>https://raw.githubusercontent.com/MOzcelik14/triM/master/docs/assets/screenshots/export_studio.png</image>
+      <caption>Hardware-Accelerated Export Studio and Loudness Normalization</caption>
     </screenshot>
   </screenshots>
   <provides>
