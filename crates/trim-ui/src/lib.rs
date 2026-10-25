@@ -770,4 +770,73 @@ mod tests {
             "A3"
         );
     }
+
+    #[test]
+    fn test_drop_media_atomic_undo() {
+        let mut app = TrimApp::default();
+        let mut video_media = trim_core::media::MediaItem::new("/mock/video.mp4");
+        video_media.id = "vid_1".to_string();
+        video_media.name = "My Video".to_string();
+        video_media.media_type = trim_core::media::MediaType::Video;
+        video_media.audio_channels = 2;
+        video_media.duration = 10.0;
+        app.project.add_media(video_media);
+
+        let v1_id = app
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .find(|t| t.name == "V1")
+            .unwrap()
+            .id
+            .clone();
+        let a1_id = app
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .find(|t| t.name == "A1")
+            .unwrap()
+            .id
+            .clone();
+
+        app.target_video_track = v1_id.clone();
+        app.target_audio_track = a1_id.clone();
+
+        // Insert clip onto timeline from source monitor
+        app.source_state.media_id = Some("vid_1".to_string());
+        app.insert_source_to_timeline(false);
+
+        assert_eq!(
+            app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(),
+            1
+        );
+        assert_eq!(
+            app.project.timeline.get_track_by_id(&a1_id).unwrap().clips.len(),
+            1
+        );
+
+        // A single undo must atomically remove BOTH video and audio clips!
+        assert!(app.undo_stack.undo(&mut app.project.timeline).unwrap());
+        assert_eq!(
+            app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(),
+            0
+        );
+        assert_eq!(
+            app.project.timeline.get_track_by_id(&a1_id).unwrap().clips.len(),
+            0
+        );
+
+        // A single redo must atomically restore BOTH video and audio clips!
+        assert!(app.undo_stack.redo(&mut app.project.timeline).unwrap());
+        assert_eq!(
+            app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(),
+            1
+        );
+        assert_eq!(
+            app.project.timeline.get_track_by_id(&a1_id).unwrap().clips.len(),
+            1
+        );
+    }
 }

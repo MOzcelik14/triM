@@ -4,7 +4,7 @@ use crate::app::{ActiveVoiceover, TrimApp};
 use crate::file_dialog::{FileDialogConfig, FileDialogRequest};
 use egui::{ColorImage, TextureOptions};
 use std::sync::mpsc::channel;
-use trim_commands::{AddClipCommand, MoveMultipleClipsCommand};
+use trim_commands::{AddClipCommand, Command, MacroCommand, MoveMultipleClipsCommand};
 use trim_core::clip::Clip;
 use trim_core::media::MediaType;
 use trim_media::FFprobeAnalyzer;
@@ -528,6 +528,8 @@ impl TrimApp {
 
         let insert_time = self.current_time;
 
+        let mut commands: Vec<Box<dyn Command>> = Vec::new();
+
         // Ripple insert: shift downstream clips forward on target track
         if !is_overwrite {
             let mut moves = Vec::new();
@@ -544,8 +546,7 @@ impl TrimApp {
                 }
             }
             if !moves.is_empty() {
-                let cmd = Box::new(MoveMultipleClipsCommand::new(moves));
-                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                commands.push(Box::new(MoveMultipleClipsCommand::new(moves)));
             }
         }
 
@@ -589,8 +590,7 @@ impl TrimApp {
             }
         }
 
-        let cmd = Box::new(AddClipCommand::new(target_track_id.clone(), new_clip));
-        let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+        commands.push(Box::new(AddClipCommand::new(target_track_id.clone(), new_clip)));
 
         if let Some(gid) = link_group {
             let audio_track_id = self
@@ -613,8 +613,7 @@ impl TrimApp {
                     }
                 }
                 if !audio_moves.is_empty() {
-                    let cmd_m = Box::new(MoveMultipleClipsCommand::new(audio_moves));
-                    let _ = self.undo_stack.push(cmd_m, &mut self.project.timeline);
+                    commands.push(Box::new(MoveMultipleClipsCommand::new(audio_moves)));
                 }
             }
 
@@ -624,9 +623,20 @@ impl TrimApp {
             audio_clip.source_out = Some(end_out);
             audio_clip.linked_group_id = Some(gid);
 
-            let cmd_a = Box::new(AddClipCommand::new(audio_track_id, audio_clip));
-            let _ = self.undo_stack.push(cmd_a, &mut self.project.timeline);
+            commands.push(Box::new(AddClipCommand::new(audio_track_id, audio_clip)));
         }
+
+        let cmd: Box<dyn Command> = if commands.len() == 1 {
+            commands.remove(0)
+        } else {
+            let action_name = if is_overwrite {
+                "Klip Üzerine Yaz (Overwrite)"
+            } else {
+                "Klip Araya Ekle (Insert)"
+            };
+            Box::new(MacroCommand::new(action_name, commands))
+        };
+        let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
 
         self.project.mark_dirty();
 

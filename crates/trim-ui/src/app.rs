@@ -2058,9 +2058,6 @@ impl eframe::App for TrimApp {
                                                     track_id.clone(),
                                                     clip,
                                                 ));
-                                                let _ = self
-                                                    .undo_stack
-                                                    .push(cmd, &mut self.project.timeline);
 
                                                 if let Some(gid) = link_group {
                                                     let audio_track_id = self
@@ -2078,9 +2075,17 @@ impl eframe::App for TrimApp {
                                                         audio_track_id,
                                                         audio_clip,
                                                     ));
+                                                    let macro_cmd = Box::new(MacroCommand::new(
+                                                        "Klip ve Ses Ekle",
+                                                        vec![cmd, cmd_a],
+                                                    ));
                                                     let _ = self
                                                         .undo_stack
-                                                        .push(cmd_a, &mut self.project.timeline);
+                                                        .push(macro_cmd, &mut self.project.timeline);
+                                                } else {
+                                                    let _ = self
+                                                        .undo_stack
+                                                        .push(cmd, &mut self.project.timeline);
                                                 }
 
                                                 self.project.mark_dirty();
@@ -2363,9 +2368,6 @@ impl eframe::App for TrimApp {
                                                     track_id.clone(),
                                                     clip,
                                                 ));
-                                                let _ = self
-                                                    .undo_stack
-                                                    .push(cmd, &mut self.project.timeline);
 
                                                 if let Some(gid) = link_group {
                                                     let audio_track_id = self
@@ -2386,9 +2388,17 @@ impl eframe::App for TrimApp {
                                                         audio_track_id,
                                                         audio_clip,
                                                     ));
+                                                    let macro_cmd = Box::new(MacroCommand::new(
+                                                        "Klip ve Ses Ekle",
+                                                        vec![cmd, cmd_a],
+                                                    ));
                                                     let _ = self
                                                         .undo_stack
-                                                        .push(cmd_a, &mut self.project.timeline);
+                                                        .push(macro_cmd, &mut self.project.timeline);
+                                                } else {
+                                                    let _ = self
+                                                        .undo_stack
+                                                        .push(cmd, &mut self.project.timeline);
                                                 }
 
                                                 self.project.mark_dirty();

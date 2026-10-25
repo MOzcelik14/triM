@@ -1589,3 +1589,51 @@ impl Command for SetClipVolumeCommand {
         "Klip Ses Seviyesini Değiştir"
     }
 }
+
+// -----------------------------------------------------------------------------
+// 24. MacroCommand (Compound / Batch atomic command)
+// -----------------------------------------------------------------------------
+#[derive(Debug)]
+pub struct MacroCommand {
+    pub name: String,
+    pub commands: Vec<Box<dyn Command>>,
+}
+
+impl MacroCommand {
+    pub fn new(name: impl Into<String>, commands: Vec<Box<dyn Command>>) -> Self {
+        Self {
+            name: name.into(),
+            commands,
+        }
+    }
+}
+
+impl Command for MacroCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        for (executed, cmd) in self.commands.iter_mut().enumerate() {
+            if let Err(err) = cmd.execute(timeline) {
+                for c in self.commands[..executed].iter_mut().rev() {
+                    let _ = c.undo(timeline);
+                }
+                return Err(err);
+            }
+        }
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        for (undid, cmd) in self.commands.iter_mut().rev().enumerate() {
+            if let Err(err) = cmd.undo(timeline) {
+                for c in self.commands.iter_mut().rev().take(undid) {
+                    let _ = c.execute(timeline);
+                }
+                return Err(err);
+            }
+        }
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}

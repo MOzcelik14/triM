@@ -714,4 +714,36 @@ mod tests {
         assert!(stack.redo(&mut tl).unwrap());
         assert_eq!(tl.get_track_by_id(&a2_id).unwrap().clips.len(), 1);
     }
+
+    #[test]
+    fn test_macro_command_atomic_undo_redo() {
+        let mut tl = TimelineModel::default();
+        let v1_id = tl.tracks.iter().find(|t| t.name == "V1").unwrap().id.clone();
+        let a1_id = tl.tracks.iter().find(|t| t.name == "A1").unwrap().id.clone();
+
+        let v_clip = Clip::new("m_vid", 0.0, 5.0);
+        let a_clip = Clip::new("m_vid", 0.0, 5.0);
+
+        let cmd_v = Box::new(AddClipCommand::new(&v1_id, v_clip));
+        let cmd_a = Box::new(AddClipCommand::new(&a1_id, a_clip));
+
+        let macro_cmd = Box::new(MacroCommand::new("Add Linked Clip", vec![cmd_v, cmd_a]));
+
+        let mut stack = UndoStack::new();
+        stack.push(macro_cmd, &mut tl).unwrap();
+
+        // Both clips should be in timeline
+        assert_eq!(tl.get_track_by_id(&v1_id).unwrap().clips.len(), 1);
+        assert_eq!(tl.get_track_by_id(&a1_id).unwrap().clips.len(), 1);
+
+        // Single undo must remove BOTH clips atomically
+        assert!(stack.undo(&mut tl).unwrap());
+        assert_eq!(tl.get_track_by_id(&v1_id).unwrap().clips.len(), 0);
+        assert_eq!(tl.get_track_by_id(&a1_id).unwrap().clips.len(), 0);
+
+        // Single redo must restore BOTH clips atomically
+        assert!(stack.redo(&mut tl).unwrap());
+        assert_eq!(tl.get_track_by_id(&v1_id).unwrap().clips.len(), 1);
+        assert_eq!(tl.get_track_by_id(&a1_id).unwrap().clips.len(), 1);
+    }
 }
