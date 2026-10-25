@@ -19,7 +19,6 @@ Sürüm numarası Semantic Versioning (`MAJOR.MINOR.PATCH`) standardını takip 
    ```
 3. Dokümantasyon ve paketleme meta verileri:
    - `io.github.mozcelik14.triM.metainfo.xml`
-   - `flatpak/io.github.mozcelik14.triM.metainfo.xml`
    - `.github/workflows/release-linux.yml` (varsayılan fallback sürüm)
    - `docs/index.html` ve `docs/js/main.js`
 
