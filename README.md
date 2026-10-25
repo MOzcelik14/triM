@@ -1,115 +1,154 @@
 # triM
 
-`triM` is a native, non-linear video editor (NLE) for Linux written in Rust. It uses `egui` and `eframe` over an OpenGL (`glow`) rendering backend for the user interface, `ffmpeg` and `ffprobe` for media decoding, filtering, and encoding, and PipeWire (`pw-cat`), PulseAudio (`paplay`), or ALSA (`aplay`) for PCM audio output. It contains no web runtime, Electron, or WebKit dependencies.
+[![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)](Cargo.toml)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey.svg)](#system-requirements)
+[![CI](https://github.com/MOzcelik14/triM/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/MOzcelik14/triM/actions)
+
+[Türkçe README için tıklayın](README.tr.md) · [Keyboard Shortcuts](docs/SHORTCUTS.md) · [Website](https://mozcelik14.github.io/triM)
+
+triM is a native, lightweight non-linear video editor written in Rust with `egui`, using system FFmpeg for media decoding and encoding.
+
+![triM Workspace](docs/assets/screenshots/workspace.png)
 
 ---
 
-## Technical Capabilities
+## Why I Built This
 
-- **Timeline Editing:** Multi-track video and audio timeline, ripple delete, razor split, slip edit, magnetic snapping, clip linking/unlinking, track locking/solo/mute, and timeline markers.
-- **Compositing & Color:** Software preview and hardware/software FFmpeg export for Chroma Key (`colorkey`), 3-Way Color Wheels (Lift, Gamma, Gain, Luminance), `.cube` 3D LUT application, opacity fades, and keyframed 2D transforms (`position`, `scale`, `rotation`, `opacity`).
-- **Audio Processing:** Real-time software PCM mixer (`44.1 kHz` stereo `f32le`) with 3-band biquad parametric EQ (Low Shelf, Peaking Mid, High Shelf), stereo panning, pitch-preserving speed scaling, voiceover recording, and EBU R128 loudness normalization (`loudnorm`) on export.
-- **Subtitles & Automated Cuts:** `.srt` and `.vtt` parser/exporter, on-monitor interactive text overlay editor, FFmpeg `scdet` scene cut detection, `silencedetect` speech interval extraction, and external Whisper CLI integration for speech-to-subtitle generation.
-- **Interchange & Export:** Multi-codec rendering (`H.264`, `H.265/HEVC`, `VP9`, `AV1`, `ProRes`, `DNxHR`, `NVENC`, `VAAPI`, `QSV`), CMX 3600 `.edl` export, and Final Cut Pro `.fcpxml` (v1.9) export.
+Most existing video editing software either requires hundreds of megabytes of disk space or runs inside a web browser runtime (Electron), leading to high memory overhead. For personal editing projects, I wanted a tool that starts quickly, has no external cloud or account dependencies, relies on local tools (FFmpeg, PipeWire), and keeps resource usage low.
+
+I built triM to serve that need. The user interface is rendered using `egui` and `eframe` over OpenGL, while video and audio decoding tasks are delegated to `ffmpeg` and `ffprobe` processes. The compiled release binary is approximately 13 MB.
 
 ---
 
-## System Requirements
+## Core Features
 
-### Supported Target Platform
-- **OS:** Linux (`x86_64`)
-- **Display Server:** Wayland or X11 with OpenGL 3.3+ (`libGL` / Mesa DRI)
-- **Rust Toolchain:** `rustc` / `cargo` >= 1.80 (2021 edition)
+### Editing & Timeline
+- Multi-track video and audio timeline (V1..Vn, A1..An)
+- Razor, Ripple, Slip, and Rate Stretch editing tools
+- Magnetic snapping to playhead and clip boundaries
+- Automatic video-to-audio clip linking and pairing (V1 -> A1, V2 -> A2 mapping)
+- Timeline markers for visual navigation
 
-### Runtime Dependencies
-- `ffmpeg` and `ffprobe` (in `$PATH`)
-- Audio output backend (resolved in order):
-  1. PipeWire (`pw-cat`)
-  2. PulseAudio (`paplay`, `parecord`)
-  3. ALSA (`aplay`, `arecord`)
-- Optional runtime binaries for auxiliary features:
-  - `whisper` or `whisper-ctranslate2` (for local speech transcription)
+### Color & Effects
+- 3-Way Color Wheels (Lift, Gamma, Gain)
+- 3D LUT support via `.cube` files
+- Chroma Keying (green screen removal)
+- Opacity controls with linear fade-in and fade-out transitions
+- Keyframe support for position, scale, rotation, and opacity
 
-### Build Dependencies (Debian / Ubuntu)
+### Audio Processing
+- Real-time software multi-track PCM mixer (48 kHz stereo)
+- Per-track gain (dB), Mute, and Solo controls
+- 3-band parametric equalizer and presets (Voice clarity, bass boost, etc.)
+- Timeline voiceover recording directly from microphone
+- 5 ms lookahead brickwall master limiter to prevent clipping
+
+### Export & Industry Interchange
+- Export in H.264, HEVC, VP9, AV1, ProRes, and DNxHR codecs
+- Automatic hardware encoder detection (NVIDIA NVENC, Intel QSV, AMD AMF, Linux VAAPI)
+- EBU R128 loudness normalization (`loudnorm`) during export
+- Sequence interchange via Final Cut Pro (`.fcpxml` v1.8/v1.9) and CMX 3600 (`.edl`)
+
+---
+
+## Screenshots
+
+| Color Grading (Lift/Gamma/Gain) | Audio Mixer & Parametric EQ |
+|---|---|
+| ![Color Grading](docs/assets/screenshots/color_grading.png) | ![Audio Mixer](docs/assets/screenshots/audio_mixer.png) |
+
+| Export Studio | Vertical (9:16) Canvas with Safe Zones |
+|---|---|
+| ![Export Studio](docs/assets/screenshots/export_studio.png) | ![Vertical Canvas](docs/assets/screenshots/vertical_9_16.png) |
+
+---
+
+## Installation
+
+### System Requirements
+- **OS:** Linux (x86_64) or Windows (x86_64)
+- **Graphics:** OpenGL 3.3+ capable driver
+- **Dependencies:** `ffmpeg` and `ffprobe` in `$PATH`
+- **Linux Audio Output:** PipeWire (`pw-cat`), PulseAudio (`paplay`), or ALSA (`aplay`)
+
+### Pre-built Binaries
+Download `.deb`, `.rpm`, `.AppImage` (Linux) or `.zip` (Windows) packages from [GitHub Releases](https://github.com/MOzcelik14/triM/releases).
+
+One-line installation on Linux:
 ```bash
-sudo apt-get update
-sudo apt-get install -y \
-  build-essential \
-  pkg-config \
-  libasound2-dev \
-  libpipewire-0.3-dev \
-  libx11-dev \
-  libgl1-mesa-dev \
-  libxkbcommon-dev \
-  libwayland-dev \
-  ffmpeg
+curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash
 ```
 
----
-
-## Build, Test, and Execution
-
-Clone the repository and build the workspace in release mode:
+### Building From Source
+Requires Rust 1.80+ toolchain:
 
 ```bash
 git clone https://github.com/MOzcelik14/triM.git
 cd triM
-cargo build --workspace --release
-```
-
-Run the binary directly:
-
-```bash
-./target/release/trim
-```
-
-Open an existing `.trim` project file from the command line:
-
-```bash
-./target/release/trim /path/to/project.trim
-```
-
-Run the test suite and static analysis checks:
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo build --release -p trim-app
+install -m 0755 target/release/trim ~/.local/bin/trim
 ```
 
 ---
 
-## Architecture Overview
+## Usage
 
-See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the complete threading model, data flow topology, memory ceilings (`LruCache`), and subprocess lifecycle management (`ChildGuard`).
+Launch the editor or pass a project file:
 
-Workspace structure:
-- `crates/trim-core`: Domain models, serialization, timecode math, and bounded `LruCache`.
-- `crates/trim-commands`: Reversible `Command` implementations and Undo/Redo stack.
-- `crates/trim-timeline`: Stateless edit point discovery and splitting logic.
-- `crates/trim-project`: `.trim` project persistence, autosave, crash recovery, and portable bundling.
-- `crates/trim-media`: `ffmpeg`/`ffprobe` process wrappers, async frame decoders, `AudioMixer`, waveform and thumbnail workers.
-- `crates/trim-export`: FFmpeg `filter_complex` compiler, EDL exporter, and FCPXML exporter.
-- `crates/trim-ui`: Immediate-mode `egui` interface, timeline canvas, monitors, and inspector.
-- `crates/trim-app`: Binary entrypoint.
+```bash
+trim
+trim /path/to/project.trim
+```
+
+### Primary Shortcuts
+
+| Key | Action |
+|---|---|
+| `Space` | Play / Pause |
+| `J` / `K` / `L` | Shuttle backwards / Stop / Shuttle forwards (2x, 4x, 8x) |
+| `C` | Razor tool |
+| `S` | Split clip at playhead |
+| `V` | Selection tool |
+| `Delete` | Remove selected clip |
+| `Shift + Delete` | Ripple delete clip and close gap |
+| `Ctrl + E` | Open Export Studio |
+| `F1` | Open keyboard shortcuts window |
+
+See [docs/SHORTCUTS.md](docs/SHORTCUTS.md) for the full shortcut list.
+
+---
+
+## Architecture
+
+The project is structured as 8 distinct Cargo workspace crates:
+
+```
+triM/
+├── crates/
+│   ├── trim-core/       # Domain models, timecode math, clips, tracks, and projects
+│   ├── trim-commands/   # Reversible Command implementations and Undo/Redo stack
+│   ├── trim-timeline/   # Editing, slicing, and split algorithms
+│   ├── trim-project/    # Disk serialization (.trim), autosave, and crash recovery
+│   ├── trim-media/      # FFmpeg process supervision, frame streaming, and audio mixing
+│   ├── trim-export/     # FFmpeg filtergraph generation, EDL, and FCPXML writers
+│   ├── trim-ui/         # Immediate-mode egui canvas, monitors, and inspector
+│   └── trim-app/        # Executable binary entry point
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for details on the threading model, memory limits, and subprocess lifecycle guards.
 
 ---
 
 ## Known Limitations
 
-1. **Software Preview Compositing Resolution:**
-   - Real-time timeline preview decodes and composites video frames on the CPU at a fixed internal preview resolution of `640x360` RGBA before uploading textures to OpenGL. High-track-count compositions (e.g., 4+ simultaneous overlapping video layers with active Chroma Key and Color Wheels) remain CPU-bound during real-time preview.
-2. **Subprocess-Driven Media Pipeline:**
-   - `triM` invokes `ffmpeg`, `ffprobe`, and `pw-cat` as isolated child processes via standard pipes rather than linking dynamically against `libavcodec`/`libavformat` C libraries. While this isolates the UI process from codec memory corruption crashes, random-access scrubbing incurs process startup overhead (`~15-40 ms` per uncached seek) on high-GOP inter-frame codecs (such as long-GOP H.264/HEVC) unless proxy media is generated.
-3. **Hardware Encoder Availability:**
-   - Hardware-accelerated export options (`h264_nvenc`, `hevc_nvenc`, `h264_vaapi`, `hevc_vaapi`, `h264_qsv`) depend on the host system's installed `ffmpeg` build and kernel/driver DRM/VAAPI/NVIDIA runtime support. No automatic fallback to software `libx264` occurs if a user manually selects an unsupported hardware encoder in the export dialog.
-4. **Platform Scope:**
-   - Audio playback (`pw-cat`/`paplay`/`aplay`), voiceover recording (`parecord`/`arecord`), and screen capture (`x11grab`/PipeWire) are implemented specifically for Linux desktop environments. Windows and macOS targets compile for core logic verification but lack native audio/capture backend bindings.
-5. **Color Space Management:**
-   - Preview compositing operates in 8-bit sRGB RGBA (`u8` per channel). 10-bit HDR (`BT.2020` / PQ / HLG) source media is tone-mapped or truncated to 8-bit during preview and filtergraph processing.
+1. **Preview Resolution:** The real-time timeline preview decodes and composites frames on the CPU at a fixed 640x360 resolution before uploading them as OpenGL textures. Heavy compositions with multiple overlapping video layers and active effects will consume CPU time during preview.
+2. **Subprocess Media Architecture:** Instead of dynamically linking C libraries (`libavcodec`), triM calls FFmpeg as isolated child processes (`ChildGuard`). This choice keeps the UI process stable and avoids codec memory crashes, but uncached seeking on long-GOP files may introduce a 15-40 ms startup delay. Using proxy mode addresses this during editing.
+3. **Platform Scope:** Microphone voiceover recording and screen capture are implemented specifically for Linux (PulseAudio/ALSA and x11grab). On Windows, audio playback is handled through low-delay `ffplay`; direct microphone input is not yet supported natively on Windows.
+4. **Color Depth:** The preview pipeline operates in 8-bit sRGB. 10-bit HDR source media is converted to 8-bit during preview.
 
 ---
 
 ## License
 
-Licensed under the GNU General Public License v3.0 or later (`GPL-3.0-or-later`). See [`LICENSE`](LICENSE) for details.
+This project is licensed under the [GNU General Public License v3.0 or later (GPL-3.0-or-later)](LICENSE).
