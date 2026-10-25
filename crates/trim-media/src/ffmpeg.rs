@@ -407,7 +407,8 @@ mod tests {
 
         if !finished {
             let _ = child.kill();
-            panic!("Process deadlocked on full pipe buffer!");
         }
+        let _ = child.wait();
+        assert!(finished, "Process deadlocked on full pipe buffer!");
     }
 }
