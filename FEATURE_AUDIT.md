@@ -23,7 +23,7 @@ Bu rapor, triM. kod tabanının (`crates/trim-core`, `trim-commands`, `trim-time
 | **Kanal Yeniden Sıralama** | **Yok** | `crates/trim-core/src/timeline.rs:tracks` | Kanalları dikeyde sürükleyerek sırasını değiştirme desteği yoktur; kanallar eklendikleri sırada kalır. |
 | **Kesme / Jilet (Razor & Split)** | **Tam çalışıyor** | `crates/trim-ui/src/canvas.rs:1145` (`CanvasAction::RazorCut`); `crates/trim-commands/src/commands.rs:SplitClipCommand`, `BatchSplitClipCommand`; `crates/trim-ui/src/app/timeline_actions.rs:split_at_playhead` | C aracıyla tıklanan yerden ve Ctrl+K ile oynatma kafasından tekli/çoklu kanal bölme kusursuz çalışır. |
 | **Dalgalanma Silme (Ripple Delete)** | **Tam çalışıyor** | `crates/trim-commands/src/commands.rs:RippleDeleteCommand`, `RippleTrimHeadCommand` (Q), `RippleTrimTailCommand` (W), `CloseGapCommand` | Boşlukları silme, klip başını/sonunu dalgalanmalı kırpma ve sağdaki klipleri sola kaydırma tam çalışır. |
-| **Dalgalanma Düzenleme Aracı (Ripple Tool - B)** | **Sadece arayüzde var, arkası boş** | `crates/trim-ui/src/toolbar.rs:10` (`EditTool::Ripple`); `crates/trim-ui/src/canvas.rs:1106-1135`, `1144-1215` | Araç çubuğunda simgesi ve kısayolu (B) mevcuttur; ancak `canvas.rs` fare tıklama/sürükleme eşleşmesinde ele alınmamış, standart `Select` aracına düşmektedir. |
+| **Dalgalanma Düzenleme Aracı (Ripple Tool - B)** | **Tam çalışıyor** | `crates/trim-ui/src/toolbar.rs:EditTool::Ripple`; `crates/trim-ui/src/canvas.rs:DragMode::RippleIn/RippleOut`; `crates/trim-commands/src/commands.rs:RippleTrimEdgeCommand` | Araç çubuğunda (B) simgesi, sarı dalgalanma köşeli parantez imleçleri, klip baş/son kırpma ve tüm sonraki klipleri eşzamanlı kaydıran Undo/Redo destekli tam entegrasyon. |
 | **Kaydırma Aracı (Slip Tool - Y)** | **Sadece arayüzde var, arkası boş** | `crates/trim-ui/src/toolbar.rs:12` (`EditTool::Slip`); `crates/trim-ui/src/canvas.rs:1106-1135`, `1144-1215` | Araç çubuğunda simgesi ve kısayolu (Y) mevcuttur; ancak `canvas.rs` fare mantığında klibin kaynak `source_in` değerini zaman çizgisinde sabitken kaydıran kod yazılmamıştır. |
 | **Slide Aracı** | **Yok** | `crates/trim-ui/src/toolbar.rs:EditTool` | Araç çubuğunda veya kodda Slide aracı bulunmamaktadır. |
 | **Hız Uzatma (Rate Stretch) Aracı** | **Yok** | `crates/trim-ui/src/toolbar.rs:EditTool`, `crates/trim-ui/src/canvas.rs` | Zaman çizgisinde klip ucundan tutup sürükleyerek hız değiştiren interaktif bir araç yoktur. (Hız yalnızca Inspector penceresinden değiştirilebilir). |
@@ -43,7 +43,7 @@ Bu rapor, triM. kod tabanının (`crates/trim-core`, `trim-commands`, `trim-time
 | **Video Geçişleri (Transitions)** | **Tam çalışıyor** | `crates/trim-core/src/clip.rs:transition_in`, `transition_out`; `crates/trim-ui/src/inspector.rs:1160`; `crates/trim-media/src/video.rs:1276`; `crates/trim-ui/src/gpu_compositor.rs:252`; `crates/trim-export/src/filtergraph.rs:468` | Cross Dissolve, Dip to Black, Dip to White, Wipe Left/Right, Slide ve Zoom geçişleri önizleme, GPU gölgelendirici ve dışa aktarmada çalışır. |
 | **Hız Değişimi (Speed Change)** | **Tam çalışıyor** | `crates/trim-core/src/clip.rs:speed`; `crates/trim-commands/src/commands.rs:ChangeClipSpeedCommand`; `crates/trim-media/src/video.rs:PlaybackStreamer`; `crates/trim-export/src/filtergraph.rs:get_atempo_filters` | 0.1x ile 10.0x arası hız değişimi; videoda `setpts`, seste kademeli `atempo` zinciri ile tam desteklenir. |
 | **Ters Oynatma (Reverse Playback)** | **Tam çalışıyor** | `crates/trim-core/src/clip.rs:reverse`; `crates/trim-media/src/video.rs:163` (2 saniyelik bellek tamponlu ters oynatıcı); `crates/trim-export/src/filtergraph.rs:159` (`reverse` & `areverse`) | Önizlemede FFmpeg bellek şişmesini engelleyen özel ters tamponlayıcı, renderda `reverse`/`areverse` tam çalışır. |
-| **Kırpma (Crop)** | **Yok** | `crates/trim-core/src/clip.rs:Clip` | Klibin sol, sağ, üst, alt kenarlarından pikselleri kırpma desteği modelde ve arayüzde yoktur. |
+| **Kırpma (Crop)** | **Tam çalışıyor** | `crates/trim-core/src/clip.rs:crop_left/right/top/bottom`; `crates/trim-commands/src/commands.rs:SetClipCropCommand`; `crates/trim-ui/src/inspector.rs`; `crates/trim-ui/src/gpu_compositor.rs:u_crop`; `crates/trim-export/src/filtergraph.rs:crop` | Sol, sağ, üst, alt kırpma kaydırıcıları; GPU shader UV maskeleme ve FFmpeg render dışa aktarımı tam çalışır. |
 | **Dönüştürme (Transform: Konum, Ölçek, Döndürme, Opaklık)** | **Tam çalışıyor** | `crates/trim-core/src/clip.rs:pos_x, pos_y, scale, rotation, opacity`; `crates/trim-media/src/video.rs:1350`; `crates/trim-ui/src/gpu_compositor.rs:270`; `crates/trim-export/src/filtergraph.rs:166` | Önizlemede GPU/CPU matris dönüşümü ve FFmpeg `scale`/`rotate`/`overlay` ile dışa aktarım tam çalışır. |
 | **Bindirme (PiP - Picture-in-Picture)** | **Tam çalışıyor** | `crates/trim-core/src/timeline.rs:get_visible_video_clips_at`; `crates/trim-media/src/video.rs:collect_timeline_layers` | Çok kanallı yapıda V2, V1'in üzerine ölçeklenip konumlandırılarak katmanlanır. |
 | **Harmanlama Modları (Blend Modes)** | **Yok** | `crates/trim-media/src/video.rs:2064`; `crates/trim-ui/src/gpu_compositor.rs:812` | Yalnızca standart alfa harmanlama (Normal) vardır; Multiply, Screen, Overlay gibi modlar yoktur. |
@@ -63,7 +63,7 @@ Bu rapor, triM. kod tabanının (`crates/trim-core`, `trim-commands`, `trim-time
 | Özellik | Durum | Kanıt (Dosya:Fonksiyon / Satır) | Notlar |
 | :--- | :--- | :--- | :--- |
 | **Klip Ses Seviyesi (Volume / Gain)** | **Tam çalışıyor** | `crates/trim-core/src/clip.rs:volume`; `crates/trim-commands/src/commands.rs:SetClipVolumeCommand`; `crates/trim-media/src/audio.rs:AudioMixer`; `crates/trim-ui/src/canvas.rs:VolumeRubberband` | Inspector'dan dB/yüzde ve zaman çizgisindeki klip üzerinden yatay lastik bant (rubberband) ile ses ayarı tam çalışır. |
-| **Ses Otomasyon Zarfı (Keyframed Volume Envelope)** | **Kısmi** | `crates/trim-ui/src/inspector.rs:1240`; `crates/trim-ui/src/canvas.rs:1550` | Klip geneli için tek bir ses seviyesi ve klip başı/sonu `fade_in`/`fade_out` vardır; ancak klip boyunca birden fazla anahtar kare ile ses yükseltip alçaltan ses zarfı eğrisi yoktur. |
+| **Ses Otomasyon Zarfı (Keyframed Volume Envelope)** | **Tam çalışıyor** | `crates/trim-commands/src/commands.rs:SetClipKeyframesCommand`; `crates/trim-ui/src/canvas.rs:VolumeRubberband`; `crates/trim-media/src/audio.rs:mix_raw_window`; `crates/trim-export/src/filtergraph.rs:volume=eval=frame` | Zaman çizgisinde Pen aracı ('P') veya Ctrl+Tık ile elmas anahtar kare ekleme, Alt+Tık ile silme, dikey sürükleme ile dB kazancı ayarlama, DSP parça bazlı enterpolasyon ve FFmpeg render tam çalışır. |
 | **Ses Geçişleri (Audio Crossfade)** | **Kısmi** | `crates/trim-export/src/filtergraph.rs:606` (`afade`); `crates/trim-media/src/audio.rs:233` | Klip başı ve sonuna doğrusal kazanç geçişi (`afade`) uygulanabilir; ancak bitişik iki ses klibi arasına otomatik eşit-güç (equal-power) crossfade düğümü eklenemez. |
 | **3 Bant Parametrik Ekolayzır (EQ)** | **Tam çalışıyor** | `crates/trim-core/src/clip.rs:AudioEqPreset`; `crates/trim-media/src/audio.rs:BiquadFilter`; `crates/trim-export/src/filtergraph.rs:equalizer` | Bas, tiz, vokal netliği, radyo sesi gibi biquad peaking/shelving filtreleri gerçek zamanlı ve renderda tam çalışır. |
 | **Gürültü Kapısı (Noise Gate)** | **Tam çalışıyor** | `crates/trim-core/src/clip.rs:noise_gate`; `crates/trim-media/src/audio.rs:apply_noise_gate`; `crates/trim-export/src/filtergraph.rs:agate` | Eşik altındaki ortam fısıltılarını kesen yazılımsal kapı ve FFmpeg `agate` filtresi tam çalışır. |
@@ -93,7 +93,7 @@ Bu rapor, triM. kod tabanının (`crates/trim-core`, `trim-commands`, `trim-time
 | :--- | :--- | :--- | :--- |
 | **Medya Havuzu Klasörleri (Bins) ve Etiketler** | **Tam çalışıyor** | `crates/trim-core/src/project.rs:MediaBinFolder`; `crates/trim-ui/src/media_bin.rs:render_media_bin`; `crates/trim-core/src/clip.rs:ColorLabel` | Klasör oluşturma, içine taşıma, ekmek kırıntısı (breadcrumb) navigasyonu ve 6 renkli klip etiketleri tam çalışır. |
 | **Medya Arama ve Filtreleme** | **Tam çalışıyor** | `crates/trim-ui/src/media_bin.rs:48` | Gerçek zamanlı arama kutusu ve Video/Ses/Görsel filtreleme butonları tam çalışır. |
-| **İç İçe Sekans (Nested Sequences / Multicam)** | **Sadece arayüzde var, arkası boş** | `crates/trim-ui/src/app.rs:1387` (`seq_tab_btn = Button::new("Sekans 01")`); `crates/trim-core/src/project.rs:69` | Zaman çizgisinin üstünde "Sekans 01" sekme butonu vardır; fakat tıklandığında hiçbir şey yapmaz. `Project` modeli yalnızca tek bir `TimelineModel` tutar; birden çok sekans veya iç içe sekans altyapısı yoktur. |
+| **İç İçe Sekans (Nested Sequences / Multicam)** | **Tam çalışıyor** | `crates/trim-core/src/sequence.rs`; `crates/trim-core/src/project.rs:sequences`; `crates/trim-ui/src/app.rs:seq_tabs`; `crates/trim-ui/src/media_bin.rs:sequence_cards` | Çoklu sekans sekmeleri, klonlama/kapatma, sekansı Medya Havuzundan zaman çizgisine iç içe (nested) klip olarak ekleme ve özyinelemeli (flattened timeline) render tam çalışır. |
 | **Eksik Medyayı Yeniden Bağlama (Relink)** | **Yok** | `crates/trim-project`, `crates/trim-ui` | Projede kullanılan bir medyanın yeri değiştiğinde veya silindiğinde kullanıcıya "Medya Çevrimdışı" uyarısı verip yeni konumu gösteren bir relink penceresi yoktur. |
 | **Proje Şablonları (Templates)** | **Tam çalışıyor** | `crates/trim-ui/src/dialogs/welcome_dialog.rs:FORMAT_PRESETS` | Karşılama penceresinde 1080p, 4K, Reels/Shorts (9:16) ve Kare (1:1) format şablonlarıyla yeni proje açma tam çalışır. |
 | **Otomatik Kaydetme ve Çökme Kurtarma** | **Tam çalışıyor** | `crates/trim-project/src/autosave.rs:AutosaveManager`; `crates/trim-project/src/lib.rs:save_snapshot` | Periyodik arka plan kaydı (`.trim.autosave`) ve açılışta kurtarma teklifi tam çalışır. |
@@ -108,7 +108,7 @@ Bu rapor, triM. kod tabanının (`crates/trim-core`, `trim-commands`, `trim-time
 | :--- | :--- | :--- | :--- |
 | **Hazır Ayarlar (Export Presets)** | **Tam çalışıyor** | `crates/trim-export/src/presets.rs:get_default_presets` | YouTube 1080p, 4K Master, Reels 9:16, ProRes 422 HQ, DNxHR, WebM VP9 ve Yalnızca Ses profilleri tam çalışır. |
 | **Özel Dışa Aktarma Ayarları (Custom Settings)** | **Kısmi** | `crates/trim-ui/src/dialogs/export_dialog.rs:80` | Çözünürlük, FPS, CRF kalite değeri ve donanım kodlayıcı elle özelleştirilebilir; ancak kullanıcının kendi özel hazır ayarını kaydedip saklayabileceği bir profil yöneticisi yoktur. |
-| **Render Kuyruğu (Render Queue / Batch Export)** | **Yok** | `crates/trim-ui/src/app.rs:export_runner` | Uygulama tek seferde yalnızca bir adet dışa aktarma işi yürütebilir; birden fazla çıktıyı sıraya koyan kuyruk yapısı yoktur. |
+| **Render Kuyruğu (Render Queue / Batch Export)** | **Tam çalışıyor** | `crates/trim-export/src/queue.rs:RenderQueue`; `crates/trim-ui/src/dialogs/render_queue_dialog.rs`; `crates/trim-ui/src/dialogs/export_dialog.rs:AddToQueue` | Dışa aktarma penceresinden "Kuyruğa Ekle" butonu, arka plan sıralı iş yürütücüsü, yüzde ilerleme çubukları, iptal/temizleme ve klasör açma modalı tam çalışır. |
 | **Aralık (In / Out) Dışa Aktarma** | **Sadece arayüzde var, arkası boş** | `crates/trim-ui/src/monitor.rs:20` (`MonitorAction::MarkIn`, `MarkOut`); `crates/trim-ui/src/app.rs:474-479`; `crates/trim-export/src/filtergraph.rs` | Monitördeki `{` ve `}` (In/Out) butonları sadece durum çubuğuna yazı yazar (`Sekans Giriş: ...`). Zaman cetvelinde aralık çizilmez ve dışa aktarma motoru her zaman tüm zaman çizgisini baştan sona (0..duration) render eder. |
 | **Donanım Kodlayıcı Tespiti (Hardware Acceleration)** | **Tam çalışıyor** | `crates/trim-export/src/presets.rs:detect_available_encoders` | `ffmpeg -encoders` çıktısını analiz ederek NVIDIA NVENC, Intel QSV, AMD AMF ve Linux VAAPI'yi otomatik seçme tam çalışır. |
 | **EDL ve FCPXML Dışa / İçe Aktarımı** | **Tam çalışıyor** | `crates/trim-export/src/edl.rs`; `crates/trim-export/src/fcpxml.rs` (v1.8/v1.9) | DaVinci Resolve ve Premiere Pro ile sekans alışverişi iki yönlü tam çalışır. |
@@ -228,7 +228,7 @@ Bu öneriler, triM'in mevcut crate ayrımına (`trim-core`, `trim-commands`, `tr
 
 ### Kategori B: Orta Vadeli Öneriler
 
-#### 5. Inspector Düzenlemelerine Undo/Redo Desteği Kazandırılması
+#### 5. Inspector Düzenlemelerine Undo/Redo Desteği Kazandırılması [✅ TAMAMLANDI]
 * **Ne olduğu:** Inspector panelinde klibin Konumu, Ölçeği, Opaklığı, 3D LUT'u veya Ses Düzeyi değiştirildiğinde bu değişikliğin `SetClipTransformCommand` veya `SetClipPropertyCommand` olarak Undo yığınına itilmesi.
 * **Kullanıcıya Faydası:** Kullanıcı yanlışlıkla bir klibin ölçeğini veya rengini bozduğunda Ctrl+Z ile eski haline dönebilir.
 * **Mevcut Koda Nasıl Oturur:**
@@ -238,7 +238,7 @@ Bu öneriler, triM'in mevcut crate ayrımına (`trim-core`, `trim-commands`, `tr
 * **Riskler:** Geri alma yığınının gereksiz ufak ara değerlerle şişmesini önlemek için "drag_stopped" kontrolü şarttır.
 * **Bağımlılık:** Yok.
 
-#### 6. Çok Noktalı Ses Seviyesi Otomasyonu (Volume Automation Envelope)
+#### 6. Çok Noktalı Ses Seviyesi Otomasyonu (Volume Automation Envelope) [✅ TAMAMLANDI]
 * **Ne olduğu:** Klibin üzerindeki ses lastik bandına tıklanarak birden çok ses anahtar karesi noktası eklenebilmesi, bu sayede klibin belirli anlarında sesin kısılıp tekrar açılabilmesi.
 * **Kullanıcıya Faydası:** Arka plan müziğini konuşma anlarında manuel olarak kısmak (ducking) veya ani patlamaları yumuşatmak için zorunludur.
 * **Mevcut Koda Nasıl Oturur:**
@@ -261,7 +261,7 @@ Bu öneriler, triM'in mevcut crate ayrımına (`trim-core`, `trim-commands`, `tr
 * **Riskler:** Yok.
 * **Bağımlılık:** Yok.
 
-#### 8. Video Kırpma (Crop) Efekti
+#### 8. Video Kırpma (Crop) Efekti [✅ TAMAMLANDI]
 * **Ne olduğu:** Klibe Sol, Sağ, Üst ve Alt yüzdelik kırpma değerlerinin eklenmesi.
 * **Kullanıcıya Faydası:** Yan yana iki videoyu bölme (split-screen), dikey videoyu yataya yerleştirirken gereksiz kenarları atma veya sinematik siyah bant efekti oluşturma.
 * **Mevcut Koda Nasıl Oturur:**
@@ -276,7 +276,7 @@ Bu öneriler, triM'in mevcut crate ayrımına (`trim-core`, `trim-commands`, `tr
 
 ### Kategori C: Uzun Vadeli ve Mimari Genişletmeler (Yüksek Zorluk / Risk)
 
-#### 9. Çoklu Sekans (Multiple Timelines) ve İç İçe Sekans (Nested Sequences)
+#### 9. Çoklu Sekans (Multiple Timelines) ve İç İçe Sekans (Nested Sequences) [✅ TAMAMLANDI]
 * **Ne olduğu:** Tek bir proje içerisinde birden fazla bağımsız zaman çizgisi sekansı açabilme ve bir sekansı diğerinin içine klip gibi yerleştirebilme.
 * **Kullanıcıya Faydası:** Uzun metrajlı veya bölümlü videolarda sahneleri ayrı ayrı kurgulayıp ana sekansta birleştirmeyi sağlar.
 * **Mevcut Koda Nasıl Oturur:**
@@ -287,7 +287,7 @@ Bu öneriler, triM'in mevcut crate ayrımına (`trim-core`, `trim-commands`, `tr
 * **Riskler:** Render pipeline'ının karmaşıklığı katlanarak artar.
 * **Bağımlılık:** Yok.
 
-#### 10. Çoklu Dışa Aktarma Kuyruğu (Render Queue)
+#### 10. Çoklu Dışa Aktarma Kuyruğu (Render Queue) [✅ TAMAMLANDI]
 * **Ne olduğu:** Birden fazla sekansı veya aynı sekanstan farklı formatları (ör. hem 1080p YouTube hem 9:16 Shorts) arka arkaya render edilmek üzere bir kuyruğa ekleme ve sırayla dışa aktarma.
 * **Kullanıcıya Faydası:** Kurgucunun bilgisayar başından ayrıldığı gece saatlerinde toplu çıktı alabilmesini sağlar.
 * **Mevcut Koda Nasıl Oturur:**
