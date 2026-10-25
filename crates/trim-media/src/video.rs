@@ -674,7 +674,8 @@ impl VideoEngine {
         let (canvas_w, canvas_h) =
             calculate_preview_size(project.timeline.width, project.timeline.height);
 
-        let visible_clips = project.timeline.get_visible_video_clips_at(timeline_time);
+        let flattened_tl = project.get_flattened_timeline();
+        let visible_clips = flattened_tl.get_visible_video_clips_at(timeline_time);
         if visible_clips.is_empty() {
             self.streamer.stop();
             self.last_rendered_frame = None;

@@ -79,6 +79,10 @@ pub struct Project {
     pub bins: Vec<MediaBinFolder>,
     #[serde(default)]
     pub timeline: TimelineModel,
+    #[serde(default)]
+    pub sequences: Vec<crate::sequence::Sequence>,
+    #[serde(default)]
+    pub active_sequence_id: Option<String>,
     #[serde(skip)]
     pub file_path: Option<String>,
     #[serde(skip)]
@@ -101,6 +105,8 @@ impl Default for Project {
             media_pool: HashMap::new(),
             bins: Vec::new(),
             timeline: TimelineModel::default(),
+            sequences: Vec::new(),
+            active_sequence_id: None,
             file_path: None,
             is_dirty: false,
         }
@@ -111,7 +117,134 @@ impl Project {
     pub fn new(name: impl Into<String>) -> Self {
         let mut proj = Self::default();
         proj.settings.name = name.into();
+        proj.ensure_sequences();
         proj
+    }
+
+    /// Ensures that project has at least one sequence corresponding to the active timeline.
+    pub fn ensure_sequences(&mut self) {
+        if self.sequences.is_empty() {
+            let id = "seq_main".to_string();
+            let name = if self.settings.name.is_empty() || self.settings.name == "Yeni Proje" {
+                "Sekans 01".to_string()
+            } else {
+                format!("{} Sekans", self.settings.name)
+            };
+            self.sequences.push(crate::sequence::Sequence {
+                id: id.clone(),
+                name,
+                timeline: self.timeline.clone(),
+            });
+            self.active_sequence_id = Some(id);
+        } else if self.active_sequence_id.is_none() {
+            self.active_sequence_id = Some(self.sequences[0].id.clone());
+        }
+    }
+
+    /// Syncs the current in-memory timeline into the active sequence in self.sequences.
+    pub fn sync_active_sequence_to_list(&mut self) {
+        self.ensure_sequences();
+        if let Some(ref act_id) = self.active_sequence_id {
+            if let Some(seq) = self.sequences.iter_mut().find(|s| &s.id == act_id) {
+                seq.timeline = self.timeline.clone();
+            }
+        }
+    }
+
+    /// Creates a new sequence with the given name, clones default settings from current timeline.
+    pub fn create_sequence(&mut self, name: impl Into<String>) -> String {
+        self.sync_active_sequence_to_list();
+        let new_id = format!("seq_{}", uuid::Uuid::new_v4());
+        let mut new_tl = TimelineModel {
+            width: self.timeline.width,
+            height: self.timeline.height,
+            ..Default::default()
+        };
+        new_tl.set_aspect_ratio(self.timeline.aspect_ratio());
+
+        let seq_name = name.into();
+        self.sequences.push(crate::sequence::Sequence {
+            id: new_id.clone(),
+            name: seq_name,
+            timeline: new_tl.clone(),
+        });
+        self.active_sequence_id = Some(new_id.clone());
+        self.timeline = new_tl;
+        self.mark_dirty();
+        new_id
+    }
+
+    /// Switches the active sequence to the specified sequence ID.
+    pub fn switch_sequence(&mut self, sequence_id: &str) -> bool {
+        if self.active_sequence_id.as_deref() == Some(sequence_id) {
+            return true;
+        }
+        self.sync_active_sequence_to_list();
+        if let Some(seq) = self.sequences.iter().find(|s| s.id == sequence_id).cloned() {
+            self.timeline = seq.timeline;
+            self.active_sequence_id = Some(seq.id);
+            self.mark_dirty();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Closes / deletes a sequence by ID. Cannot delete the last remaining sequence.
+    pub fn remove_sequence(&mut self, sequence_id: &str) -> bool {
+        if self.sequences.len() <= 1 {
+            return false;
+        }
+        let was_active = self.active_sequence_id.as_deref() == Some(sequence_id);
+        self.sequences.retain(|s| s.id != sequence_id);
+        if was_active {
+            let next_seq = self.sequences[0].clone();
+            self.timeline = next_seq.timeline;
+            self.active_sequence_id = Some(next_seq.id);
+        }
+        self.mark_dirty();
+        true
+    }
+
+    /// Renames a sequence.
+    pub fn rename_sequence(&mut self, sequence_id: &str, new_name: impl Into<String>) {
+        if let Some(seq) = self.sequences.iter_mut().find(|s| s.id == sequence_id) {
+            seq.name = new_name.into();
+            self.mark_dirty();
+        }
+    }
+
+    /// Duplicates a sequence with a new ID.
+    pub fn duplicate_sequence(&mut self, sequence_id: &str) -> Option<String> {
+        self.sync_active_sequence_to_list();
+        if let Some(seq) = self.sequences.iter().find(|s| s.id == sequence_id).cloned() {
+            let new_id = format!("seq_{}", uuid::Uuid::new_v4());
+            let new_name = format!("{} (Kopya)", seq.name);
+            let new_seq = crate::sequence::Sequence {
+                id: new_id.clone(),
+                name: new_name,
+                timeline: seq.timeline,
+            };
+            self.sequences.push(new_seq);
+            self.mark_dirty();
+            Some(new_id)
+        } else {
+            None
+        }
+    }
+
+    /// Retrieves a sequence's timeline by ID (either from active timeline if active, or from sequences list).
+    pub fn get_sequence_timeline(&self, sequence_id: &str) -> Option<TimelineModel> {
+        if self.active_sequence_id.as_deref() == Some(sequence_id) {
+            Some(self.timeline.clone())
+        } else {
+            self.sequences.iter().find(|s| s.id == sequence_id).map(|s| s.timeline.clone())
+        }
+    }
+
+    /// Flattens the active timeline by replacing nested sequence clips with concrete clips.
+    pub fn get_flattened_timeline(&self) -> TimelineModel {
+        crate::sequence::flatten_timeline_sequences(&self.timeline, &self.sequences, 4)
     }
 
     pub fn mark_dirty(&mut self) {

@@ -483,6 +483,8 @@ pub struct Clip {
     pub crop_top: f32,
     #[serde(default)]
     pub crop_bottom: f32,
+    #[serde(default)]
+    pub nested_sequence_id: Option<String>,
 }
 
 fn default_speed() -> f64 {
@@ -533,11 +535,25 @@ impl Default for Clip {
             crop_right: 0.0,
             crop_top: 0.0,
             crop_bottom: 0.0,
+            nested_sequence_id: None,
         }
     }
 }
 
 impl Clip {
+    pub fn is_nested_sequence(&self) -> bool {
+        self.nested_sequence_id.is_some()
+    }
+
+    pub fn new_nested_sequence(sequence_id: impl Into<String>, name: impl Into<String>, in_pt: f64, out_pt: f64) -> Self {
+        let seq_id = sequence_id.into();
+        let mut cl = Self::new(format!("seq:{}", seq_id), in_pt, out_pt);
+        cl.name = name.into();
+        cl.nested_sequence_id = Some(seq_id);
+        cl.color_label = ColorLabel::Purple;
+        cl
+    }
+
     pub fn has_crop(&self) -> bool {
         self.crop_left > 0.0
             || self.crop_right > 0.0

@@ -26,7 +26,7 @@ pub enum MediaFilterType {
 
 pub enum MediaBinAction {
     ImportRequested,
-    AddToTimeline(String),       // media_id
+    AddToTimeline(String),       // media_id or sequence_id
     OpenInSourceMonitor(String), // media_id
     GenerateProxy(String),       // media_id
     DeleteMedia(String),         // media_id
@@ -38,6 +38,10 @@ pub enum MediaBinAction {
         media_id: String,
         bin_id: Option<String>,
     },
+    OpenSequence(String), // sequence_id
+    CreateSequencePrompt,
+    DuplicateSequence(String), // sequence_id
+    DeleteSequence(String),    // sequence_id
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -147,6 +151,21 @@ pub fn render_media_bin(
             .clicked()
         {
             action = Some(MediaBinAction::CreateBinPrompt);
+        }
+
+        let new_seq_btn = Button::new(
+            RichText::new("🎞️+ Sekans")
+                .size(10.5)
+                .color(Color32::from_rgb(0xa7, 0x8b, 0xfa)),
+        )
+        .fill(Color32::from_rgb(0x22, 0x20, 0x30))
+        .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x3e, 0x38, 0x54)));
+        if ui
+            .add_sized([76.0, 19.0], new_seq_btn)
+            .on_hover_text("Yeni Sekans (Timeline) Oluştur")
+            .clicked()
+        {
+            action = Some(MediaBinAction::CreateSequencePrompt);
         }
 
         ui.add_space(2.0);
@@ -313,6 +332,24 @@ pub fn render_media_bin(
         Vec::new()
     };
 
+    let matching_sequences: Vec<&trim_core::sequence::Sequence> = if current_bin_id.is_none()
+        && (*filter_type == MediaFilterType::All || *filter_type == MediaFilterType::Video)
+    {
+        project
+            .sequences
+            .iter()
+            .filter(|s| {
+                if query_lower.is_empty() {
+                    true
+                } else {
+                    s.name.to_lowercase().contains(&query_lower)
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     let filtered_items: Vec<(&String, &trim_core::media::MediaItem)> = project
         .media_pool
         .iter()
@@ -346,7 +383,7 @@ pub fn render_media_bin(
         })
         .collect();
 
-    if matching_bins.is_empty() && filtered_items.is_empty() {
+    if matching_bins.is_empty() && matching_sequences.is_empty() && filtered_items.is_empty() {
         ui.vertical_centered(|ui| {
             ui.add_space(24.0);
             if current_bin_id.is_some() {
@@ -554,8 +591,148 @@ pub fn render_media_bin(
                     });
                 }
 
+                // --- 7A.2. Sequence Cards (Grid) ---
+                for seq in &matching_sequences {
+                    let is_active = project.active_sequence_id.as_deref() == Some(&seq.id);
+                    let (card_rect, card_resp) =
+                        ui.allocate_exact_size(Vec2::new(card_w, card_h), Sense::click_and_drag());
+                    let painter = ui.painter_at(card_rect);
+
+                    let bg = if is_active {
+                        Color32::from_rgb(0x28, 0x24, 0x3c)
+                    } else if card_resp.hovered() {
+                        Color32::from_rgb(0x22, 0x1e, 0x30)
+                    } else {
+                        Color32::from_rgb(0x18, 0x16, 0x22)
+                    };
+                    painter.rect_filled(card_rect, 3.0, bg);
+                    painter.rect_stroke(
+                        card_rect,
+                        3.0,
+                        Stroke::new(
+                            1.0_f32,
+                            if is_active {
+                                Color32::from_rgb(0x8b, 0x5c, 0xf6)
+                            } else if card_resp.hovered() {
+                                Color32::from_rgb(0xa7, 0x8b, 0xfa)
+                            } else {
+                                Color32::from_rgb(0x38, 0x30, 0x48)
+                            },
+                        ),
+                    );
+
+                    // Top thumbnail area
+                    let thumb_h = card_w * 0.5625;
+                    let thumb_rect = Rect::from_min_size(card_rect.min, Vec2::new(card_w, thumb_h));
+                    painter.rect_filled(thumb_rect, 2.0, Color32::from_rgb(0x12, 0x10, 0x18));
+
+                    // Sequence symbol 🎞️
+                    painter.text(
+                        thumb_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "🎞️",
+                        egui::FontId::proportional(28.0),
+                        Color32::from_rgb(0xa7, 0x8b, 0xfa),
+                    );
+
+                    // Duration badge in lower-right
+                    let dur_sec = seq.timeline.duration();
+                    let dur_str = if dur_sec >= 3600.0 {
+                        format!(
+                            "{:02}:{:02}:{:02}",
+                            (dur_sec / 3600.0) as u32,
+                            ((dur_sec % 3600.0) / 60.0) as u32,
+                            (dur_sec % 60.0) as u32
+                        )
+                    } else {
+                        format!(
+                            "{:02}:{:02}",
+                            (dur_sec / 60.0) as u32,
+                            (dur_sec % 60.0) as u32
+                        )
+                    };
+                    let dur_badge_rect = Rect::from_min_max(
+                        Pos2::new(thumb_rect.right() - 44.0, thumb_rect.bottom() - 14.0),
+                        Pos2::new(thumb_rect.right() - 2.0, thumb_rect.bottom() - 2.0),
+                    );
+                    painter.rect_filled(
+                        dur_badge_rect,
+                        2.0,
+                        Color32::from_rgba_premultiplied(0, 0, 0, 200),
+                    );
+                    painter.text(
+                        dur_badge_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        dur_str,
+                        egui::FontId::monospace(8.5),
+                        Color32::from_rgb(0xa7, 0x8b, 0xfa),
+                    );
+
+                    // Sequence name
+                    let text_y = thumb_rect.bottom() + 3.0;
+                    let mut display_name = seq.name.clone();
+                    if display_name.len() > 16 {
+                        display_name.truncate(14);
+                        display_name.push('…');
+                    }
+                    painter.text(
+                        Pos2::new(card_rect.left() + 4.0, text_y),
+                        egui::Align2::LEFT_TOP,
+                        display_name,
+                        egui::FontId::proportional(11.0),
+                        Color32::from_rgb(0xf3, 0xf0, 0xff),
+                    );
+
+                    // Specs below name
+                    painter.text(
+                        Pos2::new(card_rect.left() + 4.0, card_rect.bottom() - 3.0),
+                        egui::Align2::LEFT_BOTTOM,
+                        format!("{} kanal", seq.timeline.tracks.len()),
+                        egui::FontId::monospace(8.5),
+                        Color32::from_rgb(0x9d, 0x94, 0xb8),
+                    );
+
+                    // Interactions
+                    if card_resp.clicked() {
+                        *selected_media_id = Some(format!("seq:{}", seq.id));
+                    }
+                    if card_resp.double_clicked() {
+                        action = Some(MediaBinAction::OpenSequence(seq.id.clone()));
+                    }
+                    if card_resp.dragged() {
+                        card_resp.dnd_set_drag_payload(format!("seq:{}", seq.id));
+                    }
+
+                    // Context menu
+                    card_resp.context_menu(|ui| {
+                        ui.set_min_width(220.0);
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                        ui.spacing_mut().button_padding = Vec2::new(8.0, 4.0);
+
+                        if ui.button("Zaman Çizgisinde Aç (Çift Tık)").clicked() {
+                            action = Some(MediaBinAction::OpenSequence(seq.id.clone()));
+                            ui.close_menu();
+                        }
+                        if ui.button("Zaman Çizgisine İç İçe Ekle (Nest)").clicked() {
+                            action = Some(MediaBinAction::AddToTimeline(format!("seq:{}", seq.id)));
+                            ui.close_menu();
+                        }
+                        if ui.button("📋 Sekansı Çoğalt (Duplicate)").clicked() {
+                            action = Some(MediaBinAction::DuplicateSequence(seq.id.clone()));
+                            ui.close_menu();
+                        }
+                        if project.sequences.len() > 1 {
+                            ui.separator();
+                            if ui.button("🗑️ Sekansı Sil").clicked() {
+                                action = Some(MediaBinAction::DeleteSequence(seq.id.clone()));
+                                ui.close_menu();
+                            }
+                        }
+                    });
+                }
+
                 // --- 7B. Media Cards (Grid) ---
-                for (m_id, item) in filtered_items {
+                for &(m_id, item) in &filtered_items {
                     let is_selected = selected_media_id.as_deref() == Some(m_id.as_str());
                     let (card_rect, card_resp) =
                         ui.allocate_exact_size(Vec2::new(card_w, card_h), Sense::click_and_drag());
@@ -602,6 +779,7 @@ pub fn render_media_bin(
                             MediaType::Video => "VİDEO",
                             MediaType::Audio => "SES",
                             MediaType::Image => "RESİM",
+                            MediaType::Sequence => "SEKANS",
                             MediaType::Unknown => "DOSYA",
                         };
                         painter.text(
@@ -618,6 +796,7 @@ pub fn render_media_bin(
                         MediaType::Video => ("VID", Color32::from_rgb(0x28, 0x5a, 0x9e)),
                         MediaType::Audio => ("SES", Color32::from_rgb(0x28, 0x80, 0x50)),
                         MediaType::Image => ("IMG", Color32::from_rgb(0x9e, 0x5a, 0x28)),
+                        MediaType::Sequence => ("SEK", Color32::from_rgb(0x7c, 0x3a, 0xed)),
                         MediaType::Unknown => ("DOS", Color32::from_rgb(0x40, 0x40, 0x48)),
                     };
                     let badge_rect = Rect::from_min_size(
@@ -845,8 +1024,106 @@ pub fn render_media_bin(
                 });
             }
 
+            // --- 7A.2. Sequence Rows (List) ---
+            for seq in &matching_sequences {
+                let is_active = project.active_sequence_id.as_deref() == Some(&seq.id);
+                let row_height = 36.0;
+                let (rect, resp) = ui.allocate_exact_size(
+                    Vec2::new(ui.available_width(), row_height),
+                    Sense::click_and_drag(),
+                );
+                let painter = ui.painter_at(rect);
+
+                let bg = if is_active {
+                    Color32::from_rgb(0x28, 0x24, 0x3c)
+                } else if resp.hovered() {
+                    Color32::from_rgb(0x22, 0x1e, 0x30)
+                } else {
+                    Color32::TRANSPARENT
+                };
+                painter.rect_filled(rect, 2.0, bg);
+
+                // Icon
+                painter.text(
+                    egui::pos2(rect.left() + 18.0, rect.center().y),
+                    egui::Align2::CENTER_CENTER,
+                    "🎞️",
+                    egui::FontId::proportional(14.0),
+                    Color32::from_rgb(0xa7, 0x8b, 0xfa),
+                );
+
+                // Name
+                painter.text(
+                    egui::pos2(rect.left() + 36.0, rect.top() + 6.0),
+                    egui::Align2::LEFT_TOP,
+                    &seq.name,
+                    egui::FontId::proportional(11.5),
+                    Color32::from_rgb(0xf3, 0xf0, 0xff),
+                );
+
+                // Subtext / specs
+                let dur_sec = seq.timeline.duration();
+                let dur_str = if dur_sec >= 3600.0 {
+                    format!(
+                        "{:02}:{:02}:{:02}",
+                        (dur_sec / 3600.0) as u32,
+                        ((dur_sec % 3600.0) / 60.0) as u32,
+                        (dur_sec % 60.0) as u32
+                    )
+                } else {
+                    format!(
+                        "{:02}:{:02}",
+                        (dur_sec / 60.0) as u32,
+                        (dur_sec % 60.0) as u32
+                    )
+                };
+                painter.text(
+                    egui::pos2(rect.left() + 36.0, rect.bottom() - 5.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    format!("Sekans  •  {}  •  {} kanal", dur_str, seq.timeline.tracks.len()),
+                    egui::FontId::monospace(9.5),
+                    Color32::from_rgb(0x9d, 0x94, 0xb8),
+                );
+
+                if resp.clicked() {
+                    *selected_media_id = Some(format!("seq:{}", seq.id));
+                }
+                if resp.double_clicked() {
+                    action = Some(MediaBinAction::OpenSequence(seq.id.clone()));
+                }
+                if resp.dragged() {
+                    resp.dnd_set_drag_payload(format!("seq:{}", seq.id));
+                }
+
+                resp.context_menu(|ui| {
+                    ui.set_min_width(220.0);
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                    ui.spacing_mut().button_padding = Vec2::new(8.0, 4.0);
+
+                    if ui.button("Zaman Çizgisinde Aç (Çift Tık)").clicked() {
+                        action = Some(MediaBinAction::OpenSequence(seq.id.clone()));
+                        ui.close_menu();
+                    }
+                    if ui.button("Zaman Çizgisine İç İçe Ekle (Nest)").clicked() {
+                        action = Some(MediaBinAction::AddToTimeline(format!("seq:{}", seq.id)));
+                        ui.close_menu();
+                    }
+                    if ui.button("📋 Sekansı Çoğalt (Duplicate)").clicked() {
+                        action = Some(MediaBinAction::DuplicateSequence(seq.id.clone()));
+                        ui.close_menu();
+                    }
+                    if project.sequences.len() > 1 {
+                        ui.separator();
+                        if ui.button("🗑️ Sekansı Sil").clicked() {
+                            action = Some(MediaBinAction::DeleteSequence(seq.id.clone()));
+                            ui.close_menu();
+                        }
+                    }
+                });
+            }
+
             // --- 7B. Media Rows (List) ---
-            for (m_id, item) in filtered_items {
+            for &(m_id, item) in &filtered_items {
                 let is_selected = selected_media_id.as_deref() == Some(m_id.as_str());
                 let item_height = 36.0;
                 let (rect, resp) = ui.allocate_exact_size(
@@ -877,6 +1154,7 @@ pub fn render_media_bin(
                     MediaType::Video => ("VID", Color32::from_rgb(0x28, 0x5a, 0x9e)),
                     MediaType::Audio => ("SES", Color32::from_rgb(0x28, 0x80, 0x50)),
                     MediaType::Image => ("IMG", Color32::from_rgb(0x9e, 0x5a, 0x28)),
+                    MediaType::Sequence => ("SEK", Color32::from_rgb(0x7c, 0x3a, 0xed)),
                     MediaType::Unknown => ("DOS", Color32::from_rgb(0x40, 0x40, 0x48)),
                 };
                 let pill_rect = Rect::from_center_size(

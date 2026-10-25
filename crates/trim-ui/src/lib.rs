@@ -1326,6 +1326,92 @@ mod tests {
         let d_act = RenderQueueDialogAction::NewExportJob;
         assert_eq!(d_act, RenderQueueDialogAction::NewExportJob);
     }
+
+    #[test]
+    fn test_multi_sequence_and_nested_sequences_lifecycle() {
+        use crate::canvas::CanvasAction;
+        use trim_core::clip::{Clip, ColorLabel};
+        use trim_core::media::MediaItem;
+
+        let mut app = TrimApp::default();
+        app.project.ensure_sequences();
+        assert_eq!(app.project.sequences.len(), 1);
+        let seq1_id = app.project.active_sequence_id.clone().unwrap();
+
+        // 1. Add a media clip to Sequence 1
+        let media = MediaItem {
+            id: "test_m1".into(),
+            file_path: "/tmp/fake1.mp4".into(),
+            name: "Klip 01".into(),
+            duration: 10.0,
+            width: 1920,
+            height: 1080,
+            fps: 30.0,
+            audio_channels: 2,
+            ..Default::default()
+        };
+        app.project.add_media(media);
+        let tr_v1 = app.project.timeline.get_video_tracks()[0].id.clone();
+        let clip1 = Clip::new("test_m1", 0.0, 10.0);
+        let cmd = Box::new(trim_commands::AddClipCommand::new(tr_v1, clip1));
+        app.undo_stack.push(cmd, &mut app.project.timeline).unwrap();
+
+        // 2. Create Sequence 2
+        let seq2_id = app.project.create_sequence("Sekans 02");
+        assert_eq!(app.project.sequences.len(), 2);
+        assert_eq!(app.project.active_sequence_id.as_deref(), Some(seq2_id.as_str()));
+        assert_eq!(app.project.timeline.duration(), 0.0);
+
+        // 3. Drop Sequence 1 onto Sequence 2 as a nested sequence
+        let tr2_v1 = app.project.timeline.get_video_tracks()[0].id.clone();
+        let drop_action = CanvasAction::MediaDropped {
+            media_id: format!("seq:{}", seq1_id),
+            track_id: tr2_v1,
+            time: 2.0,
+        };
+
+        if let CanvasAction::MediaDropped { media_id, track_id, time } = drop_action {
+            let seq_id_opt = media_id.strip_prefix("seq:").map(|s| s.to_string());
+            if let Some(s_id) = seq_id_opt {
+                let seq = app.project.sequences.iter().find(|s| s.id == s_id).unwrap().clone();
+                let dur = seq.timeline.duration().max(0.1);
+                let nested_clip = Clip::new_nested_sequence(&seq.id, &seq.name, time, time + dur);
+                assert!(nested_clip.is_nested_sequence());
+                assert_eq!(nested_clip.color_label, ColorLabel::Purple);
+                let cmd = Box::new(trim_commands::AddClipCommand::new(track_id, nested_clip));
+                app.undo_stack.push(cmd, &mut app.project.timeline).unwrap();
+            }
+        }
+
+        assert_eq!(app.project.timeline.duration(), 12.0); // 2.0 + 10.0
+        let nested = &app.project.timeline.get_video_tracks()[0].clips[0];
+        assert!(nested.is_nested_sequence());
+        assert_eq!(nested.nested_sequence_id.as_deref(), Some(seq1_id.as_str()));
+
+        // 4. Test Recursive Flattening
+        let flattened = app.project.get_flattened_timeline();
+        let flattened_v_clips = &flattened.get_video_tracks()[0].clips;
+        assert_eq!(flattened_v_clips.len(), 1);
+        assert_eq!(flattened_v_clips[0].media_id, "test_m1");
+        assert_eq!(flattened_v_clips[0].timeline_in, 2.0);
+        assert_eq!(flattened_v_clips[0].timeline_out, 12.0);
+
+        // 5. Switch back to Sequence 1
+        app.project.switch_sequence(&seq1_id);
+        assert_eq!(app.project.active_sequence_id.as_deref(), Some(seq1_id.as_str()));
+        assert_eq!(app.project.timeline.duration(), 10.0);
+
+        // 6. Duplicate Sequence 1
+        let orig_name = app.project.sequences.iter().find(|s| s.id == seq1_id).unwrap().name.clone();
+        let dup_id = app.project.duplicate_sequence(&seq1_id).unwrap();
+        assert_eq!(app.project.sequences.len(), 3);
+        let dup_seq = app.project.sequences.iter().find(|s| s.id == dup_id).unwrap();
+        assert_eq!(dup_seq.name, format!("{} (Kopya)", orig_name));
+
+        // 7. Remove Duplicated Sequence
+        assert!(app.project.remove_sequence(&dup_id));
+        assert_eq!(app.project.sequences.len(), 2);
+    }
 }
 
 

@@ -114,10 +114,11 @@ impl AudioMixer {
             return;
         }
 
-        let has_solo = project.timeline.tracks.iter().any(|t| t.solo);
+        let flattened_tl = project.get_flattened_timeline();
+        let has_solo = flattened_tl.tracks.iter().any(|t| t.solo);
         let inv_i16 = 1.0_f32 / 32768.0_f32;
 
-        for track in &project.timeline.tracks {
+        for track in &flattened_tl.tracks {
             if track.track_type != trim_core::track::TrackType::Audio {
                 continue;
             }

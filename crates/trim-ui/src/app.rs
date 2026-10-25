@@ -1505,17 +1505,104 @@ impl eframe::App for TrimApp {
             .show(ctx, |ui| {
                 // Sequence Timeline Header Bar
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
+                    ui.spacing_mut().item_spacing.x = 4.0;
 
-                    let seq_tab_btn = Button::new(
-                        RichText::new("Sekans 01")
-                            .size(12.0)
-                            .strong()
-                            .color(Color32::WHITE),
+                    self.project.ensure_sequences();
+
+                    let mut seq_to_switch = None;
+                    let mut seq_to_create = false;
+                    let mut seq_to_remove = None;
+                    let mut seq_to_duplicate = None;
+
+                    for seq in &self.project.sequences {
+                        let is_active = self.project.active_sequence_id.as_deref() == Some(&seq.id);
+
+                        let fill_col = if is_active {
+                            Color32::from_rgb(0x28, 0x2c, 0x3c)
+                        } else {
+                            Color32::from_rgb(0x18, 0x1a, 0x22)
+                        };
+
+                        let border_stroke = if is_active {
+                            Stroke::new(1.5_f32, Color32::from_rgb(0x38, 0x7a, 0xe0))
+                        } else {
+                            Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x2c, 0x38))
+                        };
+
+                        let text_col = if is_active {
+                            Color32::WHITE
+                        } else {
+                            Color32::from_rgb(0x9a, 0xa2, 0xb8)
+                        };
+
+                        let tab_btn = Button::new(
+                            RichText::new(&seq.name)
+                                .size(11.5)
+                                .strong()
+                                .color(text_col),
+                        )
+                        .fill(fill_col)
+                        .stroke(border_stroke);
+
+                        let resp = ui.add(tab_btn);
+                        if resp.clicked() && !is_active {
+                            seq_to_switch = Some(seq.id.clone());
+                        }
+
+                        resp.context_menu(|ui| {
+                            if ui.button("📋 Sekansı Çoğalt (Duplicate)").clicked() {
+                                seq_to_duplicate = Some(seq.id.clone());
+                                ui.close_menu();
+                            }
+                            if self.project.sequences.len() > 1 && ui.button("✖ Bu Sekansı Kapat").clicked() {
+                                seq_to_remove = Some(seq.id.clone());
+                                ui.close_menu();
+                            }
+                        });
+                    }
+
+                    // Button to add new sequence
+                    let add_seq_btn = Button::new(
+                        RichText::new("➕")
+                            .size(11.0)
+                            .color(Color32::from_rgb(0xa0, 0xa8, 0xc0)),
                     )
-                    .fill(Color32::from_rgb(0x24, 0x24, 0x2e))
-                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x38, 0x7a, 0xe0)));
-                    let _ = ui.add(seq_tab_btn);
+                    .fill(Color32::from_rgb(0x18, 0x1a, 0x22))
+                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x2c, 0x38)));
+
+                    if ui.add(add_seq_btn).on_hover_text("Yeni Sekans Oluştur").clicked() {
+                        seq_to_create = true;
+                    }
+
+                    if let Some(target_id) = seq_to_switch {
+                        self.project.switch_sequence(&target_id);
+                        self.video_engine.clear_cache();
+                        self.audio_mixer.clear_cache();
+                        self.canvas_state.selected_clip_pairs.clear();
+                        self.current_time = 0.0;
+                    }
+
+                    if seq_to_create {
+                        let next_num = self.project.sequences.len() + 1;
+                        let new_name = format!("Sekans {:02}", next_num);
+                        self.project.create_sequence(new_name);
+                        self.video_engine.clear_cache();
+                        self.audio_mixer.clear_cache();
+                        self.canvas_state.selected_clip_pairs.clear();
+                        self.current_time = 0.0;
+                    }
+
+                    if let Some(rem_id) = seq_to_remove {
+                        self.project.remove_sequence(&rem_id);
+                        self.video_engine.clear_cache();
+                        self.audio_mixer.clear_cache();
+                        self.canvas_state.selected_clip_pairs.clear();
+                        self.current_time = 0.0;
+                    }
+
+                    if let Some(dup_id) = seq_to_duplicate {
+                        self.project.duplicate_sequence(&dup_id);
+                    }
 
                     ui.add_space(8.0);
                     let current_tc =
@@ -2251,7 +2338,55 @@ impl eframe::App for TrimApp {
                                             track_id,
                                             time,
                                         } => {
-                                            if let Some(media) = self.project.get_media(&media_id) {
+                                            let seq_id_opt = if let Some(stripped) = media_id.strip_prefix("seq:") {
+                                                Some(stripped.to_string())
+                                            } else if self.project.sequences.iter().any(|s| s.id == media_id) {
+                                                Some(media_id.clone())
+                                            } else {
+                                                None
+                                            };
+
+                                            if let Some(seq_id) = seq_id_opt {
+                                                if self.project.active_sequence_id.as_deref() == Some(&seq_id) {
+                                                    self.status_message = "Bir sekans kendi içine yerleştirilemez (Nested Loop Engellendi)".to_string();
+                                                } else if let Some(seq) = self.project.sequences.iter().find(|s| s.id == seq_id).cloned() {
+                                                    let is_video_track = self
+                                                        .project
+                                                        .timeline
+                                                        .get_track_by_id(&track_id)
+                                                        .map(|t| t.track_type == TrackType::Video)
+                                                        .unwrap_or(false);
+
+                                                    let dur = seq.timeline.duration().max(0.1);
+                                                    let has_audio = seq.timeline.get_audio_tracks().iter().any(|t| !t.clips.is_empty());
+
+                                                    let link_group = if has_audio && is_video_track {
+                                                        Some(uuid::Uuid::new_v4().to_string())
+                                                    } else {
+                                                        None
+                                                    };
+
+                                                    let mut clip = Clip::new_nested_sequence(&seq.id, &seq.name, time, time + dur);
+                                                    clip.linked_group_id = link_group.clone();
+                                                    let cmd = Box::new(AddClipCommand::new(track_id.clone(), clip));
+
+                                                    if let Some(gid) = link_group {
+                                                        let audio_track_id = self
+                                                            .project
+                                                            .timeline
+                                                            .find_or_create_corresponding_audio_track(&track_id);
+                                                        let mut audio_clip = Clip::new_nested_sequence(&seq.id, format!("{} (Ses)", seq.name), time, time + dur);
+                                                        audio_clip.linked_group_id = Some(gid);
+                                                        let cmd_a = Box::new(AddClipCommand::new(audio_track_id, audio_clip));
+                                                        let macro_cmd = Box::new(MacroCommand::new("İç İçe Sekans ve Ses Ekle", vec![cmd, cmd_a]));
+                                                        let _ = self.undo_stack.push(macro_cmd, &mut self.project.timeline);
+                                                    } else {
+                                                        let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                                    }
+                                                    self.status_message = format!("İç içe sekans eklendi: {}", seq.name);
+                                                    self.project.mark_dirty();
+                                                }
+                                            } else if let Some(media) = self.project.get_media(&media_id) {
                                                 let clip_dur =
                                                     if media.media_type == MediaType::Image {
                                                         5.0
@@ -2371,6 +2506,14 @@ impl eframe::App for TrimApp {
                                         }
                                         CanvasAction::ToggleLinkSelected => {
                                             self.toggle_link_selected_clips();
+                                        }
+                                        CanvasAction::OpenSequence(seq_id) => {
+                                            self.project.switch_sequence(&seq_id);
+                                            self.video_engine.clear_cache();
+                                            self.audio_mixer.clear_cache();
+                                            self.canvas_state.selected_clip_pairs.clear();
+                                            self.current_time = 0.0;
+                                            self.status_message = "Sekans açıldı".to_string();
                                         }
                                     }
                                 }
@@ -2501,7 +2644,65 @@ impl eframe::App for TrimApp {
                                         "Klip Kaynak Monitöründe Açıldı".to_string();
                                 }
                                 MediaBinAction::AddToTimeline(m_id) => {
-                                    let media_info = self.project.get_media(&m_id).map(|media| {
+                                    let seq_id_opt = if let Some(stripped) = m_id.strip_prefix("seq:") {
+                                        Some(stripped.to_string())
+                                    } else if self.project.sequences.iter().any(|s| s.id == m_id) {
+                                        Some(m_id.clone())
+                                    } else {
+                                        None
+                                    };
+
+                                    if let Some(seq_id) = seq_id_opt {
+                                        if self.project.active_sequence_id.as_deref() == Some(&seq_id) {
+                                            self.status_message = "Bir sekans kendi içine yerleştirilemez (Nested Loop Engellendi)".to_string();
+                                        } else if let Some(seq) = self.project.sequences.iter().find(|s| s.id == seq_id).cloned() {
+                                            let target_video_track = if self
+                                                .project
+                                                .timeline
+                                                .get_track_by_id(&self.target_video_track)
+                                                .is_some()
+                                            {
+                                                Some(self.target_video_track.clone())
+                                            } else {
+                                                self.project
+                                                    .timeline
+                                                    .get_video_tracks()
+                                                    .first()
+                                                    .map(|t| t.id.clone())
+                                            };
+
+                                            if let Some(track_id) = target_video_track {
+                                                let dur = seq.timeline.duration().max(0.1);
+                                                let has_audio = seq.timeline.get_audio_tracks().iter().any(|t| !t.clips.is_empty());
+                                                let link_group = if has_audio {
+                                                    Some(uuid::Uuid::new_v4().to_string())
+                                                } else {
+                                                    None
+                                                };
+
+                                                let mut clip = Clip::new_nested_sequence(&seq.id, &seq.name, self.current_time, self.current_time + dur);
+                                                clip.linked_group_id = link_group.clone();
+                                                let cmd = Box::new(AddClipCommand::new(track_id.clone(), clip));
+
+                                                if let Some(gid) = link_group {
+                                                    let audio_track_id = self
+                                                        .project
+                                                        .timeline
+                                                        .find_or_create_corresponding_audio_track(&track_id);
+                                                    let mut audio_clip = Clip::new_nested_sequence(&seq.id, format!("{} (Ses)", seq.name), self.current_time, self.current_time + dur);
+                                                    audio_clip.linked_group_id = Some(gid);
+                                                    let cmd_a = Box::new(AddClipCommand::new(audio_track_id, audio_clip));
+                                                    let macro_cmd = Box::new(MacroCommand::new("İç İçe Sekans ve Ses Ekle", vec![cmd, cmd_a]));
+                                                    let _ = self.undo_stack.push(macro_cmd, &mut self.project.timeline);
+                                                } else {
+                                                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                                }
+                                                self.status_message = format!("İç içe sekans eklendi: {}", seq.name);
+                                                self.project.mark_dirty();
+                                            }
+                                        }
+                                    } else {
+                                        let media_info = self.project.get_media(&m_id).map(|media| {
                                         let clip_dur = if media.media_type == MediaType::Image {
                                             5.0
                                         } else {
@@ -2649,7 +2850,8 @@ impl eframe::App for TrimApp {
                                         }
                                     }
                                 }
-                                MediaBinAction::DeleteMedia(m_id) => {
+                            }
+                            MediaBinAction::DeleteMedia(m_id) => {
                                     let is_used = self
                                         .project
                                         .timeline
@@ -2714,6 +2916,38 @@ impl eframe::App for TrimApp {
                                             .unwrap_or("Ana Havuz");
                                         self.status_message =
                                             format!("Medya '{}' klasörüne taşındı", target_name);
+                                    }
+                                }
+                                MediaBinAction::OpenSequence(seq_id) => {
+                                    self.project.switch_sequence(&seq_id);
+                                    self.video_engine.clear_cache();
+                                    self.audio_mixer.clear_cache();
+                                    self.canvas_state.selected_clip_pairs.clear();
+                                    self.current_time = 0.0;
+                                    self.status_message = "Sekans açıldı".to_string();
+                                }
+                                MediaBinAction::CreateSequencePrompt => {
+                                    let next_num = self.project.sequences.len() + 1;
+                                    let new_name = format!("Sekans {:02}", next_num);
+                                    self.project.create_sequence(new_name);
+                                    self.video_engine.clear_cache();
+                                    self.audio_mixer.clear_cache();
+                                    self.canvas_state.selected_clip_pairs.clear();
+                                    self.current_time = 0.0;
+                                    self.status_message = "Yeni sekans oluşturuldu".to_string();
+                                }
+                                MediaBinAction::DuplicateSequence(seq_id) => {
+                                    if self.project.duplicate_sequence(&seq_id).is_some() {
+                                        self.status_message = "Sekans çoğaltıldı".to_string();
+                                    }
+                                }
+                                MediaBinAction::DeleteSequence(seq_id) => {
+                                    if self.project.remove_sequence(&seq_id) {
+                                        self.video_engine.clear_cache();
+                                        self.audio_mixer.clear_cache();
+                                        self.canvas_state.selected_clip_pairs.clear();
+                                        self.current_time = 0.0;
+                                        self.status_message = "Sekans silindi".to_string();
                                     }
                                 }
                             }

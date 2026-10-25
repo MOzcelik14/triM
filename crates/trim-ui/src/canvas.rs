@@ -221,6 +221,7 @@ pub enum CanvasAction {
         new_volume: f64,
     },
     ToggleLinkSelected,
+    OpenSequence(String),
 }
 
 pub fn render_timeline_canvas(
@@ -847,7 +848,9 @@ pub fn render_timeline_canvas(
                 (None, Some(_)) => " -⧗",
                 (None, None) => "",
             };
-            let title_prefix = if clip.text_overlay.is_some() {
+            let title_prefix = if clip.is_nested_sequence() {
+                "🎞️ "
+            } else if clip.text_overlay.is_some() {
                 "🅃 "
             } else {
                 ""
@@ -1435,6 +1438,13 @@ pub fn render_timeline_canvas(
                         state.drag_orig_vol = cl.volume;
                         state.drag_orig_keyframes = cl.keyframes.get("volume").cloned().unwrap_or_default();
                         state.drag_kf_index = None;
+
+                        if ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary)) {
+                            if let Some(ref seq_id) = cl.nested_sequence_id {
+                                action = Some(CanvasAction::OpenSequence(seq_id.clone()));
+                                state.drag_mode = DragMode::None;
+                            }
+                        }
 
                         if mode == DragMode::VolumeRubberband {
                             let dur = cl.duration().max(0.04);

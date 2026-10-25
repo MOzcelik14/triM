@@ -654,7 +654,8 @@ impl TimelineExporter {
         output_path: &str,
         range: Option<(f64, f64)>,
     ) -> Result<(Vec<String>, f64), String> {
-        let timeline = &project.timeline;
+        let flattened_tl = project.get_flattened_timeline();
+        let timeline = &flattened_tl;
         let video_tracks = timeline.get_video_tracks();
         if video_tracks.is_empty() {
             return Err("Projede video kanalı bulunamadı".to_string());

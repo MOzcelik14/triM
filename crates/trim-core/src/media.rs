@@ -11,6 +11,7 @@ pub enum MediaType {
     Video,
     Audio,
     Image,
+    Sequence,
     #[default]
     Unknown,
 }
@@ -21,6 +22,7 @@ impl std::fmt::Display for MediaType {
             Self::Video => write!(f, "video"),
             Self::Audio => write!(f, "audio"),
             Self::Image => write!(f, "image"),
+            Self::Sequence => write!(f, "sequence"),
             Self::Unknown => write!(f, "unknown"),
         }
     }
