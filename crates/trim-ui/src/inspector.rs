@@ -41,6 +41,12 @@ pub enum InspectorAction {
         old_preset: AudioEqPreset,
         new_preset: AudioEqPreset,
     },
+    SetCrop {
+        track_id: String,
+        clip_id: String,
+        old_crop: (f32, f32, f32, f32),
+        new_crop: (f32, f32, f32, f32),
+    },
 }
 
 const CARD_BG: Color32 = Color32::from_rgb(0x13, 0x15, 0x1c);
@@ -152,6 +158,10 @@ pub fn render_inspector_panel(
             } else {
                 // 2. Video Dönüşümü & Anahtar Kareler
                 render_transform_card(ui, &track_id, clip, clip_time, &mut action);
+                ui.add_space(6.0);
+
+                // 2b. Video Kırpma (Crop)
+                render_crop_card(ui, &track_id, clip, &mut action);
                 ui.add_space(6.0);
 
                 // 3. Renk, LUT & Chroma Key
@@ -853,6 +863,243 @@ fn render_transform_card(
                             }
                         }
                     });
+            });
+        },
+    );
+}
+
+fn render_crop_card(
+    ui: &mut Ui,
+    track_id: &str,
+    clip: &mut Clip,
+    action: &mut Option<InspectorAction>,
+) {
+    let crop_id = ui.make_persistent_id(format!("crop_drag_{}", clip.id));
+    let mut orig_crop: Option<(f32, f32, f32, f32)> = ui.data_mut(|d| d.get_temp(crop_id));
+
+    let record_start = |ui: &mut Ui, orig: &mut Option<(f32, f32, f32, f32)>, clip: &Clip| {
+        if orig.is_none() {
+            let snap = (clip.crop_left, clip.crop_right, clip.crop_top, clip.crop_bottom);
+            *orig = Some(snap);
+            ui.data_mut(|d| d.insert_temp(crop_id, snap));
+        }
+    };
+
+    let check_stop = |ui: &mut Ui,
+                      orig: &mut Option<(f32, f32, f32, f32)>,
+                      clip: &Clip,
+                      action: &mut Option<InspectorAction>| {
+        if let Some(old) = *orig {
+            let new = (clip.crop_left, clip.crop_right, clip.crop_top, clip.crop_bottom);
+            if (old.0 - new.0).abs() > 1e-4
+                || (old.1 - new.1).abs() > 1e-4
+                || (old.2 - new.2).abs() > 1e-4
+                || (old.3 - new.3).abs() > 1e-4
+            {
+                *action = Some(InspectorAction::SetCrop {
+                    track_id: track_id.to_string(),
+                    clip_id: clip.id.clone(),
+                    old_crop: old,
+                    new_crop: new,
+                });
+            }
+            *orig = None;
+            ui.data_mut(|d| d.remove::<(f32, f32, f32, f32)>(crop_id));
+        }
+    };
+
+    let is_modified = clip.has_crop();
+    let reset_clicked = std::cell::Cell::new(false);
+
+    inspector_card(
+        ui,
+        "✂️",
+        "Video Kırpma (Crop)",
+        ACCENT_AMBER,
+        |ui| {
+            if is_modified
+                && ui
+                    .add(
+                        Button::new(
+                            RichText::new("↺ Sıfırla")
+                                .size(10.0)
+                                .color(Color32::from_rgb(0xc8, 0xd0, 0xe4)),
+                        )
+                        .fill(Color32::from_rgb(0x22, 0x26, 0x34))
+                        .rounding(Rounding::same(4.0)),
+                    )
+                    .on_hover_text("Kırpmayı sıfırla")
+                    .clicked()
+            {
+                reset_clicked.set(true);
+            }
+        },
+        |ui| {
+            if reset_clicked.get() {
+                let old = (clip.crop_left, clip.crop_right, clip.crop_top, clip.crop_bottom);
+                let new = (0.0, 0.0, 0.0, 0.0);
+                clip.crop_left = 0.0;
+                clip.crop_right = 0.0;
+                clip.crop_top = 0.0;
+                clip.crop_bottom = 0.0;
+                *action = Some(InspectorAction::SetCrop {
+                    track_id: track_id.to_string(),
+                    clip_id: clip.id.clone(),
+                    old_crop: old,
+                    new_crop: new,
+                });
+            }
+
+            // Sol
+            prop_row(ui, "Sol", |ui| {
+                let max_l = (1.0 - clip.crop_right - 0.01).max(0.0);
+                let r1 = ui.add(
+                    Slider::new(&mut clip.crop_left, 0.0..=max_l)
+                        .show_value(false)
+                        .trailing_fill(true),
+                );
+                if r1.drag_started() {
+                    record_start(ui, &mut orig_crop, clip);
+                }
+                if r1.changed() {
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                if r1.drag_stopped() || r1.lost_focus() {
+                    check_stop(ui, &mut orig_crop, clip, action);
+                }
+
+                let mut pct = (clip.crop_left * 100.0).round();
+                let r2 = ui.add(
+                    DragValue::new(&mut pct)
+                        .speed(0.5)
+                        .range(0.0..=(max_l * 100.0))
+                        .suffix(" %")
+                        .fixed_decimals(0),
+                );
+                if r2.drag_started() {
+                    record_start(ui, &mut orig_crop, clip);
+                }
+                if r2.changed() {
+                    clip.crop_left = (pct / 100.0).clamp(0.0, max_l);
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                if r2.drag_stopped() || r2.lost_focus() {
+                    check_stop(ui, &mut orig_crop, clip, action);
+                }
+            });
+
+            // Sağ
+            prop_row(ui, "Sağ", |ui| {
+                let max_r = (1.0 - clip.crop_left - 0.01).max(0.0);
+                let r1 = ui.add(
+                    Slider::new(&mut clip.crop_right, 0.0..=max_r)
+                        .show_value(false)
+                        .trailing_fill(true),
+                );
+                if r1.drag_started() {
+                    record_start(ui, &mut orig_crop, clip);
+                }
+                if r1.changed() {
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                if r1.drag_stopped() || r1.lost_focus() {
+                    check_stop(ui, &mut orig_crop, clip, action);
+                }
+
+                let mut pct = (clip.crop_right * 100.0).round();
+                let r2 = ui.add(
+                    DragValue::new(&mut pct)
+                        .speed(0.5)
+                        .range(0.0..=(max_r * 100.0))
+                        .suffix(" %")
+                        .fixed_decimals(0),
+                );
+                if r2.drag_started() {
+                    record_start(ui, &mut orig_crop, clip);
+                }
+                if r2.changed() {
+                    clip.crop_right = (pct / 100.0).clamp(0.0, max_r);
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                if r2.drag_stopped() || r2.lost_focus() {
+                    check_stop(ui, &mut orig_crop, clip, action);
+                }
+            });
+
+            // Üst
+            prop_row(ui, "Üst", |ui| {
+                let max_t = (1.0 - clip.crop_bottom - 0.01).max(0.0);
+                let r1 = ui.add(
+                    Slider::new(&mut clip.crop_top, 0.0..=max_t)
+                        .show_value(false)
+                        .trailing_fill(true),
+                );
+                if r1.drag_started() {
+                    record_start(ui, &mut orig_crop, clip);
+                }
+                if r1.changed() {
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                if r1.drag_stopped() || r1.lost_focus() {
+                    check_stop(ui, &mut orig_crop, clip, action);
+                }
+
+                let mut pct = (clip.crop_top * 100.0).round();
+                let r2 = ui.add(
+                    DragValue::new(&mut pct)
+                        .speed(0.5)
+                        .range(0.0..=(max_t * 100.0))
+                        .suffix(" %")
+                        .fixed_decimals(0),
+                );
+                if r2.drag_started() {
+                    record_start(ui, &mut orig_crop, clip);
+                }
+                if r2.changed() {
+                    clip.crop_top = (pct / 100.0).clamp(0.0, max_t);
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                if r2.drag_stopped() || r2.lost_focus() {
+                    check_stop(ui, &mut orig_crop, clip, action);
+                }
+            });
+
+            // Alt
+            prop_row(ui, "Alt", |ui| {
+                let max_b = (1.0 - clip.crop_top - 0.01).max(0.0);
+                let r1 = ui.add(
+                    Slider::new(&mut clip.crop_bottom, 0.0..=max_b)
+                        .show_value(false)
+                        .trailing_fill(true),
+                );
+                if r1.drag_started() {
+                    record_start(ui, &mut orig_crop, clip);
+                }
+                if r1.changed() {
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                if r1.drag_stopped() || r1.lost_focus() {
+                    check_stop(ui, &mut orig_crop, clip, action);
+                }
+
+                let mut pct = (clip.crop_bottom * 100.0).round();
+                let r2 = ui.add(
+                    DragValue::new(&mut pct)
+                        .speed(0.5)
+                        .range(0.0..=(max_b * 100.0))
+                        .suffix(" %")
+                        .fixed_decimals(0),
+                );
+                if r2.drag_started() {
+                    record_start(ui, &mut orig_crop, clip);
+                }
+                if r2.changed() {
+                    clip.crop_bottom = (pct / 100.0).clamp(0.0, max_b);
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                if r2.drag_stopped() || r2.lost_focus() {
+                    check_stop(ui, &mut orig_crop, clip, action);
+                }
             });
         },
     );

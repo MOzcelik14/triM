@@ -2709,6 +2709,20 @@ impl eframe::App for TrimApp {
                                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                     self.project.mark_dirty();
                                 }
+                                InspectorAction::SetCrop {
+                                    track_id,
+                                    clip_id,
+                                    old_crop,
+                                    new_crop,
+                                } => {
+                                    let cmd = Box::new(SetClipCropCommand::new(
+                                        track_id, clip_id, old_crop, new_crop,
+                                    ));
+                                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                    self.project.mark_dirty();
+                                    self.last_rendered_monitor_frame = None;
+                                    self.video_engine.last_rendered_frame = None;
+                                }
                                 InspectorAction::ChangeSpeed(spd, rev) => {
                                     if let Some((tr_id, cl_id)) =
                                         self.canvas_state.selected_clip_pairs.first()

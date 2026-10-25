@@ -249,6 +249,17 @@ impl TimelineExporter {
             }
         }
 
+        if clip.has_crop() {
+            let cl = clip.crop_left.clamp(0.0, 0.99);
+            let cr = clip.crop_right.clamp(0.0, (0.99 - cl).max(0.0));
+            let ct = clip.crop_top.clamp(0.0, 0.99);
+            let cb = clip.crop_bottom.clamp(0.0, (0.99 - ct).max(0.0));
+            f.push(format!(
+                "geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(between(X,{:.4}*W,{:.4}*W)*between(Y,{:.4}*H,{:.4}*H),alpha(X,Y),0)'",
+                cl, 1.0 - cr, ct, 1.0 - cb
+            ));
+        }
+
         if let Some(txt) = &clip.text_overlay {
             let sanitized = txt
                 .content
@@ -1688,5 +1699,34 @@ mod tests {
         assert!(t_idx.is_some(), "-t argument must be present");
         assert_eq!(cmd[t_idx.unwrap() + 1], "5.000000");
     }
+
+    #[test]
+    fn test_build_export_pipeline_with_crop() {
+        let mut proj = Project::new("CropTest");
+        let mut v = MediaItem::new("/tmp/fake_crop.mp4");
+        v.media_type = MediaType::Video;
+        let vid_id = v.id.clone();
+        proj.add_media(v);
+        let mut clip = Clip::new(&vid_id, 0.0, 5.0);
+        clip.crop_left = 0.1;
+        clip.crop_right = 0.15;
+        clip.crop_top = 0.05;
+        clip.crop_bottom = 0.2;
+        proj.timeline.tracks[0].add_clip(clip);
+
+        let preset = ExportPreset::default();
+        let (cmd, _) = TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out_crop.mp4").unwrap();
+        let fg = cmd
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd[idx + 1])
+            .unwrap();
+
+        assert!(
+            fg.contains("between(X,0.1000*W,0.8500*W)*between(Y,0.0500*H,0.8000*H)"),
+            "Filtergraph must contain crop alpha mask: {fg}"
+        );
+    }
 }
+
 

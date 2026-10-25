@@ -824,6 +824,30 @@ mod tests {
 
         stack.undo(&mut tl).unwrap();
         assert_eq!(tl.tracks[0].get_clip_by_id(&clip_id).unwrap().eq_preset, AudioEqPreset::Flat);
+
+        // 4. Crop Command
+        let old_crop = (0.0, 0.0, 0.0, 0.0);
+        let new_crop = (0.1, 0.15, 0.05, 0.2);
+        let crop_cmd = Box::new(SetClipCropCommand::new(&v1_id, &clip_id, old_crop, new_crop));
+        stack.push(crop_cmd, &mut tl).unwrap();
+        let c = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(c.crop_left, 0.1);
+        assert_eq!(c.crop_right, 0.15);
+        assert_eq!(c.crop_top, 0.05);
+        assert_eq!(c.crop_bottom, 0.2);
+        assert!(c.has_crop());
+
+        stack.undo(&mut tl).unwrap();
+        let c = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(c.crop_left, 0.0);
+        assert_eq!(c.crop_right, 0.0);
+        assert!(!c.has_crop());
+
+        stack.redo(&mut tl).unwrap();
+        let c = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(c.crop_left, 0.1);
+        assert!(c.has_crop());
     }
 }
+
 

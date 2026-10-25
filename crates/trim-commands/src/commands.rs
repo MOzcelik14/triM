@@ -1828,3 +1828,65 @@ impl Command for SetClipEqPresetCommand {
     }
 }
 
+// -----------------------------------------------------------------------------
+// 24. SetClipCropCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct SetClipCropCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub old_crop: (f32, f32, f32, f32),
+    pub new_crop: (f32, f32, f32, f32),
+}
+
+impl SetClipCropCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_crop: (f32, f32, f32, f32),
+        new_crop: (f32, f32, f32, f32),
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            old_crop,
+            new_crop,
+        }
+    }
+}
+
+impl Command for SetClipCropCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.crop_left = self.new_crop.0;
+        clip.crop_right = self.new_crop.1;
+        clip.crop_top = self.new_crop.2;
+        clip.crop_bottom = self.new_crop.3;
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.crop_left = self.old_crop.0;
+        clip.crop_right = self.old_crop.1;
+        clip.crop_top = self.old_crop.2;
+        clip.crop_bottom = self.old_crop.3;
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Kırpmayı Değiştir"
+    }
+}
+
+

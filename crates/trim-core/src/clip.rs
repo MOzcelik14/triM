@@ -475,6 +475,14 @@ pub struct Clip {
     pub audio_visualizer: Option<AudioVisualizerConfig>,
     #[serde(default)]
     pub color_label: ColorLabel,
+    #[serde(default)]
+    pub crop_left: f32,
+    #[serde(default)]
+    pub crop_right: f32,
+    #[serde(default)]
+    pub crop_top: f32,
+    #[serde(default)]
+    pub crop_bottom: f32,
 }
 
 fn default_speed() -> f64 {
@@ -521,11 +529,22 @@ impl Default for Clip {
             color_wheels: None,
             audio_visualizer: None,
             color_label: ColorLabel::None,
+            crop_left: 0.0,
+            crop_right: 0.0,
+            crop_top: 0.0,
+            crop_bottom: 0.0,
         }
     }
 }
 
 impl Clip {
+    pub fn has_crop(&self) -> bool {
+        self.crop_left > 0.0
+            || self.crop_right > 0.0
+            || self.crop_top > 0.0
+            || self.crop_bottom > 0.0
+    }
+
     pub fn new(media_id: impl Into<String>, timeline_in: f64, timeline_out: f64) -> Self {
         let dur = (timeline_out - timeline_in).max(0.04);
         Self {
@@ -922,4 +941,36 @@ mod tests {
         assert_eq!(ov.subtitle_text.as_deref(), Some("Baş Kurgucu / Director"));
         assert_eq!(ov.motion_style, MotionTitleStyle::LowerThird);
     }
+
+    #[test]
+    fn test_clip_crop_serialization_roundtrip() {
+        let mut clip = Clip::default();
+        assert!(!clip.has_crop());
+        assert_eq!(clip.crop_left, 0.0);
+        assert_eq!(clip.crop_right, 0.0);
+        assert_eq!(clip.crop_top, 0.0);
+        assert_eq!(clip.crop_bottom, 0.0);
+
+        clip.crop_left = 0.1;
+        clip.crop_right = 0.15;
+        clip.crop_top = 0.05;
+        clip.crop_bottom = 0.2;
+        assert!(clip.has_crop());
+
+        let json = serde_json::to_string(&clip).expect("serialize clip with crop");
+        let decoded: Clip = serde_json::from_str(&json).expect("deserialize clip with crop");
+        assert!(decoded.has_crop());
+        assert_eq!(decoded.crop_left, 0.1);
+        assert_eq!(decoded.crop_right, 0.15);
+        assert_eq!(decoded.crop_top, 0.05);
+        assert_eq!(decoded.crop_bottom, 0.2);
+
+        // Test backwards compatibility: json without crop fields deserializes with defaults
+        let legacy_json = r#"{"id":"test-id","media_id":"media-1","timeline_in":0.0,"timeline_out":5.0}"#;
+        let legacy_clip: Clip = serde_json::from_str(legacy_json).expect("deserialize legacy clip");
+        assert!(!legacy_clip.has_crop());
+        assert_eq!(legacy_clip.crop_left, 0.0);
+        assert_eq!(legacy_clip.crop_bottom, 0.0);
+    }
 }
+

@@ -40,6 +40,7 @@ uniform vec2 u_clip_center;
 uniform vec2 u_clip_size;
 uniform float u_rotation_rad;
 uniform float u_opacity;
+uniform vec4 u_crop;
 
 uniform int u_wipe_mode;
 uniform float u_fade_factor;
@@ -92,6 +93,9 @@ void main() {
 
     vec2 uv = (rot_rel / max(u_clip_size, vec2(1.0))) + vec2(0.5);
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+        discard;
+    }
+    if (uv.x < u_crop.x || uv.x > (1.0 - u_crop.z) || uv.y < u_crop.y || uv.y > (1.0 - u_crop.w)) {
         discard;
     }
 
@@ -207,6 +211,7 @@ pub struct LayerUniforms {
     pub brightness: f32,
     pub saturation: f32,
     pub lut_preset: i32,
+    pub crop: [f32; 4],
 }
 
 impl LayerUniforms {
@@ -383,6 +388,12 @@ impl LayerUniforms {
             brightness: clip.brightness as f32,
             saturation: clip.saturation as f32,
             lut_preset,
+            crop: [
+                clip.crop_left.clamp(0.0, 1.0),
+                clip.crop_top.clamp(0.0, 1.0),
+                clip.crop_right.clamp(0.0, 1.0),
+                clip.crop_bottom.clamp(0.0, 1.0),
+            ],
         })
     }
 }
@@ -861,6 +872,9 @@ impl GpuCompositor {
                 if let Some(loc) = gl.get_uniform_location(prog, "u_opacity") {
                     gl.uniform_1_f32(Some(&loc), u.opacity);
                 }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_crop") {
+                    gl.uniform_4_f32(Some(&loc), u.crop[0], u.crop[1], u.crop[2], u.crop[3]);
+                }
                 if let Some(loc) = gl.get_uniform_location(prog, "u_wipe_mode") {
                     gl.uniform_1_i32(Some(&loc), u.wipe_mode);
                 }
@@ -986,6 +1000,11 @@ mod tests {
             luminance: [0.05, 0.0, -0.05],
         });
 
+        clip.crop_left = 0.1;
+        clip.crop_top = 0.05;
+        clip.crop_right = 0.15;
+        clip.crop_bottom = 0.2;
+
         let u = LayerUniforms::from_clip(&clip, 640, 360, 640, 360, 2.0)
             .expect("Should produce active layer uniforms");
 
@@ -994,6 +1013,7 @@ mod tests {
         assert_eq!(u.clip_center, [360.0, 160.0]);
         assert!((u.rotation_rad - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
         assert!((u.opacity - 0.8).abs() < 1e-5);
+        assert_eq!(u.crop, [0.1, 0.05, 0.15, 0.2]);
         assert!(u.ck_enabled);
         assert_eq!(u.ck_color, [0.0, 1.0, 0.0]);
         assert!((u.ck_similarity - 0.25).abs() < 1e-5);
