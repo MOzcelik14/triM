@@ -1678,6 +1678,12 @@ impl eframe::App for TrimApp {
                                         {
                                             if t.track_type == trim_core::track::TrackType::Video {
                                                 self.target_video_track = t_id.clone();
+                                                self.target_audio_track = self
+                                                    .project
+                                                    .timeline
+                                                    .find_or_create_corresponding_audio_track(
+                                                        &t_id,
+                                                    );
                                             } else {
                                                 self.target_audio_track = t_id.clone();
                                             }
@@ -2048,8 +2054,10 @@ impl eframe::App for TrimApp {
                                                     Clip::new(&media_id, time, time + clip_dur);
                                                 clip.name = media_name.clone();
                                                 clip.linked_group_id = link_group.clone();
-                                                let cmd =
-                                                    Box::new(AddClipCommand::new(track_id, clip));
+                                                let cmd = Box::new(AddClipCommand::new(
+                                                    track_id.clone(),
+                                                    clip,
+                                                ));
                                                 let _ = self
                                                     .undo_stack
                                                     .push(cmd, &mut self.project.timeline);
@@ -2058,14 +2066,9 @@ impl eframe::App for TrimApp {
                                                     let audio_track_id = self
                                                         .project
                                                         .timeline
-                                                        .get_audio_tracks()
-                                                        .first()
-                                                        .map(|t| t.id.clone())
-                                                        .unwrap_or_else(|| {
-                                                            self.project
-                                                                .timeline
-                                                                .add_new_audio_track()
-                                                        });
+                                                        .find_or_create_corresponding_audio_track(
+                                                            &track_id,
+                                                        );
                                                     let mut audio_clip =
                                                         Clip::new(&media_id, time, time + clip_dur);
                                                     audio_clip.name =
@@ -2356,8 +2359,10 @@ impl eframe::App for TrimApp {
                                                 );
                                                 clip.name = media_name.clone();
                                                 clip.linked_group_id = link_group.clone();
-                                                let cmd =
-                                                    Box::new(AddClipCommand::new(track_id, clip));
+                                                let cmd = Box::new(AddClipCommand::new(
+                                                    track_id.clone(),
+                                                    clip,
+                                                ));
                                                 let _ = self
                                                     .undo_stack
                                                     .push(cmd, &mut self.project.timeline);
@@ -2366,14 +2371,9 @@ impl eframe::App for TrimApp {
                                                     let audio_track_id = self
                                                         .project
                                                         .timeline
-                                                        .get_audio_tracks()
-                                                        .first()
-                                                        .map(|t| t.id.clone())
-                                                        .unwrap_or_else(|| {
-                                                            self.project
-                                                                .timeline
-                                                                .add_new_audio_track()
-                                                        });
+                                                        .find_or_create_corresponding_audio_track(
+                                                            &track_id,
+                                                        );
                                                     let mut audio_clip = Clip::new(
                                                         &m_id,
                                                         self.current_time,

@@ -188,6 +188,61 @@ impl TimelineModel {
         id
     }
 
+    /// Returns the corresponding audio track ID for a given video track ID.
+    ///
+    /// - "V1" -> "A1"
+    /// - "V2" -> "A2"
+    /// - "V3" -> "A3"
+    ///
+    /// If the corresponding audio track does not yet exist, it creates it ("A{N}") and returns its ID.
+    /// If the video track has a non-standard name, it matches by ordinal index (e.g. 2nd video track -> 2nd audio track).
+    pub fn find_or_create_corresponding_audio_track(&mut self, video_track_id: &str) -> String {
+        let v_track_opt = self.get_track_by_id(video_track_id).cloned();
+        let Some(v_track) = v_track_opt else {
+            return self
+                .get_audio_tracks()
+                .first()
+                .map(|t| t.id.clone())
+                .unwrap_or_else(|| self.add_new_audio_track());
+        };
+
+        // 1. Try name-based matching: V{N} -> A{N}
+        if let Some(num_str) = v_track
+            .name
+            .strip_prefix('V')
+            .or_else(|| v_track.name.strip_prefix('v'))
+        {
+            if let Ok(num) = num_str.parse::<usize>() {
+                let target_audio_name = format!("A{}", num);
+                if let Some(existing) = self.tracks.iter().find(|t| {
+                    t.track_type == TrackType::Audio
+                        && t.name.eq_ignore_ascii_case(&target_audio_name)
+                }) {
+                    return existing.id.clone();
+                }
+                // Track does not exist yet: create A{num} and add it
+                let track = Track::new(&target_audio_name, TrackType::Audio);
+                let id = track.id.clone();
+                self.tracks.push(track);
+                return id;
+            }
+        }
+
+        // 2. Fallback: ordinal index matching (order of video tracks vs audio tracks)
+        let video_tracks = self.get_video_tracks();
+        let audio_tracks = self.get_audio_tracks();
+        let v_idx = video_tracks
+            .iter()
+            .position(|t| t.id == video_track_id)
+            .unwrap_or(0);
+
+        if v_idx < audio_tracks.len() {
+            audio_tracks[v_idx].id.clone()
+        } else {
+            self.add_new_audio_track()
+        }
+    }
+
     pub fn remove_track_safe(&mut self, track_id: &str) -> Result<Track, &'static str> {
         let track_type = self
             .get_track_by_id(track_id)
@@ -629,5 +684,38 @@ mod tests {
         assert_eq!(tl.width, 1080);
         assert_eq!(tl.height, 1080);
         assert_eq!(tl.aspect_ratio(), AspectRatio::Square1x1);
+    }
+
+    #[test]
+    fn test_corresponding_audio_track_mapping() {
+        let mut tl = TimelineModel::default();
+        // Tracks: V2, V1, A1, A2
+        let v1_id = tl
+            .tracks
+            .iter()
+            .find(|t| t.name == "V1")
+            .unwrap()
+            .id
+            .clone();
+        let v2_id = tl
+            .tracks
+            .iter()
+            .find(|t| t.name == "V2")
+            .unwrap()
+            .id
+            .clone();
+
+        // V1 should map to existing A1
+        let a1_id = tl.find_or_create_corresponding_audio_track(&v1_id);
+        assert_eq!(tl.get_track_by_id(&a1_id).unwrap().name, "A1");
+
+        // V2 should map to existing A2
+        let a2_id = tl.find_or_create_corresponding_audio_track(&v2_id);
+        assert_eq!(tl.get_track_by_id(&a2_id).unwrap().name, "A2");
+
+        // Add V3, then map it -> should auto-create A3
+        let v3_id = tl.add_new_video_track();
+        let a3_id = tl.find_or_create_corresponding_audio_track(&v3_id);
+        assert_eq!(tl.get_track_by_id(&a3_id).unwrap().name, "A3");
     }
 }

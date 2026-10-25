@@ -695,4 +695,79 @@ mod tests {
         assert_eq!(app.project.get_media("v1").unwrap().bin_id, None);
         assert_eq!(app.project.get_media("img1").unwrap().bin_id, None);
     }
+
+    #[test]
+    fn test_drop_media_v1_and_v2_corresponding_audio_tracks() {
+        let mut app = TrimApp::default();
+        // Add a mock video with audio channels
+        let mut video_media = trim_core::media::MediaItem::new("/mock/video.mp4");
+        video_media.id = "vid_1".to_string();
+        video_media.name = "My Video".to_string();
+        video_media.media_type = trim_core::media::MediaType::Video;
+        video_media.audio_channels = 2;
+        video_media.duration = 10.0;
+        app.project.add_media(video_media);
+
+        let v1_id = app
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .find(|t| t.name == "V1")
+            .unwrap()
+            .id
+            .clone();
+        let v2_id = app
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .find(|t| t.name == "V2")
+            .unwrap()
+            .id
+            .clone();
+
+        // 1. Drop onto V1: audio clip should end up in A1
+        let a1_id_expected = app
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .find(|t| t.name == "A1")
+            .unwrap()
+            .id
+            .clone();
+        let a1_id = app
+            .project
+            .timeline
+            .find_or_create_corresponding_audio_track(&v1_id);
+        assert_eq!(a1_id, a1_id_expected);
+
+        // 2. Drop onto V2: audio clip should end up in A2
+        let a2_id_expected = app
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .find(|t| t.name == "A2")
+            .unwrap()
+            .id
+            .clone();
+        let a2_id = app
+            .project
+            .timeline
+            .find_or_create_corresponding_audio_track(&v2_id);
+        assert_eq!(a2_id, a2_id_expected);
+
+        // 3. Drop onto V3 (non-existent yet): creates A3
+        let v3_id = app.project.timeline.add_new_video_track();
+        let a3_id = app
+            .project
+            .timeline
+            .find_or_create_corresponding_audio_track(&v3_id);
+        assert_eq!(
+            app.project.timeline.get_track_by_id(&a3_id).unwrap().name,
+            "A3"
+        );
+    }
 }

@@ -56,6 +56,17 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.1.1" date="2026-10-25">
+      <description>
+        <p>triM. v1.1.1 - Multi-track Audio-Video Auto-Pairing and Enhanced Camera Media Support:</p>
+        <ul>
+          <li>Intelligent Video-to-Audio Track Pairing: Videos placed on V1 pair their audio to A1, V2 pairs to A2, V3 to A3, with automatic track creation.</li>
+          <li>Synchronized Target Track Patching: Selecting a target video track automatically syncs the corresponding audio target track.</li>
+          <li>Canon Camera QuickTime MOV Support: Resilient metadata parsing for QuickTime container tags, frame rate fallback, and uncompressed Linear PCM audio.</li>
+          <li>Case-insensitive File Dialog Filters: Full support for uppercase camera file extensions (.MOV, .MP4, .JPG, .PNG).</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.1.0" date="2026-10-24">
       <description>
         <p>triM. v1.1.0 introduces industry-standard FCPXML (v1.8/v1.9) and CMX 3600 EDL sequence import and export, cinematic motion title templates (Typewriter, Lower Thirds, Cinematic Zoom, News Ticker, Box Reveal), timeline thumbnail filmstrips, interactive audio volume rubberband dB gain curves, media pool folders (bins) with breadcrumb navigation and smart media type filters, ripple delete gaps, automatic audio/video clip linking, clip color labels, default 4-track timeline structure (V2, V1, A1, A2), and an overhauled Export Video Studio dialog.</p>

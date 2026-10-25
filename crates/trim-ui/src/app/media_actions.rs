@@ -549,10 +549,30 @@ impl TrimApp {
             }
         }
 
+        let has_audio = media_type == MediaType::Audio
+            || self
+                .project
+                .get_media(m_id)
+                .map(|m| m.audio_channels > 0)
+                .unwrap_or(false);
+        let is_video_track = self
+            .project
+            .timeline
+            .get_track_by_id(&target_track_id)
+            .map(|t| t.track_type == trim_core::track::TrackType::Video)
+            .unwrap_or(false);
+
+        let link_group = if has_audio && is_video_track {
+            Some(uuid::Uuid::new_v4().to_string())
+        } else {
+            None
+        };
+
         let mut new_clip = Clip::new(m_id.clone(), insert_time, insert_time + clip_dur);
-        new_clip.name = media_name;
+        new_clip.name = media_name.clone();
         new_clip.source_in = start_in;
         new_clip.source_out = Some(end_out);
+        new_clip.linked_group_id = link_group.clone();
 
         if self
             .project
@@ -569,8 +589,45 @@ impl TrimApp {
             }
         }
 
-        let cmd = Box::new(AddClipCommand::new(target_track_id, new_clip));
+        let cmd = Box::new(AddClipCommand::new(target_track_id.clone(), new_clip));
         let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+
+        if let Some(gid) = link_group {
+            let audio_track_id = self
+                .project
+                .timeline
+                .find_or_create_corresponding_audio_track(&target_track_id);
+
+            if !is_overwrite {
+                let mut audio_moves = Vec::new();
+                if let Some(track) = self.project.timeline.get_track_by_id(&audio_track_id) {
+                    for c in &track.clips {
+                        if c.timeline_in >= insert_time {
+                            audio_moves.push((
+                                audio_track_id.clone(),
+                                c.id.clone(),
+                                c.timeline_in,
+                                c.timeline_in + clip_dur,
+                            ));
+                        }
+                    }
+                }
+                if !audio_moves.is_empty() {
+                    let cmd_m = Box::new(MoveMultipleClipsCommand::new(audio_moves));
+                    let _ = self.undo_stack.push(cmd_m, &mut self.project.timeline);
+                }
+            }
+
+            let mut audio_clip = Clip::new(m_id.clone(), insert_time, insert_time + clip_dur);
+            audio_clip.name = format!("{} (Ses)", media_name);
+            audio_clip.source_in = start_in;
+            audio_clip.source_out = Some(end_out);
+            audio_clip.linked_group_id = Some(gid);
+
+            let cmd_a = Box::new(AddClipCommand::new(audio_track_id, audio_clip));
+            let _ = self.undo_stack.push(cmd_a, &mut self.project.timeline);
+        }
+
         self.project.mark_dirty();
 
         self.seek(insert_time + clip_dur);
