@@ -45,7 +45,9 @@ pub fn timecode_to_seconds(tc: &str, fps: f64) -> Result<f64, String> {
         .map_err(|_| format!("Geçersiz kare bileşeni: {}", parts[3]))?;
 
     let effective_fps = if fps <= 0.0 { 30.0 } else { fps };
-    Ok(hh * 3600.0 + mm * 60.0 + ss + (ff / effective_fps))
+    let fps_round = effective_fps.round().max(1.0);
+    let total_frames = (hh * 3600.0 + mm * 60.0 + ss) * fps_round + ff;
+    Ok(total_frames / effective_fps)
 }
 
 /// Generates a CMX 3600 EDL string from a `Project`.
@@ -440,11 +442,16 @@ mod tests {
 
     #[test]
     fn test_timecode_to_seconds_and_roundtrip() {
-        let fps = 25.0;
-        let s = 125.68;
-        let tc = seconds_to_timecode(s, fps);
-        let back = timecode_to_seconds(&tc, fps).expect("parse timecode");
-        assert!((s - back).abs() < (1.0 / fps));
+        for fps in [23.976, 24.0, 25.0, 29.97, 30.0, 59.94, 60.0] {
+            for s in [0.0, 1.5, 65.5, 125.68, 3600.0] {
+                let tc = seconds_to_timecode(s, fps);
+                let back = timecode_to_seconds(&tc, fps).expect("parse timecode");
+                assert!(
+                    (s - back).abs() < (1.0 / fps),
+                    "Drift in EDL timecode at {s}s with {fps} fps: tc={tc}, back={back}"
+                );
+            }
+        }
     }
 
     #[test]

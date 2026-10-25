@@ -19,6 +19,7 @@ pub fn seconds_to_timecode(seconds: f64, fps: f64) -> String {
 /// Parses timecode string (e.g. `HH:MM:SS:FF` or `MM:SS:FF` or `SS:FF`) back into seconds.
 pub fn timecode_to_seconds(tc: &str, fps: f64) -> Option<f64> {
     let fps = if fps <= 0.0 { 30.0 } else { fps };
+    let fps_int = fps.round().max(1.0) as u64;
     let parts: Vec<&str> = tc.trim().split(':').collect();
     if parts.is_empty() {
         return None;
@@ -30,20 +31,20 @@ pub fn timecode_to_seconds(tc: &str, fps: f64) -> Option<f64> {
             let mm = parts[1].parse::<u64>().ok()?;
             let ss = parts[2].parse::<u64>().ok()?;
             let ff = parts[3].parse::<u64>().ok()?;
-            let total_frames = ((hh * 3600 + mm * 60 + ss) as f64 * fps).round() as u64 + ff;
+            let total_frames = (hh * 3600 + mm * 60 + ss) * fps_int + ff;
             Some(total_frames as f64 / fps)
         }
         3 => {
             let mm = parts[0].parse::<u64>().ok()?;
             let ss = parts[1].parse::<u64>().ok()?;
             let ff = parts[2].parse::<u64>().ok()?;
-            let total_frames = ((mm * 60 + ss) as f64 * fps).round() as u64 + ff;
+            let total_frames = (mm * 60 + ss) * fps_int + ff;
             Some(total_frames as f64 / fps)
         }
         2 => {
             let ss = parts[0].parse::<u64>().ok()?;
             let ff = parts[1].parse::<u64>().ok()?;
-            let total_frames = (ss as f64 * fps).round() as u64 + ff;
+            let total_frames = ss * fps_int + ff;
             Some(total_frames as f64 / fps)
         }
         1 => parts[0].parse::<f64>().ok(),
@@ -68,5 +69,21 @@ mod tests {
         assert_eq!(timecode_to_seconds("00:00:00:00", 30.0), Some(0.0));
         let s = timecode_to_seconds("00:01:05:15", 30.0).unwrap();
         assert!((s - 65.5).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_fractional_fps_timecode_roundtrip_no_drift() {
+        for fps in [23.976, 29.97, 59.94] {
+            for seconds in [0.0, 1.5, 65.5, 100.0, 3600.0] {
+                let tc = seconds_to_timecode(seconds, fps);
+                let recovered = timecode_to_seconds(&tc, fps).expect("Timecode must parse");
+                let diff = (recovered - seconds).abs();
+                let frame_dur = 1.0 / fps;
+                assert!(
+                    diff < frame_dur * 0.5,
+                    "Drift at {seconds}s ({fps} fps): timecode={tc}, recovered={recovered}s (diff={diff}s > half frame {frame_dur})"
+                );
+            }
+        }
     }
 }
