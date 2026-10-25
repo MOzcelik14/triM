@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="tr" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#121316">
+  <title>triM — Sürüm Yayınlama Rehberi</title>
+  <meta name="description" content="triM projesinde yeni bir sürümün hazırlanması, test edilmesi ve GitHub üzerinden paketlenerek yayınlanması süreci.">
+  <meta name="author" content="Murat Özçelik">
+  <link rel="canonical" href="https://mozcelik14.github.io/triM/releasing.html">
+
+  <link rel="icon" type="image/svg+xml" href="./assets/icons/io.github.mozcelik14.triM.svg">
+  <link rel="stylesheet" href="./css/style.css">
+  <script src="./js/main.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main" data-i18n="skip_to_content">İçeriğe geç</a>
+
+  <header class="site-header">
+    <div class="container nav-inner">
+      <a class="brand" href="index.html">triM<span>.</span></a>
+      <nav class="nav-links" aria-label="Yayın Menüsü">
+        <a href="index.html" data-i18n="nav_home">Ana Sayfa</a>
+        <a href="shortcuts.html" data-i18n="nav_shortcuts">Kısayollar</a>
+        <a href="releasing.html" class="active" data-i18n="nav_releasing">Yayın Rehberi</a>
+      </nav>
+      <div class="nav-actions">
+        <button type="button" class="lang-toggle" id="lang-toggle" aria-label="Dili Değiştir">TR</button>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Temayı Değiştir">☼ Açık</button>
+        <a class="button button-secondary" href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="section">
+    <div class="container">
+      <div class="page-header">
+        <div class="section-label" data-i18n="rel_label">Geliştirici Dokümantasyonu</div>
+        <h1 data-i18n="rel_title">Sürüm Yayınlama Rehberi</h1>
+        <p class="section-intro" data-i18n="rel_intro">
+          Bu kılavuz, triM projesinde yeni bir sürümün hazırlanması, derlenmesi, test edilmesi, Git etiketinin oluşturulması ve GitHub Actions CI hattı üzerinden çoklu platform paketlerinin yayınlanması adımlarını belgeler.
+        </p>
+      </div>
+
+      <!-- Step 1 -->
+      <section class="doc-block">
+        <h2 data-i18n="rel_step1_title">1. Sürüm Numarasını Güncelleme</h2>
+        <p data-i18n="rel_step1_desc">
+          triM, Semantic Versioning (SemVer: <code>MAJOR.MINOR.PATCH</code>) standardını takip eder. Yeni sürüm için ilgili dosyalarda sürüm numarasını artırın:
+        </p>
+        <div class="code-box"># Cargo.toml kök dosyası
+[workspace.package]
+version = "1.1.2"</div>
+        <p style="margin-top: 0.75rem;" data-i18n="rel_step1_lock">
+          Ardından <code>Cargo.lock</code> dosyasını güncellemek için <code>cargo check</code> komutunu çalıştırın.
+        </p>
+        <p style="margin-top: 0.75rem;" data-i18n="rel_step1_meta">Meta veri dosyalarını güncelleyin:</p>
+        <ul class="feature-list" style="margin-top: 0.5rem;">
+          <li><code>io.github.mozcelik14.triM.metainfo.xml</code></li>
+          <li><code>flatpak/io.github.mozcelik14.triM.metainfo.xml</code></li>
+          <li><code>README.md</code> ve <code>README.tr.md</code></li>
+          <li><code>docs/index.html</code> ve <code>docs/js/main.js</code></li>
+        </ul>
+      </section>
+
+      <!-- Step 2 -->
+      <section class="doc-block">
+        <h2 data-i18n="rel_step2_title">2. Doğrulama ve Testler</h2>
+        <p data-i18n="rel_step2_desc">
+          Etiket oluşturmadan önce çalışma alanındaki tüm 131+ testin, biçimlendirme kurallarının ve clippy denetimlerinin hatasız tamamlandığından emin olun:
+        </p>
+        <div class="code-box"># 1. Kod biçimlendirme kontrolü
+cargo fmt --all -- --check
+
+# 2. Uyarıları hataya dönüştüren Clippy denetimi
+cargo clippy --workspace --all-targets -- -D warnings
+
+# 3. Tüm çalışma alanı birim ve entegrasyon testleri
+cargo test --workspace</div>
+      </section>
+
+      <!-- Step 3 -->
+      <section class="doc-block">
+        <h2 data-i18n="rel_step3_title">3. Git Etiketi (Tag) ve Push</h2>
+        <p data-i18n="rel_step3_desc">
+          Değişiklikleri commit edin ve imzalı/açıklamalı bir Git etiketi oluşturarak depoya gönderin:
+        </p>
+        <div class="code-box">git add -A
+git commit -m "chore: bump version to 1.1.2"
+git push origin master
+
+# Etiketi oluştur ve pushla
+git tag -a v1.1.2 -m "Release v1.1.2"
+git push origin v1.1.2</div>
+      </section>
+
+      <!-- Step 4 -->
+      <section class="doc-block">
+        <h2 data-i18n="rel_step4_title">4. Otomatik CI / CD Dağıtım Paketleri</h2>
+        <p data-i18n="rel_step4_desc">
+          <code>v*</code> formatında bir etiket pushlandığında <code>.github/workflows/release-linux.yml</code> iş akışı otomatik devreye girer ve GitHub Releases üzerinde aşağıdaki paketleri derleyip yayınlar:
+        </p>
+        <div class="table-responsive" style="margin-top: 1rem;">
+          <table class="info-table">
+            <thead>
+              <tr>
+                <th style="width: 30%;" data-i18n="th_package">Paket Formatı</th>
+                <th data-i18n="th_target">Hedef Platform / Dağıtım</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td><code>trim_x.y.z_amd64.deb</code></td><td>Debian, Ubuntu, Linux Mint (x86_64)</td></tr>
+              <tr><td><code>trim-x.y.z-1.x86_64.rpm</code></td><td>Fedora, RHEL, openSUSE (x86_64)</td></tr>
+              <tr><td><code>triM-x.y.z-x86_64.AppImage</code></td><td>Tüm modern Linux dağıtımları için tek dosya taşınabilir paket</td></tr>
+              <tr><td><code>triM-vX.Y.Z-windows-x86_64.zip</code></td><td>Windows 10/11 x86_64 çalıştırılabilir arşiv</td></tr>
+              <tr><td><code>SHA256SUMS.txt</code></td><td>Tüm paketler için kriptografik bütünlük özetleri</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div data-i18n="footer_license">triM — GPL-3.0-or-later lisansı altında açık kaynaklıdır. Geliştirici: Murat Özçelik.</div>
+      <div>
+        <a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer">GitHub ↗</a> · 
+        <a href="index.html" data-i18n="nav_home">Ana Sayfa</a> · 
+        <a href="shortcuts.html" data-i18n="nav_shortcuts">Kısayollar</a> · 
+        <a href="releasing.html" data-i18n="nav_releasing">Yayın Rehberi</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

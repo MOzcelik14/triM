@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="tr" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#121316">
+  <title>triM — Klavye Kısayolları</title>
+  <meta name="description" content="triM video editörü için klavye kısayolları ve NLE profil karşılaştırma tablosu (triM, Premiere Pro, DaVinci Resolve).">
+  <meta name="author" content="Murat Özçelik">
+  <link rel="canonical" href="https://mozcelik14.github.io/triM/shortcuts.html">
+
+  <link rel="icon" type="image/svg+xml" href="./assets/icons/io.github.mozcelik14.triM.svg">
+  <link rel="stylesheet" href="./css/style.css">
+  <script src="./js/main.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main" data-i18n="skip_to_content">İçeriğe geç</a>
+
+  <header class="site-header">
+    <div class="container nav-inner">
+      <a class="brand" href="index.html">triM<span>.</span></a>
+      <nav class="nav-links" aria-label="Kısayollar Menüsü">
+        <a href="index.html" data-i18n="nav_home">Ana Sayfa</a>
+        <a href="shortcuts.html" class="active" data-i18n="nav_shortcuts">Kısayollar</a>
+        <a href="releasing.html" data-i18n="nav_releasing">Yayın Rehberi</a>
+      </nav>
+      <div class="nav-actions">
+        <button type="button" class="lang-toggle" id="lang-toggle" aria-label="Dili Değiştir">TR</button>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Temayı Değiştir">☼ Açık</button>
+        <a class="button button-secondary" href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="section">
+    <div class="container">
+      <div class="page-header">
+        <div class="section-label" data-i18n="sc_label">Referans Kılavuzu</div>
+        <h1 data-i18n="sc_title">Klavye Kısayolları</h1>
+        <p class="section-intro" data-i18n="sc_intro">
+          triM, endüstri standardı NLE (Non-Linear Editor) iş akışlarını destekler. Kısayol profilinizi dilediğiniz zaman uygulama içinden değiştirebilir veya <code>F1</code> tuşuna basarak kısayol rehberini açabilirsiniz.
+        </p>
+
+        <div class="search-bar-wrap">
+          <input type="search" id="shortcut-search" class="search-input" placeholder="Kısayol veya işlev ara... (örn: jilet, böl, space, ripple)" aria-label="Kısayol ara" data-i18n-placeholder="sc_search_placeholder">
+        </div>
+      </div>
+
+      <!-- Transport Shortcuts -->
+      <section class="doc-block">
+        <h2 data-i18n="sc_transport_title">1. Oynatma ve Gezinme (Transport)</h2>
+        <div class="table-responsive">
+          <table class="info-table shortcut-table">
+            <thead>
+              <tr>
+                <th style="width: 25%;" data-i18n="th_shortcut">Kısayol</th>
+                <th data-i18n="th_function">İşlev</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td><kbd>Boşluk</kbd> (Space)</td><td data-i18n="sc_fn_space">Oynat / Duraklat (Play / Pause)</td></tr>
+              <tr><td><kbd>J</kbd></td><td data-i18n="sc_fn_j">Geriye doğru oynat (her basışta 2x, 4x, 8x hızlanır)</td></tr>
+              <tr><td><kbd>K</kbd></td><td data-i18n="sc_fn_k">Oynatmayı anında durdur</td></tr>
+              <tr><td><kbd>L</kbd></td><td data-i18n="sc_fn_l">İleriye doğru oynat (her basışta 2x, 4x, 8x hızlanır)</td></tr>
+              <tr><td><kbd>Sol Ok</kbd></td><td data-i18n="sc_fn_left">1 kare geriye git</td></tr>
+              <tr><td><kbd>Sağ Ok</kbd></td><td data-i18n="sc_fn_right">1 kare ileriye git</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>Sol Ok</kbd></td><td data-i18n="sc_fn_shift_left">1 saniye geriye atla</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>Sağ Ok</kbd></td><td data-i18n="sc_fn_shift_right">1 saniye ileriye atla</td></tr>
+              <tr><td><kbd>Home</kbd></td><td data-i18n="sc_fn_home">Zaman çizgisinin en başına git (00:00:00:00)</td></tr>
+              <tr><td><kbd>End</kbd></td><td data-i18n="sc_fn_end">Zaman çizgisindeki en son klibin bitişine git</td></tr>
+              <tr><td><kbd>I</kbd></td><td data-i18n="sc_fn_i">Kaynak monitöründe giriş noktasını belirle (Mark In)</td></tr>
+              <tr><td><kbd>O</kbd></td><td data-i18n="sc_fn_o">Kaynak monitöründe çıkış noktasını belirle (Mark Out)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Editing & NLE Profiles -->
+      <section class="doc-block">
+        <h2 data-i18n="sc_edit_title">2. Araçlar ve Düzenleme (NLE Profil Karşılaştırması)</h2>
+        <p style="color: var(--text-secondary); margin-bottom: 1rem;" data-i18n="sc_edit_desc">
+          Alışık olduğunuz Premiere Pro veya DaVinci Resolve tuş düzenini tek tıkla kullanabilirsiniz.
+        </p>
+        <div class="table-responsive">
+          <table class="info-table shortcut-table">
+            <thead>
+              <tr>
+                <th style="width: 20%;" data-i18n="th_trim_default">triM Varsayılan</th>
+                <th style="width: 20%;" data-i18n="th_premiere">Premiere Pro</th>
+                <th style="width: 20%;" data-i18n="th_resolve">DaVinci Resolve</th>
+                <th data-i18n="th_function">İşlev</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td><kbd>V</kbd></td><td><kbd>V</kbd></td><td><kbd>A</kbd></td><td data-i18n="sc_fn_select">Seçim Aracı (Selection Tool)</td></tr>
+              <tr><td><kbd>C</kbd></td><td><kbd>C</kbd></td><td><kbd>B</kbd></td><td data-i18n="sc_fn_razor">Jilet / Kesme Aracı (Razor / Blade)</td></tr>
+              <tr><td><kbd>S</kbd></td><td><kbd>Ctrl</kbd> + <kbd>K</kbd></td><td><kbd>Ctrl</kbd> + <kbd>\</kbd></td><td data-i18n="sc_fn_split">Oynatma kafası konumunda klibi böl (Split Clip)</td></tr>
+              <tr><td><kbd>B</kbd></td><td><kbd>B</kbd></td><td><kbd>B</kbd></td><td data-i18n="sc_fn_ripple">Dalgalanma Düzenleme (Ripple Edit)</td></tr>
+              <tr><td><kbd>R</kbd></td><td><kbd>R</kbd></td><td><kbd>R</kbd></td><td data-i18n="sc_fn_rate">Hız Uzatma / Sıkıştırma (Rate Stretch)</td></tr>
+              <tr><td><kbd>Y</kbd></td><td><kbd>Y</kbd></td><td><kbd>T</kbd></td><td data-i18n="sc_fn_slip">Kaydırma Aracı (Slip Edit)</td></tr>
+              <tr><td><kbd>U</kbd></td><td><kbd>U</kbd></td><td><kbd>U</kbd></td><td data-i18n="sc_fn_transition">Geçiş Aracı (Transition)</td></tr>
+              <tr><td><kbd>H</kbd></td><td><kbd>H</kbd></td><td><kbd>H</kbd></td><td data-i18n="sc_fn_hand">El / Kaydırma Aracı (Hand Pan)</td></tr>
+              <tr><td><kbd>Z</kbd></td><td><kbd>Z</kbd></td><td><kbd>Z</kbd></td><td data-i18n="sc_fn_zoom">Yakınlaştırma Aracı (Zoom)</td></tr>
+              <tr><td><kbd>T</kbd></td><td><kbd>T</kbd></td><td><kbd>T</kbd></td><td data-i18n="sc_fn_type">Metin ve Yazı Aracı (Type Tool)</td></tr>
+              <tr><td><kbd>Q</kbd></td><td><kbd>Q</kbd></td><td><kbd>Shift</kbd> + <kbd>[</kbd></td><td data-i18n="sc_fn_ripple_left">Baştan oynatma kafasına kadar dalgalanarak kırp (Ripple Trim Head)</td></tr>
+              <tr><td><kbd>W</kbd></td><td><kbd>W</kbd></td><td><kbd>Shift</kbd> + <kbd>]</kbd></td><td data-i18n="sc_fn_ripple_right">Oynatma kafasından sona kadar dalgalanarak kırp (Ripple Trim Tail)</td></tr>
+              <tr><td><kbd>Delete</kbd></td><td><kbd>Delete</kbd></td><td><kbd>Backspace</kbd></td><td data-i18n="sc_fn_delete">Seçili klibi sil</td></tr>
+              <tr><td><kbd>Shift</kbd> + <kbd>Delete</kbd></td><td><kbd>Shift</kbd> + <kbd>Delete</kbd></td><td><kbd>Shift</kbd> + <kbd>Delete</kbd></td><td data-i18n="sc_fn_ripple_del">Klibi ve boşluğu kapatıp dalgalanarak sil (Ripple Delete)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Project & System Shortcuts -->
+      <section class="doc-block">
+        <h2 data-i18n="sc_project_title">3. Proje ve Genel Kısayollar</h2>
+        <div class="table-responsive">
+          <table class="info-table shortcut-table">
+            <thead>
+              <tr>
+                <th style="width: 25%;" data-i18n="th_shortcut">Kısayol</th>
+                <th data-i18n="th_function">İşlev</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>N</kbd></td><td data-i18n="sc_fn_new">Yeni proje sihirbazını aç</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>O</kbd></td><td data-i18n="sc_fn_open">Var olan .trim projesini aç</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>S</kbd></td><td data-i18n="sc_fn_save">Projeyi kaydet</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd></td><td data-i18n="sc_fn_save_as">Projeyi farklı kaydet</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>I</kbd></td><td data-i18n="sc_fn_import">Medya havuzuna video/ses/görsel içe aktar</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>E</kbd> / <kbd>Ctrl</kbd> + <kbd>M</kbd></td><td data-i18n="sc_fn_export">Dışa Aktarma Stüdyosu'nu aç (Render / Export)</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>Z</kbd></td><td data-i18n="sc_fn_undo">Son işlemi geri al (Undo)</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>Y</kbd> / <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd></td><td data-i18n="sc_fn_redo">Geri alınan işlemi yinele (Redo)</td></tr>
+              <tr><td><kbd>Ctrl</kbd> + <kbd>A</kbd></td><td data-i18n="sc_fn_select_all">Tüm klipleri seç</td></tr>
+              <tr><td><kbd>F1</kbd></td><td data-i18n="sc_fn_f1">Klavye kısayolları penceresini aç / kapat</td></tr>
+              <tr><td><kbd>M</kbd></td><td data-i18n="sc_fn_m">Oynatma kafası konumuna renkli işaretçi (Marker) ekle</td></tr>
+              <tr><td><kbd>N</kbd></td><td data-i18n="sc_fn_n">Manyetik kenetlenmeyi aç / kapat (Magnetic Snapping)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div data-i18n="footer_license">triM — GPL-3.0-or-later lisansı altında açık kaynaklıdır. Geliştirici: Murat Özçelik.</div>
+      <div>
+        <a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer">GitHub ↗</a> · 
+        <a href="index.html" data-i18n="nav_home">Ana Sayfa</a> · 
+        <a href="shortcuts.html" data-i18n="nav_shortcuts">Kısayollar</a> · 
+        <a href="releasing.html" data-i18n="nav_releasing">Yayın Rehberi</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
