@@ -12,16 +12,9 @@ use uuid::Uuid;
 #[serde(rename_all = "snake_case")]
 pub enum RenderJobStatus {
     Queued,
-    InProgress {
-        progress: f32,
-        status_text: String,
-    },
-    Completed {
-        output_path: String,
-    },
-    Failed {
-        error: String,
-    },
+    InProgress { progress: f32, status_text: String },
+    Completed { output_path: String },
+    Failed { error: String },
     Cancelled,
 }
 
@@ -126,7 +119,12 @@ impl RenderQueue {
 
     /// Removes all completed, failed, or cancelled jobs.
     pub fn clear_finished(&mut self) {
-        self.jobs.retain(|j| matches!(j.status, RenderJobStatus::Queued | RenderJobStatus::InProgress { .. }));
+        self.jobs.retain(|j| {
+            matches!(
+                j.status,
+                RenderJobStatus::Queued | RenderJobStatus::InProgress { .. }
+            )
+        });
     }
 
     /// Starts or resumes sequential queue processing.
@@ -168,7 +166,10 @@ impl RenderQueue {
 
     /// Internal method to pick the next queued job and launch it in background.
     fn start_next_job(&mut self) -> bool {
-        let next_idx = self.jobs.iter().position(|j| matches!(j.status, RenderJobStatus::Queued));
+        let next_idx = self
+            .jobs
+            .iter()
+            .position(|j| matches!(j.status, RenderJobStatus::Queued));
         let Some(idx) = next_idx else {
             self.current_job_id = None;
             self.active_runner = None;
@@ -210,7 +211,10 @@ impl RenderQueue {
                     ExportMessage::Progress(pct) => {
                         if let Some(ref cur_id) = self.current_job_id {
                             if let Some(job) = self.jobs.iter_mut().find(|j| &j.id == cur_id) {
-                                if let RenderJobStatus::InProgress { ref mut progress, .. } = job.status {
+                                if let RenderJobStatus::InProgress {
+                                    ref mut progress, ..
+                                } = job.status
+                                {
                                     *progress = pct;
                                 }
                             }
@@ -224,7 +228,11 @@ impl RenderQueue {
                     ExportMessage::Status(st) => {
                         if let Some(ref cur_id) = self.current_job_id {
                             if let Some(job) = self.jobs.iter_mut().find(|j| &j.id == cur_id) {
-                                if let RenderJobStatus::InProgress { ref mut status_text, .. } = job.status {
+                                if let RenderJobStatus::InProgress {
+                                    ref mut status_text,
+                                    ..
+                                } = job.status
+                                {
                                     *status_text = st.clone();
                                 }
                             }
@@ -263,9 +271,7 @@ impl RenderQueue {
                     Err(err) => {
                         if let Some(job) = self.jobs.iter_mut().find(|j| j.id == cur_id) {
                             if !matches!(job.status, RenderJobStatus::Cancelled) {
-                                job.status = RenderJobStatus::Failed {
-                                    error: err.clone(),
-                                };
+                                job.status = RenderJobStatus::Failed { error: err.clone() };
                             }
                         }
                         events.push(RenderQueueEvent::JobFailed {

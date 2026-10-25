@@ -545,7 +545,12 @@ impl Clip {
         self.nested_sequence_id.is_some()
     }
 
-    pub fn new_nested_sequence(sequence_id: impl Into<String>, name: impl Into<String>, in_pt: f64, out_pt: f64) -> Self {
+    pub fn new_nested_sequence(
+        sequence_id: impl Into<String>,
+        name: impl Into<String>,
+        in_pt: f64,
+        out_pt: f64,
+    ) -> Self {
         let seq_id = sequence_id.into();
         let mut cl = Self::new(format!("seq:{}", seq_id), in_pt, out_pt);
         cl.name = name.into();
@@ -982,11 +987,11 @@ mod tests {
         assert_eq!(decoded.crop_bottom, 0.2);
 
         // Test backwards compatibility: json without crop fields deserializes with defaults
-        let legacy_json = r#"{"id":"test-id","media_id":"media-1","timeline_in":0.0,"timeline_out":5.0}"#;
+        let legacy_json =
+            r#"{"id":"test-id","media_id":"media-1","timeline_in":0.0,"timeline_out":5.0}"#;
         let legacy_clip: Clip = serde_json::from_str(legacy_json).expect("deserialize legacy clip");
         assert!(!legacy_clip.has_crop());
         assert_eq!(legacy_clip.crop_left, 0.0);
         assert_eq!(legacy_clip.crop_bottom, 0.0);
     }
 }
-

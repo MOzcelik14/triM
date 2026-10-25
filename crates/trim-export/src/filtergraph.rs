@@ -1698,7 +1698,10 @@ mod tests {
         )
         .unwrap();
 
-        assert!((dur - 5.0).abs() < 1e-4, "Effective duration should be 5.0s");
+        assert!(
+            (dur - 5.0).abs() < 1e-4,
+            "Effective duration should be 5.0s"
+        );
 
         let ss_idx = cmd.iter().rposition(|a| a == "-ss");
         assert!(ss_idx.is_some(), "-ss argument must be present");
@@ -1724,7 +1727,8 @@ mod tests {
         proj.timeline.tracks[0].add_clip(clip);
 
         let preset = ExportPreset::default();
-        let (cmd, _) = TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out_crop.mp4").unwrap();
+        let (cmd, _) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out_crop.mp4").unwrap();
         let fg = cmd
             .iter()
             .position(|a| a == "-filter_complex")
@@ -1747,14 +1751,35 @@ mod tests {
         proj.add_media(a);
 
         let mut clip = Clip::new(&a_id, 0.0, 5.0);
-        clip.add_keyframe("volume", 0.0, 1.0, trim_core::keyframe::Interpolation::Linear);
-        clip.add_keyframe("volume", 2.5, 0.3, trim_core::keyframe::Interpolation::Linear);
-        clip.add_keyframe("volume", 5.0, 1.0, trim_core::keyframe::Interpolation::Linear);
-        let a1 = proj.timeline.tracks.iter_mut().find(|t| t.name == "A1").unwrap();
+        clip.add_keyframe(
+            "volume",
+            0.0,
+            1.0,
+            trim_core::keyframe::Interpolation::Linear,
+        );
+        clip.add_keyframe(
+            "volume",
+            2.5,
+            0.3,
+            trim_core::keyframe::Interpolation::Linear,
+        );
+        clip.add_keyframe(
+            "volume",
+            5.0,
+            1.0,
+            trim_core::keyframe::Interpolation::Linear,
+        );
+        let a1 = proj
+            .timeline
+            .tracks
+            .iter_mut()
+            .find(|t| t.name == "A1")
+            .unwrap();
         a1.add_clip(clip);
 
         let preset = ExportPreset::default();
-        let (cmd, _) = TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out_vol.mp4").unwrap();
+        let (cmd, _) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out_vol.mp4").unwrap();
         let fg = cmd
             .iter()
             .position(|a| a == "-filter_complex")
@@ -1767,6 +1792,3 @@ mod tests {
         );
     }
 }
-
-
-

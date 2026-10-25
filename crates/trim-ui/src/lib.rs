@@ -996,9 +996,21 @@ mod tests {
         let mut clip = trim_core::clip::Clip::new("m1", 0.0, 5.0);
         clip.id = "clip_original".to_string();
         clip.source_in = 1.0;
-        app.project.timeline.get_track_by_id_mut(&v1_id).unwrap().add_clip(clip);
+        app.project
+            .timeline
+            .get_track_by_id_mut(&v1_id)
+            .unwrap()
+            .add_clip(clip);
 
-        assert_eq!(app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(), 1);
+        assert_eq!(
+            app.project
+                .timeline
+                .get_track_by_id(&v1_id)
+                .unwrap()
+                .clips
+                .len(),
+            1
+        );
 
         // 1. Copy when nothing is selected
         app.copy_selected_clips();
@@ -1015,7 +1027,11 @@ mod tests {
 
         let track = app.project.timeline.get_track_by_id(&v1_id).unwrap();
         assert_eq!(track.clips.len(), 2);
-        let pasted = track.clips.iter().find(|c| c.id != "clip_original").unwrap();
+        let pasted = track
+            .clips
+            .iter()
+            .find(|c| c.id != "clip_original")
+            .unwrap();
         assert_eq!(pasted.timeline_in, 10.0);
         assert_eq!(pasted.timeline_out, 15.0);
         assert_eq!(pasted.source_in, 1.0);
@@ -1026,12 +1042,28 @@ mod tests {
         // 4. Undo paste
         assert!(app.undo_stack.can_undo());
         let _ = app.undo_stack.undo(&mut app.project.timeline);
-        assert_eq!(app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(), 1);
+        assert_eq!(
+            app.project
+                .timeline
+                .get_track_by_id(&v1_id)
+                .unwrap()
+                .clips
+                .len(),
+            1
+        );
 
         // 5. Redo paste
         assert!(app.undo_stack.can_redo());
         let _ = app.undo_stack.redo(&mut app.project.timeline);
-        assert_eq!(app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(), 2);
+        assert_eq!(
+            app.project
+                .timeline
+                .get_track_by_id(&v1_id)
+                .unwrap()
+                .clips
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -1047,7 +1079,11 @@ mod tests {
         clip.source_in = 3.0;
         clip.source_out = Some(8.0);
         let clip_id = clip.id.clone();
-        app.project.timeline.get_track_by_id_mut(&v1_id).unwrap().add_clip(clip);
+        app.project
+            .timeline
+            .get_track_by_id_mut(&v1_id)
+            .unwrap()
+            .add_clip(clip);
 
         // 1. Hit test with Select tool vs Slip tool
         app.canvas_state.active_tool = EditTool::Select;
@@ -1067,10 +1103,18 @@ mod tests {
         // Shifting source window from 3.0..8.0 to 5.0..10.0
         let old_bounds = (2.0, 7.0, 3.0, 8.0);
         let new_bounds = (2.0, 7.0, 5.0, 10.0);
-        let cmd = Box::new(TrimClipCommand::new(&v1_id, &clip_id, old_bounds, new_bounds));
+        let cmd = Box::new(TrimClipCommand::new(
+            &v1_id, &clip_id, old_bounds, new_bounds,
+        ));
         app.undo_stack.push(cmd, &mut app.project.timeline).unwrap();
 
-        let slipped_clip = app.project.timeline.get_track_by_id(&v1_id).unwrap().get_clip_by_id(&clip_id).unwrap();
+        let slipped_clip = app
+            .project
+            .timeline
+            .get_track_by_id(&v1_id)
+            .unwrap()
+            .get_clip_by_id(&clip_id)
+            .unwrap();
         assert_eq!(slipped_clip.timeline_in, 2.0);
         assert_eq!(slipped_clip.timeline_out, 7.0);
         assert_eq!(slipped_clip.source_in, 5.0);
@@ -1078,7 +1122,13 @@ mod tests {
 
         // 3. Undo Slip
         app.undo_stack.undo(&mut app.project.timeline).unwrap();
-        let undone_clip = app.project.timeline.get_track_by_id(&v1_id).unwrap().get_clip_by_id(&clip_id).unwrap();
+        let undone_clip = app
+            .project
+            .timeline
+            .get_track_by_id(&v1_id)
+            .unwrap()
+            .get_clip_by_id(&clip_id)
+            .unwrap();
         assert_eq!(undone_clip.timeline_in, 2.0);
         assert_eq!(undone_clip.timeline_out, 7.0);
         assert_eq!(undone_clip.source_in, 3.0);
@@ -1086,7 +1136,13 @@ mod tests {
 
         // 4. Redo Slip
         app.undo_stack.redo(&mut app.project.timeline).unwrap();
-        let redone_clip = app.project.timeline.get_track_by_id(&v1_id).unwrap().get_clip_by_id(&clip_id).unwrap();
+        let redone_clip = app
+            .project
+            .timeline
+            .get_track_by_id(&v1_id)
+            .unwrap()
+            .get_clip_by_id(&clip_id)
+            .unwrap();
         assert_eq!(redone_clip.source_in, 5.0);
         assert_eq!(redone_clip.source_out, Some(10.0));
     }
@@ -1277,7 +1333,9 @@ mod tests {
         app.undo_stack.undo(&mut app.project.timeline).unwrap();
         let tr = &app.project.timeline.tracks[0];
         let cl = tr.get_clip_by_id(&clip_id).unwrap();
-        assert!(!cl.keyframes.contains_key("volume") || cl.keyframes.get("volume").unwrap().is_empty());
+        assert!(
+            !cl.keyframes.contains_key("volume") || cl.keyframes.get("volume").unwrap().is_empty()
+        );
 
         // Test redo
         app.undo_stack.redo(&mut app.project.timeline).unwrap();
@@ -1307,7 +1365,8 @@ mod tests {
 
         // Simulate AddToQueue from ExportDialog
         let preset = trim_export::ExportPreset::default();
-        let action = ExportDialogAction::AddToQueue(preset.clone(), "/tmp/test_queue.mp4".into(), None);
+        let action =
+            ExportDialogAction::AddToQueue(preset.clone(), "/tmp/test_queue.mp4".into(), None);
         if let ExportDialogAction::AddToQueue(p, out_p, rng) = action {
             let job = RenderJob::new("Test Q Job", app.project.clone(), p, out_p, rng);
             app.render_queue.add_job(job);
@@ -1320,7 +1379,10 @@ mod tests {
 
         // Cancel job
         app.render_queue.cancel_current();
-        assert_eq!(app.render_queue.jobs[0].status, trim_export::queue::RenderJobStatus::Cancelled);
+        assert_eq!(
+            app.render_queue.jobs[0].status,
+            trim_export::queue::RenderJobStatus::Cancelled
+        );
 
         // Render dialog action test
         let d_act = RenderQueueDialogAction::NewExportJob;
@@ -1359,7 +1421,10 @@ mod tests {
         // 2. Create Sequence 2
         let seq2_id = app.project.create_sequence("Sekans 02");
         assert_eq!(app.project.sequences.len(), 2);
-        assert_eq!(app.project.active_sequence_id.as_deref(), Some(seq2_id.as_str()));
+        assert_eq!(
+            app.project.active_sequence_id.as_deref(),
+            Some(seq2_id.as_str())
+        );
         assert_eq!(app.project.timeline.duration(), 0.0);
 
         // 3. Drop Sequence 1 onto Sequence 2 as a nested sequence
@@ -1370,10 +1435,21 @@ mod tests {
             time: 2.0,
         };
 
-        if let CanvasAction::MediaDropped { media_id, track_id, time } = drop_action {
+        if let CanvasAction::MediaDropped {
+            media_id,
+            track_id,
+            time,
+        } = drop_action
+        {
             let seq_id_opt = media_id.strip_prefix("seq:").map(|s| s.to_string());
             if let Some(s_id) = seq_id_opt {
-                let seq = app.project.sequences.iter().find(|s| s.id == s_id).unwrap().clone();
+                let seq = app
+                    .project
+                    .sequences
+                    .iter()
+                    .find(|s| s.id == s_id)
+                    .unwrap()
+                    .clone();
                 let dur = seq.timeline.duration().max(0.1);
                 let nested_clip = Clip::new_nested_sequence(&seq.id, &seq.name, time, time + dur);
                 assert!(nested_clip.is_nested_sequence());
@@ -1398,14 +1474,29 @@ mod tests {
 
         // 5. Switch back to Sequence 1
         app.project.switch_sequence(&seq1_id);
-        assert_eq!(app.project.active_sequence_id.as_deref(), Some(seq1_id.as_str()));
+        assert_eq!(
+            app.project.active_sequence_id.as_deref(),
+            Some(seq1_id.as_str())
+        );
         assert_eq!(app.project.timeline.duration(), 10.0);
 
         // 6. Duplicate Sequence 1
-        let orig_name = app.project.sequences.iter().find(|s| s.id == seq1_id).unwrap().name.clone();
+        let orig_name = app
+            .project
+            .sequences
+            .iter()
+            .find(|s| s.id == seq1_id)
+            .unwrap()
+            .name
+            .clone();
         let dup_id = app.project.duplicate_sequence(&seq1_id).unwrap();
         assert_eq!(app.project.sequences.len(), 3);
-        let dup_seq = app.project.sequences.iter().find(|s| s.id == dup_id).unwrap();
+        let dup_seq = app
+            .project
+            .sequences
+            .iter()
+            .find(|s| s.id == dup_id)
+            .unwrap();
         assert_eq!(dup_seq.name, format!("{} (Kopya)", orig_name));
 
         // 7. Remove Duplicated Sequence
@@ -1413,5 +1504,3 @@ mod tests {
         assert_eq!(app.project.sequences.len(), 2);
     }
 }
-
-

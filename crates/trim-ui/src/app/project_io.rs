@@ -504,10 +504,8 @@ impl TrimApp {
                         item.name = filename;
                         item.duration = 5.0;
                         self.project.add_media(item);
-                        self.status_message = format!(
-                            "Kare dışa aktarıldı ve havuza eklendi: {}",
-                            path.display()
-                        );
+                        self.status_message =
+                            format!("Kare dışa aktarıldı ve havuza eklendi: {}", path.display());
                     } else {
                         self.status_message = format!("Kare kaydedildi: {}", path.display());
                     }
@@ -591,8 +589,9 @@ impl TrimApp {
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
             let filename = format!("kare_{}_{:06}.png", ts, (self.current_time * 1000.0) as u64);
-            let config = FileDialogConfig::save_file("Kareyi PNG Olarak Kaydet", Some(filename.clone()))
-                .add_filter("PNG Görüntüsü (*.png)", &["png"]);
+            let config =
+                FileDialogConfig::save_file("Kareyi PNG Olarak Kaydet", Some(filename.clone()))
+                    .add_filter("PNG Görüntüsü (*.png)", &["png"]);
             self.file_dialog_bridge.open(
                 FileDialogRequest::ExportCurrentFrame {
                     frame,

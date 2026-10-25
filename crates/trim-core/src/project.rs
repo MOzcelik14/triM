@@ -238,7 +238,10 @@ impl Project {
         if self.active_sequence_id.as_deref() == Some(sequence_id) {
             Some(self.timeline.clone())
         } else {
-            self.sequences.iter().find(|s| s.id == sequence_id).map(|s| s.timeline.clone())
+            self.sequences
+                .iter()
+                .find(|s| s.id == sequence_id)
+                .map(|s| s.timeline.clone())
         }
     }
 
@@ -621,7 +624,9 @@ mod tests {
         assert_eq!(offline_after[0], "m2");
 
         let relinked_m1 = proj.get_media("m1").unwrap();
-        assert_eq!(relinked_m1.file_path, existing_file.to_string_lossy().to_string());
+        assert_eq!(
+            relinked_m1.file_path,
+            existing_file.to_string_lossy().to_string()
+        );
     }
 }
-

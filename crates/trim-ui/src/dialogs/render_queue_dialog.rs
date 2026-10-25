@@ -1,6 +1,9 @@
 //! Multi-job Export / Render Queue dialog modal.
 
-use egui::{Button, Color32, Frame, Margin, ProgressBar, RichText, Rounding, ScrollArea, Stroke, Vec2, Window};
+use egui::{
+    Button, Color32, Frame, Margin, ProgressBar, RichText, Rounding, ScrollArea, Stroke, Vec2,
+    Window,
+};
 use trim_export::queue::{RenderJobStatus, RenderQueue};
 
 const CARD_BG: Color32 = Color32::from_rgb(0x17, 0x19, 0x24);

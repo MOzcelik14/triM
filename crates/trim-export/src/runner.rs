@@ -51,14 +51,18 @@ impl ExportRunner {
         is_cancelled.store(false, Ordering::SeqCst);
 
         thread::spawn(move || {
-            let (cmd_args, total_duration) =
-                match TimelineExporter::build_export_pipeline_range(&project, &preset, &output_path, range) {
-                    Ok(res) => res,
-                    Err(err) => {
-                        let _ = tx.send(ExportMessage::Finished(Err(err)));
-                        return;
-                    }
-                };
+            let (cmd_args, total_duration) = match TimelineExporter::build_export_pipeline_range(
+                &project,
+                &preset,
+                &output_path,
+                range,
+            ) {
+                Ok(res) => res,
+                Err(err) => {
+                    let _ = tx.send(ExportMessage::Finished(Err(err)));
+                    return;
+                }
+            };
 
             let _ = tx.send(ExportMessage::Status("FFmpeg başlatılıyor...".to_string()));
             log::info!("Executing export pipeline: {}", cmd_args.join(" "));

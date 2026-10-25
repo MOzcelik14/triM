@@ -73,7 +73,13 @@ pub fn render_inspector_panel(
             .tracks
             .iter()
             .find(|t| t.get_clip_by_id(clip_id).is_some())
-            .map(|t| (t.id.clone(), t.name.clone(), t.track_type == TrackType::Audio))
+            .map(|t| {
+                (
+                    t.id.clone(),
+                    t.name.clone(),
+                    t.track_type == TrackType::Audio,
+                )
+            })
     });
 
     // Top Inspector Header Bar
@@ -661,15 +667,30 @@ fn render_transform_card(
 
     let record_start = |ui: &mut Ui, orig: &mut Option<(f64, f64, f64, f64, f64)>, clip: &Clip| {
         if orig.is_none() {
-            let snap = (clip.pos_x, clip.pos_y, clip.scale, clip.rotation, clip.opacity);
+            let snap = (
+                clip.pos_x,
+                clip.pos_y,
+                clip.scale,
+                clip.rotation,
+                clip.opacity,
+            );
             *orig = Some(snap);
             ui.data_mut(|d| d.insert_temp(tf_id, snap));
         }
     };
 
-    let check_stop = |ui: &mut Ui, orig: &mut Option<(f64, f64, f64, f64, f64)>, clip: &Clip, action: &mut Option<InspectorAction>| {
+    let check_stop = |ui: &mut Ui,
+                      orig: &mut Option<(f64, f64, f64, f64, f64)>,
+                      clip: &Clip,
+                      action: &mut Option<InspectorAction>| {
         if let Some(old) = *orig {
-            let new = (clip.pos_x, clip.pos_y, clip.scale, clip.rotation, clip.opacity);
+            let new = (
+                clip.pos_x,
+                clip.pos_y,
+                clip.scale,
+                clip.rotation,
+                clip.opacity,
+            );
             if (old.0 - new.0).abs() > 1e-4
                 || (old.1 - new.1).abs() > 1e-4
                 || (old.2 - new.2).abs() > 1e-4
@@ -714,7 +735,13 @@ fn render_transform_card(
         },
         |ui| {
             if reset_clicked.get() {
-                let old = (clip.pos_x, clip.pos_y, clip.scale, clip.rotation, clip.opacity);
+                let old = (
+                    clip.pos_x,
+                    clip.pos_y,
+                    clip.scale,
+                    clip.rotation,
+                    clip.opacity,
+                );
                 let new = (0.0, 0.0, 1.0, 0.0, 1.0);
                 clip.pos_x = 0.0;
                 clip.pos_y = 0.0;
@@ -879,7 +906,12 @@ fn render_crop_card(
 
     let record_start = |ui: &mut Ui, orig: &mut Option<(f32, f32, f32, f32)>, clip: &Clip| {
         if orig.is_none() {
-            let snap = (clip.crop_left, clip.crop_right, clip.crop_top, clip.crop_bottom);
+            let snap = (
+                clip.crop_left,
+                clip.crop_right,
+                clip.crop_top,
+                clip.crop_bottom,
+            );
             *orig = Some(snap);
             ui.data_mut(|d| d.insert_temp(crop_id, snap));
         }
@@ -890,7 +922,12 @@ fn render_crop_card(
                       clip: &Clip,
                       action: &mut Option<InspectorAction>| {
         if let Some(old) = *orig {
-            let new = (clip.crop_left, clip.crop_right, clip.crop_top, clip.crop_bottom);
+            let new = (
+                clip.crop_left,
+                clip.crop_right,
+                clip.crop_top,
+                clip.crop_bottom,
+            );
             if (old.0 - new.0).abs() > 1e-4
                 || (old.1 - new.1).abs() > 1e-4
                 || (old.2 - new.2).abs() > 1e-4
@@ -936,7 +973,12 @@ fn render_crop_card(
         },
         |ui| {
             if reset_clicked.get() {
-                let old = (clip.crop_left, clip.crop_right, clip.crop_top, clip.crop_bottom);
+                let old = (
+                    clip.crop_left,
+                    clip.crop_right,
+                    clip.crop_top,
+                    clip.crop_bottom,
+                );
                 let new = (0.0, 0.0, 0.0, 0.0);
                 clip.crop_left = 0.0;
                 clip.crop_right = 0.0;
@@ -1395,7 +1437,8 @@ fn render_color_card(
                 .inner_margin(Margin::symmetric(8.0, 6.0))
                 .show(ui, |ui| {
                     let cw_id = ui.make_persistent_id(format!("cw_drag_{}", clip.id));
-                    let orig_cw: Option<Option<ColorWheelsConfig>> = ui.data_mut(|d| d.get_temp(cw_id));
+                    let orig_cw: Option<Option<ColorWheelsConfig>> =
+                        ui.data_mut(|d| d.get_temp(cw_id));
 
                     let mut has_cw = clip.color_wheels.is_some();
                     if ui

@@ -50,7 +50,7 @@
         </p>
         <div class="code-box"># Cargo.toml kök dosyası
 [workspace.package]
-version = "1.1.2"</div>
+version = "1.2.0"</div>
         <p style="margin-top: 0.75rem;" data-i18n="rel_step1_lock">
           Ardından <code>Cargo.lock</code> dosyasını güncellemek için <code>cargo check</code> komutunu çalıştırın.
         </p>
@@ -67,7 +67,7 @@ version = "1.1.2"</div>
       <section class="doc-block">
         <h2 data-i18n="rel_step2_title">2. Doğrulama ve Testler</h2>
         <p data-i18n="rel_step2_desc">
-          Etiket oluşturmadan önce çalışma alanındaki tüm 131+ testin, biçimlendirme kurallarının ve clippy denetimlerinin hatasız tamamlandığından emin olun:
+          Etiket oluşturmadan önce çalışma alanındaki tüm 135+ testin, biçimlendirme kurallarının ve clippy denetimlerinin hatasız tamamlandığından emin olun:
         </p>
         <div class="code-box"># 1. Kod biçimlendirme kontrolü
 cargo fmt --all -- --check
@@ -86,12 +86,12 @@ cargo test --workspace</div>
           Değişiklikleri commit edin ve imzalı/açıklamalı bir Git etiketi oluşturarak depoya gönderin:
         </p>
         <div class="code-box">git add -A
-git commit -m "chore: bump version to 1.1.2"
+git commit -m "chore: bump version to 1.2.0"
 git push origin master
 
 # Etiketi oluştur ve pushla
-git tag -a v1.1.2 -m "Release v1.1.2"
-git push origin v1.1.2</div>
+git tag -a v1.2.0 -m "Release v1.2.0"
+git push origin v1.2.0</div>
       </section>
 
       <!-- Step 4 -->

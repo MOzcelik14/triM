@@ -21,7 +21,11 @@ impl Sequence {
         }
     }
 
-    pub fn with_id(id: impl Into<String>, name: impl Into<String>, timeline: TimelineModel) -> Self {
+    pub fn with_id(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        timeline: TimelineModel,
+    ) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
@@ -50,7 +54,8 @@ pub fn flatten_timeline_sequences(
         for clip in &track.clips {
             if let Some(ref seq_id) = clip.nested_sequence_id {
                 if let Some(seq) = sequences.iter().find(|s| &s.id == seq_id) {
-                    let sub_flattened = flatten_timeline_sequences(&seq.timeline, sequences, max_depth - 1);
+                    let sub_flattened =
+                        flatten_timeline_sequences(&seq.timeline, sequences, max_depth - 1);
                     for st in sub_flattened
                         .tracks
                         .iter()
@@ -58,7 +63,11 @@ pub fn flatten_timeline_sequences(
                     {
                         let clip_src_in = clip.source_in;
                         let clip_src_out = clip.effective_source_out();
-                        let spd = if clip.speed.abs() > 0.001 { clip.speed } else { 1.0 };
+                        let spd = if clip.speed.abs() > 0.001 {
+                            clip.speed
+                        } else {
+                            1.0
+                        };
 
                         for sub_clip in &st.clips {
                             let s_in = sub_clip.timeline_in.max(clip_src_in);
@@ -70,8 +79,10 @@ pub fn flatten_timeline_sequences(
                                 let mut mapped_clip = sub_clip.clone();
                                 mapped_clip.timeline_in = clip.timeline_in + offset_in;
                                 mapped_clip.timeline_out = mapped_clip.timeline_in + offset_dur;
-                                mapped_clip.source_in = sub_clip.source_in + (s_in - sub_clip.timeline_in);
-                                mapped_clip.source_out = Some(mapped_clip.source_in + (s_out - s_in));
+                                mapped_clip.source_in =
+                                    sub_clip.source_in + (s_in - sub_clip.timeline_in);
+                                mapped_clip.source_out =
+                                    Some(mapped_clip.source_in + (s_out - s_in));
                                 mapped_clip.speed = sub_clip.speed * spd;
                                 // Combine opacity and volume
                                 mapped_clip.opacity *= clip.opacity;
@@ -88,7 +99,11 @@ pub fn flatten_timeline_sequences(
             new_track.clips.push(clip.clone());
         }
 
-        new_track.clips.sort_by(|a, b| a.timeline_in.partial_cmp(&b.timeline_in).unwrap_or(std::cmp::Ordering::Equal));
+        new_track.clips.sort_by(|a, b| {
+            a.timeline_in
+                .partial_cmp(&b.timeline_in)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         flattened.tracks.push(new_track);
     }
 

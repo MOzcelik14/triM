@@ -430,7 +430,10 @@ pub fn render_timeline_canvas(
                 let mut x = clip_rect.left() - clip_rect.height();
                 while x < clip_rect.right() {
                     let p1 = Pos2::new(x.max(clip_rect.left()), clip_rect.bottom());
-                    let p2 = Pos2::new((x + clip_rect.height()).min(clip_rect.right()), clip_rect.top());
+                    let p2 = Pos2::new(
+                        (x + clip_rect.height()).min(clip_rect.right()),
+                        clip_rect.top(),
+                    );
                     if p2.x > clip_rect.left() && p1.x < clip_rect.right() {
                         painter.line_segment(
                             [p1, p2],
@@ -565,8 +568,12 @@ pub fn render_timeline_canvas(
                         let dur = clip.duration().max(0.04);
                         let mut pts: Vec<Pos2> = Vec::with_capacity(kfs.len() + 2);
 
-                        let v_start = (clip.get_property_at_time("volume", 0.0) / 2.0).clamp(0.0, 1.0) as f32;
-                        pts.push(Pos2::new(clip_rect.left() + 2.0, active_bottom - (v_start * range)));
+                        let v_start =
+                            (clip.get_property_at_time("volume", 0.0) / 2.0).clamp(0.0, 1.0) as f32;
+                        pts.push(Pos2::new(
+                            clip_rect.left() + 2.0,
+                            active_bottom - (v_start * range),
+                        ));
 
                         for kf in kfs {
                             let kf_frac = (kf.time / dur).clamp(0.0, 1.0) as f32;
@@ -576,8 +583,12 @@ pub fn render_timeline_canvas(
                             pts.push(Pos2::new(kf_x, kf_y));
                         }
 
-                        let v_end = (clip.get_property_at_time("volume", dur) / 2.0).clamp(0.0, 1.0) as f32;
-                        pts.push(Pos2::new(clip_rect.right() - 2.0, active_bottom - (v_end * range)));
+                        let v_end =
+                            (clip.get_property_at_time("volume", dur) / 2.0).clamp(0.0, 1.0) as f32;
+                        pts.push(Pos2::new(
+                            clip_rect.right() - 2.0,
+                            active_bottom - (v_end * range),
+                        ));
 
                         for w in pts.windows(2) {
                             painter.line_segment([w[0], w[1]], Stroke::new(1.5_f32, line_color));
@@ -591,13 +602,22 @@ pub fn render_timeline_canvas(
                             let kf_y = active_bottom - (kf_norm * range);
                             let kf_pos = Pos2::new(kf_x, kf_y);
 
-                            let is_node_hovered = hover_p.is_some_and(|p| p.distance(kf_pos) <= 6.0);
+                            let is_node_hovered =
+                                hover_p.is_some_and(|p| p.distance(kf_pos) <= 6.0);
                             let is_active_node = state.drag_mode == DragMode::VolumeRubberband
                                 && state.drag_clip_id.as_deref() == Some(&clip.id)
                                 && state.drag_kf_index == Some(idx);
 
-                            let r = if is_node_hovered || is_active_node { 5.0 } else { 3.5 };
-                            let col = if is_node_hovered || is_active_node { Color32::WHITE } else { line_color };
+                            let r = if is_node_hovered || is_active_node {
+                                5.0
+                            } else {
+                                3.5
+                            };
+                            let col = if is_node_hovered || is_active_node {
+                                Color32::WHITE
+                            } else {
+                                line_color
+                            };
 
                             let diamond = vec![
                                 Pos2::new(kf_pos.x, kf_pos.y - r),
@@ -1427,7 +1447,9 @@ pub fn render_timeline_canvas(
                 state.drag_start_x = pos.x;
 
                 let t_pos = project.timeline.tracks.iter().position(|t| t.id == tr_id);
-                let (ty, track_h) = t_pos.map(|idx| track_offsets[idx]).unwrap_or((rect.top(), state.track_height));
+                let (ty, track_h) = t_pos
+                    .map(|idx| track_offsets[idx])
+                    .unwrap_or((rect.top(), state.track_height));
 
                 if let Some(tr) = project.timeline.get_track_by_id_mut(&tr_id) {
                     if let Some(cl) = tr.get_clip_by_id_mut(&cl_id) {
@@ -1436,10 +1458,14 @@ pub fn render_timeline_canvas(
                         state.drag_orig_sin = cl.source_in;
                         state.drag_orig_sout = cl.effective_source_out();
                         state.drag_orig_vol = cl.volume;
-                        state.drag_orig_keyframes = cl.keyframes.get("volume").cloned().unwrap_or_default();
+                        state.drag_orig_keyframes =
+                            cl.keyframes.get("volume").cloned().unwrap_or_default();
                         state.drag_kf_index = None;
 
-                        if ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary)) {
+                        if ui.input(|i| {
+                            i.pointer
+                                .button_double_clicked(egui::PointerButton::Primary)
+                        }) {
                             if let Some(ref seq_id) = cl.nested_sequence_id {
                                 action = Some(CanvasAction::OpenSequence(seq_id.clone()));
                                 state.drag_mode = DragMode::None;
@@ -1451,16 +1477,20 @@ pub fn render_timeline_canvas(
                             let active_top = ty + 18.0;
                             let active_bottom = ty + track_h - 6.0;
                             let range = (active_bottom - active_top).max(8.0);
-                            let cx = rect.left() + (cl.timeline_in as f32 * state.pixels_per_second);
+                            let cx =
+                                rect.left() + (cl.timeline_in as f32 * state.pixels_per_second);
                             let cw = (dur as f32 * state.pixels_per_second).max(4.0);
-                            let clip_rect = Rect::from_min_size(Pos2::new(cx, ty), Vec2::new(cw, track_h));
+                            let clip_rect =
+                                Rect::from_min_size(Pos2::new(cx, ty), Vec2::new(cw, track_h));
 
                             // 1. Check if user clicked an existing keyframe diamond
                             let mut clicked_kf_idx = None;
                             if let Some(kfs) = cl.keyframes.get("volume") {
                                 for (idx, kf) in kfs.iter().enumerate() {
                                     let kf_frac = (kf.time / dur).clamp(0.0, 1.0) as f32;
-                                    let kf_x = clip_rect.left() + 2.0 + kf_frac * (clip_rect.width() - 4.0);
+                                    let kf_x = clip_rect.left()
+                                        + 2.0
+                                        + kf_frac * (clip_rect.width() - 4.0);
                                     let kf_norm = (kf.value / 2.0).clamp(0.0, 1.0) as f32;
                                     let kf_y = active_bottom - (kf_norm * range);
                                     if pos.distance(Pos2::new(kf_x, kf_y)) <= 8.0 {
@@ -1488,9 +1518,14 @@ pub fn render_timeline_canvas(
                                 } else {
                                     state.drag_kf_index = Some(idx);
                                 }
-                            } else if state.active_tool == EditTool::Pen || ui.input(|i| i.modifiers.ctrl) {
+                            } else if state.active_tool == EditTool::Pen
+                                || ui.input(|i| i.modifiers.ctrl)
+                            {
                                 // Pen tool or Ctrl+click: insert a new keyframe!
-                                let rel_frac = ((pos.x - (clip_rect.left() + 2.0)) / (clip_rect.width() - 4.0)).clamp(0.0, 1.0) as f64;
+                                let rel_frac = ((pos.x - (clip_rect.left() + 2.0))
+                                    / (clip_rect.width() - 4.0))
+                                    .clamp(0.0, 1.0)
+                                    as f64;
                                 let rel_t = (rel_frac * dur).clamp(0.0, dur);
                                 let norm = ((active_bottom - pos.y) / range).clamp(0.0, 1.0);
                                 let click_vol = ((norm as f64) * 2.0).clamp(0.0, 2.0);
@@ -1498,20 +1533,46 @@ pub fn render_timeline_canvas(
                                 let old_kfs = state.drag_orig_keyframes.clone();
                                 let mut new_kfs = if old_kfs.is_empty() {
                                     vec![
-                                        trim_core::keyframe::Keyframe::new(0.0, cl.volume, trim_core::keyframe::Interpolation::Linear),
-                                        trim_core::keyframe::Keyframe::new(rel_t, click_vol, trim_core::keyframe::Interpolation::Linear),
-                                        trim_core::keyframe::Keyframe::new(dur, cl.volume, trim_core::keyframe::Interpolation::Linear),
+                                        trim_core::keyframe::Keyframe::new(
+                                            0.0,
+                                            cl.volume,
+                                            trim_core::keyframe::Interpolation::Linear,
+                                        ),
+                                        trim_core::keyframe::Keyframe::new(
+                                            rel_t,
+                                            click_vol,
+                                            trim_core::keyframe::Interpolation::Linear,
+                                        ),
+                                        trim_core::keyframe::Keyframe::new(
+                                            dur,
+                                            cl.volume,
+                                            trim_core::keyframe::Interpolation::Linear,
+                                        ),
                                     ]
                                 } else {
                                     let mut k = old_kfs.clone();
-                                    k.push(trim_core::keyframe::Keyframe::new(rel_t, click_vol, trim_core::keyframe::Interpolation::Linear));
+                                    k.push(trim_core::keyframe::Keyframe::new(
+                                        rel_t,
+                                        click_vol,
+                                        trim_core::keyframe::Interpolation::Linear,
+                                    ));
                                     k
                                 };
-                                new_kfs.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
-                                let added_idx = new_kfs.iter().position(|k| (k.time - rel_t).abs() < 1e-4).unwrap_or(0);
+                                new_kfs.sort_by(|a, b| {
+                                    a.time
+                                        .partial_cmp(&b.time)
+                                        .unwrap_or(std::cmp::Ordering::Equal)
+                                });
+                                let added_idx = new_kfs
+                                    .iter()
+                                    .position(|k| (k.time - rel_t).abs() < 1e-4)
+                                    .unwrap_or(0);
                                 cl.keyframes.insert("volume".to_string(), new_kfs);
                                 state.drag_kf_index = Some(added_idx);
-                            } else if ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary)) {
+                            } else if ui.input(|i| {
+                                i.pointer
+                                    .button_double_clicked(egui::PointerButton::Primary)
+                            }) {
                                 let old_v = cl.volume;
                                 cl.volume = 1.0;
                                 cl.keyframes.remove("volume");
@@ -1544,9 +1605,11 @@ pub fn render_timeline_canvas(
                     for (t_id, c_id) in &state.selected_clip_pairs {
                         if let Some(tr) = project.timeline.get_track_by_id(t_id) {
                             if let Some(cl) = tr.get_clip_by_id(c_id) {
-                                state
-                                    .batch_orig_ins
-                                    .push((t_id.clone(), c_id.clone(), cl.timeline_in));
+                                state.batch_orig_ins.push((
+                                    t_id.clone(),
+                                    c_id.clone(),
+                                    cl.timeline_in,
+                                ));
                             }
                         }
                     }
@@ -1810,7 +1873,11 @@ pub fn render_timeline_canvas(
                                 painter.text(
                                     tip_rect.center(),
                                     egui::Align2::CENTER_CENTER,
-                                    format!("Slip: {:.2}s - {:.2}s", cl.source_in, cl.effective_source_out()),
+                                    format!(
+                                        "Slip: {:.2}s - {:.2}s",
+                                        cl.source_in,
+                                        cl.effective_source_out()
+                                    ),
                                     egui::FontId::proportional(11.0),
                                     Color32::WHITE,
                                 );
@@ -1909,14 +1976,21 @@ pub fn render_timeline_canvas(
                                 if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
                                     if let Some(kf_idx) = state.drag_kf_index {
                                         let dur = cl.duration().max(0.04);
-                                        let cx = rect.left() + (cl.timeline_in as f32 * state.pixels_per_second);
+                                        let cx = rect.left()
+                                            + (cl.timeline_in as f32 * state.pixels_per_second);
                                         let cw = (dur as f32 * state.pixels_per_second).max(4.0);
-                                        let rel_frac = ((pos.x - (cx + 2.0)) / (cw - 4.0)).clamp(0.0, 1.0) as f64;
+                                        let rel_frac = ((pos.x - (cx + 2.0)) / (cw - 4.0))
+                                            .clamp(0.0, 1.0)
+                                            as f64;
                                         let new_t = (rel_frac * dur).clamp(0.0, dur);
 
                                         if let Some(kfs) = cl.keyframes.get_mut("volume") {
                                             if kf_idx < kfs.len() {
-                                                let orig_t = state.drag_orig_keyframes.get(kf_idx).map(|k| k.time).unwrap_or(new_t);
+                                                let orig_t = state
+                                                    .drag_orig_keyframes
+                                                    .get(kf_idx)
+                                                    .map(|k| k.time)
+                                                    .unwrap_or(new_t);
                                                 if orig_t <= 0.001 {
                                                     kfs[kf_idx].time = 0.0;
                                                 } else if (orig_t - dur).abs() <= 0.001 {
@@ -1925,7 +1999,8 @@ pub fn render_timeline_canvas(
                                                     kfs[kf_idx].time = new_t;
                                                 }
                                                 kfs[kf_idx].value = new_vol;
-                                                tip_time_str = format!("{:.2}s | ", kfs[kf_idx].time);
+                                                tip_time_str =
+                                                    format!("{:.2}s | ", kfs[kf_idx].time);
                                             }
                                         }
                                     } else {
@@ -1942,7 +2017,12 @@ pub fn render_timeline_canvas(
                             let tip_str = if db <= -60.0 {
                                 format!("{}Ses: -∞ dB (Sessiz)", tip_time_str)
                             } else {
-                                format!("{}Ses: {:+.1} dB ({:.0}%)", tip_time_str, db, new_vol * 100.0)
+                                format!(
+                                    "{}Ses: {:+.1} dB ({:.0}%)",
+                                    tip_time_str,
+                                    db,
+                                    new_vol * 100.0
+                                )
                             };
                             let tip_rect = Rect::from_center_size(
                                 Pos2::new(pos.x, pos.y - 20.0),
@@ -2103,11 +2183,18 @@ pub fn render_timeline_canvas(
                 if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id) {
                     if let Some(tr) = project.timeline.get_track_by_id_mut(tr_id) {
                         if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
-                            if state.drag_kf_index.is_some() || !state.drag_orig_keyframes.is_empty() {
+                            if state.drag_kf_index.is_some()
+                                || !state.drag_orig_keyframes.is_empty()
+                            {
                                 if let Some(kfs) = cl.keyframes.get_mut("volume") {
-                                    kfs.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));
+                                    kfs.sort_by(|a, b| {
+                                        a.time
+                                            .partial_cmp(&b.time)
+                                            .unwrap_or(std::cmp::Ordering::Equal)
+                                    });
                                 }
-                                let new_kfs = cl.keyframes.get("volume").cloned().unwrap_or_default();
+                                let new_kfs =
+                                    cl.keyframes.get("volume").cloned().unwrap_or_default();
                                 if new_kfs != state.drag_orig_keyframes {
                                     action = Some(CanvasAction::SetClipKeyframes {
                                         track_id: tr_id.clone(),
@@ -2391,7 +2478,8 @@ pub(crate) fn find_clip_at_pos(
                     let active_bottom = clip_rect.bottom() - 6.0;
                     let range = (active_bottom - active_top).max(8.0);
                     let dur = clip.duration().max(0.04);
-                    let rel_frac = ((pos.x - (clip_rect.left() + 2.0)) / (clip_rect.width() - 4.0)).clamp(0.0, 1.0) as f64;
+                    let rel_frac = ((pos.x - (clip_rect.left() + 2.0)) / (clip_rect.width() - 4.0))
+                        .clamp(0.0, 1.0) as f64;
                     let rel_t = (rel_frac * dur).clamp(0.0, dur);
 
                     let is_pen = state.active_tool == EditTool::Pen;

@@ -2046,7 +2046,3 @@ impl Command for SetClipKeyframesCommand {
         "Anahtar Kareleri Değiştir"
     }
 }
-
-
-
-

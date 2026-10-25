@@ -56,6 +56,18 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.2.0" date="2026-10-25">
+      <description>
+        <p>triM. v1.2.0 - Multiple Timelines, Nested Sequences, Render Queue, Volume Envelope, Ripple Tool, and Video Crop:</p>
+        <ul>
+          <li>Multiple Timelines and Nested Sequences: Create multiple sequences in a single project, switch via tabs, duplicate or nest sequences onto timelines with recursive rendering.</li>
+          <li>Batch Render Queue: Queue multiple export jobs with background sequential rendering, progress tracking, and queue management modal.</li>
+          <li>Volume Automation Envelope: Multi-point keyframed rubberband volume automation on audio clips with DSP sample interpolation.</li>
+          <li>Ripple Edit Tool ('B'): Interactive ripple trimming tool dynamically shifting downstream clips without leaving gaps.</li>
+          <li>Video Crop Effect: Four-sided percentage cropping with real-time GPU shader clipping and FFmpeg export filter.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.1.2" date="2026-10-25">
       <description>
         <p>triM. v1.1.2 - Timeline Track Overflow and Vertical Scrolling Fix:</p>

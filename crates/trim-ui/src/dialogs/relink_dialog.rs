@@ -117,7 +117,9 @@ impl RelinkDialog {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
                     if ui
-                        .button(RichText::new("📁 Klasör Seçerek Otomatik Yeniden Bağla...").strong())
+                        .button(
+                            RichText::new("📁 Klasör Seçerek Otomatik Yeniden Bağla...").strong(),
+                        )
                         .clicked()
                     {
                         action = Some(RelinkDialogAction::PickFolder);
@@ -134,37 +136,33 @@ impl RelinkDialog {
                 ui.label(RichText::new("Kayıp Medya Listesi:").strong());
                 ui.add_space(4.0);
 
-                ScrollArea::vertical()
-                    .max_height(220.0)
-                    .show(ui, |ui| {
-                        for item in &self.offline_items {
-                            ui.group(|ui| {
-                                ui.horizontal(|ui| {
-                                    ui.vertical(|ui| {
-                                        ui.label(RichText::new(&item.name).strong());
-                                        ui.label(
-                                            RichText::new(&item.file_path)
-                                                .size(11.0)
-                                                .color(Color32::from_rgb(0xe0, 0x70, 0x70)),
-                                        );
-                                    });
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            if ui.button("Gözat...").clicked() {
-                                                action = Some(
-                                                    RelinkDialogAction::PickSingleMedia {
-                                                        media_id: item.media_id.clone(),
-                                                    },
-                                                );
-                                            }
-                                        },
+                ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                    for item in &self.offline_items {
+                        ui.group(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.vertical(|ui| {
+                                    ui.label(RichText::new(&item.name).strong());
+                                    ui.label(
+                                        RichText::new(&item.file_path)
+                                            .size(11.0)
+                                            .color(Color32::from_rgb(0xe0, 0x70, 0x70)),
                                     );
                                 });
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if ui.button("Gözat...").clicked() {
+                                            action = Some(RelinkDialogAction::PickSingleMedia {
+                                                media_id: item.media_id.clone(),
+                                            });
+                                        }
+                                    },
+                                );
                             });
-                            ui.add_space(2.0);
-                        }
-                    });
+                        });
+                        ui.add_space(2.0);
+                    }
+                });
 
                 ui.add_space(10.0);
                 ui.separator();

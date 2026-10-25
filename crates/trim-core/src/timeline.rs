@@ -792,4 +792,3 @@ mod tests {
         assert_eq!(tl.effective_in_out(), (0.0, 10.0));
     }
 }
-

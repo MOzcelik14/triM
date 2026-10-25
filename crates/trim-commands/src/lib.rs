@@ -788,7 +788,9 @@ mod tests {
         // 1. Transform Command
         let old_tf = (0.0, 0.0, 1.0, 0.0, 1.0);
         let new_tf = (50.0, -20.0, 1.5, 45.0, 0.8);
-        let tf_cmd = Box::new(SetClipTransformCommand::new(&v1_id, &clip_id, old_tf, new_tf));
+        let tf_cmd = Box::new(SetClipTransformCommand::new(
+            &v1_id, &clip_id, old_tf, new_tf,
+        ));
         stack.push(tf_cmd, &mut tl).unwrap();
 
         let c = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
@@ -810,25 +812,49 @@ mod tests {
             lift: [0.1, 0.2, 0.3],
             ..Default::default()
         };
-        let cw_cmd = Box::new(SetClipColorWheelsCommand::new(&v1_id, &clip_id, None, Some(wheels.clone())));
+        let cw_cmd = Box::new(SetClipColorWheelsCommand::new(
+            &v1_id,
+            &clip_id,
+            None,
+            Some(wheels.clone()),
+        ));
         stack.push(cw_cmd, &mut tl).unwrap();
-        assert_eq!(tl.tracks[0].get_clip_by_id(&clip_id).unwrap().color_wheels, Some(wheels));
+        assert_eq!(
+            tl.tracks[0].get_clip_by_id(&clip_id).unwrap().color_wheels,
+            Some(wheels)
+        );
 
         stack.undo(&mut tl).unwrap();
-        assert_eq!(tl.tracks[0].get_clip_by_id(&clip_id).unwrap().color_wheels, None);
+        assert_eq!(
+            tl.tracks[0].get_clip_by_id(&clip_id).unwrap().color_wheels,
+            None
+        );
 
         // 3. EQ Preset Command
-        let eq_cmd = Box::new(SetClipEqPresetCommand::new(&v1_id, &clip_id, AudioEqPreset::Flat, AudioEqPreset::VoiceClarity));
+        let eq_cmd = Box::new(SetClipEqPresetCommand::new(
+            &v1_id,
+            &clip_id,
+            AudioEqPreset::Flat,
+            AudioEqPreset::VoiceClarity,
+        ));
         stack.push(eq_cmd, &mut tl).unwrap();
-        assert_eq!(tl.tracks[0].get_clip_by_id(&clip_id).unwrap().eq_preset, AudioEqPreset::VoiceClarity);
+        assert_eq!(
+            tl.tracks[0].get_clip_by_id(&clip_id).unwrap().eq_preset,
+            AudioEqPreset::VoiceClarity
+        );
 
         stack.undo(&mut tl).unwrap();
-        assert_eq!(tl.tracks[0].get_clip_by_id(&clip_id).unwrap().eq_preset, AudioEqPreset::Flat);
+        assert_eq!(
+            tl.tracks[0].get_clip_by_id(&clip_id).unwrap().eq_preset,
+            AudioEqPreset::Flat
+        );
 
         // 4. Crop Command
         let old_crop = (0.0, 0.0, 0.0, 0.0);
         let new_crop = (0.1, 0.15, 0.05, 0.2);
-        let crop_cmd = Box::new(SetClipCropCommand::new(&v1_id, &clip_id, old_crop, new_crop));
+        let crop_cmd = Box::new(SetClipCropCommand::new(
+            &v1_id, &clip_id, old_crop, new_crop,
+        ));
         stack.push(crop_cmd, &mut tl).unwrap();
         let c = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
         assert_eq!(c.crop_left, 0.1);
@@ -856,7 +882,9 @@ mod tests {
         let old_bounds = (0.0, 5.0, 0.0, 5.0);
         let new_bounds = (0.0, 3.0, 0.0, 3.0);
         let shifted = vec![(v1_id.clone(), c2_id.clone(), 5.0, 3.0)];
-        let ripple_cmd = Box::new(RippleTrimEdgeCommand::new(&v1_id, &clip_id, old_bounds, new_bounds, shifted));
+        let ripple_cmd = Box::new(RippleTrimEdgeCommand::new(
+            &v1_id, &clip_id, old_bounds, new_bounds, shifted,
+        ));
         stack.push(ripple_cmd, &mut tl).unwrap();
 
         let c1 = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
@@ -883,7 +911,13 @@ mod tests {
             Keyframe::new(2.5, 0.3, Interpolation::Linear),
             Keyframe::new(5.0, 1.0, Interpolation::Linear),
         ];
-        let kf_cmd = Box::new(SetClipKeyframesCommand::new(&v1_id, &clip_id, "volume", Vec::new(), kfs.clone()));
+        let kf_cmd = Box::new(SetClipKeyframesCommand::new(
+            &v1_id,
+            &clip_id,
+            "volume",
+            Vec::new(),
+            kfs.clone(),
+        ));
         stack.push(kf_cmd, &mut tl).unwrap();
 
         let c1 = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
@@ -899,7 +933,3 @@ mod tests {
         assert_eq!(c1.keyframes.get("volume"), Some(&kfs));
     }
 }
-
-
-
-

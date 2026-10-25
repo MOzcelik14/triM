@@ -116,7 +116,8 @@ impl ExportDialog {
         self.custom_fps = project.timeline.fps;
         self.in_point = project.timeline.in_point;
         self.out_point = project.timeline.out_point;
-        self.export_range_only = project.timeline.in_point.is_some() || project.timeline.out_point.is_some();
+        self.export_range_only =
+            project.timeline.in_point.is_some() || project.timeline.out_point.is_some();
         self.open_with_duration(project.timeline.duration());
     }
 

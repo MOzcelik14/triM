@@ -1080,7 +1080,11 @@ pub fn render_media_bin(
                 painter.text(
                     egui::pos2(rect.left() + 36.0, rect.bottom() - 5.0),
                     egui::Align2::LEFT_BOTTOM,
-                    format!("Sekans  •  {}  •  {} kanal", dur_str, seq.timeline.tracks.len()),
+                    format!(
+                        "Sekans  •  {}  •  {} kanal",
+                        dur_str,
+                        seq.timeline.tracks.len()
+                    ),
                     egui::FontId::monospace(9.5),
                     Color32::from_rgb(0x9d, 0x94, 0xb8),
                 );

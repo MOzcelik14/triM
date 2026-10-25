@@ -20,7 +20,7 @@ const I18N = {
     hero_desc: "triM, arayüzü egui ile doğrudan çizilen, medya çözümleme ve kodlama için sistemdeki FFmpeg araçlarını kullanan, 13 MB boyutunda yerel bir masaüstü video düzenleyicisidir. Tarayıcı motoru, Electron veya bulut bağımlılığı içermez.",
     btn_download: "Sürümleri İndir ↘",
     btn_github: "GitHub Deposu ↗",
-    window_title: "triM. v1.1.2 — Sinematik Kurgu Masası",
+    window_title: "triM. v1.2.0 — Sinematik Kurgu Masası",
 
     // Features Section
     sec_features: "Temel Özellikler",
@@ -62,7 +62,7 @@ const I18N = {
     // Gallery Section
     sec_gallery: "Canlı Uygulama Ekranları",
     sec_gallery_heading: "Gerçek Çalışma Alanı Görünümleri",
-    sec_gallery_sub: "Uygulamanın v1.1.2 sürümünden doğrudan alınan ekran görüntüleri. Büyütmek için tıklayın.",
+    sec_gallery_sub: "Uygulamanın v1.2.0 sürümünden doğrudan alınan ekran görüntüleri. Büyütmek için tıklayın.",
     filter_all: "Tümü (8)",
     filter_edit: "Kurgu Masası",
     filter_color_audio: "Renk & Ses",
@@ -208,7 +208,7 @@ const I18N = {
     hero_desc: "triM is a 13 MB native desktop non-linear video editor with its UI rendered immediately via egui, using system FFmpeg for media decoding and encoding. Zero browser engine, zero Electron, zero cloud account lock-in.",
     btn_download: "Download Releases ↘",
     btn_github: "GitHub Repository ↗",
-    window_title: "triM. v1.1.2 — Cinematic Editing Suite",
+    window_title: "triM. v1.2.0 — Cinematic Editing Suite",
 
     // Features Section
     sec_features: "Core Features",
@@ -250,7 +250,7 @@ const I18N = {
     // Gallery Section
     sec_gallery: "Live In-App Screenshots",
     sec_gallery_heading: "Real In-App Views",
-    sec_gallery_sub: "Real screenshots captured directly from triM v1.1.2. Click to enlarge.",
+    sec_gallery_sub: "Real screenshots captured directly from triM v1.2.0. Click to enlarge.",
     filter_all: "All (8)",
     filter_edit: "Workspace & Timeline",
     filter_color_audio: "Color & Audio",

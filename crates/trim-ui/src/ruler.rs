@@ -61,7 +61,10 @@ pub fn render_time_ruler(
                 Stroke::new(2.0_f32, Color32::from_rgb(0x38, 0xa0, 0xf0)),
             );
             painter.line_segment(
-                [Pos2::new(in_x, rect.top()), Pos2::new(in_x + 5.0, rect.top())],
+                [
+                    Pos2::new(in_x, rect.top()),
+                    Pos2::new(in_x + 5.0, rect.top()),
+                ],
                 Stroke::new(2.0_f32, Color32::from_rgb(0x38, 0xa0, 0xf0)),
             );
             painter.line_segment(
@@ -76,11 +79,17 @@ pub fn render_time_ruler(
         // Draw Out marker bracket: ]
         if out_point.is_some() && out_x >= rect.left() && out_x <= rect.right() {
             painter.line_segment(
-                [Pos2::new(out_x, rect.top()), Pos2::new(out_x, rect.bottom())],
+                [
+                    Pos2::new(out_x, rect.top()),
+                    Pos2::new(out_x, rect.bottom()),
+                ],
                 Stroke::new(2.0_f32, Color32::from_rgb(0x38, 0xa0, 0xf0)),
             );
             painter.line_segment(
-                [Pos2::new(out_x - 5.0, rect.top()), Pos2::new(out_x, rect.top())],
+                [
+                    Pos2::new(out_x - 5.0, rect.top()),
+                    Pos2::new(out_x, rect.top()),
+                ],
                 Stroke::new(2.0_f32, Color32::from_rgb(0x38, 0xa0, 0xf0)),
             );
             painter.line_segment(

@@ -1180,7 +1180,10 @@ impl eframe::App for TrimApp {
                     }
                     ui.separator();
                     let has_sel = !self.canvas_state.selected_clip_pairs.is_empty();
-                    if ui.add_enabled(has_sel, Button::new("Kes (Ctrl+X)")).clicked() {
+                    if ui
+                        .add_enabled(has_sel, Button::new("Kes (Ctrl+X)"))
+                        .clicked()
+                    {
                         self.copy_selected_clips();
                         self.delete_selected_clips();
                         ctx.output_mut(|o| {
@@ -1188,7 +1191,10 @@ impl eframe::App for TrimApp {
                         });
                         ui.close_menu();
                     }
-                    if ui.add_enabled(has_sel, Button::new("Kopyala (Ctrl+C)")).clicked() {
+                    if ui
+                        .add_enabled(has_sel, Button::new("Kopyala (Ctrl+C)"))
+                        .clicked()
+                    {
                         self.copy_selected_clips();
                         ctx.output_mut(|o| {
                             o.copied_text = format!("trim://clips/{}", self.clipboard_clips.len());
@@ -1196,7 +1202,10 @@ impl eframe::App for TrimApp {
                         ui.close_menu();
                     }
                     let can_paste = !self.clipboard_clips.is_empty();
-                    if ui.add_enabled(can_paste, Button::new("Yapıştır (Ctrl+V)")).clicked() {
+                    if ui
+                        .add_enabled(can_paste, Button::new("Yapıştır (Ctrl+V)"))
+                        .clicked()
+                    {
                         self.paste_clipboard_clips();
                         ui.close_menu();
                     }
@@ -3092,8 +3101,13 @@ impl eframe::App for TrimApp {
                 ExportDialogAction::StartExport(preset, out_path, range) => {
                     let (tx, rx) = channel();
                     self.export_rx = Some(rx);
-                    self.export_runner
-                        .start_export(self.project.clone(), preset, out_path, range, tx);
+                    self.export_runner.start_export(
+                        self.project.clone(),
+                        preset,
+                        out_path,
+                        range,
+                        tx,
+                    );
                 }
                 ExportDialogAction::CancelExport => {
                     self.export_runner.cancel();
@@ -3107,13 +3121,8 @@ impl eframe::App for TrimApp {
                         .and_then(|s| s.to_str())
                         .unwrap_or("Dışa Aktarma İşi")
                         .to_string();
-                    let job = RenderJob::new(
-                        job_name,
-                        self.project.clone(),
-                        preset,
-                        out_path,
-                        range,
-                    );
+                    let job =
+                        RenderJob::new(job_name, self.project.clone(), preset, out_path, range);
                     self.render_queue.add_job(job);
                     self.render_queue_dialog.open();
                     self.status_message = "İş dışa aktarma kuyruğuna eklendi.".to_string();

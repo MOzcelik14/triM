@@ -510,7 +510,8 @@ impl TrimApp {
         let paste_time = self.current_time;
         let mut new_selection = Vec::new();
         let mut commands: Vec<Box<dyn trim_commands::Command>> = Vec::new();
-        let mut linked_id_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut linked_id_map: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
 
         let mut max_out = paste_time;
         for (track_type, rel_offset, clip) in &self.clipboard_clips {
@@ -519,21 +520,22 @@ impl TrimApp {
                 trim_core::track::TrackType::Audio => self.target_audio_track.clone(),
             };
 
-            let final_track_id = if let Some(tr) = self.project.timeline.get_track_by_id(&target_track_id) {
-                if tr.track_type == *track_type && !tr.locked {
-                    target_track_id
+            let final_track_id =
+                if let Some(tr) = self.project.timeline.get_track_by_id(&target_track_id) {
+                    if tr.track_type == *track_type && !tr.locked {
+                        target_track_id
+                    } else {
+                        self.project
+                            .timeline
+                            .tracks
+                            .iter()
+                            .find(|t| t.track_type == *track_type && !t.locked)
+                            .map(|t| t.id.clone())
+                            .unwrap_or(target_track_id)
+                    }
                 } else {
-                    self.project
-                        .timeline
-                        .tracks
-                        .iter()
-                        .find(|t| t.track_type == *track_type && !t.locked)
-                        .map(|t| t.id.clone())
-                        .unwrap_or(target_track_id)
-                }
-            } else {
-                target_track_id
-            };
+                    target_track_id
+                };
 
             let mut new_clip = clip.clone();
             let new_clip_id = uuid::Uuid::new_v4().to_string();
@@ -559,15 +561,25 @@ impl TrimApp {
         }
 
         let count = commands.len();
-        let macro_cmd = Box::new(trim_commands::MacroCommand::new("Klip(leri) Yapıştır", commands));
-        if self.undo_stack.push(macro_cmd, &mut self.project.timeline).is_ok() {
+        let macro_cmd = Box::new(trim_commands::MacroCommand::new(
+            "Klip(leri) Yapıştır",
+            commands,
+        ));
+        if self
+            .undo_stack
+            .push(macro_cmd, &mut self.project.timeline)
+            .is_ok()
+        {
             self.canvas_state.selected_clip_pairs = new_selection;
             self.current_time = max_out;
             self.last_rendered_dirty = true;
             self.video_engine.clear_cache();
             self.audio_mixer.clear_cache();
             self.project.mark_dirty();
-            self.status_message = format!("📋 Yapıştırıldı: {} klip ({:.2}s -> {:.2}s)", count, paste_time, max_out);
+            self.status_message = format!(
+                "📋 Yapıştırıldı: {} klip ({:.2}s -> {:.2}s)",
+                count, paste_time, max_out
+            );
         }
     }
 }
