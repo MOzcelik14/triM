@@ -1032,4 +1032,62 @@ mod tests {
         let _ = app.undo_stack.redo(&mut app.project.timeline);
         assert_eq!(app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(), 2);
     }
+
+    #[test]
+    fn test_slip_edit_tool() {
+        use crate::canvas::{find_clip_at_pos, DragMode};
+        use crate::toolbar::EditTool;
+        use trim_commands::commands::TrimClipCommand;
+        use trim_core::clip::Clip;
+
+        let mut app = TrimApp::default();
+        let v1_id = app.project.timeline.get_video_tracks()[0].id.clone();
+        let mut clip = Clip::new("media_slip", 2.0, 7.0); // 5s duration
+        clip.source_in = 3.0;
+        clip.source_out = Some(8.0);
+        let clip_id = clip.id.clone();
+        app.project.timeline.get_track_by_id_mut(&v1_id).unwrap().add_clip(clip);
+
+        // 1. Hit test with Select tool vs Slip tool
+        app.canvas_state.active_tool = EditTool::Select;
+        let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(1000.0, 500.0));
+        let pos = egui::Pos2::new(
+            (2.0 + 2.5) * app.canvas_state.pixels_per_second, // middle of clip
+            20.0,
+        );
+        let res_select = find_clip_at_pos(&app.project, &app.canvas_state, rect, pos);
+        assert_eq!(res_select.unwrap().2, DragMode::Move);
+
+        app.canvas_state.active_tool = EditTool::Slip;
+        let res_slip = find_clip_at_pos(&app.project, &app.canvas_state, rect, pos);
+        assert_eq!(res_slip.unwrap().2, DragMode::Slip);
+
+        // 2. Slip operation: timeline_in and timeline_out stay fixed (2.0 to 7.0)
+        // Shifting source window from 3.0..8.0 to 5.0..10.0
+        let old_bounds = (2.0, 7.0, 3.0, 8.0);
+        let new_bounds = (2.0, 7.0, 5.0, 10.0);
+        let cmd = Box::new(TrimClipCommand::new(&v1_id, &clip_id, old_bounds, new_bounds));
+        app.undo_stack.push(cmd, &mut app.project.timeline).unwrap();
+
+        let slipped_clip = app.project.timeline.get_track_by_id(&v1_id).unwrap().get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(slipped_clip.timeline_in, 2.0);
+        assert_eq!(slipped_clip.timeline_out, 7.0);
+        assert_eq!(slipped_clip.source_in, 5.0);
+        assert_eq!(slipped_clip.source_out, Some(10.0));
+
+        // 3. Undo Slip
+        app.undo_stack.undo(&mut app.project.timeline).unwrap();
+        let undone_clip = app.project.timeline.get_track_by_id(&v1_id).unwrap().get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(undone_clip.timeline_in, 2.0);
+        assert_eq!(undone_clip.timeline_out, 7.0);
+        assert_eq!(undone_clip.source_in, 3.0);
+        assert_eq!(undone_clip.source_out, Some(8.0));
+
+        // 4. Redo Slip
+        app.undo_stack.redo(&mut app.project.timeline).unwrap();
+        let redone_clip = app.project.timeline.get_track_by_id(&v1_id).unwrap().get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(redone_clip.source_in, 5.0);
+        assert_eq!(redone_clip.source_out, Some(10.0));
+    }
 }
+

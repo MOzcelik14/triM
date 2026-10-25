@@ -649,7 +649,7 @@ fn render_transform_card(
     let tf_id = ui.make_persistent_id(format!("tf_drag_{}", clip.id));
     let mut orig_tf: Option<(f64, f64, f64, f64, f64)> = ui.data_mut(|d| d.get_temp(tf_id));
 
-    let mut record_start = |ui: &mut Ui, orig: &mut Option<(f64, f64, f64, f64, f64)>, clip: &Clip| {
+    let record_start = |ui: &mut Ui, orig: &mut Option<(f64, f64, f64, f64, f64)>, clip: &Clip| {
         if orig.is_none() {
             let snap = (clip.pos_x, clip.pos_y, clip.scale, clip.rotation, clip.opacity);
             *orig = Some(snap);
@@ -657,7 +657,7 @@ fn render_transform_card(
         }
     };
 
-    let mut check_stop = |ui: &mut Ui, orig: &mut Option<(f64, f64, f64, f64, f64)>, clip: &Clip, action: &mut Option<InspectorAction>| {
+    let check_stop = |ui: &mut Ui, orig: &mut Option<(f64, f64, f64, f64, f64)>, clip: &Clip, action: &mut Option<InspectorAction>| {
         if let Some(old) = *orig {
             let new = (clip.pos_x, clip.pos_y, clip.scale, clip.rotation, clip.opacity);
             if (old.0 - new.0).abs() > 1e-4
