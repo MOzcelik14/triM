@@ -93,6 +93,10 @@ pub enum FileDialogRequest {
     RelinkSingleMedia {
         media_id: String,
     },
+    ExportCurrentFrame {
+        frame: std::sync::Arc<image::RgbaImage>,
+        default_name: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

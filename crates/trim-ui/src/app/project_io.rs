@@ -490,6 +490,31 @@ impl TrimApp {
                     self.relink_dialog.refresh(&self.project);
                 }
             }
+            FileDialogRequest::ExportCurrentFrame {
+                frame,
+                default_name,
+            } => {
+                if frame.save(&path).is_ok() {
+                    let filename = path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or(&default_name)
+                        .to_string();
+                    if let Ok(mut item) = FFprobeAnalyzer::analyze(&path) {
+                        item.name = filename;
+                        item.duration = 5.0;
+                        self.project.add_media(item);
+                        self.status_message = format!(
+                            "Kare dışa aktarıldı ve havuza eklendi: {}",
+                            path.display()
+                        );
+                    } else {
+                        self.status_message = format!("Kare kaydedildi: {}", path.display());
+                    }
+                } else {
+                    self.status_message = "Kare kaydedilemedi".to_string();
+                }
+            }
         }
     }
 
@@ -560,30 +585,21 @@ impl TrimApp {
             self.video_engine
                 .render_timeline_frame(&self.project, self.current_time, false)
         });
-        if let Some(frame) = frame_arc.as_ref() {
+        if let Some(frame) = frame_arc {
             let ts = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
             let filename = format!("kare_{}_{:06}.png", ts, (self.current_time * 1000.0) as u64);
-            let out_path = std::env::current_dir()
-                .unwrap_or_else(|_| std::path::PathBuf::from("."))
-                .join(&filename);
-            if frame.save(&out_path).is_ok() {
-                if let Ok(mut item) = FFprobeAnalyzer::analyze(&out_path) {
-                    item.name = filename;
-                    item.duration = 5.0;
-                    self.project.add_media(item);
-                    self.status_message = format!(
-                        "Kare dışa aktarıldı ve havuza eklendi: {}",
-                        out_path.display()
-                    );
-                } else {
-                    self.status_message = format!("Kare kaydedildi: {}", out_path.display());
-                }
-            } else {
-                self.status_message = "Kare kaydedilemedi".to_string();
-            }
+            let config = FileDialogConfig::save_file("Kareyi PNG Olarak Kaydet", Some(filename.clone()))
+                .add_filter("PNG Görüntüsü (*.png)", &["png"]);
+            self.file_dialog_bridge.open(
+                FileDialogRequest::ExportCurrentFrame {
+                    frame,
+                    default_name: filename,
+                },
+                config,
+            );
         } else {
             self.status_message = "Dışa aktarılacak aktif kare yok".to_string();
         }
