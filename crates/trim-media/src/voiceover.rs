@@ -100,11 +100,14 @@ impl VoiceoverRecorder {
         };
 
         match child {
-            Ok(c) => Ok(Self {
-                child: Some(c),
-                output_path: out,
-                start_time: Instant::now(),
-            }),
+            Ok(mut c) => {
+                crate::ffmpeg::drain_stderr(c.stderr.take(), "trim-voiceover-stderr");
+                Ok(Self {
+                    child: Some(c),
+                    output_path: out,
+                    start_time: Instant::now(),
+                })
+            }
             Err(e) => Err(format!("Ses kaydı başlatılamadı: {}", e)),
         }
     }

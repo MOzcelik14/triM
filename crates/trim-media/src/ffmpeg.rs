@@ -117,6 +117,19 @@ pub fn ffplay_cmd() -> Command {
     create_command("ffplay")
 }
 
+/// Continuously drains a child process's stderr in a dedicated background worker
+/// to prevent OS pipe buffer exhaustion (e.g. 64KB Linux default) and avoid process deadlocks.
+pub fn drain_stderr(stderr: Option<std::process::ChildStderr>, thread_name: &'static str) {
+    if let Some(mut err_reader) = stderr {
+        let _ = std::thread::Builder::new()
+            .name(thread_name.to_string())
+            .spawn(move || {
+                let mut sink = std::io::sink();
+                let _ = std::io::copy(&mut err_reader, &mut sink);
+            });
+    }
+}
+
 /// RAII process guard that guarantees spawned child processes are cleanly killed
 /// and reaped on drop via `std::process::Child::kill()` + `.wait()`, preventing
 /// zombie or orphan background processes across Linux, Windows, and macOS.
@@ -360,6 +373,41 @@ mod tests {
             assert!(guard.try_wait().unwrap().is_none());
             assert!(guard.kill().is_ok());
             assert!(guard.try_wait().unwrap().is_some());
+        }
+    }
+
+    #[test]
+    fn test_drain_stderr_prevents_pipe_deadlock() {
+        use std::process::Stdio;
+        let mut cmd = if cfg!(target_os = "windows") {
+            let mut c = Command::new("cmd");
+            c.args(["/C", "for /L %i in (1,1,3000) do @echo 1234567890123456789012345678901234567890 1>&2"]);
+            c
+        } else {
+            let mut c = Command::new("sh");
+            c.args(["-c", "for i in $(seq 1 4000); do echo '12345678901234567890123456789012345678901234567890' >&2; done"]);
+            c
+        };
+        cmd.stderr(Stdio::piped()).stdout(Stdio::null());
+        let mut child = cmd.spawn().expect("Failed to spawn test process");
+
+        // Drain stderr in background thread
+        drain_stderr(child.stderr.take(), "test-drain-stderr");
+
+        // The process writing >150KB to stderr MUST complete without deadlocking
+        let start = std::time::Instant::now();
+        let mut finished = false;
+        while start.elapsed().as_secs() < 3 {
+            if let Ok(Some(_)) = child.try_wait() {
+                finished = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+
+        if !finished {
+            let _ = child.kill();
+            panic!("Process deadlocked on full pipe buffer!");
         }
     }
 }

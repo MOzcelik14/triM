@@ -120,12 +120,15 @@ impl ScreenRecorder {
         cmd.stderr(Stdio::piped());
 
         match cmd.spawn() {
-            Ok(child) => Ok(Self {
-                child: Some(child),
-                output_path: out,
-                start_time: Instant::now(),
-                source,
-            }),
+            Ok(mut child) => {
+                crate::ffmpeg::drain_stderr(child.stderr.take(), "trim-screenrecord-stderr");
+                Ok(Self {
+                    child: Some(child),
+                    output_path: out,
+                    start_time: Instant::now(),
+                    source,
+                })
+            }
             Err(e) => Err(format!("Ekran kaydı başlatılamadı: {}", e)),
         }
     }
