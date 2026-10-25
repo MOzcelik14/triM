@@ -619,9 +619,26 @@ impl eframe::App for TrimApp {
         // -------------------------------------------------------------
         // Global Keyboard Shortcuts
         // -------------------------------------------------------------
+        let mut do_copy = false;
+        let mut do_cut = false;
+        let mut do_paste = false;
+
         if !ctx.wants_keyboard_input() && !self.welcome_dialog.is_open {
             ctx.input(|i| {
-                if i.key_pressed(Key::Space) {
+                let is_copy = i.events.iter().any(|e| matches!(e, egui::Event::Copy))
+                    || ((i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::C));
+                let is_paste = i.events.iter().any(|e| matches!(e, egui::Event::Paste(_)))
+                    || ((i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::V));
+                let is_cut = i.events.iter().any(|e| matches!(e, egui::Event::Cut))
+                    || ((i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::X));
+
+                if is_copy {
+                    do_copy = true;
+                } else if is_paste {
+                    do_paste = true;
+                } else if is_cut {
+                    do_cut = true;
+                } else if i.key_pressed(Key::Space) {
                     self.toggle_play();
                 } else if i.key_pressed(Key::Comma) {
                     self.insert_source_to_timeline(false);
@@ -697,10 +714,6 @@ impl eframe::App for TrimApp {
                         self.current_time,
                     );
                     self.project.mark_dirty();
-                } else if i.modifiers.command && i.key_pressed(Key::C) {
-                    self.copy_selected_clips();
-                } else if i.modifiers.command && i.key_pressed(Key::V) {
-                    self.paste_clipboard_clips();
                 } else if i.key_pressed(Key::V)
                     && !i.modifiers.ctrl
                     && self.shortcut_profile != ShortcutProfile::DaVinciResolve
@@ -958,6 +971,23 @@ impl eframe::App for TrimApp {
                     self.title_dialog.open();
                 }
             });
+
+            if do_copy {
+                self.copy_selected_clips();
+                ctx.output_mut(|o| {
+                    o.copied_text = format!("trim://clips/{}", self.clipboard_clips.len());
+                });
+            }
+            if do_cut {
+                self.copy_selected_clips();
+                self.delete_selected_clips();
+                ctx.output_mut(|o| {
+                    o.copied_text = format!("trim://clips/{}", self.clipboard_clips.len());
+                });
+            }
+            if do_paste {
+                self.paste_clipboard_clips();
+            }
         }
 
         // -------------------------------------------------------------
@@ -1117,8 +1147,19 @@ impl eframe::App for TrimApp {
                     }
                     ui.separator();
                     let has_sel = !self.canvas_state.selected_clip_pairs.is_empty();
+                    if ui.add_enabled(has_sel, Button::new("Kes (Ctrl+X)")).clicked() {
+                        self.copy_selected_clips();
+                        self.delete_selected_clips();
+                        ctx.output_mut(|o| {
+                            o.copied_text = format!("trim://clips/{}", self.clipboard_clips.len());
+                        });
+                        ui.close_menu();
+                    }
                     if ui.add_enabled(has_sel, Button::new("Kopyala (Ctrl+C)")).clicked() {
                         self.copy_selected_clips();
+                        ctx.output_mut(|o| {
+                            o.copied_text = format!("trim://clips/{}", self.clipboard_clips.len());
+                        });
                         ui.close_menu();
                     }
                     let can_paste = !self.clipboard_clips.is_empty();
@@ -2062,6 +2103,15 @@ impl eframe::App for TrimApp {
                                             self.title_dialog.open();
                                         }
                                         CanvasAction::Pan(_) => {}
+                                        CanvasAction::CopySelected => {
+                                            self.copy_selected_clips();
+                                            ctx.output_mut(|o| {
+                                                o.copied_text = format!("trim://clips/{}", self.clipboard_clips.len());
+                                            });
+                                        }
+                                        CanvasAction::PasteClipboard => {
+                                            self.paste_clipboard_clips();
+                                        }
                                         CanvasAction::DeleteSelected => {
                                             let unlocked_pairs: Vec<(String, String)> = self
                                                 .canvas_state

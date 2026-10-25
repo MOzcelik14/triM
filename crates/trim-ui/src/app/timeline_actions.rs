@@ -512,6 +512,7 @@ impl TrimApp {
         let mut commands: Vec<Box<dyn trim_commands::Command>> = Vec::new();
         let mut linked_id_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
+        let mut max_out = paste_time;
         for (track_type, rel_offset, clip) in &self.clipboard_clips {
             let target_track_id = match track_type {
                 trim_core::track::TrackType::Video => self.target_video_track.clone(),
@@ -539,6 +540,7 @@ impl TrimApp {
             new_clip.id = new_clip_id.clone();
             new_clip.timeline_in = paste_time + rel_offset;
             new_clip.timeline_out = new_clip.timeline_in + clip.duration();
+            max_out = max_out.max(new_clip.timeline_out);
 
             if let Some(old_grp) = &clip.linked_group_id {
                 let new_grp = linked_id_map
@@ -560,8 +562,12 @@ impl TrimApp {
         let macro_cmd = Box::new(trim_commands::MacroCommand::new("Klip(leri) Yapıştır", commands));
         if self.undo_stack.push(macro_cmd, &mut self.project.timeline).is_ok() {
             self.canvas_state.selected_clip_pairs = new_selection;
+            self.current_time = max_out;
+            self.last_rendered_dirty = true;
+            self.video_engine.clear_cache();
+            self.audio_mixer.clear_cache();
             self.project.mark_dirty();
-            self.status_message = format!("📋 Yapıştırıldı: {} klip ({:.2}s)", count, paste_time);
+            self.status_message = format!("📋 Yapıştırıldı: {} klip ({:.2}s -> {:.2}s)", count, paste_time, max_out);
         }
     }
 }

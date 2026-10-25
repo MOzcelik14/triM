@@ -175,6 +175,8 @@ pub enum CanvasAction {
     },
     CreateTitleAtTime(f64),
     Pan(f32),
+    CopySelected,
+    PasteClipboard,
     DeleteSelected,
     RippleDeleteSelected,
     MediaDropped {
@@ -1964,6 +1966,16 @@ pub fn render_timeline_canvas(
                     && ui.button("🔗 Klipleri Bağla (Link)  [Ctrl+L]").clicked()
                 {
                     action = Some(CanvasAction::ToggleLinkSelected);
+                    ui.close_menu();
+                }
+
+                if ui.button("📋 Kopyala (Ctrl+C)").clicked() {
+                    action = Some(CanvasAction::CopySelected);
+                    ui.close_menu();
+                }
+
+                if ui.button("📋 Yapıştır (Ctrl+V)").clicked() {
+                    action = Some(CanvasAction::PasteClipboard);
                     ui.close_menu();
                 }
 

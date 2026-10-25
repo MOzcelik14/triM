@@ -1021,6 +1021,7 @@ mod tests {
         assert_eq!(pasted.source_in, 1.0);
         assert_eq!(app.canvas_state.selected_clip_pairs.len(), 1);
         assert_eq!(app.canvas_state.selected_clip_pairs[0].1, pasted.id);
+        assert_eq!(app.current_time, 15.0);
 
         // 4. Undo paste
         assert!(app.undo_stack.can_undo());
