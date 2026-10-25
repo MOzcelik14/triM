@@ -28,9 +28,17 @@ $ErrorActionPreference = "Stop"
 
 # ------------------------------------------------------------------------------
 # Version & Metadata
-# ------------------------------------------------------------------------------
 $AppName = "triM."
-$Version = "1.0.1"
+$Version = "1.1.1"
+if ($PSScriptRoot) {
+    $CargoTomlPath = Join-Path $PSScriptRoot "Cargo.toml"
+    if (Test-Path $CargoTomlPath) {
+        $CargoContent = Get-Content $CargoTomlPath -Raw
+        if ($CargoContent -match '(?m)^version\s*=\s*"([^"]+)"') {
+            $Version = $Matches[1]
+        }
+    }
+}
 $RepoOwner = "MOzcelik14"
 $RepoName = "triM"
 $GitHubRepo = "https://github.com/$RepoOwner/$RepoName"
