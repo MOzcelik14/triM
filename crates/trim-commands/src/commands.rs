@@ -4,7 +4,7 @@ use crate::{Command, CommandError};
 use trim_core::clip::{Clip, ColorLabel};
 use trim_core::marker::Marker;
 use trim_core::timeline::TimelineModel;
-use trim_core::track::{Track, TrackType};
+use trim_core::track::Track;
 
 // -----------------------------------------------------------------------------
 // 1. AddClipCommand
@@ -784,23 +784,21 @@ impl Command for DetachAudioCommand {
             )
         };
 
-        // Find existing audio track or create new one
-        let audio_track_id = if let Some(at) = timeline.get_audio_tracks().first() {
-            self.was_track_created = false;
-            at.id.clone()
-        } else {
-            let new_at = Track::new("A1", TrackType::Audio);
-            let at_id = new_at.id.clone();
-            timeline.add_track(new_at);
-            self.was_track_created = true;
-            at_id
-        };
+        // Find corresponding audio track (V1->A1, V2->A2, etc.) or create matching track
+        let track_count_before = timeline.tracks.len();
+        let audio_track_id =
+            timeline.find_or_create_corresponding_audio_track(&self.video_track_id);
+        self.was_track_created = timeline.tracks.len() > track_count_before;
 
         let mut audio_clip = Clip::new(media_id, tin, tout);
         audio_clip.source_in = sin;
         audio_clip.source_out = sout;
         audio_clip.name = format!("{} (Ses)", name);
-        self.created_audio_clip_id = Some(audio_clip.id.clone());
+        if let Some(ref prev_id) = self.created_audio_clip_id {
+            audio_clip.id = prev_id.clone();
+        } else {
+            self.created_audio_clip_id = Some(audio_clip.id.clone());
+        }
         self.created_audio_track_id = Some(audio_track_id.clone());
 
         if let Some(at) = timeline.get_track_by_id_mut(&audio_track_id) {

@@ -662,4 +662,56 @@ mod tests {
             1.0
         );
     }
+
+    #[test]
+    fn test_detach_audio_pairs_with_corresponding_audio_track_v2_to_a2() {
+        let mut tl = TimelineModel::default();
+        // default TimelineModel has V2, V1, A1, A2
+        let v2_id = tl
+            .tracks
+            .iter()
+            .find(|t| t.name == "V2")
+            .map(|t| t.id.clone())
+            .expect("V2 track must exist");
+        let a1_id = tl
+            .tracks
+            .iter()
+            .find(|t| t.name == "A1")
+            .map(|t| t.id.clone())
+            .expect("A1 track must exist");
+        let a2_id = tl
+            .tracks
+            .iter()
+            .find(|t| t.name == "A2")
+            .map(|t| t.id.clone())
+            .expect("A2 track must exist");
+
+        let clip = Clip::new("m_video", 1.0, 6.0);
+        let clip_id = clip.id.clone();
+        tl.get_track_by_id_mut(&v2_id).unwrap().add_clip(clip);
+
+        let mut stack = UndoStack::new();
+        let cmd = Box::new(DetachAudioCommand::new(&v2_id, &clip_id));
+        stack.push(cmd, &mut tl).unwrap();
+
+        // The video clip on V2 must now be muted
+        let v_clip = tl.get_track_by_id(&v2_id).unwrap().get_clip_by_id(&clip_id).unwrap();
+        assert!(v_clip.muted, "Video clip should be muted after detaching audio");
+
+        // The audio clip must be placed on A2, NOT A1!
+        let a1_clips = &tl.get_track_by_id(&a1_id).unwrap().clips;
+        let a2_clips = &tl.get_track_by_id(&a2_id).unwrap().clips;
+        assert_eq!(a1_clips.len(), 0, "A1 track must not receive audio from V2");
+        assert_eq!(a2_clips.len(), 1, "A2 track must receive audio from V2");
+
+        // Undo
+        assert!(stack.undo(&mut tl).unwrap());
+        let v_clip_unmuted = tl.get_track_by_id(&v2_id).unwrap().get_clip_by_id(&clip_id).unwrap();
+        assert!(!v_clip_unmuted.muted, "Video clip should be unmuted after undo");
+        assert_eq!(tl.get_track_by_id(&a2_id).unwrap().clips.len(), 0);
+
+        // Redo
+        assert!(stack.redo(&mut tl).unwrap());
+        assert_eq!(tl.get_track_by_id(&a2_id).unwrap().clips.len(), 1);
+    }
 }
