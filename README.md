@@ -3,7 +3,7 @@
 [![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)](Cargo.toml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey.svg)](#system-requirements)
-[![CI](https://github.com/MOzcelik14/triM/actions/workflows/rust-ci.yml/badge.svg)](https://github.com/MOzcelik14/triM/actions)
+[![CI](https://github.com/MOzcelik14/triM/actions/workflows/ci.yml/badge.svg)](https://github.com/MOzcelik14/triM/actions)
 
 [Türkçe README için tıklayın](README.tr.md) · [Keyboard Shortcuts](docs/SHORTCUTS.md) · [Website](https://mozcelik14.github.io/triM)
 
