@@ -100,6 +100,7 @@ impl Default for ExportDialog {
 
 pub enum ExportDialogAction {
     StartExport(ExportPreset, String, Option<(f64, f64)>),
+    AddToQueue(ExportPreset, String, Option<(f64, f64)>),
     CancelExport,
     OpenOutputFolder(String),
 }
@@ -779,6 +780,44 @@ impl ExportDialog {
                                 };
 
                                 action = Some(ExportDialogAction::StartExport(
+                                    preset,
+                                    self.output_path.clone(),
+                                    range,
+                                ));
+                            }
+
+                            ui.add_space(6.0);
+
+                            let btn_queue = Button::new(
+                                RichText::new("📥 Kuyruğa Ekle")
+                                    .size(11.5)
+                                    .color(Color32::from_rgb(0xe0, 0xe6, 0xf8))
+                                    .strong(),
+                            )
+                            .fill(Color32::from_rgb(0x22, 0x27, 0x38))
+                            .stroke(Stroke::new(1.0_f32, ACCENT_BLUE))
+                            .rounding(Rounding::same(6.0))
+                            .min_size(Vec2::new(115.0, 32.0));
+
+                            if ui.add(btn_queue).clicked() {
+                                let mut preset = self.presets[self.selected_preset_idx].clone();
+                                preset.width = Some(self.custom_width);
+                                preset.height = Some(self.custom_height);
+                                preset.fps = Some(self.custom_fps);
+                                preset.crf = self.custom_crf;
+                                preset.hw_accel = self.hw_accel;
+                                preset.loudness_norm = self.loudness_norm;
+
+                                let range = if self.export_range_only && (self.in_point.is_some() || self.out_point.is_some()) {
+                                    let in_val = self.in_point.unwrap_or(0.0);
+                                    let out_val = self.out_point.unwrap_or(self.timeline_duration);
+                                    Some((in_val, out_val))
+                                } else {
+                                    None
+                                };
+
+                                self.is_open = false;
+                                action = Some(ExportDialogAction::AddToQueue(
                                     preset,
                                     self.output_path.clone(),
                                     range,

@@ -1286,6 +1286,46 @@ mod tests {
         assert_eq!(cl.keyframes.get("volume").unwrap().len(), 4);
         assert!((cl.get_property_at_time("volume", 1.5) - 0.6).abs() < 1e-4);
     }
+
+    #[test]
+    fn test_render_queue_dialog_lifecycle_and_actions() {
+        use crate::dialogs::export_dialog::ExportDialogAction;
+        use crate::dialogs::render_queue_dialog::RenderQueueDialogAction;
+        use trim_export::queue::RenderJob;
+
+        let mut app = TrimApp::default();
+        assert!(!app.render_queue_dialog.is_open);
+        assert_eq!(app.render_queue.jobs.len(), 0);
+
+        // Open dialog directly
+        app.render_queue_dialog.open();
+        assert!(app.render_queue_dialog.is_open);
+
+        // Toggle dialog
+        app.render_queue_dialog.toggle();
+        assert!(!app.render_queue_dialog.is_open);
+
+        // Simulate AddToQueue from ExportDialog
+        let preset = trim_export::ExportPreset::default();
+        let action = ExportDialogAction::AddToQueue(preset.clone(), "/tmp/test_queue.mp4".into(), None);
+        if let ExportDialogAction::AddToQueue(p, out_p, rng) = action {
+            let job = RenderJob::new("Test Q Job", app.project.clone(), p, out_p, rng);
+            app.render_queue.add_job(job);
+            app.render_queue_dialog.open();
+        }
+
+        assert_eq!(app.render_queue.jobs.len(), 1);
+        assert!(app.render_queue_dialog.is_open);
+        assert_eq!(app.render_queue.jobs[0].name, "Test Q Job");
+
+        // Cancel job
+        app.render_queue.cancel_current();
+        assert_eq!(app.render_queue.jobs[0].status, trim_export::queue::RenderJobStatus::Cancelled);
+
+        // Render dialog action test
+        let d_act = RenderQueueDialogAction::NewExportJob;
+        assert_eq!(d_act, RenderQueueDialogAction::NewExportJob);
+    }
 }
 
 

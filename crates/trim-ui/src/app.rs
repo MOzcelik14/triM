@@ -28,6 +28,7 @@ use trim_core::media::MediaType;
 use trim_core::project::Project;
 use trim_core::time::seconds_to_timecode;
 use trim_core::track::TrackType;
+use trim_export::queue::{RenderJob, RenderQueue, RenderQueueEvent};
 use trim_export::runner::{ExportMessage, ExportRunner};
 use trim_media::{
     generate_title_image, AudioMixer, AudioStreamPlayer, FFprobeAnalyzer, ThumbnailGenerator,
@@ -123,10 +124,12 @@ pub struct TrimApp {
     pub welcome_dialog: WelcomeDialog,
     pub shortcuts_dialog: ShortcutsDialog,
     pub relink_dialog: RelinkDialog,
+    pub render_queue_dialog: RenderQueueDialog,
     pub autosave_mgr: AutosaveManager,
 
     pub export_runner: ExportRunner,
     pub export_rx: Option<Receiver<ExportMessage>>,
+    pub render_queue: RenderQueue,
 
     pub monitor_texture: Option<TextureHandle>,
     pub monitor_gpu_texture_id: Option<egui::TextureId>,
@@ -212,9 +215,11 @@ impl Default for TrimApp {
             welcome_dialog: WelcomeDialog::default(),
             shortcuts_dialog: ShortcutsDialog::default(),
             relink_dialog: RelinkDialog::default(),
+            render_queue_dialog: RenderQueueDialog::default(),
             autosave_mgr: AutosaveManager::default(),
             export_runner: ExportRunner::default(),
             export_rx: None,
+            render_queue: RenderQueue::default(),
             monitor_texture: None,
             monitor_gpu_texture_id: None,
             gpu_compositor: None,
@@ -594,6 +599,28 @@ impl eframe::App for TrimApp {
             self.export_rx = None;
         }
 
+        // Poll sequential background render queue
+        let queue_events = self.render_queue.poll();
+        for ev in queue_events {
+            match ev {
+                RenderQueueEvent::JobProgress { .. } => {
+                    ctx.request_repaint();
+                }
+                RenderQueueEvent::JobCompleted { output_path, .. } => {
+                    self.status_message = format!("Kuyruk işi tamamlandı: {}", output_path);
+                    ctx.request_repaint();
+                }
+                RenderQueueEvent::JobFailed { error, .. } => {
+                    self.status_message = format!("Kuyruk işinde hata: {}", error);
+                    ctx.request_repaint();
+                }
+                RenderQueueEvent::QueueFinished => {
+                    self.status_message = "Tüm render kuyruğu tamamlandı!".to_string();
+                    ctx.request_repaint();
+                }
+            }
+        }
+
         // Check background proxy generation messages
         if let Some(rx) = &self.proxy_rx {
             while let Ok((m_id, res)) = rx.try_recv() {
@@ -965,6 +992,8 @@ impl eframe::App for TrimApp {
                     self.toggle_link_selected_clips();
                 } else if i.modifiers.ctrl && i.key_pressed(Key::I) {
                     self.prompt_import_media();
+                } else if i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(Key::E) {
+                    self.render_queue_dialog.toggle();
                 } else if i.modifiers.ctrl && (i.key_pressed(Key::E) || i.key_pressed(Key::M)) {
                     self.export_dialog.open(&self.project);
                 } else if i.modifiers.ctrl && i.key_pressed(Key::T) {
@@ -1091,6 +1120,10 @@ impl eframe::App for TrimApp {
                     }
                     if ui.button("Dışa Aktarma Stüdyosu... (Ctrl+M)").clicked() {
                         self.export_dialog.open(&self.project);
+                        ui.close_menu();
+                    }
+                    if ui.button("📋 Render Kuyruğu... (Ctrl+Shift+E)").clicked() {
+                        self.render_queue_dialog.open();
                         ui.close_menu();
                     }
                     ui.separator();
@@ -2834,6 +2867,23 @@ impl eframe::App for TrimApp {
                     self.export_rx = None;
                     self.status_message = "Dışa aktarma iptal edildi".to_string();
                 }
+                ExportDialogAction::AddToQueue(preset, out_path, range) => {
+                    let job_name = Path::new(&out_path)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("Dışa Aktarma İşi")
+                        .to_string();
+                    let job = RenderJob::new(
+                        job_name,
+                        self.project.clone(),
+                        preset,
+                        out_path,
+                        range,
+                    );
+                    self.render_queue.add_job(job);
+                    self.render_queue_dialog.open();
+                    self.status_message = "İş dışa aktarma kuyruğuna eklendi.".to_string();
+                }
                 ExportDialogAction::OpenOutputFolder(path) => {
                     let p = std::path::Path::new(&path);
                     let folder = if p.is_file() {
@@ -2848,6 +2898,29 @@ impl eframe::App for TrimApp {
                     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
                     let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
                 }
+            }
+        }
+
+        if let Some(act) = self.render_queue_dialog.show(ctx, &mut self.render_queue) {
+            match act {
+                RenderQueueDialogAction::OpenOutputFolder(path) => {
+                    let p = std::path::Path::new(&path);
+                    let folder = if p.is_file() {
+                        p.parent().unwrap_or(p)
+                    } else {
+                        p
+                    };
+                    #[cfg(target_os = "windows")]
+                    let _ = std::process::Command::new("explorer").arg(folder).spawn();
+                    #[cfg(target_os = "macos")]
+                    let _ = std::process::Command::new("open").arg(folder).spawn();
+                    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+                    let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
+                }
+                RenderQueueDialogAction::NewExportJob => {
+                    self.export_dialog.open(&self.project);
+                }
+                RenderQueueDialogAction::Close => {}
             }
         }
 

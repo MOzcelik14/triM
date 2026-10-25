@@ -5,6 +5,7 @@ pub mod close_confirm_dialog;
 pub mod export_dialog;
 pub mod recovery_dialog;
 pub mod relink_dialog;
+pub mod render_queue_dialog;
 pub mod screen_record_dialog;
 pub mod shortcuts_dialog;
 pub mod silence_dialog;
@@ -18,6 +19,7 @@ pub use close_confirm_dialog::{CloseConfirmAction, CloseConfirmDialog, PendingCl
 pub use export_dialog::{ExportDialog, ExportDialogAction};
 pub use recovery_dialog::{RecoveryAction, RecoveryDialog};
 pub use relink_dialog::{OfflineMediaEntry, RelinkDialog, RelinkDialogAction};
+pub use render_queue_dialog::{RenderQueueDialog, RenderQueueDialogAction};
 pub use screen_record_dialog::{ScreenRecordAction, ScreenRecordDialog};
 pub use shortcuts_dialog::ShortcutsDialog;
 pub use silence_dialog::{SilenceDialog, SilenceDialogAction};
