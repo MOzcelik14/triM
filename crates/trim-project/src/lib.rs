@@ -116,19 +116,59 @@ pub fn bundle_project<P: AsRef<Path>>(
     let mut count = 0;
     let mut total_bytes = 0u64;
 
+    let mut copied_sources: std::collections::HashMap<PathBuf, String> =
+        std::collections::HashMap::new();
+    let mut used_dest_names: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+
     for (id, item) in &mut bundled_project.media_pool {
         let src_path = Path::new(&item.file_path);
         if src_path.exists() {
-            let file_name = src_path
+            let canon_path = fs::canonicalize(src_path).unwrap_or_else(|_| src_path.to_path_buf());
+
+            // If the same physical file was already copied for another media item, reuse it
+            if let Some(existing_rel) = copied_sources.get(&canon_path) {
+                item.file_path = existing_rel.clone();
+                continue;
+            }
+
+            let orig_name = src_path
                 .file_name()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| format!("media_{}", id));
-            let dest_file = media_dir.join(&file_name);
+
+            // Disambiguate destination filename if a different file already took this name
+            let chosen_name = if !used_dest_names.contains(&orig_name) {
+                orig_name
+            } else {
+                let stem = src_path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| format!("media_{}", id));
+                let ext = src_path
+                    .extension()
+                    .map(|s| format!(".{}", s.to_string_lossy()))
+                    .unwrap_or_default();
+
+                let mut counter = 2usize;
+                loop {
+                    let candidate = format!("{}_{}{}", stem, counter, ext);
+                    if !used_dest_names.contains(&candidate) {
+                        break candidate;
+                    }
+                    counter += 1;
+                }
+            };
+
+            let dest_file = media_dir.join(&chosen_name);
             let bytes = fs::copy(src_path, &dest_file)?;
             total_bytes += bytes;
             count += 1;
-            // Relative path for standalone portability
-            item.file_path = format!("media/{}", file_name);
+
+            let rel_path = format!("media/{}", chosen_name);
+            used_dest_names.insert(chosen_name);
+            copied_sources.insert(canon_path, rel_path.clone());
+            item.file_path = rel_path;
         }
     }
 
@@ -377,6 +417,60 @@ mod tests {
             loaded_media_path
         );
         assert_eq!(fs::read(loaded_media_path).unwrap(), b"fake video bytes");
+    }
+
+    #[test]
+    fn test_bundle_project_same_filename_collision_and_deduplication() {
+        use trim_core::media::MediaItem;
+
+        let base_dir = tempdir().unwrap();
+        let cam1_dir = base_dir.path().join("camera1");
+        let cam2_dir = base_dir.path().join("camera2");
+        fs::create_dir_all(&cam1_dir).unwrap();
+        fs::create_dir_all(&cam2_dir).unwrap();
+
+        let cam1_file = cam1_dir.join("clip.mp4");
+        let cam2_file = cam2_dir.join("clip.mp4");
+        fs::write(&cam1_file, b"content-of-cam1").unwrap();
+        fs::write(&cam2_file, b"content-of-cam2").unwrap();
+
+        let mut proj = Project::new("MultiCamCollisions");
+        let item1 = MediaItem::new(&cam1_file);
+        let id1 = item1.id.clone();
+        proj.add_media(item1);
+
+        let item2 = MediaItem::new(&cam2_file);
+        let id2 = item2.id.clone();
+        proj.add_media(item2);
+
+        // Third item references the exact same file as item1 (deduplication check)
+        let mut item3 = MediaItem::new(&cam1_file);
+        item3.id = "m3_duplicate_cam1".into();
+        let id3 = item3.id.clone();
+        proj.add_media(item3);
+
+        let bundle_target = base_dir.path().join("BundledProject");
+        let (count, total_bytes) = bundle_project(&proj, &bundle_target).unwrap();
+
+        // 2 unique files copied, not 3 (item3 is deduplicated)
+        assert_eq!(count, 2, "Should copy exactly 2 unique media files");
+        assert_eq!(total_bytes, (b"content-of-cam1".len() + b"content-of-cam2".len()) as u64);
+
+        let loaded = load_project(bundle_target.join("MultiCamCollisions.trim")).unwrap();
+        let loaded_m1 = loaded.get_media(&id1).unwrap();
+        let loaded_m2 = loaded.get_media(&id2).unwrap();
+        let loaded_m3 = loaded.get_media(&id3).unwrap();
+
+        // m1 and m3 must share the same bundled path
+        assert_eq!(loaded_m1.file_path, loaded_m3.file_path);
+        // m1 and m2 must have DIFFERENT bundled paths
+        assert_ne!(loaded_m1.file_path, loaded_m2.file_path);
+
+        // Verify contents are NOT overwritten
+        let path1 = Path::new(&loaded_m1.file_path);
+        let path2 = Path::new(&loaded_m2.file_path);
+        assert_eq!(fs::read(path1).unwrap(), b"content-of-cam1");
+        assert_eq!(fs::read(path2).unwrap(), b"content-of-cam2");
     }
 
     #[test]
