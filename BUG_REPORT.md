@@ -54,7 +54,7 @@
 ### 2.1. Kesirli FPS Zaman Kodu (Timecode) Yuvarlama ve Sapma Hatası (Drift)
 * **Konum**: [`crates/trim-core/src/time.rs:6-14, 33-34`](file:///home/mozcelik/Projeler/triM/crates/trim-core/src/time.rs#L6-L34)
 * **Koşul & Etki**: `seconds_to_timecode` fonksiyonu toplam saniyeyi `let fps_int = fps.round() as u64; total_seconds = total_frames / fps_int;` şeklinde hesaplarken, `timecode_to_seconds` doğrudan kesirli `fps` değeriyle çarpmaktadır. 29.97 FPS (NTSC standardı) bir projede 100 saniyelik bir süre için `seconds_to_timecode` `00:01:39:27` üretmekte, bu değer `timecode_to_seconds` fonksiyonuna verildiğinde ise `99.8998s` (yaklaşık 0.10 saniye / 3 kare fark) elde edilmektedir. Zaman çizgisinde süre uzadıkça gösterge ve kesim noktaları kaymaktadır.
-* **Durum**: **[Doğrulandı]**
+* **Durum**: **[Düzeltildi (Grup 3)]** (`trim-core` ve `trim-export` içerisinde saniye dönüşümünde `fps.round()` tamsayı tabanına dayalı kare hesabı eşitlenerek yuvarlama sapması giderildi)
 * **Önerilen Düzeltme**: Zaman kodu dönüşümlerinde saniye hesabı doğrudan `total_frames as f64 / fps` üzerinden tutarlı bir şekilde hesaplanmalı, NTSC standartları için drop-frame gösterimi ya da kesirli kare katsayıları eşitlenmelidir.
 
 ---
