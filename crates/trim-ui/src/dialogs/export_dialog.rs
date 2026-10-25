@@ -38,6 +38,9 @@ pub struct ExportDialog {
     pub timeline_native_width: u32,
     pub timeline_native_height: u32,
     pub timeline_native_fps: f64,
+    pub in_point: Option<f64>,
+    pub out_point: Option<f64>,
+    pub export_range_only: bool,
 }
 
 impl Default for ExportDialog {
@@ -88,12 +91,15 @@ impl Default for ExportDialog {
             timeline_native_width: 1920,
             timeline_native_height: 1080,
             timeline_native_fps: 30.0,
+            in_point: None,
+            out_point: None,
+            export_range_only: false,
         }
     }
 }
 
 pub enum ExportDialogAction {
-    StartExport(ExportPreset, String),
+    StartExport(ExportPreset, String, Option<(f64, f64)>),
     CancelExport,
     OpenOutputFolder(String),
 }
@@ -107,6 +113,9 @@ impl ExportDialog {
         self.custom_width = project.timeline.width;
         self.custom_height = project.timeline.height;
         self.custom_fps = project.timeline.fps;
+        self.in_point = project.timeline.in_point;
+        self.out_point = project.timeline.out_point;
+        self.export_range_only = project.timeline.in_point.is_some() || project.timeline.out_point.is_some();
         self.open_with_duration(project.timeline.duration());
     }
 
@@ -709,6 +718,23 @@ impl ExportDialog {
                         );
                     });
 
+                    if self.in_point.is_some() || self.out_point.is_some() {
+                        let in_val = self.in_point.unwrap_or(0.0);
+                        let out_val = self.out_point.unwrap_or(self.timeline_duration);
+                        ui.horizontal(|ui| {
+                            ui.checkbox(
+                                &mut self.export_range_only,
+                                RichText::new(format!(
+                                    "Yalnızca Giriş/Çıkış Aralığını Aktar ({} - {})",
+                                    seconds_to_timecode(in_val, self.timeline_native_fps),
+                                    seconds_to_timecode(out_val, self.timeline_native_fps),
+                                ))
+                                .size(11.5)
+                                .color(Color32::from_rgb(0x38, 0xa0, 0xf0)),
+                            );
+                        });
+                    }
+
                     ui.add_space(12.0);
 
                     // =========================================================
@@ -743,9 +769,19 @@ impl ExportDialog {
 
                                 self.is_exporting = true;
                                 self.progress = 0.0;
+
+                                let range = if self.export_range_only && (self.in_point.is_some() || self.out_point.is_some()) {
+                                    let in_val = self.in_point.unwrap_or(0.0);
+                                    let out_val = self.out_point.unwrap_or(self.timeline_duration);
+                                    Some((in_val, out_val))
+                                } else {
+                                    None
+                                };
+
                                 action = Some(ExportDialogAction::StartExport(
                                     preset,
                                     self.output_path.clone(),
+                                    range,
                                 ));
                             }
 

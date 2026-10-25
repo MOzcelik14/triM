@@ -94,6 +94,10 @@ pub struct TimelineModel {
     pub snap_enabled: bool,
     #[serde(default = "default_snap_threshold")]
     pub snap_threshold: f64,
+    #[serde(default)]
+    pub in_point: Option<f64>,
+    #[serde(default)]
+    pub out_point: Option<f64>,
 }
 
 fn default_width() -> u32 {
@@ -127,6 +131,8 @@ impl Default for TimelineModel {
             fps: 30.0,
             snap_enabled: true,
             snap_threshold: 0.15,
+            in_point: None,
+            out_point: None,
         }
     }
 }
@@ -146,6 +152,38 @@ impl TimelineModel {
 
     pub fn duration(&self) -> f64 {
         self.tracks.iter().map(|t| t.duration()).fold(0.0, f64::max)
+    }
+
+    pub fn set_in_point(&mut self, time: f64) {
+        let t = time.max(0.0);
+        if let Some(out) = self.out_point {
+            if t > out {
+                self.out_point = None;
+            }
+        }
+        self.in_point = Some(t);
+    }
+
+    pub fn set_out_point(&mut self, time: f64) {
+        let t = time.max(0.0);
+        if let Some(inp) = self.in_point {
+            if t < inp {
+                self.in_point = None;
+            }
+        }
+        self.out_point = Some(t);
+    }
+
+    pub fn clear_in_out(&mut self) {
+        self.in_point = None;
+        self.out_point = None;
+    }
+
+    pub fn effective_in_out(&self) -> (f64, f64) {
+        let total = self.duration();
+        let inp = self.in_point.unwrap_or(0.0).clamp(0.0, total);
+        let out = self.out_point.unwrap_or(total).clamp(inp, total);
+        (inp, out)
     }
 
     pub fn add_track(&mut self, track: Track) {
@@ -718,4 +756,40 @@ mod tests {
         let a3_id = tl.find_or_create_corresponding_audio_track(&v3_id);
         assert_eq!(tl.get_track_by_id(&a3_id).unwrap().name, "A3");
     }
+
+    #[test]
+    fn test_in_out_points() {
+        let mut tl = TimelineModel::default();
+        let mut tr = Track::new("V1", TrackType::Video);
+        tr.add_clip(Clip::new("m1", 0.0, 10.0));
+        tl.add_track(tr);
+
+        assert_eq!(tl.effective_in_out(), (0.0, 10.0));
+
+        tl.set_in_point(2.0);
+        assert_eq!(tl.in_point, Some(2.0));
+        assert_eq!(tl.effective_in_out(), (2.0, 10.0));
+
+        tl.set_out_point(8.0);
+        assert_eq!(tl.out_point, Some(8.0));
+        assert_eq!(tl.effective_in_out(), (2.0, 8.0));
+
+        // Setting out point before in point resets in point
+        tl.set_out_point(1.0);
+        assert_eq!(tl.in_point, None);
+        assert_eq!(tl.out_point, Some(1.0));
+        assert_eq!(tl.effective_in_out(), (0.0, 1.0));
+
+        // Setting in point after out point resets out point
+        tl.set_in_point(5.0);
+        assert_eq!(tl.in_point, Some(5.0));
+        assert_eq!(tl.out_point, None);
+        assert_eq!(tl.effective_in_out(), (5.0, 10.0));
+
+        tl.clear_in_out();
+        assert_eq!(tl.in_point, None);
+        assert_eq!(tl.out_point, None);
+        assert_eq!(tl.effective_in_out(), (0.0, 10.0));
+    }
 }
+

@@ -626,6 +626,15 @@ impl TimelineExporter {
         preset: &ExportPreset,
         output_path: &str,
     ) -> Result<(Vec<String>, f64), String> {
+        Self::build_export_pipeline_range(project, preset, output_path, None)
+    }
+
+    pub fn build_export_pipeline_range(
+        project: &Project,
+        preset: &ExportPreset,
+        output_path: &str,
+        range: Option<(f64, f64)>,
+    ) -> Result<(Vec<String>, f64), String> {
         let timeline = &project.timeline;
         let video_tracks = timeline.get_video_tracks();
         if video_tracks.is_empty() {
@@ -799,15 +808,31 @@ impl TimelineExporter {
             "yuv420p".into(),
             "-r".into(),
             format!("{}", out_fps),
+        ]);
+
+        let (eff_start, eff_duration) = if let Some((start, end)) = range {
+            let s = start.max(0.0).min(total_duration);
+            let e = end.max(s).min(total_duration);
+            let d = (e - s).max(0.001);
+            (Some(s), d)
+        } else {
+            (None, total_duration)
+        };
+
+        if let Some(start) = eff_start {
+            cmd.extend(vec!["-ss".into(), format!("{:.6}", start)]);
+        }
+
+        cmd.extend(vec![
             "-t".into(),
-            format!("{:.6}", total_duration),
+            format!("{:.6}", eff_duration),
             "-progress".into(),
             "pipe:1".into(),
             "-nostats".into(),
             output_path.to_string(),
         ]);
 
-        Ok((cmd, total_duration))
+        Ok((cmd, eff_duration))
     }
 
     /// Resolves optimal video codec arguments honoring hardware acceleration and fallbacks.
@@ -1634,4 +1659,34 @@ mod tests {
             "must contain animated fontsize: {fg}"
         );
     }
+
+    #[test]
+    fn test_build_export_pipeline_with_in_out_range() {
+        let mut proj = Project::new("RangeTest");
+        let mut v = MediaItem::new("/tmp/fake_range.mp4");
+        v.media_type = MediaType::Video;
+        let vid_id = v.id.clone();
+        proj.add_media(v);
+        proj.timeline.tracks[0].add_clip(Clip::new(&vid_id, 0.0, 10.0));
+
+        let preset = ExportPreset::default();
+        let (cmd, dur) = TimelineExporter::build_export_pipeline_range(
+            &proj,
+            &preset,
+            "/tmp/out_range.mp4",
+            Some((2.5, 7.5)),
+        )
+        .unwrap();
+
+        assert!((dur - 5.0).abs() < 1e-4, "Effective duration should be 5.0s");
+
+        let ss_idx = cmd.iter().rposition(|a| a == "-ss");
+        assert!(ss_idx.is_some(), "-ss argument must be present");
+        assert_eq!(cmd[ss_idx.unwrap() + 1], "2.500000");
+
+        let t_idx = cmd.iter().rposition(|a| a == "-t");
+        assert!(t_idx.is_some(), "-t argument must be present");
+        assert_eq!(cmd[t_idx.unwrap() + 1], "5.000000");
+    }
 }
+

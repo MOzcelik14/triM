@@ -986,4 +986,50 @@ mod tests {
 
         assert_eq!(canvas_offset.y, 105.0);
     }
+
+    #[test]
+    fn test_copy_and_paste_clips_with_undo() {
+        let mut app = app::TrimApp::default();
+        let v1_id = app.target_video_track.clone();
+
+        // Add a sample clip to V1
+        let mut clip = trim_core::clip::Clip::new("m1", 0.0, 5.0);
+        clip.id = "clip_original".to_string();
+        clip.source_in = 1.0;
+        let _ = app.project.timeline.get_track_by_id_mut(&v1_id).unwrap().add_clip(clip);
+
+        assert_eq!(app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(), 1);
+
+        // 1. Copy when nothing is selected
+        app.copy_selected_clips();
+        assert!(app.clipboard_clips.is_empty());
+
+        // 2. Select and copy clip
+        app.canvas_state.selected_clip_pairs = vec![(v1_id.clone(), "clip_original".to_string())];
+        app.copy_selected_clips();
+        assert_eq!(app.clipboard_clips.len(), 1);
+
+        // 3. Paste at time = 10.0
+        app.current_time = 10.0;
+        app.paste_clipboard_clips();
+
+        let track = app.project.timeline.get_track_by_id(&v1_id).unwrap();
+        assert_eq!(track.clips.len(), 2);
+        let pasted = track.clips.iter().find(|c| c.id != "clip_original").unwrap();
+        assert_eq!(pasted.timeline_in, 10.0);
+        assert_eq!(pasted.timeline_out, 15.0);
+        assert_eq!(pasted.source_in, 1.0);
+        assert_eq!(app.canvas_state.selected_clip_pairs.len(), 1);
+        assert_eq!(app.canvas_state.selected_clip_pairs[0].1, pasted.id);
+
+        // 4. Undo paste
+        assert!(app.undo_stack.can_undo());
+        let _ = app.undo_stack.undo(&mut app.project.timeline);
+        assert_eq!(app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(), 1);
+
+        // 5. Redo paste
+        assert!(app.undo_stack.can_redo());
+        let _ = app.undo_stack.redo(&mut app.project.timeline);
+        assert_eq!(app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(), 2);
+    }
 }

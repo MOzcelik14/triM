@@ -44,6 +44,7 @@ impl ExportRunner {
         project: Project,
         preset: ExportPreset,
         output_path: String,
+        range: Option<(f64, f64)>,
         tx: Sender<ExportMessage>,
     ) {
         let is_cancelled = Arc::clone(&self.is_cancelled);
@@ -51,7 +52,7 @@ impl ExportRunner {
 
         thread::spawn(move || {
             let (cmd_args, total_duration) =
-                match TimelineExporter::build_export_pipeline(&project, &preset, &output_path) {
+                match TimelineExporter::build_export_pipeline_range(&project, &preset, &output_path, range) {
                     Ok(res) => res,
                     Err(err) => {
                         let _ = tx.send(ExportMessage::Finished(Err(err)));

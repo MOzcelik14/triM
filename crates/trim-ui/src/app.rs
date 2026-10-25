@@ -147,6 +147,7 @@ pub struct TrimApp {
     pub confirmed_exit: bool,
     pub last_saved_undo_len: usize,
     pub file_dialog_bridge: FileDialogBridge,
+    pub clipboard_clips: Vec<(trim_core::track::TrackType, f64, trim_core::clip::Clip)>,
 }
 
 impl Default for TrimApp {
@@ -232,6 +233,7 @@ impl Default for TrimApp {
             confirmed_exit: false,
             last_saved_undo_len: 0,
             file_dialog_bridge: FileDialogBridge::default(),
+            clipboard_clips: Vec::new(),
         }
     }
 }
@@ -472,13 +474,23 @@ impl TrimApp {
                 MonitorAction::TogglePlay => self.toggle_play(),
                 MonitorAction::StepFrame(d) => self.step_frame(d),
                 MonitorAction::MarkIn => {
-                    self.status_message = format!("Sekans Giriş: {:.2}s", self.current_time);
+                    self.project.timeline.set_in_point(self.current_time);
+                    self.project.mark_dirty();
+                    self.status_message = format!("Giriş Noktası (In): {:.2}s", self.current_time);
                 }
                 MonitorAction::MarkOut => {
-                    self.status_message = format!("Sekans Çıkış: {:.2}s", self.current_time);
+                    self.project.timeline.set_out_point(self.current_time);
+                    self.project.mark_dirty();
+                    self.status_message = format!("Çıkış Noktası (Out): {:.2}s", self.current_time);
                 }
-                MonitorAction::GoToIn => self.seek(0.0),
-                MonitorAction::GoToOut => self.seek(prog_dur),
+                MonitorAction::GoToIn => {
+                    let t = self.project.timeline.in_point.unwrap_or(0.0);
+                    self.seek(t);
+                }
+                MonitorAction::GoToOut => {
+                    let t = self.project.timeline.out_point.unwrap_or(prog_dur);
+                    self.seek(t);
+                }
                 MonitorAction::ExportFrame => self.export_current_frame(),
                 MonitorAction::Seek(t) => self.seek(t),
                 MonitorAction::ToggleSafeZones => {
@@ -613,17 +625,31 @@ impl eframe::App for TrimApp {
                     self.insert_source_to_timeline(false);
                 } else if i.key_pressed(Key::Period) {
                     self.insert_source_to_timeline(true);
+                } else if i.modifiers.alt && i.key_pressed(Key::X) {
+                    self.project.timeline.clear_in_out();
+                    self.project.mark_dirty();
+                    self.status_message = "Giriş/Çıkış Noktaları Temizlendi".to_string();
                 } else if i.key_pressed(Key::I) && !i.modifiers.ctrl {
                     if self.source_state.media_id.is_some() {
                         self.source_state.mark_in = Some(self.source_state.current_time);
                         self.status_message =
                             format!("Kaynak Giriş: {:.2}s", self.source_state.current_time);
+                    } else {
+                        self.project.timeline.set_in_point(self.current_time);
+                        self.project.mark_dirty();
+                        self.status_message =
+                            format!("Giriş Noktası (In): {:.2}s", self.current_time);
                     }
                 } else if i.key_pressed(Key::O) && !i.modifiers.ctrl {
                     if self.source_state.media_id.is_some() {
                         self.source_state.mark_out = Some(self.source_state.current_time);
                         self.status_message =
                             format!("Kaynak Çıkış: {:.2}s", self.source_state.current_time);
+                    } else {
+                        self.project.timeline.set_out_point(self.current_time);
+                        self.project.mark_dirty();
+                        self.status_message =
+                            format!("Çıkış Noktası (Out): {:.2}s", self.current_time);
                     }
                 } else if i.modifiers.ctrl
                     && i.key_pressed(Key::K)
@@ -669,6 +695,10 @@ impl eframe::App for TrimApp {
                         self.current_time,
                     );
                     self.project.mark_dirty();
+                } else if i.modifiers.command && i.key_pressed(Key::C) {
+                    self.copy_selected_clips();
+                } else if i.modifiers.command && i.key_pressed(Key::V) {
+                    self.paste_clipboard_clips();
                 } else if i.key_pressed(Key::V)
                     && !i.modifiers.ctrl
                     && self.shortcut_profile != ShortcutProfile::DaVinciResolve
@@ -1074,6 +1104,17 @@ impl eframe::App for TrimApp {
                                     .is_some()
                             });
                         self.project.mark_dirty();
+                        ui.close_menu();
+                    }
+                    ui.separator();
+                    let has_sel = !self.canvas_state.selected_clip_pairs.is_empty();
+                    if ui.add_enabled(has_sel, Button::new("Kopyala (Ctrl+C)")).clicked() {
+                        self.copy_selected_clips();
+                        ui.close_menu();
+                    }
+                    let can_paste = !self.clipboard_clips.is_empty();
+                    if ui.add_enabled(can_paste, Button::new("Yapıştır (Ctrl+V)")).clicked() {
+                        self.paste_clipboard_clips();
                         ui.close_menu();
                     }
                     ui.separator();
@@ -1818,6 +1859,8 @@ impl eframe::App for TrimApp {
                                         self.project.timeline.fps,
                                         self.current_time,
                                         &markers,
+                                        self.project.timeline.in_point,
+                                        self.project.timeline.out_point,
                                     );
 
                                     if let Some(act) = ruler_act {
@@ -2625,11 +2668,11 @@ impl eframe::App for TrimApp {
         // -------------------------------------------------------------
         if let Some(act) = self.export_dialog.show(ctx) {
             match act {
-                ExportDialogAction::StartExport(preset, out_path) => {
+                ExportDialogAction::StartExport(preset, out_path, range) => {
                     let (tx, rx) = channel();
                     self.export_rx = Some(rx);
                     self.export_runner
-                        .start_export(self.project.clone(), preset, out_path, tx);
+                        .start_export(self.project.clone(), preset, out_path, range, tx);
                 }
                 ExportDialogAction::CancelExport => {
                     self.export_runner.cancel();

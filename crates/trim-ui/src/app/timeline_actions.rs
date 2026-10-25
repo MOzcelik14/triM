@@ -463,4 +463,105 @@ impl TrimApp {
         self.status_message = format!("🎨 Klip rengi güncellendi: {}", color.label());
         self.project.mark_dirty();
     }
+
+    /// Copies currently selected timeline clips into the internal clipboard.
+    pub fn copy_selected_clips(&mut self) {
+        if self.canvas_state.selected_clip_pairs.is_empty() {
+            self.status_message = "Kopyalanacak klip seçilmedi".to_string();
+            return;
+        }
+
+        let mut clips_to_copy = Vec::new();
+        let mut min_in = f64::MAX;
+
+        for (tr_id, cl_id) in &self.canvas_state.selected_clip_pairs {
+            if let Some(track) = self.project.timeline.get_track_by_id(tr_id) {
+                if let Some(clip) = track.get_clip_by_id(cl_id) {
+                    if clip.timeline_in < min_in {
+                        min_in = clip.timeline_in;
+                    }
+                    clips_to_copy.push((track.track_type, clip.clone()));
+                }
+            }
+        }
+
+        if clips_to_copy.is_empty() {
+            return;
+        }
+
+        self.clipboard_clips = clips_to_copy
+            .into_iter()
+            .map(|(tt, clip)| {
+                let rel_offset = (clip.timeline_in - min_in).max(0.0);
+                (tt, rel_offset, clip)
+            })
+            .collect();
+
+        self.status_message = format!("📋 Kopyalandı: {} klip", self.clipboard_clips.len());
+    }
+
+    /// Pastes clips from the clipboard starting at the playhead (`current_time`) onto the target track.
+    pub fn paste_clipboard_clips(&mut self) {
+        if self.clipboard_clips.is_empty() {
+            self.status_message = "Panoda yapıştırılacak klip yok".to_string();
+            return;
+        }
+
+        let paste_time = self.current_time;
+        let mut new_selection = Vec::new();
+        let mut commands: Vec<Box<dyn trim_commands::Command>> = Vec::new();
+        let mut linked_id_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+
+        for (track_type, rel_offset, clip) in &self.clipboard_clips {
+            let target_track_id = match track_type {
+                trim_core::track::TrackType::Video => self.target_video_track.clone(),
+                trim_core::track::TrackType::Audio => self.target_audio_track.clone(),
+            };
+
+            let final_track_id = if let Some(tr) = self.project.timeline.get_track_by_id(&target_track_id) {
+                if tr.track_type == *track_type && !tr.locked {
+                    target_track_id
+                } else {
+                    self.project
+                        .timeline
+                        .tracks
+                        .iter()
+                        .find(|t| t.track_type == *track_type && !t.locked)
+                        .map(|t| t.id.clone())
+                        .unwrap_or(target_track_id)
+                }
+            } else {
+                target_track_id
+            };
+
+            let mut new_clip = clip.clone();
+            let new_clip_id = uuid::Uuid::new_v4().to_string();
+            new_clip.id = new_clip_id.clone();
+            new_clip.timeline_in = paste_time + rel_offset;
+            new_clip.timeline_out = new_clip.timeline_in + clip.duration();
+
+            if let Some(old_grp) = &clip.linked_group_id {
+                let new_grp = linked_id_map
+                    .entry(old_grp.clone())
+                    .or_insert_with(|| uuid::Uuid::new_v4().to_string())
+                    .clone();
+                new_clip.linked_group_id = Some(new_grp);
+            }
+
+            new_selection.push((final_track_id.clone(), new_clip_id));
+            commands.push(Box::new(AddClipCommand::new(final_track_id, new_clip)));
+        }
+
+        if commands.is_empty() {
+            return;
+        }
+
+        let count = commands.len();
+        let macro_cmd = Box::new(trim_commands::MacroCommand::new("Klip(leri) Yapıştır", commands));
+        if self.undo_stack.push(macro_cmd, &mut self.project.timeline).is_ok() {
+            self.canvas_state.selected_clip_pairs = new_selection;
+            self.project.mark_dirty();
+            self.status_message = format!("📋 Yapıştırıldı: {} klip ({:.2}s)", count, paste_time);
+        }
+    }
 }
