@@ -1130,5 +1130,90 @@ mod tests {
             assert!(action.is_none() || matches!(action, Some(RelinkDialogAction::Close)));
         });
     }
+
+    #[test]
+    fn test_ripple_edit_tool_and_canvas_action() {
+        use crate::canvas::{CanvasAction, TimelineCanvasState};
+        use crate::toolbar::EditTool;
+        use trim_core::clip::Clip;
+
+        let mut app = TrimApp::default();
+        let track_id = app.project.timeline.tracks[0].id.clone();
+
+        let c1 = Clip::new("m1", 0.0, 5.0);
+        let c1_id = c1.id.clone();
+        let c2 = Clip::new("m2", 5.0, 10.0);
+        let c2_id = c2.id.clone();
+
+        app.project.timeline.tracks[0].add_clip(c1);
+        app.project.timeline.tracks[0].add_clip(c2);
+
+        // Verify tool selection
+        app.current_edit_tool = EditTool::Ripple;
+        assert_eq!(app.current_edit_tool, EditTool::Ripple);
+
+        // Verify canvas state tool mapping
+        let state = TimelineCanvasState {
+            active_tool: EditTool::Ripple,
+            ..Default::default()
+        };
+        assert_eq!(state.active_tool, EditTool::Ripple);
+
+        // Test Ripple Trim Out action: shrink c1 from 5.0 to 3.0, shifting c2 from 5.0 to 3.0
+        let old_bounds = (0.0, 5.0, 0.0, 5.0);
+        let new_bounds = (0.0, 3.0, 0.0, 3.0);
+        let shifted = vec![(track_id.clone(), c2_id.clone(), 5.0, 3.0)];
+
+        let action = CanvasAction::ClipRippleTrimmed {
+            track_id: track_id.clone(),
+            clip_id: c1_id.clone(),
+            old_bounds,
+            new_bounds,
+            shifted_clips: shifted,
+        };
+
+        // Dispatch action as in app.rs
+        if let CanvasAction::ClipRippleTrimmed {
+            track_id,
+            clip_id,
+            old_bounds,
+            new_bounds,
+            shifted_clips,
+        } = action
+        {
+            let cmd = Box::new(trim_commands::RippleTrimEdgeCommand::new(
+                track_id,
+                clip_id,
+                old_bounds,
+                new_bounds,
+                shifted_clips,
+            ));
+            app.undo_stack.push(cmd, &mut app.project.timeline).unwrap();
+        }
+
+        // Verify state after ripple trim: c1 is 0..3, c2 is 3..8
+        let t = &app.project.timeline.tracks[0];
+        let cl1 = t.get_clip_by_id(&c1_id).unwrap();
+        let cl2 = t.get_clip_by_id(&c2_id).unwrap();
+        assert_eq!(cl1.timeline_out, 3.0);
+        assert_eq!(cl2.timeline_in, 3.0);
+
+        // Test undo
+        app.undo_stack.undo(&mut app.project.timeline).unwrap();
+        let t = &app.project.timeline.tracks[0];
+        let cl1 = t.get_clip_by_id(&c1_id).unwrap();
+        let cl2 = t.get_clip_by_id(&c2_id).unwrap();
+        assert_eq!(cl1.timeline_out, 5.0);
+        assert_eq!(cl2.timeline_in, 5.0);
+
+        // Test redo
+        app.undo_stack.redo(&mut app.project.timeline).unwrap();
+        let t = &app.project.timeline.tracks[0];
+        let cl1 = t.get_clip_by_id(&c1_id).unwrap();
+        let cl2 = t.get_clip_by_id(&c2_id).unwrap();
+        assert_eq!(cl1.timeline_out, 3.0);
+        assert_eq!(cl2.timeline_in, 3.0);
+    }
 }
+
 

@@ -2027,6 +2027,25 @@ impl eframe::App for TrimApp {
                                                 .push(cmd, &mut self.project.timeline);
                                             self.project.mark_dirty();
                                         }
+                                        CanvasAction::ClipRippleTrimmed {
+                                            track_id,
+                                            clip_id,
+                                            old_bounds,
+                                            new_bounds,
+                                            shifted_clips,
+                                        } => {
+                                            let cmd = Box::new(RippleTrimEdgeCommand::new(
+                                                track_id,
+                                                clip_id,
+                                                old_bounds,
+                                                new_bounds,
+                                                shifted_clips,
+                                            ));
+                                            let _ = self
+                                                .undo_stack
+                                                .push(cmd, &mut self.project.timeline);
+                                            self.project.mark_dirty();
+                                        }
                                         CanvasAction::ClipModified => {
                                             self.project.mark_dirty();
                                         }

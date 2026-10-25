@@ -1889,4 +1889,93 @@ impl Command for SetClipCropCommand {
     }
 }
 
+// -----------------------------------------------------------------------------
+// 25. RippleTrimEdgeCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct RippleTrimEdgeCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub old_bounds: (f64, f64, f64, f64),
+    pub new_bounds: (f64, f64, f64, f64),
+    pub shifted_clips: Vec<(String, String, f64, f64)>, // (track_id, clip_id, old_in, new_in)
+}
+
+impl RippleTrimEdgeCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_bounds: (f64, f64, f64, f64),
+        new_bounds: (f64, f64, f64, f64),
+        shifted_clips: Vec<(String, String, f64, f64)>,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            old_bounds,
+            new_bounds,
+            shifted_clips,
+        }
+    }
+}
+
+impl Command for RippleTrimEdgeCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+
+        clip.timeline_in = self.new_bounds.0;
+        clip.timeline_out = self.new_bounds.1;
+        clip.source_in = self.new_bounds.2;
+        clip.source_out = Some(self.new_bounds.3);
+
+        for (tr_id, cl_id, _, new_in) in &self.shifted_clips {
+            if let Some(tr) = timeline.get_track_by_id_mut(tr_id) {
+                if let Some(c) = tr.get_clip_by_id_mut(cl_id) {
+                    c.move_to(*new_in);
+                }
+            }
+        }
+        for track in &mut timeline.tracks {
+            track.sort_clips();
+        }
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+
+        clip.timeline_in = self.old_bounds.0;
+        clip.timeline_out = self.old_bounds.1;
+        clip.source_in = self.old_bounds.2;
+        clip.source_out = Some(self.old_bounds.3);
+
+        for (tr_id, cl_id, old_in, _) in &self.shifted_clips {
+            if let Some(tr) = timeline.get_track_by_id_mut(tr_id) {
+                if let Some(c) = tr.get_clip_by_id_mut(cl_id) {
+                    c.move_to(*old_in);
+                }
+            }
+        }
+        for track in &mut timeline.tracks {
+            track.sort_clips();
+        }
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Dalgalanma Düzenleme (Ripple Trim)"
+    }
+}
+
+
 

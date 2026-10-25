@@ -847,7 +847,36 @@ mod tests {
         let c = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
         assert_eq!(c.crop_left, 0.1);
         assert!(c.has_crop());
+
+        // 5. Ripple Trim Edge Command
+        let c2 = Clip::new("media_2", 5.0, 10.0);
+        let c2_id = c2.id.clone();
+        tl.tracks[0].add_clip(c2);
+
+        let old_bounds = (0.0, 5.0, 0.0, 5.0);
+        let new_bounds = (0.0, 3.0, 0.0, 3.0);
+        let shifted = vec![(v1_id.clone(), c2_id.clone(), 5.0, 3.0)];
+        let ripple_cmd = Box::new(RippleTrimEdgeCommand::new(&v1_id, &clip_id, old_bounds, new_bounds, shifted));
+        stack.push(ripple_cmd, &mut tl).unwrap();
+
+        let c1 = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(c1.timeline_out, 3.0);
+        let c2 = tl.tracks[0].get_clip_by_id(&c2_id).unwrap();
+        assert_eq!(c2.timeline_in, 3.0);
+
+        stack.undo(&mut tl).unwrap();
+        let c1 = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(c1.timeline_out, 5.0);
+        let c2 = tl.tracks[0].get_clip_by_id(&c2_id).unwrap();
+        assert_eq!(c2.timeline_in, 5.0);
+
+        stack.redo(&mut tl).unwrap();
+        let c1 = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(c1.timeline_out, 3.0);
+        let c2 = tl.tracks[0].get_clip_by_id(&c2_id).unwrap();
+        assert_eq!(c2.timeline_in, 3.0);
     }
 }
+
 
 

@@ -23,6 +23,8 @@ pub enum DragMode {
     Rubberband,
     HandPan,
     Slip,
+    RippleIn,
+    RippleOut,
 }
 
 pub const TRACK_TOP_PADDING: f32 = 0.0;
@@ -163,6 +165,13 @@ pub enum CanvasAction {
         clip_id: String,
         old_bounds: (f64, f64, f64, f64),
         new_bounds: (f64, f64, f64, f64),
+    },
+    ClipRippleTrimmed {
+        track_id: String,
+        clip_id: String,
+        old_bounds: (f64, f64, f64, f64),
+        new_bounds: (f64, f64, f64, f64),
+        shifted_clips: Vec<(String, String, f64, f64)>,
     },
     ClipModified,
     PromptSpeed(String, String),
@@ -1059,10 +1068,19 @@ pub fn render_timeline_canvas(
         EditTool::Slip => {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
+        EditTool::Ripple => {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeColumn);
+        }
         _ => {
             if matches!(
                 state.drag_mode,
-                DragMode::FadeIn | DragMode::FadeOut | DragMode::TrimIn | DragMode::TrimOut | DragMode::Slip
+                DragMode::FadeIn
+                    | DragMode::FadeOut
+                    | DragMode::TrimIn
+                    | DragMode::TrimOut
+                    | DragMode::Slip
+                    | DragMode::RippleIn
+                    | DragMode::RippleOut
             ) {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
             }
@@ -1152,7 +1170,11 @@ pub fn render_timeline_canvas(
                     _ => {
                         if let Some((_, _, mode)) = find_clip_at_pos(project, state, rect, pos) {
                             match mode {
-                                DragMode::TrimIn | DragMode::TrimOut | DragMode::Slip => {
+                                DragMode::TrimIn
+                                | DragMode::TrimOut
+                                | DragMode::Slip
+                                | DragMode::RippleIn
+                                | DragMode::RippleOut => {
                                     ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
                                 }
                                 DragMode::VolumeRubberband => {
@@ -1362,12 +1384,27 @@ pub fn render_timeline_canvas(
                 }
 
                 state.batch_orig_ins.clear();
-                for (t_id, c_id) in &state.selected_clip_pairs {
-                    if let Some(tr) = project.timeline.get_track_by_id(t_id) {
-                        if let Some(cl) = tr.get_clip_by_id(c_id) {
-                            state
-                                .batch_orig_ins
-                                .push((t_id.clone(), c_id.clone(), cl.timeline_in));
+                if mode == DragMode::RippleIn || mode == DragMode::RippleOut {
+                    let boundary = state.drag_orig_out - 1e-4;
+                    if let Some(tr) = project.timeline.get_track_by_id(&tr_id) {
+                        for c in &tr.clips {
+                            if c.id != cl_id && c.timeline_in >= boundary {
+                                state.batch_orig_ins.push((
+                                    tr_id.clone(),
+                                    c.id.clone(),
+                                    c.timeline_in,
+                                ));
+                            }
+                        }
+                    }
+                } else {
+                    for (t_id, c_id) in &state.selected_clip_pairs {
+                        if let Some(tr) = project.timeline.get_track_by_id(t_id) {
+                            if let Some(cl) = tr.get_clip_by_id(c_id) {
+                                state
+                                    .batch_orig_ins
+                                    .push((t_id.clone(), c_id.clone(), cl.timeline_in));
+                            }
                         }
                     }
                 }
@@ -1529,6 +1566,63 @@ pub fn render_timeline_canvas(
                         if let Some(tr) = project.timeline.get_track_by_id_mut(tr_id) {
                             if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
                                 cl.trim_out(snapped_out);
+                            }
+                        }
+                    }
+                }
+                DragMode::RippleOut => {
+                    if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id)
+                    {
+                        let target_out = (state.drag_orig_out + dt).max(state.drag_orig_in + 0.04);
+                        let (snapped_out, snap_pt) = project.timeline.snap_time_with_playhead(
+                            target_out,
+                            current_time,
+                            Some(snap_thresh),
+                            Some(cl_id),
+                        );
+                        state.snap_guide_x =
+                            snap_pt.map(|pt| rect.left() + (pt as f32 * state.pixels_per_second));
+                        let shift_dt = snapped_out - state.drag_orig_out;
+                        if let Some(tr) = project.timeline.get_track_by_id_mut(tr_id) {
+                            if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
+                                cl.trim_out(snapped_out);
+                            }
+                        }
+                        for (t_id, c_id, orig_in) in &state.batch_orig_ins {
+                            if let Some(tr) = project.timeline.get_track_by_id_mut(t_id) {
+                                if let Some(c) = tr.get_clip_by_id_mut(c_id) {
+                                    c.move_to((orig_in + shift_dt).max(0.0));
+                                }
+                            }
+                        }
+                    }
+                }
+                DragMode::RippleIn => {
+                    if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id)
+                    {
+                        let target_in = (state.drag_orig_in + dt)
+                            .max(0.0)
+                            .min(state.drag_orig_out - 0.04);
+                        let (snapped_in, snap_pt) = project.timeline.snap_time_with_playhead(
+                            target_in,
+                            current_time,
+                            Some(snap_thresh),
+                            Some(cl_id),
+                        );
+                        state.snap_guide_x =
+                            snap_pt.map(|pt| rect.left() + (pt as f32 * state.pixels_per_second));
+                        let shift_dt = snapped_in - state.drag_orig_in;
+                        if let Some(tr) = project.timeline.get_track_by_id_mut(tr_id) {
+                            if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
+                                cl.trim_in(snapped_in);
+                                cl.move_to(state.drag_orig_in);
+                            }
+                        }
+                        for (t_id, c_id, orig_in) in &state.batch_orig_ins {
+                            if let Some(tr) = project.timeline.get_track_by_id_mut(t_id) {
+                                if let Some(c) = tr.get_clip_by_id_mut(c_id) {
+                                    c.move_to((orig_in - shift_dt).max(0.0));
+                                }
                             }
                         }
                     }
@@ -1791,6 +1885,50 @@ pub fn render_timeline_canvas(
                     }
                 }
             }
+            DragMode::RippleIn | DragMode::RippleOut => {
+                if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id) {
+                    if let Some(tr) = project.timeline.get_track_by_id(tr_id) {
+                        if let Some(cl) = tr.get_clip_by_id(cl_id) {
+                            let new_bounds = (
+                                cl.timeline_in,
+                                cl.timeline_out,
+                                cl.source_in,
+                                cl.effective_source_out(),
+                            );
+                            let old_bounds = (
+                                state.drag_orig_in,
+                                state.drag_orig_out,
+                                state.drag_orig_sin,
+                                state.drag_orig_sout,
+                            );
+                            let mut shifted_clips = Vec::new();
+                            for (t_id, c_id, orig_in) in &state.batch_orig_ins {
+                                if let Some(t) = project.timeline.get_track_by_id(t_id) {
+                                    if let Some(c) = t.get_clip_by_id(c_id) {
+                                        if (c.timeline_in - *orig_in).abs() > 1e-4 {
+                                            shifted_clips.push((
+                                                t_id.clone(),
+                                                c_id.clone(),
+                                                *orig_in,
+                                                c.timeline_in,
+                                            ));
+                                        }
+                                    }
+                                }
+                            }
+                            if new_bounds != old_bounds || !shifted_clips.is_empty() {
+                                action = Some(CanvasAction::ClipRippleTrimmed {
+                                    track_id: tr_id.clone(),
+                                    clip_id: cl_id.clone(),
+                                    old_bounds,
+                                    new_bounds,
+                                    shifted_clips,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
             DragMode::FadeIn | DragMode::FadeOut => {
                 action = Some(CanvasAction::ClipModified);
             }
@@ -2027,6 +2165,14 @@ pub(crate) fn find_clip_at_pos(
 
                 if state.active_tool == EditTool::Slip {
                     return Some((track.id.clone(), clip.id.clone(), DragMode::Slip));
+                }
+
+                if state.active_tool == EditTool::Ripple {
+                    if pos.x < clip_rect.center().x {
+                        return Some((track.id.clone(), clip.id.clone(), DragMode::RippleIn));
+                    } else {
+                        return Some((track.id.clone(), clip.id.clone(), DragMode::RippleOut));
+                    }
                 }
 
                 // Check fade handles (prioritized in the top 18px of the clip)
