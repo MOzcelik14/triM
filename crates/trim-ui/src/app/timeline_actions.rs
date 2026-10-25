@@ -307,6 +307,7 @@ impl TrimApp {
         let name = track.name.clone();
         let cmd = Box::new(AddTrackCommand::new(track, 0));
         let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+        self.canvas_state.pending_scroll_y = Some(0.0);
         self.status_message = format!("Video kanalı eklendi: {}", name);
         self.project.mark_dirty();
     }
@@ -332,6 +333,7 @@ impl TrimApp {
         let len = self.project.timeline.tracks.len();
         let cmd = Box::new(AddTrackCommand::new(track, len));
         let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+        self.canvas_state.pending_scroll_y = Some(f32::MAX);
         self.status_message = format!("Ses kanalı eklendi: {}", name);
         self.project.mark_dirty();
     }

@@ -869,4 +869,121 @@ mod tests {
             1
         );
     }
+
+    #[test]
+    fn test_synchronized_follower_scroll() {
+        let ctx = egui::Context::default();
+        let mut canvas_offset = Vec2::ZERO;
+        let canvas_id = egui::Id::new("canvas_scroll");
+        let mut state = egui::scroll_area::State::load(&ctx, canvas_id).unwrap_or_default();
+        state.offset.y = 50.0;
+        state.store(&ctx, canvas_id);
+
+        // Frame 1: Initial render
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                // Ruler (follower X)
+                let ruler_out = egui::ScrollArea::horizontal()
+                    .id_salt("ruler_scroll")
+                    .horizontal_scroll_offset(canvas_offset.x)
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .show(ui, |ui| {
+                        ui.allocate_exact_size(Vec2::new(1000.0, 26.0), egui::Sense::hover());
+                    });
+                assert_eq!(ruler_out.state.offset.x, canvas_offset.x);
+
+                // Track Headers (follower Y)
+                let headers_out = egui::ScrollArea::vertical()
+                    .id_salt("headers_scroll")
+                    .vertical_scroll_offset(canvas_offset.y)
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .show(ui, |ui| {
+                        ui.allocate_exact_size(Vec2::new(216.0, 1000.0), egui::Sense::hover());
+                    });
+                assert_eq!(headers_out.state.offset.y, canvas_offset.y);
+
+                // Canvas (driver X & Y)
+                let canvas_out = egui::ScrollArea::both()
+                    .id_salt("canvas_scroll")
+                    .max_width(400.0)
+                    .max_height(300.0)
+                    .show(ui, |ui| {
+                        ui.allocate_exact_size(Vec2::new(1000.0, 1000.0), egui::Sense::hover());
+                    });
+                canvas_offset = canvas_out.state.offset;
+            });
+        });
+
+        // Verify initial state
+        assert_eq!(canvas_offset, Vec2::ZERO);
+
+        // Frame 2: Suppose canvas scrolled to (120.0, 75.0)
+        canvas_offset = Vec2::new(120.0, 75.0);
+
+        let _ = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                // Ruler receives canvas X offset
+                let ruler_out = egui::ScrollArea::horizontal()
+                    .id_salt("ruler_scroll")
+                    .max_width(400.0)
+                    .horizontal_scroll_offset(canvas_offset.x)
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .show(ui, |ui| {
+                        ui.allocate_exact_size(Vec2::new(1000.0, 26.0), egui::Sense::hover());
+                    });
+                assert_eq!(ruler_out.state.offset.x, 120.0);
+
+                // Track Headers receives canvas Y offset
+                let headers_out = egui::ScrollArea::vertical()
+                    .id_salt("headers_scroll")
+                    .max_height(300.0)
+                    .vertical_scroll_offset(canvas_offset.y)
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .show(ui, |ui| {
+                        ui.allocate_exact_size(Vec2::new(216.0, 1000.0), egui::Sense::hover());
+                    });
+                assert_eq!(headers_out.state.offset.y, 75.0);
+            });
+        });
+
+        // Frame 3: Mouse wheel over track headers (pos = 50, 50)
+        let mut raw_input = egui::RawInput::default();
+        raw_input
+            .events
+            .push(egui::Event::PointerMoved(egui::Pos2::new(50.0, 50.0)));
+        raw_input.events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: Vec2::new(0.0, -30.0), // scroll down 30px
+            modifiers: Default::default(),
+        });
+
+        let _ = ctx.run(raw_input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _headers_resp = ui.scope(|ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("headers_scroll")
+                        .max_height(300.0)
+                        .vertical_scroll_offset(canvas_offset.y)
+                        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                        .show(ui, |ui| {
+                            ui.allocate_exact_size(Vec2::new(216.0, 1000.0), egui::Sense::hover());
+                        })
+                });
+
+                // Check if user scrolled over headers
+                if ui
+                    .input(|i| i.pointer.hover_pos())
+                    .map(|p| p.x <= 216.0)
+                    .unwrap_or(false)
+                {
+                    let scroll_delta = ui.input(|i| i.raw_scroll_delta);
+                    if scroll_delta.y != 0.0 {
+                        canvas_offset.y = (canvas_offset.y - scroll_delta.y).clamp(0.0, 700.0);
+                    }
+                }
+            });
+        });
+
+        assert_eq!(canvas_offset.y, 105.0);
+    }
 }

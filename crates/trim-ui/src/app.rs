@@ -1,6 +1,9 @@
 //! Main triM. desktop application implementing `eframe::App` with Premiere Pro 4-Quadrant layout.
 
-use crate::canvas::{render_timeline_canvas, CanvasAction, TimelineCanvasState};
+use crate::canvas::{
+    calculate_total_tracks_height, clamp_scroll_offset, render_timeline_canvas, CanvasAction,
+    TimelineCanvasState,
+};
 use crate::dialogs::*;
 use crate::file_dialog::FileDialogBridge;
 use crate::inspector::{render_inspector_panel, InspectorAction};
@@ -13,7 +16,7 @@ use crate::toolbar::{render_vertical_toolbar, EditTool};
 use crate::track_header::{render_track_header, TrackHeaderAction, TRACK_HEADER_WIDTH};
 use crate::vu_meter::{VuMeterState, VuMeterWidget};
 
-use egui::{Button, Color32, Key, RichText, ScrollArea, Stroke, TextureHandle, Vec2};
+use egui::{Button, Color32, Key, RichText, Stroke, TextureHandle, Vec2};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver};
@@ -1373,9 +1376,9 @@ impl eframe::App for TrimApp {
         // -------------------------------------------------------------
         egui::TopBottomPanel::bottom("timeline_panel")
             .resizable(true)
-            .min_height(200.0)
-            .default_height(340.0)
-            .max_height(600.0)
+            .min_height(140.0)
+            .default_height(280.0)
+            .max_height((ctx.screen_rect().height() - 150.0).max(400.0))
             .show(ctx, |ui| {
                 // Sequence Timeline Header Bar
                 ui.horizontal(|ui| {
@@ -1549,6 +1552,29 @@ impl eframe::App for TrimApp {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::ZERO;
 
+                    let top_bar_h = 26.0;
+                    let tracks_viewport_h = (ui.available_height() - top_bar_h).max(40.0);
+                    let canvas_scroll_id = egui::Id::new("timeline_canvas_both_scroll");
+
+                    // Handle pending vertical scroll request (e.g. from adding video/audio track)
+                    if let Some(target_y) = self.canvas_state.pending_scroll_y.take() {
+                        let mut st = egui::scroll_area::State::load(ctx, canvas_scroll_id).unwrap_or_default();
+                        let total_h = calculate_total_tracks_height(&self.project.timeline.tracks, &self.canvas_state);
+                        st.offset.y = clamp_scroll_offset(target_y, total_h, tracks_viewport_h);
+                        st.store(ctx, canvas_scroll_id);
+                    }
+
+                    // Clamp scroll offset if tracks were removed or resized
+                    let total_tracks_h = calculate_total_tracks_height(&self.project.timeline.tracks, &self.canvas_state);
+                    let mut canvas_scroll_state = egui::scroll_area::State::load(ctx, canvas_scroll_id).unwrap_or_default();
+                    let clamped_y = clamp_scroll_offset(canvas_scroll_state.offset.y, total_tracks_h, tracks_viewport_h);
+                    if clamped_y != canvas_scroll_state.offset.y {
+                        canvas_scroll_state.offset.y = clamped_y;
+                        canvas_scroll_state.store(ctx, canvas_scroll_id);
+                    }
+                    let current_scroll_x = canvas_scroll_state.offset.x;
+                    let current_scroll_y = canvas_scroll_state.offset.y;
+
                     // 1. Vertical Toolbar (Fixed width 42px for 32x32 tools)
                     ui.allocate_ui(Vec2::new(42.0, ui.available_height()), |ui| {
                         render_vertical_toolbar(ui, &mut self.current_edit_tool);
@@ -1568,7 +1594,7 @@ impl eframe::App for TrimApp {
                         ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing = Vec2::ZERO;
                             let (corner_rect, _) = ui.allocate_exact_size(
-                                Vec2::new(header_w, 26.0),
+                                Vec2::new(header_w, top_bar_h),
                                 egui::Sense::hover(),
                             );
                             let cp = ui.painter_at(corner_rect);
@@ -1628,110 +1654,131 @@ impl eframe::App for TrimApp {
                                 );
                             });
 
-                            let mut pending_header_actions = Vec::new();
-                            for track in &self.project.timeline.tracks {
-                                let is_patch = self.target_video_track == track.id
-                                    || self.target_audio_track == track.id;
-                                let tr_h = self.canvas_state.get_track_height(&track.id);
-                                let is_recording_vo = self
-                                    .active_voiceover
-                                    .as_ref()
-                                    .map(|vo| vo.track_id == track.id)
-                                    .unwrap_or(false);
-                                let (_, hdr_act) =
-                                    render_track_header(ui, track, tr_h, is_patch, is_recording_vo);
-                                if let Some(act) = hdr_act {
-                                    pending_header_actions.push((track.id.clone(), act));
-                                }
-                                ui.add_space(self.canvas_state.track_spacing);
-                            }
+                            let headers_scroll_out = egui::ScrollArea::vertical()
+                                .id_salt("timeline_track_headers_scroll")
+                                .max_height(tracks_viewport_h)
+                                .vertical_scroll_offset(current_scroll_y)
+                                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                                .show(ui, |ui| {
+                                    ui.spacing_mut().item_spacing = Vec2::ZERO;
+                                    ui.vertical(|ui| {
+                                        ui.spacing_mut().item_spacing = Vec2::ZERO;
+                                        let mut pending_header_actions = Vec::new();
+                                        for track in &self.project.timeline.tracks {
+                                            let is_patch = self.target_video_track == track.id
+                                                || self.target_audio_track == track.id;
+                                            let tr_h = self.canvas_state.get_track_height(&track.id);
+                                            let is_recording_vo = self
+                                                .active_voiceover
+                                                .as_ref()
+                                                .map(|vo| vo.track_id == track.id)
+                                                .unwrap_or(false);
+                                            let (_, hdr_act) =
+                                                render_track_header(ui, track, tr_h, is_patch, is_recording_vo);
+                                            if let Some(act) = hdr_act {
+                                                pending_header_actions.push((track.id.clone(), act));
+                                            }
+                                            ui.add_space(self.canvas_state.track_spacing);
+                                        }
 
-                            for (t_id, act) in pending_header_actions {
-                                match act {
-                                    TrackHeaderAction::ToggleMute => {
-                                        if let Some(t) =
-                                            self.project.timeline.get_track_by_id_mut(&t_id)
-                                        {
-                                            t.muted = !t.muted;
-                                            self.project.mark_dirty();
-                                        }
-                                    }
-                                    TrackHeaderAction::ToggleSolo => {
-                                        if let Some(t) =
-                                            self.project.timeline.get_track_by_id_mut(&t_id)
-                                        {
-                                            t.solo = !t.solo;
-                                            self.project.mark_dirty();
-                                        }
-                                    }
-                                    TrackHeaderAction::ToggleLock => {
-                                        if let Some(t) =
-                                            self.project.timeline.get_track_by_id_mut(&t_id)
-                                        {
-                                            t.locked = !t.locked;
-                                            self.project.mark_dirty();
-                                        }
-                                    }
-                                    TrackHeaderAction::TogglePatchTarget => {
-                                        if let Some(t) =
-                                            self.project.timeline.get_track_by_id(&t_id)
-                                        {
-                                            if t.track_type == trim_core::track::TrackType::Video {
-                                                self.target_video_track = t_id.clone();
-                                                self.target_audio_track = self
-                                                    .project
-                                                    .timeline
-                                                    .find_or_create_corresponding_audio_track(
-                                                        &t_id,
-                                                    );
-                                            } else {
-                                                self.target_audio_track = t_id.clone();
+                                        for (t_id, act) in pending_header_actions {
+                                            match act {
+                                                TrackHeaderAction::ToggleMute => {
+                                                    if let Some(t) =
+                                                        self.project.timeline.get_track_by_id_mut(&t_id)
+                                                    {
+                                                        t.muted = !t.muted;
+                                                        self.project.mark_dirty();
+                                                    }
+                                                }
+                                                TrackHeaderAction::ToggleSolo => {
+                                                    if let Some(t) =
+                                                        self.project.timeline.get_track_by_id_mut(&t_id)
+                                                    {
+                                                        t.solo = !t.solo;
+                                                        self.project.mark_dirty();
+                                                    }
+                                                }
+                                                TrackHeaderAction::ToggleLock => {
+                                                    if let Some(t) =
+                                                        self.project.timeline.get_track_by_id_mut(&t_id)
+                                                    {
+                                                        t.locked = !t.locked;
+                                                        self.project.mark_dirty();
+                                                    }
+                                                }
+                                                TrackHeaderAction::TogglePatchTarget => {
+                                                    if let Some(t) =
+                                                        self.project.timeline.get_track_by_id(&t_id)
+                                                    {
+                                                        if t.track_type == trim_core::track::TrackType::Video {
+                                                            self.target_video_track = t_id.clone();
+                                                            self.target_audio_track = self
+                                                                .project
+                                                                .timeline
+                                                                .find_or_create_corresponding_audio_track(
+                                                                    &t_id,
+                                                                );
+                                                        } else {
+                                                            self.target_audio_track = t_id.clone();
+                                                        }
+                                                    }
+                                                }
+                                                TrackHeaderAction::RecordVoiceover => {
+                                                    let is_currently_rec = self
+                                                        .active_voiceover
+                                                        .as_ref()
+                                                        .map(|vo| vo.track_id == t_id)
+                                                        .unwrap_or(false);
+                                                    if is_currently_rec {
+                                                        self.finish_voiceover();
+                                                    } else {
+                                                        if self.active_voiceover.is_some() {
+                                                            self.finish_voiceover();
+                                                        }
+                                                        self.start_voiceover(t_id.clone());
+                                                    }
+                                                }
+                                                TrackHeaderAction::VolumeChanged(vol) => {
+                                                    if let Some(t) =
+                                                        self.project.timeline.get_track_by_id_mut(&t_id)
+                                                    {
+                                                        t.volume = vol;
+                                                        self.project.mark_dirty();
+                                                    }
+                                                }
+                                                TrackHeaderAction::ResizeTrack(new_h) => {
+                                                    self.canvas_state.set_track_height(&t_id, new_h);
+                                                }
+                                                TrackHeaderAction::DeleteTrack => {
+                                                    let cmd = Box::new(RemoveTrackCommand::new(t_id.clone()));
+                                                    match self.undo_stack.push(cmd, &mut self.project.timeline)
+                                                    {
+                                                        Ok(_) => {
+                                                            self.canvas_state
+                                                                .selected_clip_pairs
+                                                                .retain(|(tr_id, _)| tr_id != &t_id);
+                                                            self.status_message = "Kanal silindi".to_string();
+                                                            self.project.mark_dirty();
+                                                        }
+                                                        Err(e) => {
+                                                            self.status_message =
+                                                                format!("Kanal silinemedi: {}", e);
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
-                                    }
-                                    TrackHeaderAction::RecordVoiceover => {
-                                        let is_currently_rec = self
-                                            .active_voiceover
-                                            .as_ref()
-                                            .map(|vo| vo.track_id == t_id)
-                                            .unwrap_or(false);
-                                        if is_currently_rec {
-                                            self.finish_voiceover();
-                                        } else {
-                                            if self.active_voiceover.is_some() {
-                                                self.finish_voiceover();
-                                            }
-                                            self.start_voiceover(t_id.clone());
-                                        }
-                                    }
-                                    TrackHeaderAction::VolumeChanged(vol) => {
-                                        if let Some(t) =
-                                            self.project.timeline.get_track_by_id_mut(&t_id)
-                                        {
-                                            t.volume = vol;
-                                            self.project.mark_dirty();
-                                        }
-                                    }
-                                    TrackHeaderAction::ResizeTrack(new_h) => {
-                                        self.canvas_state.set_track_height(&t_id, new_h);
-                                    }
-                                    TrackHeaderAction::DeleteTrack => {
-                                        let cmd = Box::new(RemoveTrackCommand::new(t_id.clone()));
-                                        match self.undo_stack.push(cmd, &mut self.project.timeline)
-                                        {
-                                            Ok(_) => {
-                                                self.canvas_state
-                                                    .selected_clip_pairs
-                                                    .retain(|(tr_id, _)| tr_id != &t_id);
-                                                self.status_message = "Kanal silindi".to_string();
-                                                self.project.mark_dirty();
-                                            }
-                                            Err(e) => {
-                                                self.status_message =
-                                                    format!("Kanal silinemedi: {}", e);
-                                            }
-                                        }
-                                    }
+                                    });
+                                });
+
+                            // Forward mouse wheel scrolling over track headers to canvas scroll state
+                            if ui.input(|i| i.pointer.hover_pos()).map(|p| headers_scroll_out.inner_rect.contains(p)).unwrap_or(false) {
+                                let scroll_delta = ui.input(|i| i.raw_scroll_delta);
+                                if scroll_delta.y != 0.0 {
+                                    let mut st = egui::scroll_area::State::load(ui.ctx(), canvas_scroll_id).unwrap_or_default();
+                                    st.offset.y = clamp_scroll_offset(st.offset.y - scroll_delta.y, total_tracks_h, tracks_viewport_h);
+                                    st.store(ui.ctx(), canvas_scroll_id);
                                 }
                             }
                         });
@@ -1747,54 +1794,75 @@ impl eframe::App for TrimApp {
                         self.canvas_state.track_heights.clear();
                     }
 
-                    // 3. Scrollable Timeline Canvas
+                    // 3. Scrollable Timeline Canvas + Time Ruler
                     let vu_w = 58.0;
                     let avail_canvas_w = (ui.available_width() - vu_w).max(100.0);
                     ui.allocate_ui(Vec2::new(avail_canvas_w, ui.available_height()), |ui| {
-                        ScrollArea::horizontal().show(ui, |ui| {
+                        ui.spacing_mut().item_spacing = Vec2::ZERO;
+                        ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing = Vec2::ZERO;
-                            ui.vertical(|ui| {
-                                ui.spacing_mut().item_spacing = Vec2::ZERO;
-                                let markers = self.project.timeline.markers.clone();
-                                let (_ruler_resp, ruler_act) = render_time_ruler(
-                                    ui,
-                                    self.canvas_state.pixels_per_second,
-                                    0.0,
-                                    self.project.timeline.duration(),
-                                    self.project.timeline.fps,
-                                    self.current_time,
-                                    &markers,
-                                );
 
-                                if let Some(act) = ruler_act {
-                                    match act {
-                                        RulerAction::Seek(t) => self.seek(t),
-                                        RulerAction::MarkerClicked(m_id) => {
-                                            if let Some(m) = self
-                                                .project
-                                                .timeline
-                                                .markers
-                                                .iter()
-                                                .find(|m| m.id == m_id)
-                                            {
-                                                self.seek(m.time);
+                            // 1. Time Ruler (Follower of canvas X scroll)
+                            egui::ScrollArea::horizontal()
+                                .id_salt("timeline_ruler_scroll")
+                                .max_width(avail_canvas_w)
+                                .horizontal_scroll_offset(current_scroll_x)
+                                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                                .show(ui, |ui| {
+                                    ui.spacing_mut().item_spacing = Vec2::ZERO;
+                                    let markers = self.project.timeline.markers.clone();
+                                    let (_ruler_resp, ruler_act) = render_time_ruler(
+                                        ui,
+                                        self.canvas_state.pixels_per_second,
+                                        current_scroll_x,
+                                        self.project.timeline.duration(),
+                                        self.project.timeline.fps,
+                                        self.current_time,
+                                        &markers,
+                                    );
+
+                                    if let Some(act) = ruler_act {
+                                        match act {
+                                            RulerAction::Seek(t) => self.seek(t),
+                                            RulerAction::MarkerClicked(m_id) => {
+                                                if let Some(m) = self
+                                                    .project
+                                                    .timeline
+                                                    .markers
+                                                    .iter()
+                                                    .find(|m| m.id == m_id)
+                                                {
+                                                    self.seek(m.time);
+                                                }
                                             }
                                         }
                                     }
-                                }
+                                });
 
-                                self.canvas_state.active_tool = self.current_edit_tool;
-                                self.project.timeline.snap_enabled = self.snap_enabled;
-                                let (_canvas_resp, canvas_act) = render_timeline_canvas(
-                                    ui,
-                                    &mut self.project,
-                                    &mut self.canvas_state,
-                                    self.current_time,
-                                    &self.waveform_gen,
-                                    &self.media_bin_textures,
-                                );
+                            // 2. Timeline Canvas (Driver of both X and Y scroll)
+                            self.canvas_state.active_tool = self.current_edit_tool;
+                            self.project.timeline.snap_enabled = self.snap_enabled;
+                            let canvas_scroll_out = egui::ScrollArea::both()
+                                .id_salt(canvas_scroll_id)
+                                .max_width(avail_canvas_w)
+                                .max_height(tracks_viewport_h)
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    ui.spacing_mut().item_spacing = Vec2::ZERO;
+                                    let (_canvas_resp, canvas_act) = render_timeline_canvas(
+                                        ui,
+                                        &mut self.project,
+                                        &mut self.canvas_state,
+                                        self.current_time,
+                                        &self.waveform_gen,
+                                        &self.media_bin_textures,
+                                    );
+                                    canvas_act
+                                });
 
-                                if let Some(act) = canvas_act {
+                            self.canvas_state.scroll_offset = canvas_scroll_out.state.offset;
+
+                            if let Some(act) = canvas_scroll_out.inner {
                                     match act {
                                         CanvasAction::Seek(t) => self.seek(t),
                                         CanvasAction::SelectClips(pairs) => {
@@ -2133,7 +2201,6 @@ impl eframe::App for TrimApp {
                                 }
                             });
                         });
-                    });
 
                     // 4. Master VU Meter (Far Right)
                     ui.allocate_ui(Vec2::new(vu_w, ui.available_height()), |ui| {

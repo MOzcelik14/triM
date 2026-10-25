@@ -19,7 +19,7 @@ pub fn render_time_ruler(
     markers: &[Marker],
 ) -> (Response, Option<RulerAction>) {
     let avail_width = ui.available_width().max(600.0);
-    let total_width = (total_duration as f32 + 30.0) * pixels_per_second;
+    let total_width = (total_duration as f32 + 30.0).max(60.0) * pixels_per_second;
     let ruler_width = avail_width.max(total_width);
     let ruler_height = 26.0;
 

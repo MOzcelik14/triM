@@ -54,6 +54,8 @@ pub struct TimelineCanvasState {
     pub drag_target_track_id: Option<String>,
     pub track_heights: std::collections::HashMap<String, f32>,
     pub selected_gap: Option<(String, f64, f64)>, // (track_id, gap_start, gap_end)
+    pub scroll_offset: Vec2,
+    pub pending_scroll_y: Option<f32>,
 }
 
 impl Default for TimelineCanvasState {
@@ -81,6 +83,8 @@ impl Default for TimelineCanvasState {
             drag_target_track_id: None,
             track_heights: std::collections::HashMap::new(),
             selected_gap: None,
+            scroll_offset: Vec2::ZERO,
+            pending_scroll_y: None,
         }
     }
 }
@@ -112,6 +116,32 @@ impl TimelineCanvasState {
         }
         offsets
     }
+}
+
+/// Calculates total height required by all tracks including spacing.
+pub fn calculate_total_tracks_height(
+    tracks: &[trim_core::track::Track],
+    canvas_state: &TimelineCanvasState,
+) -> f32 {
+    if tracks.is_empty() {
+        canvas_state.track_height
+    } else {
+        tracks
+            .iter()
+            .map(|t| canvas_state.get_track_height(&t.id) + canvas_state.track_spacing)
+            .sum::<f32>()
+    }
+}
+
+/// Clamps vertical scroll offset within valid bounds `[0.0, max_scroll]`.
+pub fn clamp_scroll_offset(offset_y: f32, content_height: f32, viewport_height: f32) -> f32 {
+    let max_scroll = (content_height - viewport_height).max(0.0);
+    offset_y.clamp(0.0, max_scroll)
+}
+
+/// Checks if vertical scrolling is needed for the given content and viewport heights.
+pub fn is_vertical_scroll_needed(content_height: f32, viewport_height: f32) -> bool {
+    content_height > viewport_height
 }
 
 pub enum CanvasAction {
@@ -1987,4 +2017,55 @@ pub fn find_gap_at_pos(
         return None;
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use trim_core::track::{Track, TrackType};
+
+    #[test]
+    fn test_calculate_total_tracks_height_empty() {
+        let state = TimelineCanvasState::default();
+        let tracks: Vec<Track> = Vec::new();
+        assert_eq!(
+            calculate_total_tracks_height(&tracks, &state),
+            state.track_height
+        );
+    }
+
+    #[test]
+    fn test_calculate_total_tracks_height_with_custom_heights() {
+        let mut state = TimelineCanvasState::default();
+        let mut t1 = Track::new("V1", TrackType::Video);
+        let mut t2 = Track::new("A1", TrackType::Audio);
+        t1.id = "t1".into();
+        t2.id = "t2".into();
+        state.set_track_height("t1", 80.0);
+        // t2 uses default track_height (56.0)
+
+        let tracks = vec![t1, t2];
+        let total = calculate_total_tracks_height(&tracks, &state);
+        // (80.0 + 6.0) + (56.0 + 6.0) = 148.0
+        assert_eq!(total, 148.0);
+    }
+
+    #[test]
+    fn test_clamp_scroll_offset() {
+        // Content smaller than viewport: max_scroll = 0.0
+        assert_eq!(clamp_scroll_offset(50.0, 200.0, 300.0), 0.0);
+        assert_eq!(clamp_scroll_offset(-10.0, 200.0, 300.0), 0.0);
+
+        // Content larger than viewport: max_scroll = 500.0 - 300.0 = 200.0
+        assert_eq!(clamp_scroll_offset(-20.0, 500.0, 300.0), 0.0);
+        assert_eq!(clamp_scroll_offset(100.0, 500.0, 300.0), 100.0);
+        assert_eq!(clamp_scroll_offset(350.0, 500.0, 300.0), 200.0);
+    }
+
+    #[test]
+    fn test_is_vertical_scroll_needed() {
+        assert!(!is_vertical_scroll_needed(200.0, 300.0));
+        assert!(!is_vertical_scroll_needed(300.0, 300.0));
+        assert!(is_vertical_scroll_needed(301.0, 300.0));
+    }
 }
