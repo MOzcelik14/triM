@@ -1,54 +1,44 @@
 <!doctype html>
-<html lang="tr">
+<html lang="tr" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#101015">
-  <meta name="description" content="triM. — Hızlı, hafif ve bağımsız masaüstü video düzenleyici. 4K akıllı proxy, çok kanallı zaman çizgisi, SRT/VTT altyazı motoru, canlı ses kaydı ve GPU hızlandırmalı render desteği.">
-  <meta name="author" content="M. Özçelik">
+  <meta name="theme-color" content="#121316">
+  <title>triM — Masaüstü Video Düzenleyici</title>
+  <meta name="description" content="Rust ile yazılmış, egui arayüzlü, sistemdeki FFmpeg araçlarını kullanan, 13 MB boyutunda hafif ve yerel masaüstü video düzenleyicisi.">
+  <meta name="author" content="Murat Özçelik">
   <link rel="canonical" href="https://mozcelik14.github.io/triM/">
+  
+  <!-- Open Graph -->
   <meta property="og:type" content="website">
-  <meta property="og:site_name" content="triM.">
-  <meta property="og:title" content="triM. — Masaüstü Video Düzenleyici">
-  <meta property="og:description" content="Hafif, hızlı ve tam kontrol sağlayan masaüstü video düzenleyici. 4K proxy, altyazı süiti, ses kaydı ve GPU export.">
+  <meta property="og:site_name" content="triM">
+  <meta property="og:title" content="triM — Masaüstü Video Düzenleyici">
+  <meta property="og:description" content="Rust ile yazılmış, FFmpeg tabanlı, 13 MB boyutunda bağımsız yerel masaüstü video düzenleyicisi.">
   <meta property="og:url" content="https://mozcelik14.github.io/triM/">
-  <meta property="og:image" content="https://mozcelik14.github.io/triM/assets/screenshots/trim_workspace.png">
+  <meta property="og:image" content="https://mozcelik14.github.io/triM/assets/screenshots/workspace.png">
   <meta name="twitter:card" content="summary_large_image">
+  
   <link rel="icon" type="image/svg+xml" href="./assets/icons/io.github.mozcelik14.triM.svg">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./css/style.css">
   <script src="./js/main.js" defer></script>
-  <title>triM. — Masaüstü Video Düzenleyici</title>
 </head>
 <body>
-  <a class="skip-link" href="#main" data-i18n="skip">İçeriğe geç</a>
-  <header class="site-header" id="site-header">
+  <a class="skip-link" href="#main">İçeriğe geç</a>
+
+  <header class="site-header">
     <div class="container nav-inner">
-      <a class="brand" href="#top" aria-label="triM.">
-        <img src="./assets/branding/logo_wordmark.svg" width="102" height="31" alt="triM.">
-      </a>
-      <nav id="primary-nav" class="nav-links" aria-label="Main navigation">
+      <a class="brand" href="#top">triM<span>.</span></a>
+      <nav class="nav-links" aria-label="Ana Menü">
         <a href="#features" data-i18n="nav_features">Özellikler</a>
-        <a href="#proxy" data-i18n="nav_proxy">Akıllı Proxy</a>
-        <a href="#audio" data-i18n="nav_audio">Ses & Renk</a>
-        <a href="#shortcuts" data-i18n="nav_shortcuts">Kısayollar</a>
-        <a href="#get-started" data-i18n="nav_download">İndir</a>
+        <a href="#gallery" data-i18n="nav_gallery">Ekranlar</a>
+        <a href="#installation" data-i18n="nav_install">Kurulum</a>
+        <a href="#architecture" data-i18n="nav_arch">Mimari</a>
+        <a href="#limitations" data-i18n="nav_limits">Sınırlamalar</a>
       </nav>
       <div class="nav-actions">
-        <div class="language-switch" role="group" aria-label="Language / Dil">
-          <button type="button" class="lang-button is-active" data-lang="tr" aria-pressed="true">TR</button>
-          <span aria-hidden="true">/</span>
-          <button type="button" class="lang-button" data-lang="en" aria-pressed="false">EN</button>
-        </div>
-        <a class="nav-github" href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer" aria-label="GitHub repository">
-          <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .8a11.2 11.2 0 0 0-3.54 21.83c.56.1.76-.24.76-.54v-2.12c-3.1.68-3.75-1.32-3.75-1.32-.5-1.28-1.24-1.63-1.24-1.63-1.01-.7.08-.69.08-.69 1.12.08 1.71 1.15 1.71 1.15 1 .1.77.98 3.21.7.1-.72.4-1.22.72-1.5-2.47-.28-5.07-1.24-5.07-5.53 0-1.22.44-2.22 1.15-3-.12-.28-.5-1.42.1-2.95 0 0 .94-.3 3.08 1.14A10.7 10.7 0 0 1 12 5.96c.95 0 1.9.13 2.8.38 2.14-1.45 3.07-1.14 3.07-1.14.61 1.53.23 2.67.12 2.95.71.78 1.14 1.78 1.14 3 0 4.3-2.6 5.24-5.08 5.52.4.35.76 1.02.76 2.07v3.35c0 .3.2.65.77.54A11.2 11.2 0 0 0 12 .8Z"/></svg>
-          <span>GitHub</span><span class="link-arrow" aria-hidden="true">↗</span>
-        </a>
-        <button type="button" class="menu-toggle" id="menu-toggle" aria-expanded="false" aria-controls="primary-nav" aria-label="Menüyü aç">
-          <span></span><span></span>
-        </button>
+        <button type="button" class="lang-toggle" id="lang-toggle" aria-label="Dili Değiştir">TR</button>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Temayı Değiştir">☼ Açık</button>
+        <a class="button button-secondary" href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
       </div>
     </div>
   </header>
@@ -56,313 +46,253 @@
   <main id="main">
     <!-- Hero Section -->
     <section class="hero" id="top">
-      <div class="hero-atmosphere" aria-hidden="true"></div>
-      <div class="container hero-grid">
-        <div class="hero-copy">
-          <div class="eyebrow"><span class="eyebrow-line"></span><span data-i18n="hero_kicker">MASAÜSTÜ VİDEO DÜZENLEYİCİ · v1.1.1</span><span class="eyebrow-end">/ 01</span></div>
-          <h1><span data-i18n="hero_line1">Kurgunun ritmini</span><em data-i18n="hero_line2">hissedin.</em></h1>
-          <p class="hero-description" data-i18n="hero_description">Büyük kurulum dosyaları, ağır tarayıcı motorları ve karmaşık abonelikler olmadan video kurgulayın. triM., 4K akıllı proxy iş akışı, zaman çizgisi ses kaydı, SRT altyazı motoru ve GPU hızlandırmalı render desteğiyle ihtiyacınız olan her şeyi yaklaşık 19 MB boyutta sunar.</p>
-          <div class="hero-buttons">
-            <a class="button button-primary" href="#get-started"><span data-i18n="hero_download">Hemen İndir</span><span aria-hidden="true">↘</span></a>
-            <a class="button button-quiet" href="#features"><span data-i18n="hero_explore">Özellikleri Keşfet</span><span aria-hidden="true">↘</span></a>
-          </div>
-          <div class="hero-footnote"><span class="live-pixel" aria-hidden="true"></span><span data-i18n="hero_note">Linux ve Windows için bağımsız yerel masaüstü uygulaması · ~19 MB</span></div>
-        </div>
-
-        <div class="hero-art" id="preview">
-          <div class="art-topline"><span data-i18n="preview_heading">UYGULAMADAN CANLI GÖRÜNTÜLER</span><span>01 / 06</span></div>
-          <div class="screenshot-shell">
-            <div class="window-top">
-              <span class="window-mark">triM<span>.</span></span>
-              <div class="preview-tabs" role="group" aria-label="Ekran Görüntüleri">
-                <button type="button" class="preview-tab is-active" data-preview="workspace" aria-pressed="true" data-i18n="tab_workspace">Kurgu Masası</button>
-                <button type="button" class="preview-tab" data-preview="subtitles" aria-pressed="false" data-i18n="tab_subtitles">Altyazı & Smart Cut</button>
-                <button type="button" class="preview-tab" data-preview="vertical" aria-pressed="false" data-i18n="tab_vertical">Dikey Reels (9:16)</button>
-                <button type="button" class="preview-tab" data-preview="audio" aria-pressed="false" data-i18n="tab_audio">Ses & EQ</button>
-                <button type="button" class="preview-tab" data-preview="shortcuts" aria-pressed="false" data-i18n="tab_shortcuts">Kısayol Profilleri</button>
-                <button type="button" class="preview-tab" data-preview="export" aria-pressed="false" data-i18n="tab_export">GPU Dışa Aktarım</button>
-              </div>
-              <div class="window-controls" aria-hidden="true"><i></i><i></i><i></i></div>
-            </div>
-            <div class="screenshot-stage">
-              <img class="preview-image is-active" data-image="workspace" src="./assets/screenshots/trim_workspace.png" width="1920" height="1080" alt="triM. ana kurgu masası ve zaman çizgisi" fetchpriority="high">
-              <img class="preview-image" data-image="subtitles" src="./assets/screenshots/trim_subtitles_smart_cut.png" width="1920" height="1080" alt="triM. altyazı içe aktarımı ve akıllı sahne kesimi" loading="lazy">
-              <img class="preview-image" data-image="vertical" src="./assets/screenshots/trim_vertical_safezones.png" width="1920" height="1080" alt="triM. 9:16 dikey shorts/reels tuvali ve güvenli alan çizgileri" loading="lazy">
-              <img class="preview-image" data-image="audio" src="./assets/screenshots/trim_audio_eq.png" width="1920" height="1080" alt="triM. çok kanallı ses mikseri ve EQ ayarları" loading="lazy">
-              <img class="preview-image" data-image="shortcuts" src="./assets/screenshots/trim_shortcuts_profiles.png" width="1920" height="1080" alt="triM. çoklu NLE klavye kısayol profilleri diyaloğu" loading="lazy">
-              <img class="preview-image" data-image="export" src="./assets/screenshots/trim_export_loudness.png" width="1920" height="1080" alt="triM. GPU hızlandırmalı ve EBU R128 normalizasyonlu dışa aktarım stüdyosu" loading="lazy">
-            </div>
-          </div>
-          <div class="art-caption"><span data-i18n="preview_caption">Gerçek uygulama görüntüsü / triM. v1.1.1</span><span class="caption-cross" aria-hidden="true">✳</span></div>
+      <div class="container hero-content">
+        <div class="hero-tagline" data-i18n="hero_tag">Rust ile Geliştirilen Masaüstü Video Düzenleyici</div>
+        <h1 data-i18n="hero_title">Hafif, yerel ve doğrudan.</h1>
+        <p class="hero-description" data-i18n="hero_desc">
+          triM, arayüzü egui ile çizilen, medya çözümleme ve kodlama için sistemdeki FFmpeg araçlarını kullanan, 13 MB boyutunda bir masaüstü video kurgu yazılımıdır. Tarayıcı motoru veya harici bulut bağımlılığı içermez.
+        </p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#installation" data-i18n="btn_download">Sürümleri İndir ↘</a>
+          <a class="button button-secondary" href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer" data-i18n="btn_github">GitHub Deposu ↗</a>
         </div>
       </div>
-
-      <!-- Highlights Strip -->
-      <div class="container highlights-strip" aria-label="Öne Çıkan Özellikler">
-        <div class="highlight-pill"><span>⚡</span> 19 MB Hafif Kurulum</div>
-        <div class="highlight-pill"><span>🎞️</span> 4K Akıllı Proxy</div>
-        <div class="highlight-pill"><span>🔄</span> FCPXML & EDL Aktarımı</div>
-        <div class="highlight-pill"><span>✨</span> Sinematik Başlık Şablonları</div>
-        <div class="highlight-pill"><span>📁</span> Medya Klasörleme (Bins)</div>
-        <div class="highlight-pill"><span>🎙️</span> Canlı Ses Kaydı</div>
-        <div class="highlight-pill"><span>📝</span> SRT / VTT Altyazı</div>
-        <div class="highlight-pill"><span>🎨</span> 3D LUT & Renk</div>
-        <div class="highlight-pill"><span>⌨️</span> Premiere & Resolve Kısayolları</div>
-        <div class="highlight-pill"><span>🚀</span> GPU Hızlandırma</div>
-      </div>
-    </section>
-
-    <!-- Main Features Grid -->
-    <section class="section section-features" id="features">
       <div class="container">
-        <div class="section-heading">
-          <div class="section-index"><span class="index-line"></span> 02 / <span data-i18n="features_index">KURGU ARAÇLARI</span></div>
-          <h2 data-i18n="features_title">İhtiyacınız olan her şey <em>tek ekranda.</em></h2>
-          <p data-i18n="features_intro">Gereksiz katmanlar ve dikkat dağıtan menüler olmadan; videonuzu ekleyin, düzenleyin ve tamamlayın.</p>
-        </div>
-        <div class="feature-grid">
-          <!-- Card 1: Smart Proxy & 4K -->
-          <article class="feature-card feature-card-main" id="proxy">
-            <div class="feature-top"><span>01 / PERFORMANS</span><span class="feature-symbol" aria-hidden="true">↗</span></div>
-            <div class="feature-body">
-              <h3 data-i18n="feat_proxy_title">4K Çekimlerde Akıcı Önizleme</h3>
-              <p data-i18n="feat_proxy_desc">Büyük 4K ve UHD ham videolarla çalışırken önizlemenin takılmaması için tek tıkla arka planda 720p H.264 proxy üretin. Zaman çizgisindeki [⚡ Proxy] düğmesiyle hafif önizlemeye geçin; kurgunuz 60 FPS akarken, dışa aktarım sırasında triM. doğrudan orijinal tam çözünürlüklü dosyanızı render eder.</p>
-              <div class="feature-tags">
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> 720p H.264 Arka Plan Üretimi</span>
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> Zaman Çizgisinde Tek Tıkla Geçiş</span>
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> Orijinal 4K Master Dışa Aktarım</span>
-              </div>
-            </div>
-          </article>
-
-          <!-- Card 2: Timeline & Smart Cut -->
-          <article class="feature-card feature-card-secondary">
-            <div class="feature-top"><span>02 / ZAMAN ÇİZGİSİ</span><span class="feature-symbol" aria-hidden="true">↗</span></div>
-            <div class="feature-body">
-              <h3 data-i18n="feat_timeline_title">Çok Kanallı Kurgu & Akıllı Kesim</h3>
-              <p data-i18n="feat_timeline_desc">V2/V1 ve A1/A2 çok kanallı katmanlarda çalışın. Kliplerde küçük resim şeridi (filmstrip), interaktif ses lastik bandı (rubberband dB), boşluk dalgalı silme (ripple delete gap), manyetik yapışma ve akıllı sahne algılama (Smart Cut) ile kesintisiz kurgu akışı sağlayın.</p>
-              <div class="feature-tags">
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> Filmstrip & Ses Kazanç Lastik Bandı</span>
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> Ripple Delete & Manyetik Yapışma</span>
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> Smart Cut Otomatik Sahne Bölme</span>
-              </div>
-            </div>
-          </article>
-
-          <!-- Card 3: Pro Audio & Voiceover -->
-          <article class="feature-card feature-card-secondary" id="audio">
-            <div class="feature-top"><span>03 / SES MÜHENDİSLİĞİ</span><span class="feature-symbol" aria-hidden="true">↗</span></div>
-            <div class="feature-body">
-              <h3 data-i18n="feat_audio_title">Canlı Seslendirme & EBU R128</h3>
-              <p data-i18n="feat_audio_desc">Harici bir kayıt programı açmanıza gerek kalmadan, ses izinin başındaki [🎤] butonuna basarak doğrudan mikrofonunuzdan konuşma kaydedin. Çok kanallı mikser konsolu, konuşma netliği EQ hazır ayarları, dip gürültü filtresi (Noise Gate) ve YouTube, Spotify standartlarında (-14 LUFS / -23 LUFS) EBU R128 ses normalizasyonu elinizin altında.</p>
-              <div class="feature-tags">
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> İz Üzerinde Tek Tıkla Canlı Ses Kaydı</span>
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> YouTube, Spotify & EBU R128 Seviyesi</span>
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> Ses Netliği, Bas & Gürültü Kapısı</span>
-              </div>
-            </div>
-          </article>
-
-          <!-- Card 4: Subtitles, Titler & 3D LUT -->
-          <article class="feature-card feature-card-main feature-card-color">
-            <div class="feature-top"><span>04 / ALTYAZI VE RENK</span><span class="feature-symbol" aria-hidden="true">↗</span></div>
-            <div class="feature-body">
-              <h3 data-i18n="feat_text_color_title">Sinematik Başlıklar, Altyazı & 3D LUT</h3>
-              <p data-i18n="feat_text_color_desc">Hareketli başlık şablonları (Daktilo, Alt Bantlar, Sinematik Zoom, Kayan Yazı) ile profesyonel girişler tasarlayın. .SRT/.VTT altyazı motoru, canlı önizleme ve dahili sinematik LUT profilleri veya harici .cube 3D LUT dosyaları ile renk derecelendirme yapın.</p>
-              <div class="feature-tags">
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> Sinematik Hareketli Başlık Şablonları</span>
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> .SRT/.VTT Altyazı & Alt Bantlar</span>
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> 3D LUT (.cube) & 9:16 Dikey Tuval</span>
-              </div>
-            </div>
-          </article>
-
-          <!-- Card 5: Media Bins & Smart Search -->
-          <article class="feature-card feature-card-secondary" id="bins">
-            <div class="feature-top"><span>05 / MEDYA DÜZENİ</span><span class="feature-symbol" aria-hidden="true">↗</span></div>
-            <div class="feature-body">
-              <h3 data-i18n="feat_bins_title">Medya Klasörleme (Bins) & Filtreler</h3>
-              <p data-i18n="feat_bins_desc">Yüzlerce klip içeren büyük projelerde düzeninizi koruyun. İç içe klasörler (bins) oluşturun, ekmek kırıntısı (breadcrumb) navigasyonuyla hızlıca gezinin; video, ses ve görsel akıllı filtre çubuklarıyla aradığınız materyale anında ulaşın.</p>
-              <div class="feature-tags">
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> Sınırsız Klasörleme & Kırıntı Gezintisi</span>
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> Video, Ses ve Görsel Hızlı Filtreleri</span>
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> Renk Etiketleri & A/V Otomatik Bağlama</span>
-              </div>
-            </div>
-          </article>
-
-          <!-- Card 6: FCPXML & EDL Interchange -->
-          <article class="feature-card feature-card-main feature-card-export" id="interchange">
-            <div class="feature-top"><span>06 / ENDÜSTRİ UYUMU</span><span class="feature-symbol" aria-hidden="true">↗</span></div>
-            <div class="feature-body">
-              <h3 data-i18n="feat_interchange_title">FCPXML & EDL İçe / Dışa Aktarma</h3>
-              <p data-i18n="feat_interchange_desc">Diğer NLE yazılımlarıyla tam entegre çalışın. Apple Final Cut Pro XML (v1.8 / v1.9) ve CMX 3600 EDL dosyalarını hem içeri aktarın hem dışa aktarın. DaVinci Resolve ve Premiere Pro projelerinizi triM.'de açın ya da kurgunuzu stüdyoya taşıyın.</p>
-              <div class="feature-tags">
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> FCPXML 1.8 / 1.9 Tam İçe ve Dışa Aktarım</span>
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> CMX 3600 EDL Standart Uyumluluk</span>
-                <span class="feature-tag"><b class="feature-tag-check">✓</b> DaVinci Resolve & Premiere Pro Köprüsü</span>
-              </div>
-            </div>
-          </article>
-        </div>
-        <p class="feature-disclaimer" data-i18n="feature_note">Yukarıdaki tüm ekran görüntüleri doğrudan triM. masaüstü uygulamasından alınmıştır.</p>
-      </div>
-    </section>
-
-    <!-- Design Approach / Native Desktop -->
-    <section class="manifesto" id="approach">
-      <div class="container manifesto-grid">
-        <div class="manifesto-left">
-          <div class="section-index"><span class="index-line"></span> 03 / <span data-i18n="workflow_index">YAKLAŞIM</span></div>
-          <p class="manifesto-label">LIGHTWEIGHT BY DESIGN.</p>
-        </div>
-        <div class="manifesto-right">
-          <h2 data-i18n="workflow_title">Gereksiz yük yok.<br><em>Doğrudan masaüstünüzde.</em></h2>
-          <p data-i18n="workflow_text">triM., bir web tarayıcısı penceresi içine hapsedilmiş ağır uygulamalardan biri değildir. Bilgisayarınızın kaynaklarını boşa harcamayan, açılışı birkaç saniye süren ve internet bağlantısına ihtiyaç duymayan yerel bir masaüstü yazılımıdır. Tüm medyalarınız, proje dosyalarınız ve yaratıcı süreciniz tamamen sizin kontrolünüzdedir.</p>
-          <div class="manifesto-points">
-            <div><span>01</span><strong data-i18n="point_1">~19 MB Bağımsız Masaüstü</strong></div>
-            <div><span>02</span><strong data-i18n="point_2">GPU Donanım Render Desteği</strong></div>
-            <div><span>03</span><strong data-i18n="point_3">Taşınabilir Kayıpsız Proje Paketleme</strong></div>
-            <div><span>04</span><strong data-i18n="point_4">FCPXML & EDL Proje Uyumu</strong></div>
-          </div>
-        </div>
-      </div>
-      <div class="manifesto-marquee" aria-hidden="true">MAKE THE CUT. <span>STAY IN THE FLOW.</span> MAKE THE CUT. <span>STAY IN THE FLOW.</span></div>
-    </section>
-
-    <!-- Shortcuts Section with Multi-NLE Profile Switcher -->
-    <section class="section shortcuts-section" id="shortcuts">
-      <div class="container shortcut-layout">
-        <div>
-          <div class="section-index"><span class="index-line"></span> 04 / <span data-i18n="shortcuts_index">KISAYOLLAR</span></div>
-          <h2 data-i18n="shortcuts_title">Alıştığınız kısayolları <em>bırakmayın.</em></h2>
-          <p data-i18n="shortcuts_description">Kurgu yaparken parmak hafızası her şeydir. triM., kendi seri tuş düzeninin yanı sıra tek tıkla Adobe Premiere Pro veya DaVinci Resolve kısayol profillerine geçmenizi sağlar.</p>
-          <div class="shortcut-profile-selector" role="group" aria-label="Kısayol Profili">
-            <button type="button" class="profile-btn is-active" data-profile="trim">triM. Varsayılan</button>
-            <button type="button" class="profile-btn" data-profile="premiere">Adobe Premiere Pro</button>
-            <button type="button" class="profile-btn" data-profile="resolve">DaVinci Resolve</button>
-          </div>
-          <a class="text-link" href="https://github.com/MOzcelik14/triM#shortcuts" target="_blank" rel="noopener noreferrer"><span data-i18n="shortcuts_link">Tüm kısayolları gör</span> ↗</a>
-        </div>
-        <div class="shortcut-board" id="shortcut-board">
-          <div class="shortcut-row"><span data-i18n="key_split">Klip Bölme (Split / Razor)</span><div id="sc-split"><kbd>S</kbd> <kbd>C</kbd></div></div>
-          <div class="shortcut-row"><span data-i18n="key_trim">Başı / Sonu Kırp (Ripple Trim)</span><div id="sc-trim"><kbd>Q</kbd><kbd>W</kbd></div></div>
-          <div class="shortcut-row"><span data-i18n="key_select">Seçim Aracı (Selection)</span><div id="sc-select"><kbd>V</kbd></div></div>
-          <div class="shortcut-row"><span data-i18n="key_ripple">Dalgalanma Düzenleme (Ripple)</span><div id="sc-ripple"><kbd>B</kbd></div></div>
-          <div class="shortcut-row"><span data-i18n="key_play">Oynat / Duraklat</span><div id="sc-play"><kbd>Space</kbd></div></div>
-          <div class="shortcut-row"><span data-i18n="key_shuttle">Geri / Dur / İleri (Shuttle)</span><div id="sc-shuttle"><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd></div></div>
-          <div class="shortcut-row"><span data-i18n="key_undo">Geri Al</span><div id="sc-undo"><kbd>Ctrl</kbd><kbd>Z</kbd></div></div>
+        <div class="hero-image-wrap">
+          <picture>
+            <source srcset="./assets/screenshots/workspace.webp" type="image/webp">
+            <img src="./assets/screenshots/workspace.png" width="1920" height="1080" alt="triM Ana Kurgu Masası Ekran Görüntüsü" fetchpriority="high">
+          </picture>
         </div>
       </div>
     </section>
 
-    <!-- Download & Installation Section -->
-    <section class="download-section" id="get-started">
-      <div class="container download-layout">
-        <div class="download-copy">
-          <div class="section-index"><span class="index-line"></span> 05 / <span data-i18n="install_index">BAŞLANGIÇ</span></div>
-          <h2 data-i18n="install_title">Saniyeler içinde <em>başlayın.</em></h2>
-          <p data-i18n="install_description">triM. tamamen ücretsiz ve açık kaynaklıdır. Tek satırlık komutla kurabilir, hazır paketleri indirebilir veya kaynak kodundan derleyebilirsiniz.</p>
-          <a class="button button-primary" href="https://github.com/MOzcelik14/triM/releases" target="_blank" rel="noopener noreferrer"><span data-i18n="install_release">GitHub Sürümlerine Git</span><span aria-hidden="true">↗</span></a>
-          <p class="system-note">LINUX · WINDOWS <span>—</span> v1.1.1 RELEASE</p>
+    <!-- Features Section -->
+    <section class="section" id="features">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-label" data-i18n="sec_features">Temel Özellikler</div>
+          <h2>İhtiyaç duyulan kurgu araçları, doğrudan yerel kodla.</h2>
+          <p class="section-intro">Ağır kurulum paketleri ve karmaşık menüler yerine doğrudan kurguya odaklanan modüler araçlar.</p>
         </div>
 
-        <div class="terminal">
-          <div class="terminal-top">
-            <div class="terminal-dots"><i></i><i></i><i></i></div>
-            <span data-i18n="terminal_title">Hızlı Kurulum ve İndirme</span>
-            <span>~/triM</span>
+        <div class="features-grid">
+          <div class="feature-group">
+            <h3 data-i18n="feat_edit_title">Kurgu ve Zaman Çizgisi</h3>
+            <ul class="feature-list">
+              <li>Çok kanallı video ve ses zaman çizgisi (V1..Vn, A1..An)</li>
+              <li>Jilet (Razor), Dalgalanma (Ripple), Kaydırma (Slip) ve Hız Uzatma araçları</li>
+              <li>Oynatma kafasına ve klip kenarlarına manyetik kenetlenme (Snapping)</li>
+              <li>Otomatik video-ses eşleştirmesi (V1 -> A1, V2 -> A2) ve klip bağlama</li>
+              <li>Zaman çizgisi üzerinde görsel işaretçiler (Markers)</li>
+            </ul>
           </div>
-          <div class="terminal-content">
-            <!-- Install Method Tabs -->
-            <div class="install-tabs" role="group" aria-label="Kurulum Yöntemi">
-              <button type="button" class="install-tab is-active" data-install="linux">Linux (Tek Satır)</button>
-              <button type="button" class="install-tab" data-install="windows">Windows (PowerShell)</button>
-              <button type="button" class="install-tab" data-install="packages">Hazır Paketler (.deb / .rpm / Zip)</button>
-              <button type="button" class="install-tab" data-install="source">Kaynak Kod (Cargo)</button>
-            </div>
 
-            <!-- Pane 1: Linux Curl -->
-            <div class="install-pane is-active" id="pane-linux">
-              <p class="terminal-step"><span>01</span> <span data-i18n="step_linux_curl">Terminalinizi açın ve tek satırda kurun:</span></p>
-              <div class="code-area">
-                <pre><code id="cmd-linux-curl">curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash</code></pre>
-                <button class="copy-button" type="button" data-copy="cmd-linux-curl" data-i18n="copy">Kopyala</button>
-              </div>
-              <p class="terminal-hint" data-i18n="hint_linux_curl">Uygulama simgesi ve masaüstü kısayolu otomatik oluşturulur. Kaldırmak için: install.sh --uninstall</p>
-            </div>
+          <div class="feature-group">
+            <h3 data-i18n="feat_color_title">Renk ve Görsel Efektler</h3>
+            <ul class="feature-list">
+              <li>3 yönlü renk çarkları (Lift, Gamma, Gain) ile tonlama</li>
+              <li><code>.cube</code> formatında 3D LUT uygulama desteği</li>
+              <li>Chroma Key (yeşil ve mavi perde renk anahtarlama)</li>
+              <li>Opaklık geçişleri (fade-in, fade-out) ve katman harmanlama</li>
+              <li>Konum, ölçek, döndürme ve opaklık için anahtar kareler (Keyframes)</li>
+            </ul>
+          </div>
 
-            <!-- Pane 2: Windows PowerShell -->
-            <div class="install-pane" id="pane-windows">
-              <p class="terminal-step"><span>01</span> <span data-i18n="step_win_ps">PowerShell'i açın ve tek komutla kurun:</span></p>
-              <div class="code-area">
-                <pre><code id="cmd-win-ps">iwr -useb https://raw.githubusercontent.com/MOzcelik14/triM/master/install.ps1 | iex</code></pre>
-                <button class="copy-button" type="button" data-copy="cmd-win-ps" data-i18n="copy">Kopyala</button>
-              </div>
-              <p class="terminal-hint" data-i18n="hint_win_ps">Windows Başlat menüsü kısayolu oluşturulur. FFmpeg otomatik kontrol edilir.</p>
-            </div>
+          <div class="feature-group">
+            <h3 data-i18n="feat_audio_title">Çok Kanallı Ses</h3>
+            <ul class="feature-list">
+              <li>48 kHz stereo gerçek zamanlı yazılımsal PCM mikser</li>
+              <li>Kanal bazlı kazanç (dB), sessize alma (Mute) ve solo dinleme</li>
+              <li>3 bant parametrik ekolayzır ve ses hazır ayarları (vokal netliği, bas)</li>
+              <li>Doğrudan zaman çizgisine mikrofonla ses kaydı (Voiceover)</li>
+              <li>Çıkışta kırpılmayı önleyen 5 ms tuğla duvar sınırlayıcı (Lookahead Limiter)</li>
+            </ul>
+          </div>
 
-            <!-- Pane 3: Binary Packages -->
-            <div class="install-pane" id="pane-packages">
-              <p class="terminal-step"><span>01</span> <span data-i18n="step_direct_download">İşletim sisteminize uygun paketi doğrudan indirin:</span></p>
-              <div class="package-grid">
-                <a class="package-card" href="https://github.com/MOzcelik14/triM/releases/latest" target="_blank" rel="noopener noreferrer">
-                  <div class="package-name">Debian / Ubuntu <span>↗</span></div>
-                  <div class="package-desc">.deb paketi</div>
-                </a>
-                <a class="package-card" href="https://github.com/MOzcelik14/triM/releases/latest" target="_blank" rel="noopener noreferrer">
-                  <div class="package-name">Fedora / RHEL <span>↗</span></div>
-                  <div class="package-desc">.rpm paketi</div>
-                </a>
-                <a class="package-card" href="https://github.com/MOzcelik14/triM/releases/latest" target="_blank" rel="noopener noreferrer">
-                  <div class="package-name">Evrensel Linux <span>↗</span></div>
-                  <div class="package-desc">.AppImage paketi</div>
-                </a>
-                <a class="package-card" href="https://github.com/MOzcelik14/triM/releases/latest" target="_blank" rel="noopener noreferrer">
-                  <div class="package-name">Windows 64-bit <span>↗</span></div>
-                  <div class="package-desc">Taşınabilir .zip</div>
-                </a>
-              </div>
-            </div>
+          <div class="feature-group">
+            <h3 data-i18n="feat_export_title">Dışa Aktarma ve Standartlar</h3>
+            <ul class="feature-list">
+              <li>H.264, HEVC, VP9, AV1, ProRes ve DNxHR formatlarında render</li>
+              <li>Donanım hızlandırma tespiti (NVENC, Intel QSV, AMD AMF, Linux VAAPI)</li>
+              <li>EBU R128 standardında entegre ses normalizasyonu (<code>loudnorm</code>)</li>
+              <li>Final Cut Pro (<code>.fcpxml</code> v1.8/v1.9) ve CMX 3600 (<code>.edl</code>) aktarımı</li>
+              <li>9:16 Dikey kurgu modu ve güvenli alan çizgileri (Reels / Shorts)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
 
-            <!-- Pane 4: Source Build -->
-            <div class="install-pane" id="pane-source">
-              <p class="terminal-step"><span>01</span> <span data-i18n="step_build">Depoyu klonlayıp kaynak kodundan derleyin:</span></p>
-              <div class="code-area">
-                <pre><code id="cmd-source-build">git clone https://github.com/MOzcelik14/triM.git
+    <!-- Screenshot Gallery -->
+    <section class="section" id="gallery">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-label" data-i18n="sec_gallery">Canlı Uygulama Ekranları</div>
+          <h2>Uygulama Görünümleri</h2>
+          <p class="section-intro" data-i18n="sec_gallery_sub">Uygulamanın v1.1.1 sürümünden doğrudan alınan ekran görüntüleri. Büyütmek için tıklayın.</p>
+        </div>
+
+        <div class="gallery-grid">
+          <div class="gallery-card">
+            <picture>
+              <source srcset="./assets/screenshots/workspace.webp" type="image/webp">
+              <img src="./assets/screenshots/workspace.png" alt="Ana Kurgu Masası" loading="lazy">
+            </picture>
+            <div class="gallery-card-caption" data-i18n="caption_workspace">Ana Kurgu Masası</div>
+          </div>
+
+          <div class="gallery-card">
+            <picture>
+              <source srcset="./assets/screenshots/timeline.webp" type="image/webp">
+              <img src="./assets/screenshots/timeline.png" alt="Zaman Çizgisi Detayı" loading="lazy">
+            </picture>
+            <div class="gallery-card-caption" data-i18n="caption_timeline">Zaman Çizgisi Detayı</div>
+          </div>
+
+          <div class="gallery-card">
+            <picture>
+              <source srcset="./assets/screenshots/color_grading.webp" type="image/webp">
+              <img src="./assets/screenshots/color_grading.png" alt="Renk Çarkları ve Tonlama" loading="lazy">
+            </picture>
+            <div class="gallery-card-caption" data-i18n="caption_color_grading">Renk Düzenleme (Lift/Gamma/Gain)</div>
+          </div>
+
+          <div class="gallery-card">
+            <picture>
+              <source srcset="./assets/screenshots/audio_mixer.webp" type="image/webp">
+              <img src="./assets/screenshots/audio_mixer.png" alt="Çok Kanallı Ses Mikseri" loading="lazy">
+            </picture>
+            <div class="gallery-card-caption" data-i18n="caption_audio_mixer">Ses Mikseri & VU Metre</div>
+          </div>
+
+          <div class="gallery-card">
+            <picture>
+              <source srcset="./assets/screenshots/export_studio.webp" type="image/webp">
+              <img src="./assets/screenshots/export_studio.png" alt="Dışa Aktarma Stüdyosu" loading="lazy">
+            </picture>
+            <div class="gallery-card-caption" data-i18n="caption_export_studio">Dışa Aktarma Stüdyosu</div>
+          </div>
+
+          <div class="gallery-card">
+            <picture>
+              <source srcset="./assets/screenshots/vertical_9_16.webp" type="image/webp">
+              <img src="./assets/screenshots/vertical_9_16.png" alt="Dikey Kurgu 9:16" loading="lazy">
+            </picture>
+            <div class="gallery-card-caption" data-i18n="caption_vertical_9_16">Dikey Tuval (9:16)</div>
+          </div>
+
+          <div class="gallery-card">
+            <picture>
+              <source srcset="./assets/screenshots/welcome.webp" type="image/webp">
+              <img src="./assets/screenshots/welcome.png" alt="Karşılama Ekranı" loading="lazy">
+            </picture>
+            <div class="gallery-card-caption" data-i18n="caption_welcome">Karşılama Ekranı</div>
+          </div>
+
+          <div class="gallery-card">
+            <picture>
+              <source srcset="./assets/screenshots/shortcuts.webp" type="image/webp">
+              <img src="./assets/screenshots/shortcuts.png" alt="Kısayol Penceresi" loading="lazy">
+            </picture>
+            <div class="gallery-card-caption" data-i18n="caption_shortcuts">Klavye Kısayolları (F1)</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Installation Section -->
+    <section class="section" id="installation">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-label" data-i18n="sec_install">Kurulum ve Derleme</div>
+          <h2>Kurulum</h2>
+          <p class="section-intro">Hazır paketleri indirin veya kaynak kodundan derleyin.</p>
+        </div>
+
+        <p><strong>Gereksinimler:</strong> 64-bit Linux veya Windows, OpenGL 3.3+ grafik sürücüsü, sistemde kurulu <code>ffmpeg</code> ve <code>ffprobe</code>.</p>
+
+        <h3 style="margin-top: 1.5rem; font-size: 1.15rem;">Linux Tek Satır Kurulum:</h3>
+        <div class="code-box">curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash</div>
+
+        <h3 style="margin-top: 1.5rem; font-size: 1.15rem;">Paket İndirmeleri:</h3>
+        <p style="color: var(--text-secondary); margin: 0.5rem 0 1rem;">
+          <a class="button button-secondary" href="https://github.com/MOzcelik14/triM/releases" target="_blank" rel="noopener noreferrer">GitHub Sürümler Sayfası (.deb, .rpm, .AppImage, .zip) ↗</a>
+        </p>
+
+        <h3 style="margin-top: 1.5rem; font-size: 1.15rem;">Kaynaktan Derleme:</h3>
+        <div class="code-box">git clone https://github.com/MOzcelik14/triM.git
 cd triM
-cargo build --release
-./target/release/trim</code></pre>
-                <button class="copy-button" type="button" data-copy="cmd-source-build" data-i18n="copy">Kopyala</button>
-              </div>
-              <p class="terminal-hint" data-i18n="hint_source_build">Sisteminizde FFmpeg ve derleme araçlarının kurulu olması yeterlidir.</p>
-            </div>
-          </div>
+cargo build --release -p trim-app
+install -m 0755 target/release/trim ~/.local/bin/trim</div>
+      </div>
+    </section>
+
+    <!-- Architecture Section -->
+    <section class="section" id="architecture">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-label" data-i18n="sec_arch">Mimari ve Tasarım Kararları</div>
+          <h2>Modüler Rust Mimarisi</h2>
+          <p class="section-intro">triM, sorumlulukların ayrıldığı 8 bağımsız Cargo crate'inden oluşur.</p>
         </div>
+
+        <table class="info-table">
+          <thead>
+            <tr>
+              <th>Crate</th>
+              <th>Sorumluluk</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>trim-core</code></td><td>Zaman hesabı, klip, kanal, proje modelleri ve bellek sınırları (LruCache)</td></tr>
+            <tr><td><code>trim-commands</code></td><td>Geri alınabilir (Undo/Redo) komut nesneleri ve komut yığını</td></tr>
+            <tr><td><code>trim-timeline</code></td><td>Zaman çizgisi kurgu algoritmaları, kesim noktası tespiti</td></tr>
+            <tr><td><code>trim-project</code></td><td>Atomik dosya kaydetme (.trim), otomatik yedekleme ve kurtarma</td></tr>
+            <tr><td><code>trim-media</code></td><td>FFmpeg alt süreç yöneticisi, asenkron kare çözümleme, PCM ses mikseri</td></tr>
+            <tr><td><code>trim-export</code></td><td>FFmpeg filtergraph derleyicisi, EDL ve FCPXML aktarımı</td></tr>
+            <tr><td><code>trim-ui</code></td><td>egui arayüzü, zaman çizgisi çizimi, monitörler ve inspector</td></tr>
+            <tr><td><code>trim-app</code></td><td>Masaüstü çalıştırılabilir ikili giriş noktası</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Limitations Section -->
+    <section class="section" id="limitations">
+      <div class="container">
+        <div class="section-header">
+          <div class="section-label" data-i18n="sec_limits">Bilinen Sınırlamalar</div>
+          <h2>Açık ve Dürüst Teknik Detaylar</h2>
+        </div>
+
+        <ol class="limitations-list">
+          <li><strong>Önizleme Çözünürlüğü:</strong> Zaman çizgisi önizlemesi CPU üzerinde sabit 640x360 çözünürlükte işlenir ve OpenGL dokusu olarak yüklenir. Çok sayıda eşzamanlı katman içeren sahnelerde CPU kullanımı artabilir.</li>
+          <li><strong>Alt Süreç Tabanlı Medya Hattı:</strong> C kütüphanelerini doğrudan bağlamak yerine FFmpeg izole bir alt süreç olarak çalıştırılır. Bu tercih arayüz çökmesini önler; ancak uzun GOP aralığına sahip dosyalarda ilk arama sırasında 15-40 ms civarında gecikme olabilir. Akıcı kurgu için proxy modu önerilir.</li>
+          <li><strong>Platform Kapsamı:</strong> Mikrofonla ses kaydı (Voiceover) ve ekran kaydı şu anda Linux'a özgüdür. Windows derlemesinde ses oynatımı ffplay üzerinden çalışır; doğrudan mikrofon kaydı henüz Windows'ta desteklenmemektedir.</li>
+          <li><strong>Renk Derinliği:</strong> Önizleme 8-bit sRGB alanında çalışır. 10-bit HDR kaynak medyalar önizleme sırasında 8-bite indirgenir.</li>
+        </ol>
       </div>
     </section>
   </main>
 
-  <!-- Site Footer -->
-  <footer class="site-footer">
-    <div class="container footer-top">
-      <div>
-        <img src="./assets/branding/logo_wordmark.svg" alt="triM." width="124" height="37">
-        <p data-i18n="footer_tagline">Masaüstü video düzenleyici. Hafif, hızlı ve bağımsız.</p>
-      </div>
-      <div class="footer-links">
-        <a href="#features" data-i18n="nav_features">Özellikler</a>
-        <a href="#proxy" data-i18n="nav_proxy">Akıllı Proxy</a>
-        <a href="#audio" data-i18n="nav_audio">Ses & Renk</a>
-        <a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
-        <a href="https://github.com/MOzcelik14/triM/releases" target="_blank" rel="noopener noreferrer" data-i18n="footer_releases">Sürümler ↗</a>
-        <a href="https://github.com/MOzcelik14/triM/blob/master/LICENSE" target="_blank" rel="noopener noreferrer" data-i18n="footer_license">GPL-3.0 Lisansı ↗</a>
-      </div>
+  <!-- Lightbox Modal -->
+  <div class="modal" id="image-modal" role="dialog" aria-modal="true" aria-label="Görsel Büyütme">
+    <div class="modal-content">
+      <button type="button" class="modal-close" id="modal-close" aria-label="Kapat">&times;</button>
+      <img id="modal-img" src="" alt="">
+      <div class="modal-caption" id="modal-caption"></div>
     </div>
-    <div class="container footer-bottom">
-      <span>© 2026 M. Özçelik & triM. Katkıda Bulunanlar</span>
-      <span data-i18n="footer_credit">Linux & Windows için özenle geliştirildi.</span>
-      <a href="#top" data-i18n="back_top">Yukarı ↑</a>
+  </div>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div>triM — <a href="LICENSE">GPL-3.0-or-later</a> lisansı altında açık kaynaklıdır. Geliştirici: Murat Özçelik.</div>
+      <div>
+        <a href="https://github.com/MOzcelik14/triM" target="_blank" rel="noopener noreferrer">GitHub</a> · 
+        <a href="docs/SHORTCUTS.md">Kısayollar</a> · 
+        <a href="docs/RELEASING.md">Yayın Rehberi</a>
+      </div>
     </div>
   </footer>
 </body>
