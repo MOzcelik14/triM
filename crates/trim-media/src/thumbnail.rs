@@ -33,33 +33,50 @@ impl Default for ThumbnailGenerator {
 impl ThumbnailGenerator {
     pub fn new(cache_dir: PathBuf) -> Self {
         let (req_tx, req_rx) = channel::<MediaItem>();
+        let req_rx = Arc::new(Mutex::new(req_rx));
         let (res_tx, res_rx) = channel::<(String, PathBuf)>();
         let in_flight = Arc::new(Mutex::new(HashSet::<String>::new()));
-        let in_flight_worker = in_flight.clone();
-        let cache_dir_clone = cache_dir.clone();
 
-        std::thread::Builder::new()
-            .name("thumbnail-worker".to_string())
-            .spawn(move || {
-                while let Ok(item) = req_rx.recv() {
-                    let target = get_thumbnail_path_static(&cache_dir_clone, &item);
-                    let ok = if target.is_file()
-                        && target.metadata().map(|m| m.len() > 0).unwrap_or(false)
-                    {
-                        true
-                    } else {
-                        generate_thumbnail_disk(&cache_dir_clone, &item).is_some()
-                    };
+        // Bounded worker pool (2 concurrent workers)
+        let num_workers = 2usize;
+        for w_idx in 0..num_workers {
+            let rx = req_rx.clone();
+            let res_tx = res_tx.clone();
+            let in_flight_worker = in_flight.clone();
+            let cache_dir_clone = cache_dir.clone();
 
-                    if ok {
-                        let _ = res_tx.send((item.id.clone(), target));
+            if let Err(e) = std::thread::Builder::new()
+                .name(format!("thumbnail-worker-{}", w_idx))
+                .spawn(move || {
+                    loop {
+                        let item = {
+                            let Ok(lock) = rx.lock() else { break };
+                            match lock.recv() {
+                                Ok(it) => it,
+                                Err(_) => break,
+                            }
+                        };
+                        let target = get_thumbnail_path_static(&cache_dir_clone, &item);
+                        let ok = if target.is_file()
+                            && target.metadata().map(|m| m.len() > 0).unwrap_or(false)
+                        {
+                            true
+                        } else {
+                            generate_thumbnail_disk(&cache_dir_clone, &item).is_some()
+                        };
+
+                        if ok {
+                            let _ = res_tx.send((item.id.clone(), target));
+                        }
+                        if let Ok(mut set) = in_flight_worker.lock() {
+                            set.remove(&item.id);
+                        }
                     }
-                    if let Ok(mut set) = in_flight_worker.lock() {
-                        set.remove(&item.id);
-                    }
-                }
-            })
-            .expect("Failed to spawn thumbnail worker thread");
+                })
+            {
+                log::error!("Failed to spawn thumbnail worker thread #{}: {}", w_idx, e);
+            }
+        }
 
         Self {
             cache_dir,
@@ -192,4 +209,22 @@ fn simple_hash(s: &str) -> u128 {
     let mut h2 = DefaultHasher::new();
     s.chars().rev().collect::<String>().hash(&mut h2);
     ((h1.finish() as u128) << 64) | (h2.finish() as u128)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_thumbnail_generator_bounded_pool() {
+        let temp_dir = std::env::temp_dir().join("trim_thumb_pool_test");
+        let gen = ThumbnailGenerator::new(temp_dir);
+
+        let item = MediaItem::new("/nonexistent/video.mp4");
+        gen.request_thumbnail(&item);
+
+        // Polling ready receiver should not hang
+        let ready = gen.poll_thumbnail();
+        assert!(ready.is_none());
+    }
 }

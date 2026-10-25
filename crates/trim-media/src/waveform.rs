@@ -37,35 +37,51 @@ impl WaveformGenerator {
     pub fn new(cache_dir: PathBuf, points_per_second: u32) -> Self {
         let (req_tx, req_rx) = channel::<PathBuf>();
         let memory_cache = Arc::new(RwLock::new(HashMap::new()));
-        let mem_clone = memory_cache.clone();
+        let req_rx = Arc::new(Mutex::new(req_rx));
         let in_flight = Arc::new(Mutex::new(HashSet::<String>::new()));
-        let in_flight_worker = in_flight.clone();
-        let cache_dir_clone = cache_dir.clone();
 
-        std::thread::Builder::new()
-            .name("waveform-worker".to_string())
-            .spawn(move || {
-                while let Ok(path) = req_rx.recv() {
-                    let path_str = path.to_string_lossy().to_string();
-                    let cache_path =
-                        get_cache_path_static(&cache_dir_clone, &path, points_per_second);
-                    let peaks_opt = extract_and_cache_waveform(
-                        &cache_dir_clone,
-                        &cache_path,
-                        &path,
-                        points_per_second,
-                    );
-                    if let Some(peaks) = peaks_opt {
-                        if let Ok(mut mc) = mem_clone.write() {
-                            mc.insert(path_str.clone(), peaks);
+        // Bounded worker pool (2 concurrent workers)
+        let num_workers = 2usize;
+        for w_idx in 0..num_workers {
+            let rx = req_rx.clone();
+            let mem_clone = memory_cache.clone();
+            let in_flight_worker = in_flight.clone();
+            let cache_dir_clone = cache_dir.clone();
+
+            if let Err(e) = std::thread::Builder::new()
+                .name(format!("waveform-worker-{}", w_idx))
+                .spawn(move || {
+                    loop {
+                        let path = {
+                            let Ok(lock) = rx.lock() else { break };
+                            match lock.recv() {
+                                Ok(p) => p,
+                                Err(_) => break,
+                            }
+                        };
+                        let path_str = path.to_string_lossy().to_string();
+                        let cache_path =
+                            get_cache_path_static(&cache_dir_clone, &path, points_per_second);
+                        let peaks_opt = extract_and_cache_waveform(
+                            &cache_dir_clone,
+                            &cache_path,
+                            &path,
+                            points_per_second,
+                        );
+                        if let Some(peaks) = peaks_opt {
+                            if let Ok(mut mc) = mem_clone.write() {
+                                mc.insert(path_str.clone(), peaks);
+                            }
+                        }
+                        if let Ok(mut set) = in_flight_worker.lock() {
+                            set.remove(&path_str);
                         }
                     }
-                    if let Ok(mut set) = in_flight_worker.lock() {
-                        set.remove(&path_str);
-                    }
-                }
-            })
-            .expect("Failed to spawn waveform worker thread");
+                })
+            {
+                log::error!("Failed to spawn waveform worker thread #{}: {}", w_idx, e);
+            }
+        }
 
         Self {
             cache_dir,
@@ -255,5 +271,17 @@ mod tests {
         let path = Path::new("/path/to/media.mp4");
         let cache_p = gen.get_cache_path(path);
         assert!(cache_p.to_string_lossy().ends_with(".dat"));
+    }
+
+    #[test]
+    fn test_waveform_bounded_worker_pool_lifecycle() {
+        let temp_dir = std::env::temp_dir().join("trim_wf_pool_test");
+        let gen = WaveformGenerator::new(temp_dir, 50);
+
+        // Submitting multiple nonexistent paths must not panic or block workers
+        for i in 0..10 {
+            let p = format!("/nonexistent/file_{}.wav", i);
+            assert!(gen.get_waveform(&p).is_none());
+        }
     }
 }
