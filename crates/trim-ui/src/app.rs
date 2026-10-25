@@ -1,8 +1,7 @@
 //! Main triM. desktop application implementing `eframe::App` with Premiere Pro 4-Quadrant layout.
 
 use crate::canvas::{
-    calculate_total_tracks_height, clamp_scroll_offset, render_timeline_canvas, CanvasAction,
-    TimelineCanvasState,
+    calculate_total_tracks_height, render_timeline_canvas, CanvasAction, TimelineCanvasState,
 };
 use crate::dialogs::*;
 use crate::file_dialog::FileDialogBridge;
@@ -1376,8 +1375,8 @@ impl eframe::App for TrimApp {
         // -------------------------------------------------------------
         egui::TopBottomPanel::bottom("timeline_panel")
             .resizable(true)
-            .min_height(140.0)
-            .default_height(280.0)
+            .min_height(200.0)
+            .default_height(340.0)
             .max_height((ctx.screen_rect().height() - 150.0).max(400.0))
             .show(ctx, |ui| {
                 // Sequence Timeline Header Bar
@@ -1553,27 +1552,27 @@ impl eframe::App for TrimApp {
                     ui.spacing_mut().item_spacing = Vec2::ZERO;
 
                     let top_bar_h = 26.0;
-                    let tracks_viewport_h = (ui.available_height() - top_bar_h).max(40.0);
-                    let canvas_scroll_id = egui::Id::new("timeline_canvas_both_scroll");
-
-                    // Handle pending vertical scroll request (e.g. from adding video/audio track)
-                    if let Some(target_y) = self.canvas_state.pending_scroll_y.take() {
-                        let mut st = egui::scroll_area::State::load(ctx, canvas_scroll_id).unwrap_or_default();
-                        let total_h = calculate_total_tracks_height(&self.project.timeline.tracks, &self.canvas_state);
-                        st.offset.y = clamp_scroll_offset(target_y, total_h, tracks_viewport_h);
-                        st.store(ctx, canvas_scroll_id);
-                    }
-
-                    // Clamp scroll offset if tracks were removed or resized
                     let total_tracks_h = calculate_total_tracks_height(&self.project.timeline.tracks, &self.canvas_state);
-                    let mut canvas_scroll_state = egui::scroll_area::State::load(ctx, canvas_scroll_id).unwrap_or_default();
-                    let clamped_y = clamp_scroll_offset(canvas_scroll_state.offset.y, total_tracks_h, tracks_viewport_h);
-                    if clamped_y != canvas_scroll_state.offset.y {
-                        canvas_scroll_state.offset.y = clamped_y;
-                        canvas_scroll_state.store(ctx, canvas_scroll_id);
+                    let avail_h = ui.available_height();
+                    let content_viewport_h = (avail_h - top_bar_h).max(40.0);
+
+                    // If tracks fit within available height, no vertical scrolling is needed
+                    if total_tracks_h <= content_viewport_h {
+                        if self.canvas_state.scroll_offset.y != 0.0 {
+                            self.canvas_state.scroll_offset.y = 0.0;
+                            self.canvas_state.pending_scroll_y = Some(0.0);
+                        }
+                    } else {
+                        let max_scroll = total_tracks_h - content_viewport_h;
+                        let clamped_y = self.canvas_state.scroll_offset.y.clamp(0.0, max_scroll);
+                        if clamped_y != self.canvas_state.scroll_offset.y {
+                            self.canvas_state.scroll_offset.y = clamped_y;
+                            self.canvas_state.pending_scroll_y = Some(clamped_y);
+                        }
                     }
-                    let current_scroll_x = canvas_scroll_state.offset.x;
-                    let current_scroll_y = canvas_scroll_state.offset.y;
+
+                    let current_scroll_x = self.canvas_state.scroll_offset.x;
+                    let current_scroll_y = self.canvas_state.scroll_offset.y;
 
                     // 1. Vertical Toolbar (Fixed width 42px for 32x32 tools)
                     ui.allocate_ui(Vec2::new(42.0, ui.available_height()), |ui| {
@@ -1656,9 +1655,9 @@ impl eframe::App for TrimApp {
 
                             let headers_scroll_out = egui::ScrollArea::vertical()
                                 .id_salt("timeline_track_headers_scroll")
-                                .max_height(tracks_viewport_h)
                                 .vertical_scroll_offset(current_scroll_y)
                                 .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                                .auto_shrink([false, false])
                                 .show(ui, |ui| {
                                     ui.spacing_mut().item_spacing = Vec2::ZERO;
                                     ui.vertical(|ui| {
@@ -1776,9 +1775,9 @@ impl eframe::App for TrimApp {
                             if ui.input(|i| i.pointer.hover_pos()).map(|p| headers_scroll_out.inner_rect.contains(p)).unwrap_or(false) {
                                 let scroll_delta = ui.input(|i| i.raw_scroll_delta);
                                 if scroll_delta.y != 0.0 {
-                                    let mut st = egui::scroll_area::State::load(ui.ctx(), canvas_scroll_id).unwrap_or_default();
-                                    st.offset.y = clamp_scroll_offset(st.offset.y - scroll_delta.y, total_tracks_h, tracks_viewport_h);
-                                    st.store(ui.ctx(), canvas_scroll_id);
+                                    let max_scroll = (total_tracks_h - content_viewport_h).max(0.0);
+                                    let new_y = (self.canvas_state.scroll_offset.y - scroll_delta.y).clamp(0.0, max_scroll);
+                                    self.canvas_state.pending_scroll_y = Some(new_y);
                                 }
                             }
                         });
@@ -1842,23 +1841,26 @@ impl eframe::App for TrimApp {
                             // 2. Timeline Canvas (Driver of both X and Y scroll)
                             self.canvas_state.active_tool = self.current_edit_tool;
                             self.project.timeline.snap_enabled = self.snap_enabled;
-                            let canvas_scroll_out = egui::ScrollArea::both()
-                                .id_salt(canvas_scroll_id)
-                                .max_width(avail_canvas_w)
-                                .max_height(tracks_viewport_h)
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    ui.spacing_mut().item_spacing = Vec2::ZERO;
-                                    let (_canvas_resp, canvas_act) = render_timeline_canvas(
-                                        ui,
-                                        &mut self.project,
-                                        &mut self.canvas_state,
-                                        self.current_time,
-                                        &self.waveform_gen,
-                                        &self.media_bin_textures,
-                                    );
-                                    canvas_act
-                                });
+                            let mut canvas_scroll = egui::ScrollArea::both()
+                                .id_salt("timeline_canvas_both_scroll")
+                                .auto_shrink([false, false]);
+
+                            if let Some(target_y) = self.canvas_state.pending_scroll_y.take() {
+                                canvas_scroll = canvas_scroll.vertical_scroll_offset(target_y);
+                            }
+
+                            let canvas_scroll_out = canvas_scroll.show(ui, |ui| {
+                                ui.spacing_mut().item_spacing = Vec2::ZERO;
+                                let (_canvas_resp, canvas_act) = render_timeline_canvas(
+                                    ui,
+                                    &mut self.project,
+                                    &mut self.canvas_state,
+                                    self.current_time,
+                                    &self.waveform_gen,
+                                    &self.media_bin_textures,
+                                );
+                                canvas_act
+                            });
 
                             self.canvas_state.scroll_offset = canvas_scroll_out.state.offset;
 
