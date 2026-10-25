@@ -23,6 +23,24 @@ pub enum InspectorAction {
     ImportSubtitles,
     ExportSubtitles,
     SelectCustomLut(String),
+    SetTransform {
+        track_id: String,
+        clip_id: String,
+        old_transform: (f64, f64, f64, f64, f64),
+        new_transform: (f64, f64, f64, f64, f64),
+    },
+    SetColorWheels {
+        track_id: String,
+        clip_id: String,
+        old_wheels: Option<ColorWheelsConfig>,
+        new_wheels: Option<ColorWheelsConfig>,
+    },
+    SetEqPreset {
+        track_id: String,
+        clip_id: String,
+        old_preset: AudioEqPreset,
+        new_preset: AudioEqPreset,
+    },
 }
 
 const CARD_BG: Color32 = Color32::from_rgb(0x13, 0x15, 0x1c);
@@ -49,7 +67,7 @@ pub fn render_inspector_panel(
             .tracks
             .iter()
             .find(|t| t.get_clip_by_id(clip_id).is_some())
-            .map(|t| (t.name.clone(), t.track_type == TrackType::Audio))
+            .map(|t| (t.id.clone(), t.name.clone(), t.track_type == TrackType::Audio))
     });
 
     // Top Inspector Header Bar
@@ -67,7 +85,7 @@ pub fn render_inspector_panel(
                         .color(Color32::WHITE),
                 );
                 ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                    if let Some((ref t_name, is_audio)) = track_meta {
+                    if let Some((_, ref t_name, is_audio)) = track_meta {
                         let (badge_txt, badge_col) = if is_audio {
                             (format!("SES • {}", t_name), ACCENT_TEAL)
                         } else {
@@ -84,13 +102,13 @@ pub fn render_inspector_panel(
     ui.add_space(6.0);
 
     let target_clip_and_track = if let Some(clip_id) = selected_clip_id {
-        if let Some((t_name, is_audio)) = track_meta {
+        if let Some((t_id, t_name, is_audio)) = track_meta {
             project
                 .timeline
                 .tracks
                 .iter_mut()
                 .find_map(|t| t.get_clip_by_id_mut(clip_id))
-                .map(|c| (t_name, is_audio, c))
+                .map(|c| (t_id, t_name, is_audio, c))
         } else {
             None
         }
@@ -107,7 +125,7 @@ pub fn render_inspector_panel(
         return action;
     }
 
-    let (track_name, is_audio, clip) = target_clip_and_track.unwrap();
+    let (track_id, track_name, is_audio, clip) = target_clip_and_track.unwrap();
     let clip_time = (playhead_time - clip.timeline_in).max(0.0);
 
     ScrollArea::vertical()
@@ -124,7 +142,7 @@ pub fn render_inspector_panel(
             }
 
             if is_audio {
-                render_audio_card(ui, clip, &mut action);
+                render_audio_card(ui, &track_id, clip, &mut action);
                 ui.add_space(6.0);
 
                 render_speed_card(ui, clip, &mut action);
@@ -133,15 +151,15 @@ pub fn render_inspector_panel(
                 render_transitions_card(ui, clip, &mut action);
             } else {
                 // 2. Video Dönüşümü & Anahtar Kareler
-                render_transform_card(ui, clip, clip_time, &mut action);
+                render_transform_card(ui, &track_id, clip, clip_time, &mut action);
                 ui.add_space(6.0);
 
                 // 3. Renk, LUT & Chroma Key
-                render_color_card(ui, clip, &mut action);
+                render_color_card(ui, &track_id, clip, &mut action);
                 ui.add_space(6.0);
 
                 // 4. Ses & EQ Profili
-                render_audio_card(ui, clip, &mut action);
+                render_audio_card(ui, &track_id, clip, &mut action);
                 ui.add_space(6.0);
 
                 // 5. Hız, Yön & Akıllı Kurgu
@@ -617,6 +635,7 @@ fn render_info_and_timing_card(
 
 fn render_transform_card(
     ui: &mut Ui,
+    track_id: &str,
     clip: &mut Clip,
     clip_time: f64,
     action: &mut Option<InspectorAction>,
@@ -624,7 +643,40 @@ fn render_transform_card(
     let is_modified = clip.pos_x.abs() > 0.01
         || clip.pos_y.abs() > 0.01
         || (clip.scale - 1.0).abs() > 0.005
+        || clip.rotation.abs() > 0.01
         || (clip.opacity - 1.0).abs() > 0.005;
+
+    let tf_id = ui.make_persistent_id(format!("tf_drag_{}", clip.id));
+    let mut orig_tf: Option<(f64, f64, f64, f64, f64)> = ui.data_mut(|d| d.get_temp(tf_id));
+
+    let mut record_start = |ui: &mut Ui, orig: &mut Option<(f64, f64, f64, f64, f64)>, clip: &Clip| {
+        if orig.is_none() {
+            let snap = (clip.pos_x, clip.pos_y, clip.scale, clip.rotation, clip.opacity);
+            *orig = Some(snap);
+            ui.data_mut(|d| d.insert_temp(tf_id, snap));
+        }
+    };
+
+    let mut check_stop = |ui: &mut Ui, orig: &mut Option<(f64, f64, f64, f64, f64)>, clip: &Clip, action: &mut Option<InspectorAction>| {
+        if let Some(old) = *orig {
+            let new = (clip.pos_x, clip.pos_y, clip.scale, clip.rotation, clip.opacity);
+            if (old.0 - new.0).abs() > 1e-4
+                || (old.1 - new.1).abs() > 1e-4
+                || (old.2 - new.2).abs() > 1e-4
+                || (old.3 - new.3).abs() > 1e-4
+                || (old.4 - new.4).abs() > 1e-4
+            {
+                *action = Some(InspectorAction::SetTransform {
+                    track_id: track_id.to_string(),
+                    clip_id: clip.id.clone(),
+                    old_transform: old,
+                    new_transform: new,
+                });
+            }
+            *orig = None;
+            ui.data_mut(|d| d.remove::<(f64, f64, f64, f64, f64)>(tf_id));
+        }
+    };
 
     let reset_clicked = std::cell::Cell::new(false);
     inspector_card(
@@ -652,86 +704,140 @@ fn render_transform_card(
         },
         |ui| {
             if reset_clicked.get() {
+                let old = (clip.pos_x, clip.pos_y, clip.scale, clip.rotation, clip.opacity);
+                let new = (0.0, 0.0, 1.0, 0.0, 1.0);
                 clip.pos_x = 0.0;
                 clip.pos_y = 0.0;
                 clip.scale = 1.0;
+                clip.rotation = 0.0;
                 clip.opacity = 1.0;
-                *action = Some(InspectorAction::ClipModified);
+                *action = Some(InspectorAction::SetTransform {
+                    track_id: track_id.to_string(),
+                    clip_id: clip.id.clone(),
+                    old_transform: old,
+                    new_transform: new,
+                });
             }
 
             prop_row(ui, "Konum X", |ui| {
                 render_kf_btn(ui, clip, "pos_x", clip_time, clip.pos_x, action);
-                if ui
-                    .add(DragValue::new(&mut clip.pos_x).speed(1.0).suffix(" px"))
-                    .changed()
-                {
+                let r = ui.add(DragValue::new(&mut clip.pos_x).speed(1.0).suffix(" px"));
+                if r.drag_started() {
+                    record_start(ui, &mut orig_tf, clip);
+                }
+                if r.changed() {
                     sync_kf_value(clip, "pos_x", clip_time, clip.pos_x);
                     *action = Some(InspectorAction::ClipModified);
+                }
+                if r.drag_stopped() || r.lost_focus() {
+                    check_stop(ui, &mut orig_tf, clip, action);
                 }
             });
 
             prop_row(ui, "Konum Y", |ui| {
                 render_kf_btn(ui, clip, "pos_y", clip_time, clip.pos_y, action);
-                if ui
-                    .add(DragValue::new(&mut clip.pos_y).speed(1.0).suffix(" px"))
-                    .changed()
-                {
+                let r = ui.add(DragValue::new(&mut clip.pos_y).speed(1.0).suffix(" px"));
+                if r.drag_started() {
+                    record_start(ui, &mut orig_tf, clip);
+                }
+                if r.changed() {
                     sync_kf_value(clip, "pos_y", clip_time, clip.pos_y);
                     *action = Some(InspectorAction::ClipModified);
+                }
+                if r.drag_stopped() || r.lost_focus() {
+                    check_stop(ui, &mut orig_tf, clip, action);
                 }
             });
 
             prop_row(ui, "Ölçek", |ui| {
                 render_kf_btn(ui, clip, "scale", clip_time, clip.scale, action);
-                if ui
-                    .add(
-                        Slider::new(&mut clip.scale, 0.1..=4.0)
-                            .show_value(false)
-                            .trailing_fill(true),
-                    )
-                    .changed()
-                {
+                let r1 = ui.add(
+                    Slider::new(&mut clip.scale, 0.1..=4.0)
+                        .show_value(false)
+                        .trailing_fill(true),
+                );
+                if r1.drag_started() {
+                    record_start(ui, &mut orig_tf, clip);
+                }
+                if r1.changed() {
                     sync_kf_value(clip, "scale", clip_time, clip.scale);
                     *action = Some(InspectorAction::ClipModified);
                 }
-                if ui
-                    .add(
-                        DragValue::new(&mut clip.scale)
-                            .speed(0.01)
-                            .range(0.05..=10.0)
-                            .fixed_decimals(2),
-                    )
-                    .changed()
-                {
+                if r1.drag_stopped() || r1.lost_focus() {
+                    check_stop(ui, &mut orig_tf, clip, action);
+                }
+
+                let r2 = ui.add(
+                    DragValue::new(&mut clip.scale)
+                        .speed(0.01)
+                        .range(0.05..=10.0)
+                        .fixed_decimals(2),
+                );
+                if r2.drag_started() {
+                    record_start(ui, &mut orig_tf, clip);
+                }
+                if r2.changed() {
                     sync_kf_value(clip, "scale", clip_time, clip.scale);
                     *action = Some(InspectorAction::ClipModified);
+                }
+                if r2.drag_stopped() || r2.lost_focus() {
+                    check_stop(ui, &mut orig_tf, clip, action);
+                }
+            });
+
+            prop_row(ui, "Döndürme", |ui| {
+                render_kf_btn(ui, clip, "rotation", clip_time, clip.rotation, action);
+                let r = ui.add(
+                    DragValue::new(&mut clip.rotation)
+                        .speed(0.5)
+                        .suffix("°")
+                        .fixed_decimals(1),
+                );
+                if r.drag_started() {
+                    record_start(ui, &mut orig_tf, clip);
+                }
+                if r.changed() {
+                    sync_kf_value(clip, "rotation", clip_time, clip.rotation);
+                    *action = Some(InspectorAction::ClipModified);
+                }
+                if r.drag_stopped() || r.lost_focus() {
+                    check_stop(ui, &mut orig_tf, clip, action);
                 }
             });
 
             prop_row(ui, "Opaklık", |ui| {
                 render_kf_btn(ui, clip, "opacity", clip_time, clip.opacity, action);
-                if ui
-                    .add(
-                        Slider::new(&mut clip.opacity, 0.0..=1.0)
-                            .show_value(false)
-                            .trailing_fill(true),
-                    )
-                    .changed()
-                {
+                let r1 = ui.add(
+                    Slider::new(&mut clip.opacity, 0.0..=1.0)
+                        .show_value(false)
+                        .trailing_fill(true),
+                );
+                if r1.drag_started() {
+                    record_start(ui, &mut orig_tf, clip);
+                }
+                if r1.changed() {
                     sync_kf_value(clip, "opacity", clip_time, clip.opacity);
                     *action = Some(InspectorAction::ClipModified);
                 }
-                if ui
-                    .add(
-                        DragValue::new(&mut clip.opacity)
-                            .speed(0.01)
-                            .range(0.0..=1.0)
-                            .fixed_decimals(2),
-                    )
-                    .changed()
-                {
+                if r1.drag_stopped() || r1.lost_focus() {
+                    check_stop(ui, &mut orig_tf, clip, action);
+                }
+
+                let r2 = ui.add(
+                    DragValue::new(&mut clip.opacity)
+                        .speed(0.01)
+                        .range(0.0..=1.0)
+                        .fixed_decimals(2),
+                );
+                if r2.drag_started() {
+                    record_start(ui, &mut orig_tf, clip);
+                }
+                if r2.changed() {
                     sync_kf_value(clip, "opacity", clip_time, clip.opacity);
                     *action = Some(InspectorAction::ClipModified);
+                }
+                if r2.drag_stopped() || r2.lost_focus() {
+                    check_stop(ui, &mut orig_tf, clip, action);
                 }
             });
 
@@ -856,7 +962,12 @@ fn render_speed_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspector
     );
 }
 
-fn render_color_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<InspectorAction>) {
+fn render_color_card(
+    ui: &mut Ui,
+    track_id: &str,
+    clip: &mut Clip,
+    action: &mut Option<InspectorAction>,
+) {
     let has_color_changes = clip.brightness.abs() > 0.005
         || (clip.contrast - 1.0).abs() > 0.005
         || (clip.saturation - 1.0).abs() > 0.005
@@ -1036,6 +1147,9 @@ fn render_color_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspector
                 .rounding(Rounding::same(6.0))
                 .inner_margin(Margin::symmetric(8.0, 6.0))
                 .show(ui, |ui| {
+                    let cw_id = ui.make_persistent_id(format!("cw_drag_{}", clip.id));
+                    let orig_cw: Option<Option<ColorWheelsConfig>> = ui.data_mut(|d| d.get_temp(cw_id));
+
                     let mut has_cw = clip.color_wheels.is_some();
                     if ui
                         .checkbox(
@@ -1046,18 +1160,46 @@ fn render_color_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspector
                         )
                         .changed()
                     {
-                        clip.color_wheels = if has_cw {
+                        let old_wheels = clip.color_wheels.clone();
+                        let new_wheels = if has_cw {
                             Some(ColorWheelsConfig::default())
                         } else {
                             None
                         };
-                        *action = Some(InspectorAction::ClipModified);
+                        clip.color_wheels = new_wheels.clone();
+                        *action = Some(InspectorAction::SetColorWheels {
+                            track_id: track_id.to_string(),
+                            clip_id: clip.id.clone(),
+                            old_wheels,
+                            new_wheels,
+                        });
                     }
 
                     if let Some(cw) = &mut clip.color_wheels {
                         ui.add_space(4.0);
+                        let primary_down = ui.input(|i| i.pointer.primary_down());
+                        let primary_released = ui.input(|i| i.pointer.primary_released());
+
+                        if primary_down && orig_cw.is_none() {
+                            ui.data_mut(|d| d.insert_temp(cw_id, Some(cw.clone())));
+                        }
+
                         if render_color_wheels_panel(ui, cw) {
                             *action = Some(InspectorAction::ClipModified);
+                        }
+
+                        if primary_released {
+                            if let Some(Some(old)) = orig_cw {
+                                if &old != cw {
+                                    *action = Some(InspectorAction::SetColorWheels {
+                                        track_id: track_id.to_string(),
+                                        clip_id: clip.id.clone(),
+                                        old_wheels: Some(old),
+                                        new_wheels: Some(cw.clone()),
+                                    });
+                                }
+                            }
+                            ui.data_mut(|d| d.remove::<Option<ColorWheelsConfig>>(cw_id));
                         }
                     }
                 });
@@ -1216,7 +1358,12 @@ fn render_transitions_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Ins
     );
 }
 
-fn render_audio_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<InspectorAction>) {
+fn render_audio_card(
+    ui: &mut Ui,
+    track_id: &str,
+    clip: &mut Clip,
+    action: &mut Option<InspectorAction>,
+) {
     let pct = (clip.volume * 100.0).round() as i32;
     let is_muted = clip.muted;
     inspector_card(
@@ -1270,9 +1417,16 @@ fn render_audio_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspector
                             if ui
                                 .selectable_label(clip.eq_preset == *p, p.label())
                                 .clicked()
+                                && clip.eq_preset != *p
                             {
+                                let old_preset = clip.eq_preset;
                                 clip.eq_preset = *p;
-                                *action = Some(InspectorAction::ClipModified);
+                                *action = Some(InspectorAction::SetEqPreset {
+                                    track_id: track_id.to_string(),
+                                    clip_id: clip.id.clone(),
+                                    old_preset,
+                                    new_preset: *p,
+                                });
                             }
                         }
                     });

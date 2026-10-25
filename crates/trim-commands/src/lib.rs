@@ -772,4 +772,56 @@ mod tests {
         assert_eq!(tl.get_track_by_id(&v1_id).unwrap().clips.len(), 1);
         assert_eq!(tl.get_track_by_id(&a1_id).unwrap().clips.len(), 1);
     }
+
+    #[test]
+    fn test_inspector_undo_commands() {
+        use trim_core::clip::{AudioEqPreset, ColorWheelsConfig};
+
+        let mut tl = TimelineModel::default();
+        let v1_id = tl.tracks[0].id.clone();
+        let clip = Clip::new("m1", 0.0, 5.0);
+        let clip_id = clip.id.clone();
+        tl.tracks[0].add_clip(clip);
+
+        let mut stack = UndoStack::new();
+
+        // 1. Transform Command
+        let old_tf = (0.0, 0.0, 1.0, 0.0, 1.0);
+        let new_tf = (50.0, -20.0, 1.5, 45.0, 0.8);
+        let tf_cmd = Box::new(SetClipTransformCommand::new(&v1_id, &clip_id, old_tf, new_tf));
+        stack.push(tf_cmd, &mut tl).unwrap();
+
+        let c = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(c.pos_x, 50.0);
+        assert_eq!(c.scale, 1.5);
+        assert_eq!(c.opacity, 0.8);
+
+        stack.undo(&mut tl).unwrap();
+        let c = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(c.pos_x, 0.0);
+        assert_eq!(c.scale, 1.0);
+
+        stack.redo(&mut tl).unwrap();
+        let c = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(c.pos_x, 50.0);
+
+        // 2. Color Wheels Command
+        let mut wheels = ColorWheelsConfig::default();
+        wheels.lift = [0.1, 0.2, 0.3];
+        let cw_cmd = Box::new(SetClipColorWheelsCommand::new(&v1_id, &clip_id, None, Some(wheels.clone())));
+        stack.push(cw_cmd, &mut tl).unwrap();
+        assert_eq!(tl.tracks[0].get_clip_by_id(&clip_id).unwrap().color_wheels, Some(wheels));
+
+        stack.undo(&mut tl).unwrap();
+        assert_eq!(tl.tracks[0].get_clip_by_id(&clip_id).unwrap().color_wheels, None);
+
+        // 3. EQ Preset Command
+        let eq_cmd = Box::new(SetClipEqPresetCommand::new(&v1_id, &clip_id, AudioEqPreset::Flat, AudioEqPreset::VoiceClarity));
+        stack.push(eq_cmd, &mut tl).unwrap();
+        assert_eq!(tl.tracks[0].get_clip_by_id(&clip_id).unwrap().eq_preset, AudioEqPreset::VoiceClarity);
+
+        stack.undo(&mut tl).unwrap();
+        assert_eq!(tl.tracks[0].get_clip_by_id(&clip_id).unwrap().eq_preset, AudioEqPreset::Flat);
+    }
 }
+

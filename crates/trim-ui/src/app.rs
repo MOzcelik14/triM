@@ -2607,6 +2607,49 @@ impl eframe::App for TrimApp {
                                     self.last_rendered_monitor_frame = None;
                                     self.video_engine.last_rendered_frame = None;
                                 }
+                                InspectorAction::SetTransform {
+                                    track_id,
+                                    clip_id,
+                                    old_transform,
+                                    new_transform,
+                                } => {
+                                    let cmd = Box::new(SetClipTransformCommand::new(
+                                        track_id,
+                                        clip_id,
+                                        old_transform,
+                                        new_transform,
+                                    ));
+                                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                    self.project.mark_dirty();
+                                    self.last_rendered_monitor_frame = None;
+                                    self.video_engine.last_rendered_frame = None;
+                                }
+                                InspectorAction::SetColorWheels {
+                                    track_id,
+                                    clip_id,
+                                    old_wheels,
+                                    new_wheels,
+                                } => {
+                                    let cmd = Box::new(SetClipColorWheelsCommand::new(
+                                        track_id, clip_id, old_wheels, new_wheels,
+                                    ));
+                                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                    self.project.mark_dirty();
+                                    self.last_rendered_monitor_frame = None;
+                                    self.video_engine.last_rendered_frame = None;
+                                }
+                                InspectorAction::SetEqPreset {
+                                    track_id,
+                                    clip_id,
+                                    old_preset,
+                                    new_preset,
+                                } => {
+                                    let cmd = Box::new(SetClipEqPresetCommand::new(
+                                        track_id, clip_id, old_preset, new_preset,
+                                    ));
+                                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                    self.project.mark_dirty();
+                                }
                                 InspectorAction::ChangeSpeed(spd, rev) => {
                                     if let Some((tr_id, cl_id)) =
                                         self.canvas_state.selected_clip_pairs.first()

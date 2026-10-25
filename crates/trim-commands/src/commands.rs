@@ -1,7 +1,7 @@
 //! Complete implementation of all 14 timeline editing commands.
 
 use crate::{Command, CommandError};
-use trim_core::clip::{Clip, ColorLabel};
+use trim_core::clip::{AudioEqPreset, Clip, ColorLabel, ColorWheelsConfig};
 use trim_core::marker::Marker;
 use trim_core::timeline::TimelineModel;
 use trim_core::track::Track;
@@ -1637,3 +1637,194 @@ impl Command for MacroCommand {
         &self.name
     }
 }
+
+// -----------------------------------------------------------------------------
+// 21. SetClipTransformCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct SetClipTransformCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub old_pos_x: f64,
+    pub old_pos_y: f64,
+    pub old_scale: f64,
+    pub old_rotation: f64,
+    pub old_opacity: f64,
+    pub new_pos_x: f64,
+    pub new_pos_y: f64,
+    pub new_scale: f64,
+    pub new_rotation: f64,
+    pub new_opacity: f64,
+}
+
+impl SetClipTransformCommand {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_transform: (f64, f64, f64, f64, f64),
+        new_transform: (f64, f64, f64, f64, f64),
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            old_pos_x: old_transform.0,
+            old_pos_y: old_transform.1,
+            old_scale: old_transform.2,
+            old_rotation: old_transform.3,
+            old_opacity: old_transform.4,
+            new_pos_x: new_transform.0,
+            new_pos_y: new_transform.1,
+            new_scale: new_transform.2,
+            new_rotation: new_transform.3,
+            new_opacity: new_transform.4,
+        }
+    }
+}
+
+impl Command for SetClipTransformCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.pos_x = self.new_pos_x;
+        clip.pos_y = self.new_pos_y;
+        clip.scale = self.new_scale;
+        clip.rotation = self.new_rotation;
+        clip.opacity = self.new_opacity;
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.pos_x = self.old_pos_x;
+        clip.pos_y = self.old_pos_y;
+        clip.scale = self.old_scale;
+        clip.rotation = self.old_rotation;
+        clip.opacity = self.old_opacity;
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Dönüşümü Değiştir"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 22. SetClipColorWheelsCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct SetClipColorWheelsCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub old_wheels: Option<ColorWheelsConfig>,
+    pub new_wheels: Option<ColorWheelsConfig>,
+}
+
+impl SetClipColorWheelsCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_wheels: Option<ColorWheelsConfig>,
+        new_wheels: Option<ColorWheelsConfig>,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            old_wheels,
+            new_wheels,
+        }
+    }
+}
+
+impl Command for SetClipColorWheelsCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.color_wheels = self.new_wheels.clone();
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.color_wheels = self.old_wheels.clone();
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Renk Tekerleklerini Değiştir"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 23. SetClipEqPresetCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct SetClipEqPresetCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub old_preset: AudioEqPreset,
+    pub new_preset: AudioEqPreset,
+}
+
+impl SetClipEqPresetCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_preset: AudioEqPreset,
+        new_preset: AudioEqPreset,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            old_preset,
+            new_preset,
+        }
+    }
+}
+
+impl Command for SetClipEqPresetCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.eq_preset = self.new_preset;
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.eq_preset = self.old_preset;
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "EQ Profilini Değiştir"
+    }
+}
+
