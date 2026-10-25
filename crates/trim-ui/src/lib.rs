@@ -809,33 +809,63 @@ mod tests {
         app.insert_source_to_timeline(false);
 
         assert_eq!(
-            app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(),
+            app.project
+                .timeline
+                .get_track_by_id(&v1_id)
+                .unwrap()
+                .clips
+                .len(),
             1
         );
         assert_eq!(
-            app.project.timeline.get_track_by_id(&a1_id).unwrap().clips.len(),
+            app.project
+                .timeline
+                .get_track_by_id(&a1_id)
+                .unwrap()
+                .clips
+                .len(),
             1
         );
 
         // A single undo must atomically remove BOTH video and audio clips!
         assert!(app.undo_stack.undo(&mut app.project.timeline).unwrap());
         assert_eq!(
-            app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(),
+            app.project
+                .timeline
+                .get_track_by_id(&v1_id)
+                .unwrap()
+                .clips
+                .len(),
             0
         );
         assert_eq!(
-            app.project.timeline.get_track_by_id(&a1_id).unwrap().clips.len(),
+            app.project
+                .timeline
+                .get_track_by_id(&a1_id)
+                .unwrap()
+                .clips
+                .len(),
             0
         );
 
         // A single redo must atomically restore BOTH video and audio clips!
         assert!(app.undo_stack.redo(&mut app.project.timeline).unwrap());
         assert_eq!(
-            app.project.timeline.get_track_by_id(&v1_id).unwrap().clips.len(),
+            app.project
+                .timeline
+                .get_track_by_id(&v1_id)
+                .unwrap()
+                .clips
+                .len(),
             1
         );
         assert_eq!(
-            app.project.timeline.get_track_by_id(&a1_id).unwrap().clips.len(),
+            app.project
+                .timeline
+                .get_track_by_id(&a1_id)
+                .unwrap()
+                .clips
+                .len(),
             1
         );
     }

@@ -47,30 +47,28 @@ impl ThumbnailGenerator {
 
             if let Err(e) = std::thread::Builder::new()
                 .name(format!("thumbnail-worker-{}", w_idx))
-                .spawn(move || {
-                    loop {
-                        let item = {
-                            let Ok(lock) = rx.lock() else { break };
-                            match lock.recv() {
-                                Ok(it) => it,
-                                Err(_) => break,
-                            }
-                        };
-                        let target = get_thumbnail_path_static(&cache_dir_clone, &item);
-                        let ok = if target.is_file()
-                            && target.metadata().map(|m| m.len() > 0).unwrap_or(false)
-                        {
-                            true
-                        } else {
-                            generate_thumbnail_disk(&cache_dir_clone, &item).is_some()
-                        };
+                .spawn(move || loop {
+                    let item = {
+                        let Ok(lock) = rx.lock() else { break };
+                        match lock.recv() {
+                            Ok(it) => it,
+                            Err(_) => break,
+                        }
+                    };
+                    let target = get_thumbnail_path_static(&cache_dir_clone, &item);
+                    let ok = if target.is_file()
+                        && target.metadata().map(|m| m.len() > 0).unwrap_or(false)
+                    {
+                        true
+                    } else {
+                        generate_thumbnail_disk(&cache_dir_clone, &item).is_some()
+                    };
 
-                        if ok {
-                            let _ = res_tx.send((item.id.clone(), target));
-                        }
-                        if let Ok(mut set) = in_flight_worker.lock() {
-                            set.remove(&item.id);
-                        }
+                    if ok {
+                        let _ = res_tx.send((item.id.clone(), target));
+                    }
+                    if let Ok(mut set) = in_flight_worker.lock() {
+                        set.remove(&item.id);
                     }
                 })
             {

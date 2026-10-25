@@ -2079,9 +2079,10 @@ impl eframe::App for TrimApp {
                                                         "Klip ve Ses Ekle",
                                                         vec![cmd, cmd_a],
                                                     ));
-                                                    let _ = self
-                                                        .undo_stack
-                                                        .push(macro_cmd, &mut self.project.timeline);
+                                                    let _ = self.undo_stack.push(
+                                                        macro_cmd,
+                                                        &mut self.project.timeline,
+                                                    );
                                                 } else {
                                                     let _ = self
                                                         .undo_stack

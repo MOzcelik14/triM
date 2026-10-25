@@ -381,7 +381,10 @@ mod tests {
         use std::process::Stdio;
         let mut cmd = if cfg!(target_os = "windows") {
             let mut c = Command::new("cmd");
-            c.args(["/C", "for /L %i in (1,1,3000) do @echo 1234567890123456789012345678901234567890 1>&2"]);
+            c.args([
+                "/C",
+                "for /L %i in (1,1,3000) do @echo 1234567890123456789012345678901234567890 1>&2",
+            ]);
             c
         } else {
             let mut c = Command::new("sh");

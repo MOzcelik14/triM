@@ -78,7 +78,7 @@
 ### 2.4. Klip Sürükle-Bırak İşleminde Ayrık Geri Alma (Atomic Undo Eksikliği)
 * **Konum**: [`crates/trim-ui/src/app.rs:2057-2084`](file:///home/mozcelik/Projeler/triM/crates/trim-ui/src/app.rs#L2057-L2084)
 * **Koşul & Etki**: Medya havuzundan zaman çizgisine video bırakıldığında, hem video klibi hem de otomatik oluşturulan ses klibi için `undo_stack.push()` fonksiyonu iki kez art arda çağrılmaktadır. Kullanıcı Ctrl+Z'ye bir kez bastığında yalnızca ses klibi silinmekte, video klibi zaman çizgisinde kalmaktadır. Tek bir kullanıcı eylemi iki ayrı geri alma adımına bölünmektedir.
-* **Durum**: **[Doğrulandı]**
+* **Durum**: **[Düzeltildi (Grup 4)]** (`MacroCommand` oluşturuldu; sürükle-bırak, oynatma kafasından ekleme ve araya ekleme/üzerine yazma işlemlerinde video ve bağlı ses tek komutta birleştirildi)
 * **Önerilen Düzeltme**: Her iki klip ekleme eylemini tek bir işlemde toplayan bir `MacroCommand` veya `CompoundCommand` oluşturularak yığına tek seferde itilmelidir.
 
 ---
@@ -94,7 +94,7 @@
 ### 2.6. Kurulum Betiklerinde Sürüm Uyuşmazlığı (`v1.0.1` vs `v1.1.1`)
 * **Konum**: [`install.sh:29`](file:///home/mozcelik/Projeler/triM/install.sh#L29) ve [`install.ps1:33`](file:///home/mozcelik/Projeler/triM/install.ps1#L33)
 * **Koşul & Etki**: Projedeki tüm Rust krate'leri (`Cargo.toml`) ve Flatpak meta verileri `1.1.1` sürümüne güncellenmişken, `install.sh` betiğinde `VERSION="1.0.1"` ve `install.ps1` betiğinde `$Version = "1.0.1"` sabit kalmıştır. Kullanıcı betiği çalıştırıp hazır ikili indirmeyi seçtiğinde GitHub Releases üzerinden eski `1.0.1` sürümünü indirmektedir.
-* **Durum**: **[Doğrulandı]**
+* **Durum**: **[Düzeltildi (Grup 4)]** (Her iki betikte varsayılan sürüm `1.1.1` yapıldı ve yerel klonda Cargo.toml sürümünü dinamik okuma desteği eklendi)
 * **Önerilen Düzeltme**: Her iki kurulum betiğindeki sürüm sabiti `1.1.1` olarak güncellenmelidir.
 
 ---
@@ -128,7 +128,7 @@
 ### 3.4. Çift (Mükerrer) GitHub Actions CI Çalıştırması
 * **Konum**: [`.github/workflows/ci.yml`](file:///home/mozcelik/Projeler/triM/.github/workflows/ci.yml) ve [`.github/workflows/rust-ci.yml`](file:///home/mozcelik/Projeler/triM/.github/workflows/rust-ci.yml)
 * **Koşul & Etki**: Her iki iş akışı da `master` dalına push ve PR olaylarında bağımsız olarak tetiklenmekte ve her ikisi de Ubuntu üzerinde `cargo test` ve `cargo build` adımlarını tekrarlamaktadır. Bu durum GitHub Actions kotasını iki kat tüketmektedir.
-* **Durum**: **[Doğrulandı]**
+* **Durum**: **[Düzeltildi (Grup 4)]** (Mükerrer `rust-ci.yml` kaldırıldı; tüm Linux ve Windows format, lint, test ve release build adımları `ci.yml` altında konsolide edildi)
 * **Önerilen Düzeltme**: İki dosya tek bir `ci.yml` altında çoklu platform matrisi (Linux ve Windows) olarak birleştirilmelidir.
 
 ---

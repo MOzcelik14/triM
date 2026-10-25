@@ -590,7 +590,10 @@ impl TrimApp {
             }
         }
 
-        commands.push(Box::new(AddClipCommand::new(target_track_id.clone(), new_clip)));
+        commands.push(Box::new(AddClipCommand::new(
+            target_track_id.clone(),
+            new_clip,
+        )));
 
         if let Some(gid) = link_group {
             let audio_track_id = self

@@ -118,8 +118,7 @@ pub fn bundle_project<P: AsRef<Path>>(
 
     let mut copied_sources: std::collections::HashMap<PathBuf, String> =
         std::collections::HashMap::new();
-    let mut used_dest_names: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
+    let mut used_dest_names: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for (id, item) in &mut bundled_project.media_pool {
         let src_path = Path::new(&item.file_path);
@@ -454,7 +453,10 @@ mod tests {
 
         // 2 unique files copied, not 3 (item3 is deduplicated)
         assert_eq!(count, 2, "Should copy exactly 2 unique media files");
-        assert_eq!(total_bytes, (b"content-of-cam1".len() + b"content-of-cam2".len()) as u64);
+        assert_eq!(
+            total_bytes,
+            (b"content-of-cam1".len() + b"content-of-cam2".len()) as u64
+        );
 
         let loaded = load_project(bundle_target.join("MultiCamCollisions.trim")).unwrap();
         let loaded_m1 = loaded.get_media(&id1).unwrap();

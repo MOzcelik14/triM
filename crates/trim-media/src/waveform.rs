@@ -50,32 +50,30 @@ impl WaveformGenerator {
 
             if let Err(e) = std::thread::Builder::new()
                 .name(format!("waveform-worker-{}", w_idx))
-                .spawn(move || {
-                    loop {
-                        let path = {
-                            let Ok(lock) = rx.lock() else { break };
-                            match lock.recv() {
-                                Ok(p) => p,
-                                Err(_) => break,
-                            }
-                        };
-                        let path_str = path.to_string_lossy().to_string();
-                        let cache_path =
-                            get_cache_path_static(&cache_dir_clone, &path, points_per_second);
-                        let peaks_opt = extract_and_cache_waveform(
-                            &cache_dir_clone,
-                            &cache_path,
-                            &path,
-                            points_per_second,
-                        );
-                        if let Some(peaks) = peaks_opt {
-                            if let Ok(mut mc) = mem_clone.write() {
-                                mc.insert(path_str.clone(), peaks);
-                            }
+                .spawn(move || loop {
+                    let path = {
+                        let Ok(lock) = rx.lock() else { break };
+                        match lock.recv() {
+                            Ok(p) => p,
+                            Err(_) => break,
                         }
-                        if let Ok(mut set) = in_flight_worker.lock() {
-                            set.remove(&path_str);
+                    };
+                    let path_str = path.to_string_lossy().to_string();
+                    let cache_path =
+                        get_cache_path_static(&cache_dir_clone, &path, points_per_second);
+                    let peaks_opt = extract_and_cache_waveform(
+                        &cache_dir_clone,
+                        &cache_path,
+                        &path,
+                        points_per_second,
+                    );
+                    if let Some(peaks) = peaks_opt {
+                        if let Ok(mut mc) = mem_clone.write() {
+                            mc.insert(path_str.clone(), peaks);
                         }
+                    }
+                    if let Ok(mut set) = in_flight_worker.lock() {
+                        set.remove(&path_str);
                     }
                 })
             {

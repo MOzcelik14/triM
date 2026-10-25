@@ -695,8 +695,15 @@ mod tests {
         stack.push(cmd, &mut tl).unwrap();
 
         // The video clip on V2 must now be muted
-        let v_clip = tl.get_track_by_id(&v2_id).unwrap().get_clip_by_id(&clip_id).unwrap();
-        assert!(v_clip.muted, "Video clip should be muted after detaching audio");
+        let v_clip = tl
+            .get_track_by_id(&v2_id)
+            .unwrap()
+            .get_clip_by_id(&clip_id)
+            .unwrap();
+        assert!(
+            v_clip.muted,
+            "Video clip should be muted after detaching audio"
+        );
 
         // The audio clip must be placed on A2, NOT A1!
         let a1_clips = &tl.get_track_by_id(&a1_id).unwrap().clips;
@@ -706,8 +713,15 @@ mod tests {
 
         // Undo
         assert!(stack.undo(&mut tl).unwrap());
-        let v_clip_unmuted = tl.get_track_by_id(&v2_id).unwrap().get_clip_by_id(&clip_id).unwrap();
-        assert!(!v_clip_unmuted.muted, "Video clip should be unmuted after undo");
+        let v_clip_unmuted = tl
+            .get_track_by_id(&v2_id)
+            .unwrap()
+            .get_clip_by_id(&clip_id)
+            .unwrap();
+        assert!(
+            !v_clip_unmuted.muted,
+            "Video clip should be unmuted after undo"
+        );
         assert_eq!(tl.get_track_by_id(&a2_id).unwrap().clips.len(), 0);
 
         // Redo
@@ -718,8 +732,20 @@ mod tests {
     #[test]
     fn test_macro_command_atomic_undo_redo() {
         let mut tl = TimelineModel::default();
-        let v1_id = tl.tracks.iter().find(|t| t.name == "V1").unwrap().id.clone();
-        let a1_id = tl.tracks.iter().find(|t| t.name == "A1").unwrap().id.clone();
+        let v1_id = tl
+            .tracks
+            .iter()
+            .find(|t| t.name == "V1")
+            .unwrap()
+            .id
+            .clone();
+        let a1_id = tl
+            .tracks
+            .iter()
+            .find(|t| t.name == "A1")
+            .unwrap()
+            .id
+            .clone();
 
         let v_clip = Clip::new("m_vid", 0.0, 5.0);
         let a_clip = Clip::new("m_vid", 0.0, 5.0);
