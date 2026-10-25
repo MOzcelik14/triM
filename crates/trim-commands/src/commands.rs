@@ -406,9 +406,13 @@ impl Command for SplitClipCommand {
         left_clip.transition_out = None;
         left_clip.keyframes = left_kfs;
 
-        // Right clip gets new id
+        // Right clip preserves ID if re-executing (Redo), or gets new UUID on first execute
         let mut right_clip = orig.clone();
-        right_clip.id = uuid::Uuid::new_v4().to_string();
+        let r_id = self
+            .right_clip_id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        right_clip.id = r_id.clone();
         right_clip.timeline_in = self.split_time;
         if !orig.reverse {
             right_clip.source_in = split_source;
@@ -418,7 +422,7 @@ impl Command for SplitClipCommand {
         right_clip.fade_in = 0.0;
         right_clip.transition_in = None;
         right_clip.keyframes = right_kfs;
-        self.right_clip_id = Some(right_clip.id.clone());
+        self.right_clip_id = Some(r_id);
 
         self.original_clip = Some(orig);
 
@@ -520,6 +524,8 @@ impl Command for BatchSplitClipCommand {
             let mut seg = orig.clone();
             seg.id = if i == 0 {
                 orig.id.clone()
+            } else if let Some(prev_id) = self.created_clip_ids.get(i) {
+                prev_id.clone()
             } else {
                 uuid::Uuid::new_v4().to_string()
             };
