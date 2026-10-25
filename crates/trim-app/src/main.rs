@@ -62,7 +62,7 @@ fn main() -> Result<(), eframe::Error> {
         ..Default::default()
     };
 
-    let initial_file = std::env::args().nth(1);
+    let initial_file = std::env::args().skip(1).find(|arg| !arg.starts_with("--"));
 
     eframe::run_native(
         "triM.",
@@ -73,6 +73,7 @@ fn main() -> Result<(), eframe::Error> {
                 let p = Path::new(&file_str);
                 if p.exists() {
                     app.open_path(p);
+                    app.welcome_dialog.close();
                 }
             }
             if std::env::args().any(|arg| arg == "--no-welcome") {
@@ -81,6 +82,10 @@ fn main() -> Result<(), eframe::Error> {
             if std::env::args().any(|arg| arg == "--open-shortcuts") {
                 app.welcome_dialog.close();
                 app.shortcuts_dialog.open();
+            }
+            if std::env::args().any(|arg| arg == "--open-mixer") {
+                app.welcome_dialog.close();
+                app.audio_mixer_dialog.open();
             }
             if std::env::args().any(|arg| arg == "--open-export") {
                 app.welcome_dialog.close();
@@ -110,17 +115,13 @@ fn main() -> Result<(), eframe::Error> {
             if std::env::args().any(|arg| arg == "--tab-effects") {
                 app.active_left_tab = trim_ui::LeftPanelTab::Effects;
             }
-            if std::env::args().any(|arg| arg == "--select-first") {
+            if std::env::args().any(|arg| arg == "--select-v1") {
                 app.active_left_tab = trim_ui::LeftPanelTab::Effects;
-                if let Some((t_id, c_id)) = app
-                    .project
-                    .timeline
-                    .tracks
-                    .iter()
-                    .find_map(|t| t.clips.first().map(|c| (t.id.clone(), c.id.clone())))
-                {
-                    app.canvas_state.selected_clip_pairs = vec![(t_id, c_id)];
-                    app.current_time = 1.0;
+                if let Some(t) = app.project.timeline.tracks.iter().find(|t| t.name == "V1") {
+                    if let Some(c) = t.clips.first() {
+                        app.canvas_state.selected_clip_pairs = vec![(t.id.clone(), c.id.clone())];
+                        app.current_time = 1.0;
+                    }
                 }
             }
             Ok(Box::new(app))

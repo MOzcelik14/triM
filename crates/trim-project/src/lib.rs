@@ -378,4 +378,155 @@ mod tests {
         );
         assert_eq!(fs::read(loaded_media_path).unwrap(), b"fake video bytes");
     }
+
+    #[test]
+    fn test_generate_synthetic_showcase_files() {
+        use trim_core::clip::{ColorLabel, ColorWheelsConfig, LutPreset};
+        use trim_core::marker::Marker;
+        use trim_core::media::{MediaItem, MediaType};
+        use trim_core::timeline::AspectRatio;
+
+        let mut proj = Project::new("triM Sinematik Kurgu");
+        let m1 = MediaItem {
+            id: "m_cam_a".into(),
+            file_path: "/tmp/trim_test_media/camera_a.mp4".into(),
+            name: "Kamera_A_Roportaj.mp4".into(),
+            media_type: MediaType::Video,
+            duration: 12.0,
+            width: 1920,
+            height: 1080,
+            fps: 30.0,
+            video_codec: "h264".into(),
+            audio_codec: "aac".into(),
+            audio_channels: 2,
+            audio_sample_rate: 48000,
+            file_size_bytes: 500_000,
+            date_added: 0.0,
+            proxy_path: None,
+            bin_id: None,
+        };
+        let m2 = MediaItem {
+            id: "m_cam_b".into(),
+            file_path: "/tmp/trim_test_media/camera_b.mp4".into(),
+            name: "B-Roll_Aksiyon.mp4".into(),
+            media_type: MediaType::Video,
+            duration: 10.0,
+            width: 1920,
+            height: 1080,
+            fps: 30.0,
+            video_codec: "h264".into(),
+            audio_codec: "aac".into(),
+            audio_channels: 2,
+            audio_sample_rate: 48000,
+            file_size_bytes: 400_000,
+            date_added: 0.0,
+            proxy_path: None,
+            bin_id: None,
+        };
+        let m3 = MediaItem {
+            id: "m_audio".into(),
+            file_path: "/tmp/trim_test_media/soundtrack.wav".into(),
+            name: "Film_Muzigi.wav".into(),
+            media_type: MediaType::Audio,
+            duration: 20.0,
+            width: 0,
+            height: 0,
+            fps: 0.0,
+            video_codec: "".into(),
+            audio_codec: "pcm_s16le".into(),
+            audio_channels: 2,
+            audio_sample_rate: 48000,
+            file_size_bytes: 1_000_000,
+            date_added: 0.0,
+            proxy_path: None,
+            bin_id: None,
+        };
+
+        proj.media_pool.insert(m1.id.clone(), m1);
+        proj.media_pool.insert(m2.id.clone(), m2);
+        proj.media_pool.insert(m3.id.clone(), m3);
+
+        // V1 clip
+        let mut clip_v1 = Clip::new("m_cam_a", 0.0, 7.5);
+        clip_v1.name = "Kamera_A_Roportaj.mp4".into();
+        clip_v1.lut_preset = LutPreset::TealOrange;
+        clip_v1.color_wheels = Some(ColorWheelsConfig {
+            lift: [0.03, -0.01, -0.05],
+            gamma: [1.06, 1.0, 0.94],
+            gain: [1.0, 1.03, 0.96],
+            luminance: [0.0, 0.0, 0.0],
+        });
+        clip_v1.color_label = ColorLabel::Green;
+        proj.timeline.tracks[1].add_clip(clip_v1);
+
+        // V2 clip (PIP)
+        let mut clip_v2 = Clip::new("m_cam_b", 3.0, 6.8);
+        clip_v2.name = "B-Roll_Aksiyon.mp4".into();
+        clip_v2.scale = 0.42;
+        clip_v2.pos_x = 0.72;
+        clip_v2.pos_y = 0.28;
+        clip_v2.fade_in = 0.4;
+        clip_v2.fade_out = 0.4;
+        clip_v2.color_label = ColorLabel::Blue;
+        proj.timeline.tracks[0].add_clip(clip_v2);
+
+        // A1 clip (dialogue)
+        let mut clip_a1 = Clip::new("m_cam_a", 0.0, 7.5);
+        clip_a1.name = "Vokal_Roportaj.wav".into();
+        clip_a1.fade_in = 0.2;
+        clip_a1.fade_out = 0.3;
+        clip_a1.color_label = ColorLabel::Yellow;
+        proj.timeline.tracks[2].add_clip(clip_a1);
+
+        // A2 clip (music)
+        let mut clip_a2 = Clip::new("m_audio", 0.0, 10.0);
+        clip_a2.name = "Film_Muzigi.wav".into();
+        clip_a2.volume = 0.4;
+        clip_a2.fade_in = 1.0;
+        clip_a2.fade_out = 1.2;
+        clip_a2.color_label = ColorLabel::Purple;
+        proj.timeline.tracks[3].add_clip(clip_a2);
+
+        proj.timeline.markers.push(Marker {
+            id: "m1".into(),
+            time: 3.0,
+            name: "B-Roll Giris".into(),
+            color: "#E07A38".into(),
+        });
+
+        save_project(&mut proj, "/tmp/trim_showcase.trim").unwrap();
+
+        // Vertical project
+        let mut proj_vert = Project::new("triM Dikey Video");
+        proj_vert
+            .timeline
+            .set_aspect_ratio(AspectRatio::Vertical9x16);
+        proj_vert.settings.width = 1080;
+        proj_vert.settings.height = 1920;
+        let m_v = MediaItem {
+            id: "m_reel".into(),
+            file_path: "/tmp/trim_test_media/reel_clip.mp4".into(),
+            name: "Reels_Story.mp4".into(),
+            media_type: MediaType::Video,
+            duration: 10.0,
+            width: 1080,
+            height: 1920,
+            fps: 30.0,
+            video_codec: "h264".into(),
+            audio_codec: "aac".into(),
+            audio_channels: 2,
+            audio_sample_rate: 48000,
+            file_size_bytes: 400_000,
+            date_added: 0.0,
+            proxy_path: None,
+            bin_id: None,
+        };
+        proj_vert.media_pool.insert(m_v.id.clone(), m_v);
+        let mut clip_reel = Clip::new("m_reel", 0.0, 8.0);
+        clip_reel.name = "Reels_Story.mp4".into();
+        clip_reel.color_label = ColorLabel::Magenta;
+        proj_vert.timeline.tracks[1].add_clip(clip_reel);
+
+        save_project(&mut proj_vert, "/tmp/trim_vertical.trim").unwrap();
+    }
 }
