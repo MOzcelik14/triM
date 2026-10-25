@@ -875,8 +875,31 @@ mod tests {
         assert_eq!(c1.timeline_out, 3.0);
         let c2 = tl.tracks[0].get_clip_by_id(&c2_id).unwrap();
         assert_eq!(c2.timeline_in, 3.0);
+
+        // 6. Set Clip Keyframes Command
+        use trim_core::keyframe::{Interpolation, Keyframe};
+        let kfs = vec![
+            Keyframe::new(0.0, 1.0, Interpolation::Linear),
+            Keyframe::new(2.5, 0.3, Interpolation::Linear),
+            Keyframe::new(5.0, 1.0, Interpolation::Linear),
+        ];
+        let kf_cmd = Box::new(SetClipKeyframesCommand::new(&v1_id, &clip_id, "volume", Vec::new(), kfs.clone()));
+        stack.push(kf_cmd, &mut tl).unwrap();
+
+        let c1 = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(c1.keyframes.get("volume"), Some(&kfs));
+        assert!((c1.get_property_at_time("volume", 2.5) - 0.3).abs() < 1e-4);
+
+        stack.undo(&mut tl).unwrap();
+        let c1 = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
+        assert!(!c1.keyframes.contains_key("volume"));
+
+        stack.redo(&mut tl).unwrap();
+        let c1 = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(c1.keyframes.get("volume"), Some(&kfs));
     }
 }
+
 
 
 

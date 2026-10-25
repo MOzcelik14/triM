@@ -191,7 +191,8 @@ impl AudioMixer {
 
                 let src_len = c_max - c_min;
                 let eff_vol = (clip.volume as f32) * track_vol;
-                let has_fade = clip.fade_in > 0.0 || clip.fade_out > 0.0;
+                let has_vol_kfs = clip.keyframes.get("volume").is_some_and(|k| !k.is_empty());
+                let has_dynamic_gain = clip.fade_in > 0.0 || clip.fade_out > 0.0 || has_vol_kfs;
                 let step = if src_len >= 2 && chunk_len >= 2 {
                     (src_len - 1) as f64 / (chunk_len - 1) as f64
                 } else {
@@ -224,12 +225,18 @@ impl AudioMixer {
                         (s[0] as f32 * inv_i16, s[1] as f32 * inv_i16)
                     };
 
-                    let gain = if has_fade {
+                    let gain = if has_dynamic_gain {
                         let cur_t = overlap_start + (k as f64 / SAMPLE_RATE as f64);
                         let dt = (cur_t - clip.timeline_in).max(0.0);
                         let rem = (clip.timeline_out - cur_t).max(0.0);
 
-                        let mut g = eff_vol;
+                        let dyn_vol = if has_vol_kfs {
+                            (clip.get_property_at_time("volume", dt) as f32) * track_vol
+                        } else {
+                            eff_vol
+                        };
+
+                        let mut g = dyn_vol;
                         if clip.fade_in > 0.0 && dt < clip.fade_in {
                             g *= (dt / clip.fade_in) as f32;
                         }

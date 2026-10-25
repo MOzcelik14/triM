@@ -1981,6 +1981,25 @@ impl eframe::App for TrimApp {
                                                 .push(cmd, &mut self.project.timeline);
                                             self.project.mark_dirty();
                                         }
+                                        CanvasAction::SetClipKeyframes {
+                                            track_id,
+                                            clip_id,
+                                            property,
+                                            old_keyframes,
+                                            new_keyframes,
+                                        } => {
+                                            let cmd = Box::new(SetClipKeyframesCommand::new(
+                                                track_id,
+                                                clip_id,
+                                                property,
+                                                old_keyframes,
+                                                new_keyframes,
+                                            ));
+                                            let _ = self
+                                                .undo_stack
+                                                .push(cmd, &mut self.project.timeline);
+                                            self.project.mark_dirty();
+                                        }
                                         CanvasAction::ClearSelection => {
                                             self.canvas_state.selected_clip_pairs.clear();
                                         }

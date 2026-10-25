@@ -1977,5 +1977,76 @@ impl Command for RippleTrimEdgeCommand {
     }
 }
 
+// -----------------------------------------------------------------------------
+// 26. SetClipKeyframesCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct SetClipKeyframesCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub property: String,
+    pub old_keyframes: Vec<trim_core::keyframe::Keyframe>,
+    pub new_keyframes: Vec<trim_core::keyframe::Keyframe>,
+}
+
+impl SetClipKeyframesCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        property: impl Into<String>,
+        old_keyframes: Vec<trim_core::keyframe::Keyframe>,
+        new_keyframes: Vec<trim_core::keyframe::Keyframe>,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            property: property.into(),
+            old_keyframes,
+            new_keyframes,
+        }
+    }
+}
+
+impl Command for SetClipKeyframesCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+
+        if self.new_keyframes.is_empty() {
+            clip.keyframes.remove(&self.property);
+        } else {
+            clip.keyframes
+                .insert(self.property.clone(), self.new_keyframes.clone());
+        }
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+
+        if self.old_keyframes.is_empty() {
+            clip.keyframes.remove(&self.property);
+        } else {
+            clip.keyframes
+                .insert(self.property.clone(), self.old_keyframes.clone());
+        }
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Anahtar Kareleri Değiştir"
+    }
+}
+
+
 
 

@@ -584,7 +584,15 @@ impl TimelineExporter {
         // Force exact clip length so timing never drifts.
         a.push(format!("atrim=duration={:.6}", dur));
         a.push(format!("apad=whole_dur={:.6}", dur));
-        if (eff_vol - 1.0).abs() > 0.001 {
+        if let Some(kfs) = animated_kfs(clip, "volume") {
+            let trk_mult = if clip.volume > 0.001 {
+                eff_vol / clip.volume
+            } else {
+                1.0
+            };
+            let expr = keyframe_expr(kfs, "t", |v| (v * trk_mult).clamp(0.0, 10.0));
+            a.push(format!("volume=eval=frame:volume='{expr}'"));
+        } else if (eff_vol - 1.0).abs() > 0.001 {
             a.push(format!("volume={:.4}", eff_vol));
         }
 
@@ -1727,6 +1735,37 @@ mod tests {
             "Filtergraph must contain crop alpha mask: {fg}"
         );
     }
+
+    #[test]
+    fn test_build_export_pipeline_with_volume_keyframes() {
+        let mut proj = Project::new("VolKfTest");
+        let mut a = MediaItem::new("/tmp/fake_audio.mp3");
+        a.media_type = MediaType::Audio;
+        a.audio_codec = "mp3".into();
+        let a_id = a.id.clone();
+        proj.add_media(a);
+
+        let mut clip = Clip::new(&a_id, 0.0, 5.0);
+        clip.add_keyframe("volume", 0.0, 1.0, trim_core::keyframe::Interpolation::Linear);
+        clip.add_keyframe("volume", 2.5, 0.3, trim_core::keyframe::Interpolation::Linear);
+        clip.add_keyframe("volume", 5.0, 1.0, trim_core::keyframe::Interpolation::Linear);
+        let a1 = proj.timeline.tracks.iter_mut().find(|t| t.name == "A1").unwrap();
+        a1.add_clip(clip);
+
+        let preset = ExportPreset::default();
+        let (cmd, _) = TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out_vol.mp4").unwrap();
+        let fg = cmd
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd[idx + 1])
+            .unwrap();
+
+        assert!(
+            fg.contains("volume=eval=frame:volume="),
+            "Filtergraph must contain volume evaluation expression: {fg}"
+        );
+    }
 }
+
 
 

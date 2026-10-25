@@ -1214,6 +1214,78 @@ mod tests {
         assert_eq!(cl1.timeline_out, 3.0);
         assert_eq!(cl2.timeline_in, 3.0);
     }
+
+    #[test]
+    fn test_volume_automation_keyframes_action_and_undo() {
+        use crate::canvas::CanvasAction;
+        use trim_core::clip::Clip;
+        use trim_core::keyframe::{Interpolation, Keyframe};
+
+        let mut app = TrimApp::default();
+        let track_id = app.project.timeline.tracks[0].id.clone();
+
+        let mut clip = Clip::new("m_audio", 0.0, 10.0);
+        let clip_id = clip.id.clone();
+        clip.volume = 1.0;
+        app.project.timeline.tracks[0].add_clip(clip);
+
+        let kfs = vec![
+            Keyframe::new(0.0, 1.0, Interpolation::Linear),
+            Keyframe::new(3.0, 0.2, Interpolation::Linear),
+            Keyframe::new(7.0, 1.8, Interpolation::Linear),
+            Keyframe::new(10.0, 0.5, Interpolation::Linear),
+        ];
+
+        let action = CanvasAction::SetClipKeyframes {
+            track_id: track_id.clone(),
+            clip_id: clip_id.clone(),
+            property: "volume".to_string(),
+            old_keyframes: Vec::new(),
+            new_keyframes: kfs.clone(),
+        };
+
+        if let CanvasAction::SetClipKeyframes {
+            track_id,
+            clip_id,
+            property,
+            old_keyframes,
+            new_keyframes,
+        } = action
+        {
+            let cmd = Box::new(trim_commands::SetClipKeyframesCommand::new(
+                track_id,
+                clip_id,
+                property,
+                old_keyframes,
+                new_keyframes,
+            ));
+            app.undo_stack.push(cmd, &mut app.project.timeline).unwrap();
+        }
+
+        // Verify keyframes applied and interpolation works
+        let tr = &app.project.timeline.tracks[0];
+        let cl = tr.get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(cl.keyframes.get("volume").unwrap().len(), 4);
+        assert!((cl.get_property_at_time("volume", 0.0) - 1.0).abs() < 1e-4);
+        assert!((cl.get_property_at_time("volume", 3.0) - 0.2).abs() < 1e-4);
+        assert!((cl.get_property_at_time("volume", 7.0) - 1.8).abs() < 1e-4);
+        assert!((cl.get_property_at_time("volume", 10.0) - 0.5).abs() < 1e-4);
+        // Midpoint 1.5s is between 1.0 and 0.2 -> 0.6
+        assert!((cl.get_property_at_time("volume", 1.5) - 0.6).abs() < 1e-4);
+
+        // Test undo
+        app.undo_stack.undo(&mut app.project.timeline).unwrap();
+        let tr = &app.project.timeline.tracks[0];
+        let cl = tr.get_clip_by_id(&clip_id).unwrap();
+        assert!(!cl.keyframes.contains_key("volume") || cl.keyframes.get("volume").unwrap().is_empty());
+
+        // Test redo
+        app.undo_stack.redo(&mut app.project.timeline).unwrap();
+        let tr = &app.project.timeline.tracks[0];
+        let cl = tr.get_clip_by_id(&clip_id).unwrap();
+        assert_eq!(cl.keyframes.get("volume").unwrap().len(), 4);
+        assert!((cl.get_property_at_time("volume", 1.5) - 0.6).abs() < 1e-4);
+    }
 }
 
 
