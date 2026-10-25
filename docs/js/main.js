@@ -10,7 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
     nav_shortcuts: "Kısayollar",
     nav_download: "İndir",
 
-    hero_kicker: "MASAÜSTÜ VİDEO DÜZENLEYİCİ · v1.0.1",
+    hero_kicker: "MASAÜSTÜ VİDEO DÜZENLEYİCİ · v1.1.0",
     hero_line1: "Kurgunun ritmini",
     hero_line2: "hissedin.",
     hero_description: "Büyük kurulum dosyaları, ağır tarayıcı motorları ve karmaşık abonelikler olmadan video kurgulayın. triM., 4K akıllı proxy iş akışı, zaman çizgisi ses kaydı, SRT altyazı motoru ve GPU hızlandırmalı render desteğiyle ihtiyacınız olan her şeyi yaklaşık 19 MB boyutta sunar.",
@@ -25,7 +25,7 @@ document.addEventListener("DOMContentLoaded", () => {
     tab_audio: "Ses & EQ",
     tab_shortcuts: "Kısayol Profilleri",
     tab_export: "GPU Dışa Aktarım",
-    preview_caption: "Gerçek uygulama görüntüsü / triM. v1.0.1",
+    preview_caption: "Gerçek uygulama görüntüsü / triM. v1.1.0",
 
     features_index: "KURGU ARAÇLARI",
     features_title: "İhtiyacınız olan her şey <em>tek ekranda.</em>",
@@ -34,14 +34,20 @@ document.addEventListener("DOMContentLoaded", () => {
     feat_proxy_title: "4K Çekimlerde Akıcı Önizleme",
     feat_proxy_desc: "Büyük 4K ve UHD ham videolarla çalışırken önizlemenin takılmaması için tek tıkla arka planda 720p H.264 proxy üretin. Zaman çizgisindeki [⚡ Proxy] düğmesiyle hafif önizlemeye geçin; kurgunuz 60 FPS akarken, dışa aktarım sırasında triM. doğrudan orijinal tam çözünürlüklü dosyanızı render eder.",
 
-    feat_timeline_title: "Hassas Kesim & Akıllı Sahne Algılama",
-    feat_timeline_desc: "Çok kanallı video ve ses izleri üzerinde serbestçe çalışın. Manyetik yapışma, çizgiden kesme (S), dalgalanma kırpması (Q/W) ve boşluk kapatma (Shift+Delete) hız kazandırır. Akıllı Sahne Algılama (Smart Cut) özelliğiyle uzun çekimlerdeki kamera açı değişimleri otomatik algılanır ve tek tıkla jiletle ayrılır.",
+    feat_timeline_title: "Çok Kanallı Kurgu & Akıllı Kesim",
+    feat_timeline_desc: "V2/V1 ve A1/A2 çok kanallı katmanlarda çalışın. Kliplerde küçük resim şeridi (filmstrip), interaktif ses lastik bandı (rubberband dB), boşluk dalgalı silme (ripple delete gap), manyetik yapışma ve akıllı sahne algılama (Smart Cut) ile kesintisiz kurgu akışı sağlayın.",
 
     feat_audio_title: "Canlı Seslendirme & EBU R128",
     feat_audio_desc: "Harici bir kayıt programı açmanıza gerek kalmadan, ses izinin başındaki [🎤] butonuna basarak doğrudan mikrofonunuzdan konuşma kaydedin. Çok kanallı mikser konsolu, konuşma netliği EQ hazır ayarları, dip gürültü filtresi (Noise Gate) ve YouTube, Spotify standartlarında (-14 LUFS / -23 LUFS) EBU R128 ses normalizasyonu elinizin altında.",
 
-    feat_text_color_title: "Altyazı Süiti, Canlı Titler & 3D LUT",
-    feat_text_color_desc: ".SRT ve .VTT altyazı dosyalarını doğrudan projenize aktarın ya da dışa verin. Canlı Titler ile alt yazı kutularını, boyutları ve renkleri Inspector üzerinden anında düzenleyin. Dahili Teal & Orange, Vintage Film ve Monochrome gibi sinematik profilleri kullanın veya harici .cube 3D LUT dosyalarınızı projeye dahil edin.",
+    feat_text_color_title: "Sinematik Başlıklar, Altyazı & 3D LUT",
+    feat_text_color_desc: "Hareketli başlık şablonları (Daktilo, Alt Bantlar, Sinematik Zoom, Kayan Yazı) ile profesyonel girişler tasarlayın. .SRT/.VTT altyazı motoru, canlı önizleme ve dahili sinematik LUT profilleri veya harici .cube 3D LUT dosyaları ile renk derecelendirme yapın.",
+
+    feat_bins_title: "Medya Klasörleme (Bins) & Filtreler",
+    feat_bins_desc: "Yüzlerce klip içeren büyük projelerde düzeninizi koruyun. İç içe klasörler (bins) oluşturun, ekmek kırıntısı (breadcrumb) navigasyonuyla hızlıca gezinin; video, ses ve görsel akıllı filtre çubuklarıyla aradığınız materyale anında ulaşın.",
+
+    feat_interchange_title: "FCPXML & EDL İçe / Dışa Aktarma",
+    feat_interchange_desc: "Diğer NLE yazılımlarıyla tam entegre çalışın. Apple Final Cut Pro XML (v1.8 / v1.9) ve CMX 3600 EDL dosyalarını hem içeri aktarın hem dışa aktarın. DaVinci Resolve ve Premiere Pro projelerinizi triM.'de açın ya da kurgunuzu stüdyoya taşıyın.",
 
     feature_note: "Yukarıdaki tüm ekran görüntüleri doğrudan triM. masaüstü uygulamasından alınmıştır.",
 
@@ -51,6 +57,7 @@ document.addEventListener("DOMContentLoaded", () => {
     point_1: "~19 MB Bağımsız Masaüstü",
     point_2: "GPU Donanım Render Desteği",
     point_3: "Taşınabilir Kayıpsız Proje Paketleme",
+    point_4: "FCPXML & EDL Proje Uyumu",
 
     shortcuts_index: "KISAYOLLAR",
     shortcuts_title: "Alıştığınız kısayolları <em>bırakmayın.</em>",
@@ -101,7 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
     nav_shortcuts: "Shortcuts",
     nav_download: "Download",
 
-    hero_kicker: "DESKTOP VIDEO EDITOR · v1.0.1",
+    hero_kicker: "DESKTOP VIDEO EDITOR · v1.1.0",
     hero_line1: "Edit video with",
     hero_line2: "clarity and speed.",
     hero_description: "Edit video without massive downloads, sluggish web wrappers, or complicated cloud subscriptions. triM. delivers 4K smart proxy workflows, timeline voiceover recording, an SRT subtitle suite, and GPU-accelerated export in a compact ~19 MB native application.",
@@ -116,7 +123,7 @@ document.addEventListener("DOMContentLoaded", () => {
     tab_audio: "Audio & EQ",
     tab_shortcuts: "Shortcut Profiles",
     tab_export: "GPU Render",
-    preview_caption: "Actual app screenshots / triM. v1.0.1",
+    preview_caption: "Actual app screenshots / triM. v1.1.0",
 
     features_index: "THE TOOLS",
     features_title: "Everything you need <em>on one screen.</em>",
@@ -125,14 +132,20 @@ document.addEventListener("DOMContentLoaded", () => {
     feat_proxy_title: "Silky-Smooth 4K & UHD Playback",
     feat_proxy_desc: "Keep playback smooth when working with heavy 4K and UHD raw footage. Generate lightweight 720p H.264 proxies in the background with one click. Switch to proxy mode on the timeline for instant 60 FPS scrubbing, while triM. preserves your original full-resolution master files during export.",
 
-    feat_timeline_title: "Precision Cutting & Smart Scene Detection",
-    feat_timeline_desc: "Work across layered video and audio tracks with complete precision. Magnetic snapping, razor cutting (S), ripple trims (Q/W), and ripple delete (Shift+Delete) keep you in flow. Smart Scene Detection automatically detects camera cut points in long source takes and slices them instantly.",
+    feat_timeline_title: "Multi-Track Editing & Precision Cutting",
+    feat_timeline_desc: "Work across layered V2/V1 and A1/A2 tracks. Timeline thumbnail filmstrips, interactive volume rubberband (dB gain), gap ripple delete, magnetic snapping, and Smart Scene Detection keep your workflow uninterrupted.",
 
     feat_audio_title: "Live Voiceover & EBU R128 Loudness",
     feat_audio_desc: "Record high-quality voiceovers straight into your timeline by clicking the microphone button [🎤] on any audio track. Polish your audio with a multi-channel mixer, Voice Clarity EQ, Noise Gate, and master EBU R128 loudness normalization for YouTube and Spotify (-14 LUFS / -23 LUFS).",
 
-    feat_text_color_title: "Subtitle Suite, Live Titler & 3D LUTs",
-    feat_text_color_desc: "Import and export .SRT and .VTT subtitle files seamlessly with automatic lower-third track generation. Use the Live Titler to format text, boxes, and drop shadows in real time. Apply cinematic 3D LUTs (Teal & Orange, Vintage Film, Monochrome Noir) or load your own .cube files.",
+    feat_text_color_title: "Motion Titles, Subtitles & 3D LUTs",
+    feat_text_color_desc: "Create cinematic intros with animated title presets (Typewriter, Lower Thirds, Cinematic Zoom, Ticker). Import/export .SRT/.VTT subtitles, preview in real time, and grade with built-in presets or external .cube 3D LUTs.",
+
+    feat_bins_title: "Media Bins & Smart Search Filters",
+    feat_bins_desc: "Organize large-scale edits effortlessly. Create nested folders (bins), navigate with breadcrumb trails, and instantly filter media by video, audio, or image types.",
+
+    feat_interchange_title: "FCPXML & EDL Industry Interchange",
+    feat_interchange_desc: "Seamless roundtrip interoperability with major NLEs. Import and export Apple Final Cut Pro XML (v1.8 / v1.9) and CMX 3600 EDL sequences to and from DaVinci Resolve and Adobe Premiere Pro.",
 
     feature_note: "All screenshots displayed above were captured directly from the running triM. desktop application.",
 
@@ -142,6 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
     point_1: "~19 MB Standalone App",
     point_2: "Hardware GPU Export",
     point_3: "Portable Bundled Projects",
+    point_4: "FCPXML & EDL Roundtrip",
 
     shortcuts_index: "SHORTCUTS",
     shortcuts_title: "Keep your existing <em>muscle memory.</em>",

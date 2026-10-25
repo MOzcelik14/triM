@@ -249,6 +249,209 @@ impl TimelineExporter {
             }
         }
 
+        if let Some(txt) = &clip.text_overlay {
+            let sanitized = txt
+                .content
+                .replace('\\', "\\\\")
+                .replace('\'', "\\'")
+                .replace(':', "\\:")
+                .replace('%', "\\%");
+            let font_size = ((txt.font_size as f64) * (out_h as f64 / 1080.0))
+                .round()
+                .max(10.0) as u32;
+            let font_color = format!(
+                "0x{:02x}{:02x}{:02x}{:02x}",
+                txt.text_color[0], txt.text_color[1], txt.text_color[2], txt.text_color[3]
+            );
+            let shadow_part = if txt.has_shadow {
+                ":shadowx=2:shadowy=2:shadowcolor=black@0.7"
+            } else {
+                ""
+            };
+            let box_part = if let Some(bg) = txt.bg_color {
+                format!(
+                    ":box=1:boxcolor=0x{:02x}{:02x}{:02x}@{:.2}:boxborderw=8",
+                    bg[0],
+                    bg[1],
+                    bg[2],
+                    bg[3] as f32 / 255.0
+                )
+            } else if txt.motion_style == MotionTitleStyle::LowerThird {
+                ":box=1:boxcolor=0x0f172a@0.85:boxborderw=10".to_string()
+            } else if txt.motion_style == MotionTitleStyle::Ticker {
+                ":box=1:boxcolor=0x0c0e14@0.90:boxborderw=10".to_string()
+            } else if txt.motion_style == MotionTitleStyle::BoxReveal {
+                ":box=1:boxcolor=0x141822@0.90:boxborderw=10".to_string()
+            } else {
+                String::new()
+            };
+
+            match txt.motion_style {
+                MotionTitleStyle::Typewriter => {
+                    let chars: Vec<char> = txt.content.chars().collect();
+                    let total_chars = chars.len();
+                    let x_expr = format!("(w-text_w)*{:.3}", txt.pos_x.clamp(0.0, 1.0));
+                    let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
+                    let type_dur = (dur * 0.75).min(dur);
+
+                    if total_chars <= 1 {
+                        f.push(format!(
+                            "drawtext=text='{sanitized}':fontsize={font_size}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                        ));
+                    } else {
+                        for i in 1..=total_chars {
+                            let sub: String = chars[..i].iter().collect();
+                            let sub_sanitized = sub
+                                .replace('\\', "\\\\")
+                                .replace('\'', "\\'")
+                                .replace(':', "\\:")
+                                .replace('%', "\\%");
+                            let st = (i - 1) as f64 * type_dur / total_chars as f64;
+                            let et = if i < total_chars {
+                                i as f64 * type_dur / total_chars as f64
+                            } else {
+                                dur
+                            };
+                            let enable_clause = if i < total_chars {
+                                format!(":enable='between(t,{:.4},{:.4})'", st, et)
+                            } else {
+                                format!(":enable='gte(t,{:.4})'", st)
+                            };
+                            f.push(format!(
+                                "drawtext=text='{sub_sanitized}':fontsize={font_size}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}{enable_clause}"
+                            ));
+                        }
+                    }
+
+                    if let Some(sub) = &txt.subtitle_text {
+                        if !sub.trim().is_empty() {
+                            let sub_sanitized = sub
+                                .replace('\\', "\\\\")
+                                .replace('\'', "\\'")
+                                .replace(':', "\\:")
+                                .replace('%', "\\%");
+                            let sub_size = ((font_size as f64 * 0.58).round().max(8.0)) as u32;
+                            let sub_y = format!(
+                                "(h-text_h)*{:.3}+{:.0}",
+                                txt.pos_y.clamp(0.0, 1.0),
+                                font_size as f64 * 1.25
+                            );
+                            let sub_enable = format!(":enable='gte(t,{:.4})'", type_dur);
+                            f.push(format!(
+                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}{sub_enable}"
+                            ));
+                        }
+                    }
+                }
+                MotionTitleStyle::LowerThird => {
+                    let slide_dur = (dur * 0.25).clamp(0.15, 0.6);
+                    let offset = ((120.0 * (out_w as f64 / 1920.0)).round().max(40.0)) as i32;
+                    let x_expr = format!(
+                        "if(lt(t,{slide_dur:.4}),(w-text_w)*{:.3}-{offset}*(1-t/{slide_dur:.4}),(w-text_w)*{:.3})",
+                        txt.pos_x.clamp(0.0, 1.0),
+                        txt.pos_x.clamp(0.0, 1.0)
+                    );
+                    let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
+                    f.push(format!(
+                        "drawtext=text='{sanitized}':fontsize={font_size}:fontcolor={font_color}:x='{x_expr}':y={y_expr}{shadow_part}{box_part}"
+                    ));
+
+                    if let Some(sub) = &txt.subtitle_text {
+                        if !sub.trim().is_empty() {
+                            let sub_sanitized = sub
+                                .replace('\\', "\\\\")
+                                .replace('\'', "\\'")
+                                .replace(':', "\\:")
+                                .replace('%', "\\%");
+                            let sub_size = ((font_size as f64 * 0.58).round().max(8.0)) as u32;
+                            let sub_y = format!(
+                                "(h-text_h)*{:.3}+{:.0}",
+                                txt.pos_y.clamp(0.0, 1.0),
+                                font_size as f64 * 1.25
+                            );
+                            let sub_x_expr = format!(
+                                "if(lt(t,{slide_dur:.4}),(w-text_w)*{:.3}-{offset}*(1-t/{slide_dur:.4}),(w-text_w)*{:.3})",
+                                txt.pos_x.clamp(0.0, 1.0),
+                                txt.pos_x.clamp(0.0, 1.0)
+                            );
+                            f.push(format!(
+                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}:fontcolor=0xc8d7e6dc:x='{sub_x_expr}':y={sub_y}{shadow_part}"
+                            ));
+                        }
+                    }
+                }
+                MotionTitleStyle::CinematicZoom => {
+                    let size_expr = format!("'{font_size}*(0.94+0.10*t/{dur:.4})'");
+                    let x_expr = format!("(w-text_w)*{:.3}", txt.pos_x.clamp(0.0, 1.0));
+                    let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
+                    f.push(format!(
+                        "drawtext=text='{sanitized}':fontsize={size_expr}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                    ));
+
+                    if let Some(sub) = &txt.subtitle_text {
+                        if !sub.trim().is_empty() {
+                            let sub_sanitized = sub
+                                .replace('\\', "\\\\")
+                                .replace('\'', "\\'")
+                                .replace(':', "\\:")
+                                .replace('%', "\\%");
+                            let sub_size = ((font_size as f64 * 0.58).round().max(8.0)) as u32;
+                            let sub_y = format!(
+                                "(h-text_h)*{:.3}+{:.0}",
+                                txt.pos_y.clamp(0.0, 1.0),
+                                font_size as f64 * 1.25
+                            );
+                            f.push(format!(
+                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}"
+                            ));
+                        }
+                    }
+                }
+                MotionTitleStyle::Ticker => {
+                    let x_expr = format!("w-(t/{dur:.4})*(w+text_w)");
+                    let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
+                    f.push(format!(
+                        "drawtext=text='{sanitized}':fontsize={font_size}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                    ));
+                }
+                MotionTitleStyle::BoxReveal => {
+                    let reveal_t = (dur * 0.25).min(0.5);
+                    let x_expr = format!("(w-text_w)*{:.3}", txt.pos_x.clamp(0.0, 1.0));
+                    let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
+                    let enable_clause = format!(":enable='gte(t,{:.4})'", reveal_t);
+                    f.push(format!(
+                        "drawtext=text='{sanitized}':fontsize={font_size}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}{enable_clause}"
+                    ));
+                }
+                MotionTitleStyle::None => {
+                    let x_expr = format!("(w-text_w)*{:.3}", txt.pos_x.clamp(0.0, 1.0));
+                    let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
+                    f.push(format!(
+                        "drawtext=text='{sanitized}':fontsize={font_size}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                    ));
+
+                    if let Some(sub) = &txt.subtitle_text {
+                        if !sub.trim().is_empty() {
+                            let sub_sanitized = sub
+                                .replace('\\', "\\\\")
+                                .replace('\'', "\\'")
+                                .replace(':', "\\:")
+                                .replace('%', "\\%");
+                            let sub_size = ((font_size as f64 * 0.58).round().max(8.0)) as u32;
+                            let sub_y = format!(
+                                "(h-text_h)*{:.3}+{:.0}",
+                                txt.pos_y.clamp(0.0, 1.0),
+                                font_size as f64 * 1.25
+                            );
+                            f.push(format!(
+                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
         // Opacity (static or keyframed).
         if let Some(kfs) = animated_kfs(clip, "opacity") {
             let expr = keyframe_expr(kfs, "T", |v| v.clamp(0.0, 1.0));
@@ -294,64 +497,6 @@ impl TimelineExporter {
                 Some("wipe_left") => f.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte(X/W,max(0,1-(T-{:.4})/{:.4})),alpha(X,Y),0)'", st, d)),
                 Some("wipe_right") => f.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(gte(X/W,min(1,(T-{:.4})/{:.4})),alpha(X,Y),0)'", st, d)),
                 _ => f.push(format!("fade=t=out:st={:.4}:d={:.4}:alpha=1", st, d)),
-            }
-        }
-
-        if let Some(txt) = &clip.text_overlay {
-            let sanitized = txt
-                .content
-                .replace('\\', "\\\\")
-                .replace('\'', "\\'")
-                .replace(':', "\\:")
-                .replace('%', "\\%");
-            let font_size = ((txt.font_size as f64) * (out_h as f64 / 1080.0))
-                .round()
-                .max(10.0) as u32;
-            let font_color = format!(
-                "0x{:02x}{:02x}{:02x}{:02x}",
-                txt.text_color[0], txt.text_color[1], txt.text_color[2], txt.text_color[3]
-            );
-            let x_expr = format!("(w-text_w)*{:.3}", txt.pos_x.clamp(0.0, 1.0));
-            let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
-            let shadow_part = if txt.has_shadow {
-                ":shadowx=2:shadowy=2:shadowcolor=black@0.7"
-            } else {
-                ""
-            };
-            let box_part = if let Some(bg) = txt.bg_color {
-                format!(
-                    ":box=1:boxcolor=0x{:02x}{:02x}{:02x}@{:.2}:boxborderw=8",
-                    bg[0],
-                    bg[1],
-                    bg[2],
-                    bg[3] as f32 / 255.0
-                )
-            } else if txt.motion_style == MotionTitleStyle::LowerThird {
-                ":box=1:boxcolor=0x0f172a@0.85:boxborderw=10".to_string()
-            } else {
-                String::new()
-            };
-            f.push(format!(
-                "drawtext=text='{sanitized}':fontsize={font_size}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
-            ));
-
-            if let Some(sub) = &txt.subtitle_text {
-                if !sub.trim().is_empty() {
-                    let sub_sanitized = sub
-                        .replace('\\', "\\\\")
-                        .replace('\'', "\\'")
-                        .replace(':', "\\:")
-                        .replace('%', "\\%");
-                    let sub_size = ((font_size as f64 * 0.58).round().max(8.0)) as u32;
-                    let sub_y = format!(
-                        "(h-text_h)*{:.3}+{:.0}",
-                        txt.pos_y.clamp(0.0, 1.0),
-                        font_size as f64 * 1.25
-                    );
-                    f.push(format!(
-                        "drawtext=text='{sub_sanitized}':fontsize={sub_size}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}"
-                    ));
-                }
             }
         }
 
@@ -1340,6 +1485,153 @@ mod tests {
         assert!(
             fg3.contains("lut3d=file='C\\:/Users/Editor/LUTs/cinematic.cube'"),
             "should escape Windows drive colon and backslashes in lut3d filter: {fg3}"
+        );
+    }
+
+    #[test]
+    fn test_typewriter_drawtext_generation() {
+        use trim_core::clip::{MotionTitleStyle, TextOverlay};
+
+        let mut proj = Project::new("TypewriterTest");
+        let mut v = MediaItem::new("/tmp/fake_tw.mp4");
+        v.media_type = MediaType::Video;
+        let vid_id = v.id.clone();
+        proj.add_media(v);
+
+        let mut c = Clip::new(&vid_id, 0.0, 4.0);
+        c.text_overlay = Some(TextOverlay {
+            content: "triM".to_string(),
+            motion_style: MotionTitleStyle::Typewriter,
+            subtitle_text: Some("NLE".to_string()),
+            font_size: 48.0,
+            text_color: [255, 255, 255, 255],
+            has_shadow: true,
+            ..Default::default()
+        });
+        proj.timeline.tracks[0].add_clip(c);
+
+        let preset = ExportPreset::default();
+        let (cmd, _) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out.mp4").unwrap();
+        let fg = cmd
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd[idx + 1])
+            .unwrap();
+
+        // Should contain progressive letter reveals
+        assert!(
+            fg.contains("drawtext=text='t'"),
+            "should contain first char: {fg}"
+        );
+        assert!(
+            fg.contains("drawtext=text='tr'"),
+            "should contain two chars: {fg}"
+        );
+        assert!(
+            fg.contains("drawtext=text='tri'"),
+            "should contain three chars: {fg}"
+        );
+        assert!(
+            fg.contains("drawtext=text='triM'"),
+            "should contain full word: {fg}"
+        );
+        assert!(
+            fg.contains(":enable='between(t,"),
+            "should contain enable between: {fg}"
+        );
+        assert!(
+            fg.contains(":enable='gte(t,"),
+            "should contain enable gte: {fg}"
+        );
+        assert!(
+            fg.contains("drawtext=text='NLE'"),
+            "should contain subtitle: {fg}"
+        );
+    }
+
+    #[test]
+    fn test_text_clip_fade_in_fade_out_order() {
+        use trim_core::clip::TextOverlay;
+
+        let mut proj = Project::new("TextFadeTest");
+        let mut v = MediaItem::new("/tmp/fake_fade.png");
+        v.media_type = MediaType::Image;
+        let vid_id = v.id.clone();
+        proj.add_media(v);
+
+        let mut c = Clip::new(&vid_id, 0.0, 5.0);
+        c.fade_in = 1.0;
+        c.fade_out = 1.0;
+        c.text_overlay = Some(TextOverlay {
+            content: "Fade Me".to_string(),
+            font_size: 48.0,
+            text_color: [255, 255, 255, 255],
+            ..Default::default()
+        });
+        proj.timeline.tracks[0].add_clip(c);
+
+        let preset = ExportPreset::default();
+        let (cmd, _) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out.mp4").unwrap();
+        let fg = cmd
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd[idx + 1])
+            .unwrap();
+
+        let drawtext_pos = fg
+            .find("drawtext=text='Fade Me'")
+            .expect("drawtext must exist");
+        let fade_in_pos = fg
+            .find("fade=t=in:st=0:d=1.0000:alpha=1")
+            .expect("fade in must exist");
+        let fade_out_pos = fg
+            .find("fade=t=out:st=4.0000:d=1.0000:alpha=1")
+            .expect("fade out must exist");
+
+        // CRUCIAL: drawtext MUST come BEFORE fade=t=in and fade=t=out so the text is properly faded!
+        assert!(
+            drawtext_pos < fade_in_pos,
+            "drawtext ({drawtext_pos}) must be before fade_in ({fade_in_pos}): {fg}"
+        );
+        assert!(
+            fade_in_pos < fade_out_pos,
+            "fade_in ({fade_in_pos}) must be before fade_out ({fade_out_pos}): {fg}"
+        );
+    }
+
+    #[test]
+    fn test_cinematic_zoom_drawtext_generation() {
+        use trim_core::clip::{MotionTitleStyle, TextOverlay};
+
+        let mut proj = Project::new("ZoomTest");
+        let mut v = MediaItem::new("/tmp/fake_zoom.mp4");
+        v.media_type = MediaType::Video;
+        let vid_id = v.id.clone();
+        proj.add_media(v);
+
+        let mut c = Clip::new(&vid_id, 0.0, 5.0);
+        c.text_overlay = Some(TextOverlay {
+            content: "Cinematic Zoom".to_string(),
+            motion_style: MotionTitleStyle::CinematicZoom,
+            font_size: 50.0,
+            ..Default::default()
+        });
+        proj.timeline.tracks[0].add_clip(c);
+
+        let preset = ExportPreset::default();
+        let (cmd, _) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out.mp4").unwrap();
+        let fg = cmd
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd[idx + 1])
+            .unwrap();
+
+        assert!(
+            fg.contains("fontsize='50*(0.94+0.10*t/5.0000)'"),
+            "must contain animated fontsize: {fg}"
         );
     }
 }

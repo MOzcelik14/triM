@@ -56,6 +56,11 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.1.0" date="2026-10-24">
+      <description>
+        <p>triM. v1.1.0 introduces industry-standard FCPXML (v1.8/v1.9) and CMX 3600 EDL sequence import and export, cinematic motion title templates (Typewriter, Lower Thirds, Cinematic Zoom, News Ticker, Box Reveal), timeline thumbnail filmstrips, interactive audio volume rubberband dB gain curves, media pool folders (bins) with breadcrumb navigation and smart media type filters, ripple delete gaps, automatic audio/video clip linking, clip color labels, default 4-track timeline structure (V2, V1, A1, A2), and an overhauled Export Video Studio dialog.</p>
+      </description>
+    </release>
     <release version="1.0.1" date="2026-10-24">
       <description>
         <p>triM. v1.0.1 brings full Windows x86_64 MSVC compatibility, OpenGL 3.3 / GLES 3.0 off-screen FBO GPU preview compositing, a 5 ms lookahead brickwall master bus limiter, non-blocking asynchronous native file dialogs, J-K-L shuttle transport, magnetic timeline snapping with visual guides, and a redesigned Project Hub welcome screen.</p>
