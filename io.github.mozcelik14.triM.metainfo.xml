@@ -56,6 +56,14 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.2.1" date="2026-10-30">
+      <description>
+        <p>triM. v1.2.1 - Turkish Character Input Fix:</p>
+        <ul>
+          <li>Fixed Turkish characters (ç, ğ, ı, ö, ş, ü, İ) not being typed into text fields (Type tool, inspector, title dialog) on Linux X11 sessions using ibus.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.2.0" date="2026-10-25">
       <description>
         <p>triM. v1.2.0 - Multiple Timelines, Nested Sequences, Render Queue, Volume Envelope, Ripple Tool, and Video Crop:</p>

@@ -3063,7 +3063,7 @@ dependencies = [
 
 [[package]]
 name = "trim-app"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "eframe",
  "egui",
@@ -3082,7 +3082,7 @@ dependencies = [
 
 [[package]]
 name = "trim-commands"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "log",
  "tempfile",
@@ -3093,7 +3093,7 @@ dependencies = [
 
 [[package]]
 name = "trim-core"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "log",
  "serde",
@@ -3105,7 +3105,7 @@ dependencies = [
 
 [[package]]
 name = "trim-export"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "log",
  "serde",
@@ -3119,7 +3119,7 @@ dependencies = [
 
 [[package]]
 name = "trim-media"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "image",
  "log",
@@ -3133,7 +3133,7 @@ dependencies = [
 
 [[package]]
 name = "trim-project"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "log",
  "serde",
@@ -3145,7 +3145,7 @@ dependencies = [
 
 [[package]]
 name = "trim-timeline"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "log",
  "tempfile",
@@ -3157,7 +3157,7 @@ dependencies = [
 
 [[package]]
 name = "trim-ui"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "eframe",
  "egui",

@@ -29,7 +29,7 @@ $ErrorActionPreference = "Stop"
 # ------------------------------------------------------------------------------
 # Version & Metadata
 $AppName = "triM."
-$Version = "1.2.0"
+$Version = "1.2.1"
 if ($PSScriptRoot) {
     $CargoTomlPath = Join-Path $PSScriptRoot "Cargo.toml"
     if (Test-Path $CargoTomlPath) {

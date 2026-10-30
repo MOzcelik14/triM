@@ -3991,5 +3991,21 @@ impl eframe::App for TrimApp {
                 self.bin_dialog = Some(state);
             }
         }
+
+        suppress_linux_ime_for_text_input(ctx);
+    }
+}
+
+/// On Linux (X11 + ibus/fcitx) winit routes keystrokes through the input method whenever a
+/// text field requests IME. egui-winit deliberately ignores `Ime::Commit` events on Linux
+/// (https://github.com/emilk/egui/issues/5008), so every non-ASCII character such as
+/// `ç ğ ı ö ş ü İ` is silently swallowed. Disabling IME for the window while a text field has
+/// focus makes winit deliver the layout's characters directly as regular keyboard text.
+///
+/// This must run at the very end of `update`: egui-winit applies the platform output (which
+/// enables IME) before viewport commands are processed, so our command wins in the same frame.
+fn suppress_linux_ime_for_text_input(ctx: &egui::Context) {
+    if cfg!(target_os = "linux") && ctx.wants_keyboard_input() {
+        ctx.send_viewport_cmd(egui::ViewportCommand::IMEAllowed(false));
     }
 }
