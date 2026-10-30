@@ -515,6 +515,9 @@ impl TrimApp {
                 MonitorAction::TextPositionDrag { pos_x, pos_y } => {
                     self.handle_monitor_text_drag(pos_x, pos_y);
                 }
+                MonitorAction::TextSelectAt { pos_x, pos_y } => {
+                    self.handle_monitor_text_select(pos_x, pos_y);
+                }
                 MonitorAction::TextContentEdited(content) => {
                     self.handle_monitor_text_content_changed(content);
                 }

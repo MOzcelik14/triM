@@ -193,6 +193,31 @@ impl TrimApp {
         }
     }
 
+    /// Selects the text clip under the playhead whose anchor matches (`pos_x`, `pos_y`).
+    /// Topmost visible track wins when several text clips share the same anchor.
+    pub fn handle_monitor_text_select(&mut self, pos_x: f32, pos_y: f32) {
+        let mut found = None;
+        for track in self.project.timeline.get_video_tracks().iter().rev() {
+            if !track.visible {
+                continue;
+            }
+            if let Some(clip) = track.find_clip_at(self.current_time) {
+                if let Some(txt) = &clip.text_overlay {
+                    if (txt.pos_x - pos_x).abs() < 1e-3 && (txt.pos_y - pos_y).abs() < 1e-3 {
+                        found = Some((track.id.clone(), clip.id.clone()));
+                        break;
+                    }
+                }
+            }
+        }
+        if let Some(pair) = found {
+            if self.canvas_state.selected_clip_pairs.first() != Some(&pair) {
+                self.canvas_state.selected_clip_pairs = vec![pair];
+                self.status_message = "Metin Klibi Seçildi (görüntüde sürükleyerek taşıyın)".into();
+            }
+        }
+    }
+
     pub fn handle_monitor_text_drag(&mut self, pos_x: f32, pos_y: f32) {
         if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first().cloned() {
             if let Some(tr) = self.project.timeline.get_track_by_id_mut(&tr_id) {

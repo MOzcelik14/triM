@@ -355,6 +355,51 @@ mod tests {
     }
 
     #[test]
+    fn test_monitor_select_tool_picks_and_drags_text() {
+        use trim_core::clip::Clip;
+        use trim_core::track::{Track, TrackType};
+
+        let mut app = TrimApp::default();
+        let mut track = Track::new("V1", TrackType::Video);
+        track.add_clip(Clip::new("m_test", 0.0, 5.0));
+        let tr_id = track.id.clone();
+        app.project.timeline.add_track(track);
+        app.target_video_track = tr_id;
+        app.current_time = 1.0;
+
+        app.handle_monitor_text_click(0.30, 0.40);
+        let created = app
+            .canvas_state
+            .selected_clip_pairs
+            .first()
+            .cloned()
+            .unwrap();
+
+        // Deselect, then pick the text again via its anchor like the Selection tool does
+        app.canvas_state.selected_clip_pairs.clear();
+        app.handle_monitor_text_select(0.30, 0.40);
+        assert_eq!(app.canvas_state.selected_clip_pairs.first(), Some(&created));
+
+        // A non-matching anchor must not change the selection
+        app.canvas_state.selected_clip_pairs.clear();
+        app.handle_monitor_text_select(0.90, 0.90);
+        assert!(app.canvas_state.selected_clip_pairs.is_empty());
+
+        // Drag after selection moves the text clip
+        app.handle_monitor_text_select(0.30, 0.40);
+        app.handle_monitor_text_drag(0.6, 0.7);
+        let cl = app
+            .project
+            .timeline
+            .get_track_by_id(&created.0)
+            .unwrap()
+            .get_clip_by_id(&created.1)
+            .unwrap();
+        let ov = cl.text_overlay.as_ref().unwrap();
+        assert_eq!((ov.pos_x, ov.pos_y), (0.6, 0.7));
+    }
+
+    #[test]
     fn test_monitor_text_tool_click_drag_content() {
         use trim_core::clip::Clip;
         use trim_core::track::{Track, TrackType};

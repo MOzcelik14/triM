@@ -27,9 +27,36 @@ pub enum MonitorAction {
     Seek(f64),
     ToggleSafeZones,
     SetAspectRatio(trim_core::AspectRatio),
-    TextToolClick { pos_x: f32, pos_y: f32 },
-    TextPositionDrag { pos_x: f32, pos_y: f32 },
+    TextToolClick {
+        pos_x: f32,
+        pos_y: f32,
+    },
+    TextPositionDrag {
+        pos_x: f32,
+        pos_y: f32,
+    },
+    /// Selection tool picked the text overlay whose anchor is at (`pos_x`, `pos_y`).
+    TextSelectAt {
+        pos_x: f32,
+        pos_y: f32,
+    },
     TextContentEdited(String),
+}
+
+/// Approximate on-screen bounding box of a text overlay (used for Selection tool hit-testing).
+fn overlay_hit_rect(painter: &egui::Painter, frame_rect: Rect, ov: &ActiveTextOverlay) -> Rect {
+    let scaled_font_size = (ov.font_size * (frame_rect.height() / 1080.0)).clamp(10.0, 160.0);
+    let galley = painter.layout_no_wrap(
+        ov.text.clone(),
+        egui::FontId::proportional(scaled_font_size),
+        Color32::WHITE,
+    );
+    let size = Vec2::new(galley.size().x.max(40.0), galley.size().y.max(24.0));
+    let center = Pos2::new(
+        frame_rect.left() + frame_rect.width() * ov.pos_x.clamp(0.0, 1.0),
+        frame_rect.top() + frame_rect.height() * ov.pos_y.clamp(0.0, 1.0),
+    );
+    Rect::from_center_size(center, size).expand(8.0)
 }
 
 #[derive(Debug, Clone)]
@@ -374,6 +401,78 @@ impl<'a> MonitorWidget<'a> {
                         }
                     }
                 }
+            }
+        }
+
+        // Selection tool: pick an on-screen text overlay and drag it directly in the viewport
+        let is_select_tool = self.active_tool == Some(crate::toolbar::EditTool::Select);
+        if self.mode == MonitorMode::Program && is_select_tool && self.has_content {
+            let drag_id = egui::Id::new("program_monitor_text_drag_offset");
+            let norm_of = |p: Pos2| -> (f32, f32) {
+                (
+                    (p.x - frame_rect.left()) / frame_rect.width().max(1.0),
+                    (p.y - frame_rect.top()) / frame_rect.height().max(1.0),
+                )
+            };
+            let hit_overlay = |p: Pos2| -> Option<&ActiveTextOverlay> {
+                if !frame_rect.contains(p) {
+                    return None;
+                }
+                self.text_overlays.iter().find(|ov| {
+                    ov.alpha > 0.001
+                        && !ov.text.is_empty()
+                        && overlay_hit_rect(&painter, frame_rect, ov).contains(p)
+                })
+            };
+
+            if let Some(hover) = response.hover_pos() {
+                if hit_overlay(hover).is_some() {
+                    ui.ctx().set_cursor_icon(if response.dragged() {
+                        egui::CursorIcon::Grabbing
+                    } else {
+                        egui::CursorIcon::Grab
+                    });
+                }
+            }
+
+            if response.drag_started() {
+                let origin = ui.input(|i| i.pointer.press_origin());
+                let grabbed = origin.and_then(|p| hit_overlay(p).map(|ov| (p, ov)));
+                if let Some((p, ov)) = grabbed {
+                    let (nx, ny) = norm_of(p);
+                    let offset = Vec2::new(nx - ov.pos_x, ny - ov.pos_y);
+                    ui.memory_mut(|m| m.data.insert_temp(drag_id, Some(offset)));
+                    action = Some(MonitorAction::TextSelectAt {
+                        pos_x: ov.pos_x,
+                        pos_y: ov.pos_y,
+                    });
+                } else {
+                    ui.memory_mut(|m| m.data.insert_temp(drag_id, None::<Vec2>));
+                }
+            } else if response.dragged() {
+                let offset = ui
+                    .memory(|m| m.data.get_temp::<Option<Vec2>>(drag_id))
+                    .flatten();
+                if let (Some(offset), Some(p)) = (offset, response.interact_pointer_pos()) {
+                    let (nx, ny) = norm_of(p);
+                    action = Some(MonitorAction::TextPositionDrag {
+                        pos_x: (nx - offset.x).clamp(0.02, 0.98),
+                        pos_y: (ny - offset.y).clamp(0.02, 0.98),
+                    });
+                }
+            } else if response.clicked() {
+                if let Some(p) = response.interact_pointer_pos() {
+                    if let Some(ov) = hit_overlay(p) {
+                        action = Some(MonitorAction::TextSelectAt {
+                            pos_x: ov.pos_x,
+                            pos_y: ov.pos_y,
+                        });
+                    }
+                }
+            }
+
+            if response.drag_stopped() {
+                ui.memory_mut(|m| m.data.insert_temp(drag_id, None::<Vec2>));
             }
         }
 
