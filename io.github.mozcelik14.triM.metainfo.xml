@@ -56,6 +56,14 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.2.2" date="2026-10-30">
+      <description>
+        <p>triM. v1.2.2 - Drag Text Directly in the Viewport:</p>
+        <ul>
+          <li>With the Selection tool, text overlays can now be picked and dragged directly inside the program monitor instead of using only the inspector position controls.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.2.1" date="2026-10-30">
       <description>
         <p>triM. v1.2.1 - Turkish Character Input Fix:</p>

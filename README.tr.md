@@ -1,6 +1,6 @@
 # triM
 
-[![Sürüm](https://img.shields.io/badge/sürüm-1.2.1-blue.svg)](Cargo.toml)
+[![Sürüm](https://img.shields.io/badge/sürüm-1.2.2-blue.svg)](Cargo.toml)
 [![Lisans: GPL-3.0](https://img.shields.io/badge/lisans-GPL--3.0-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey.svg)](#sistem-gereksinimleri)
 [![CI](https://github.com/MOzcelik14/triM/actions/workflows/ci.yml/badge.svg)](https://github.com/MOzcelik14/triM/actions)
