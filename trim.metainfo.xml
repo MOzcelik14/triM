@@ -56,6 +56,16 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.2.5" date="2026-11-01">
+      <description>
+        <p>triM. v1.2.5 - Açılış Splash Ekranı ve Modern Başlangıç Deneyimi:</p>
+        <ul>
+          <li>DaVinci Resolve ve Kdenlive stili modern, sinematik açılış (splash) ekranı eklendi.</li>
+          <li>Açılış aşamalarında grafik/GPU, ses motoru ve FFmpeg bileşenlerinin kontrol durumları dinamik göstergelerle sunuldu.</li>
+          <li>Tek tıkla veya Esc/Space tuşlarıyla anında atlama ve --no-splash komut satırı parametresi desteği sağlandı.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.2.3" date="2026-11-01">
       <description>
         <p>triM. v1.2.3 - Media Bin Empty State Overhaul and UI Centering:</p>

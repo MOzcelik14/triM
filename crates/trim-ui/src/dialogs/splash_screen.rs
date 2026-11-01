@@ -215,7 +215,7 @@ impl SplashScreen {
 
                                     ui.add_space(2.0);
                                     ui.label(
-                                        RichText::new("PROFESYONEL VİDEO DÜZENLEYİCİ")
+                                        RichText::new("HAFİF VİDEO DÜZENLEYİCİ")
                                             .font(FontId::proportional(11.0))
                                             .strong()
                                             .color(Color32::from_rgb(130, 150, 175)),

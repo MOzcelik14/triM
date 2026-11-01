@@ -18,7 +18,7 @@ fn main() -> Result<(), eframe::Error> {
             }
             "--help" | "-h" => {
                 println!(
-                    "triM. v{} - Profesyonel Masaüstü Video Düzenleyici (Rust NLE)",
+                    "triM. v{} - Hafif Masaüstü Video Düzenleyici (Rust NLE)",
                     env!("CARGO_PKG_VERSION")
                 );
                 println!("\nKullanım: trim [DOSYA]");
