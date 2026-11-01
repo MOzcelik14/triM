@@ -56,6 +56,14 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.2.3" date="2026-11-01">
+      <description>
+        <p>triM. v1.2.3 - Media Bin Empty State Overhaul and UI Centering:</p>
+        <ul>
+          <li>Redesigned the media pool empty state with an aesthetically centered dropzone card, modern iconography, and properly aligned call-to-action buttons.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.2.2" date="2026-10-30">
       <description>
         <p>triM. v1.2.2 - Drag Text Directly in the Viewport:</p>

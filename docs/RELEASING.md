@@ -11,7 +11,7 @@ Sürüm numarası Semantic Versioning (`MAJOR.MINOR.PATCH`) standardını takip 
 1. `Cargo.toml`:
    ```toml
    [workspace.package]
-   version = "1.2.2"
+   version = "1.2.3"
    ```
 2. `Cargo.lock` güncellemesi:
    ```bash
@@ -42,11 +42,11 @@ Değişiklikleri commit edip sürüm etiketini oluşturun:
 
 ```bash
 git add -A
-git commit -m "chore: bump version to 1.2.2"
+git commit -m "chore: bump version to 1.2.3"
 git push origin master
 
-git tag -a v1.2.2 -m "Release v1.2.2: Kısa sürüm açıklaması"
-git push origin v1.2.2
+git tag -a v1.2.3 -m "Release v1.2.3: Kısa sürüm açıklaması"
+git push origin v1.2.3
 ```
 
 ---
