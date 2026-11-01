@@ -122,6 +122,7 @@ pub struct TrimApp {
     pub recovery_dialog: RecoveryDialog,
     pub audio_mixer_dialog: AudioMixerDialog,
     pub welcome_dialog: WelcomeDialog,
+    pub splash_screen: SplashScreen,
     pub shortcuts_dialog: ShortcutsDialog,
     pub relink_dialog: RelinkDialog,
     pub render_queue_dialog: RenderQueueDialog,
@@ -213,6 +214,7 @@ impl Default for TrimApp {
             recovery_dialog: RecoveryDialog::default(),
             audio_mixer_dialog: AudioMixerDialog::default(),
             welcome_dialog: WelcomeDialog::default(),
+            splash_screen: SplashScreen::default(),
             shortcuts_dialog: ShortcutsDialog::default(),
             relink_dialog: RelinkDialog::default(),
             render_queue_dialog: RenderQueueDialog::default(),
@@ -653,7 +655,10 @@ impl eframe::App for TrimApp {
         let mut do_cut = false;
         let mut do_paste = false;
 
-        if !ctx.wants_keyboard_input() && !self.welcome_dialog.is_open {
+        if !ctx.wants_keyboard_input()
+            && !self.welcome_dialog.is_open
+            && !self.splash_screen.is_active
+        {
             ctx.input(|i| {
                 let is_copy = i.events.iter().any(|e| matches!(e, egui::Event::Copy))
                     || ((i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::C));
@@ -3487,7 +3492,7 @@ impl eframe::App for TrimApp {
         // Welcome Screen / Project Launcher Modal
         // (Do not overlap when Crash Recovery modal is active)
         // -------------------------------------------------------------
-        let welcome_act = if self.recovery_dialog.is_open {
+        let welcome_act = if self.recovery_dialog.is_open || self.splash_screen.is_active {
             None
         } else {
             self.welcome_dialog.show(ctx)
@@ -3994,6 +3999,11 @@ impl eframe::App for TrimApp {
                 self.bin_dialog = Some(state);
             }
         }
+
+        // -------------------------------------------------------------
+        // Startup Splash Screen (DaVinci Resolve / Kdenlive Style)
+        // -------------------------------------------------------------
+        self.splash_screen.show(ctx);
 
         suppress_linux_ime_for_text_input(ctx);
     }

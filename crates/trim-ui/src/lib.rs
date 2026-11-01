@@ -19,6 +19,7 @@ pub mod vu_meter;
 
 pub use app::TrimApp;
 pub use canvas::TimelineCanvasState;
+pub use dialogs::SplashScreen;
 pub use file_dialog::{
     FileDialogBridge, FileDialogConfig, FileDialogMode, FileDialogRequest, FileDialogResponse,
 };

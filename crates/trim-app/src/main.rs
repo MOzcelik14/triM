@@ -25,6 +25,7 @@ fn main() -> Result<(), eframe::Error> {
                 println!("\nSeçenekler:");
                 println!("  -v, --version    Sürüm bilgisini göster");
                 println!("  -h, --help       Bu yardım mesajını göster");
+                println!("  --no-splash      Açılış ekranını göstermeden başlat");
                 return Ok(());
             }
             _ => {}
@@ -75,6 +76,9 @@ fn main() -> Result<(), eframe::Error> {
                     app.open_path(p);
                     app.welcome_dialog.close();
                 }
+            }
+            if std::env::args().any(|arg| arg == "--no-splash") {
+                app.splash_screen.dismiss();
             }
             if std::env::args().any(|arg| arg == "--no-welcome") {
                 app.welcome_dialog.close();
