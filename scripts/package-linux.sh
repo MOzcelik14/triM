@@ -18,9 +18,10 @@ BIN="$ROOT/target/release/trim"
 DESKTOP="$ROOT/trim.desktop"
 METAINFO="$ROOT/trim.metainfo.xml"
 ICON="$ROOT/trim.svg"
+ICON_PNG="$ROOT/trim.png"
 DIST="$ROOT/dist"
 mkdir -p "$DIST"
-for path in "$BIN" "$DESKTOP" "$METAINFO" "$ICON"; do
+for path in "$BIN" "$DESKTOP" "$METAINFO" "$ICON" "$ICON_PNG"; do
   [[ -f "$path" ]] || { echo "Missing input: $path" >&2; exit 1; }
 done
 [[ -x "$BIN" ]] || { echo "Not executable: $BIN" >&2; exit 1; }
@@ -207,6 +208,9 @@ build_appimage() {
   rm -rf "$work"
   mkdir -p "$tools" "$work"
   install_payload "$appdir"
+  # appimagetool requires a raster PNG icon and .DirIcon matching Icon= in .desktop
+  install -Dm644 "$ICON_PNG" "$appdir/trim.png"
+  ln -sf "trim.png" "$appdir/.DirIcon"
   local custom_apprun="$work/AppRun.custom"
   write_runtime_launcher "$custom_apprun" "usr/bin/trim"
   local linuxdeploy="$tools/linuxdeploy-x86_64.AppImage"
@@ -218,9 +222,9 @@ build_appimage() {
   fi
   (
     cd "$work"
-    export ARCH=x86_64 VERSION="$VERSION" APPIMAGE_EXTRACT_AND_RUN=1
+    export ARCH=x86_64 VERSION="$VERSION" LINUXDEPLOY_OUTPUT_VERSION="$VERSION" APPIMAGE_EXTRACT_AND_RUN=1
     "$linuxdeploy" --appdir "$appdir" \
-      --executable "$BIN" --desktop-file "$DESKTOP" --icon-file "$ICON" \
+      --executable "$BIN" --desktop-file "$DESKTOP" --icon-file "$ICON" --icon-file "$ICON_PNG" \
       --custom-apprun "$custom_apprun" \
       --output appimage
   )
