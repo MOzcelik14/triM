@@ -271,43 +271,75 @@ pub fn render_media_bin(
 
     // 4. Empty State check
     if project.media_pool.is_empty() && project.bins.is_empty() {
-        ui.vertical_centered(|ui| {
-            ui.add_space(30.0);
-            ui.label(
-                RichText::new("Medya Havuzu Boş")
-                    .color(Color32::from_rgb(0x90, 0x90, 0xa5))
-                    .size(13.0)
-                    .strong(),
-            );
-            ui.add_space(4.0);
-            ui.label(
-                RichText::new("Dosyaları buraya sürükleyin\nveya '+ İçe Aktar' butonuna basın.")
-                    .color(Color32::from_rgb(0x65, 0x65, 0x75))
-                    .size(11.0),
-            );
-            ui.add_space(14.0);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-                let btn_imp = Button::new(
-                    RichText::new("+ Medya Ekle")
-                        .size(12.0)
-                        .color(Color32::WHITE),
-                )
-                .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
-                if ui.add(btn_imp).clicked() {
-                    action = Some(MediaBinAction::ImportRequested);
-                }
+        let avail_h = ui.available_height();
+        let top_space = ((avail_h - 220.0) * 0.38).clamp(24.0, 160.0);
+        ui.add_space(top_space);
 
-                let btn_fld = Button::new(
-                    RichText::new("📁+ Klasör Oluştur")
-                        .size(12.0)
-                        .color(Color32::WHITE),
-                )
-                .fill(Color32::from_rgb(0x28, 0x5a, 0x9e));
-                if ui.add(btn_fld).clicked() {
-                    action = Some(MediaBinAction::CreateBinPrompt);
-                }
-            });
+        ui.vertical_centered(|ui| {
+            egui::Frame::none()
+                .fill(Color32::from_rgba_unmultiplied(24, 27, 38, 180))
+                .stroke(Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(148, 163, 184, 40)))
+                .rounding(egui::Rounding::same(10.0))
+                .inner_margin(egui::Margin::symmetric(24.0, 20.0))
+                .show(ui, |ui| {
+                    ui.set_max_width(340.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(RichText::new("🎬").size(30.0));
+                        ui.add_space(6.0);
+
+                        ui.label(
+                            RichText::new("Medya Havuzu Boş")
+                                .color(Color32::from_rgb(0xf1, 0xf5, 0xf9))
+                                .size(14.0)
+                                .strong(),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new("Dosyaları buraya sürükleyip bırakın\nveya aşağıdaki butonlarla başlayın.")
+                                .color(Color32::from_rgb(0x94, 0xa3, 0xb8))
+                                .size(11.0),
+                        );
+                        ui.add_space(16.0);
+
+                        let btn_w1 = 116.0;
+                        let btn_w2 = 126.0;
+                        let spacing = 10.0;
+                        let total_w = btn_w1 + btn_w2 + spacing;
+                        let pad = ((ui.available_width() - total_w) / 2.0).max(0.0);
+
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = spacing;
+                            ui.add_space(pad);
+
+                            let btn_imp = Button::new(
+                                RichText::new("+ Medya Ekle")
+                                    .size(11.5)
+                                    .strong()
+                                    .color(Color32::WHITE),
+                            )
+                            .fill(Color32::from_rgb(0x25, 0x63, 0xeb))
+                            .rounding(egui::Rounding::same(5.0));
+
+                            if ui.add_sized([btn_w1, 28.0], btn_imp).clicked() {
+                                action = Some(MediaBinAction::ImportRequested);
+                            }
+
+                            let btn_fld = Button::new(
+                                RichText::new("📁+ Klasör Oluştur")
+                                    .size(11.5)
+                                    .strong()
+                                    .color(Color32::from_rgb(0xfb, 0xbf, 0x24)),
+                            )
+                            .fill(Color32::from_rgb(0x1e, 0x24, 0x33))
+                            .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x3b, 0x43, 0x58)))
+                            .rounding(egui::Rounding::same(5.0));
+
+                            if ui.add_sized([btn_w2, 28.0], btn_fld).clicked() {
+                                action = Some(MediaBinAction::CreateBinPrompt);
+                            }
+                        });
+                    });
+                });
         });
         return action;
     }
@@ -384,37 +416,80 @@ pub fn render_media_bin(
         .collect();
 
     if matching_bins.is_empty() && matching_sequences.is_empty() && filtered_items.is_empty() {
+        let avail_h = ui.available_height();
+        let top_space = ((avail_h - 180.0) * 0.35).clamp(20.0, 120.0);
+        ui.add_space(top_space);
+
         ui.vertical_centered(|ui| {
-            ui.add_space(24.0);
             if current_bin_id.is_some() {
-                ui.label(
-                    RichText::new("📁 Bu klasörde henüz medya yok")
-                        .color(Color32::from_rgb(0xa0, 0xa0, 0xb0))
-                        .size(12.0)
-                        .strong(),
-                );
-                ui.add_space(4.0);
-                ui.label(
-                    RichText::new("Dosyaları buraya sürükleyebilir veya medyaları sağ tıklayıp\n'📁 Klasöre Taşı' ile buraya ekleyebilirsiniz.")
-                        .color(Color32::from_rgb(0x70, 0x70, 0x80))
-                        .size(11.0),
-                );
-                ui.add_space(10.0);
-                let btn_imp = Button::new(
-                    RichText::new("+ Buraya Medya Ekle")
-                        .size(11.0)
-                        .color(Color32::WHITE),
-                )
-                .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
-                if ui.add(btn_imp).clicked() {
-                    action = Some(MediaBinAction::ImportRequested);
-                }
+                egui::Frame::none()
+                    .fill(Color32::from_rgba_unmultiplied(24, 27, 38, 170))
+                    .stroke(Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(148, 163, 184, 35)))
+                    .rounding(egui::Rounding::same(10.0))
+                    .inner_margin(egui::Margin::symmetric(24.0, 18.0))
+                    .show(ui, |ui| {
+                        ui.set_max_width(340.0);
+                        ui.vertical_centered(|ui| {
+                            ui.label(RichText::new("📁").size(26.0));
+                            ui.add_space(6.0);
+                            ui.label(
+                                RichText::new("Bu Klasörde Medya Yok")
+                                    .color(Color32::from_rgb(0xf1, 0xf5, 0xf9))
+                                    .size(13.5)
+                                    .strong(),
+                            );
+                            ui.add_space(4.0);
+                            ui.label(
+                                RichText::new("Dosyaları buraya sürükleyebilir veya medyaları\nsağ tıklayıp '📁 Klasöre Taşı' ile ekleyebilirsiniz.")
+                                    .color(Color32::from_rgb(0x94, 0xa3, 0xb8))
+                                    .size(11.0),
+                            );
+                            ui.add_space(14.0);
+
+                            let btn_w = 145.0;
+                            let pad = ((ui.available_width() - btn_w) / 2.0).max(0.0);
+                            ui.horizontal(|ui| {
+                                ui.add_space(pad);
+                                let btn_imp = Button::new(
+                                    RichText::new("+ Buraya Medya Ekle")
+                                        .size(11.5)
+                                        .strong()
+                                        .color(Color32::WHITE),
+                                )
+                                .fill(Color32::from_rgb(0x25, 0x63, 0xeb))
+                                .rounding(egui::Rounding::same(5.0));
+
+                                if ui.add_sized([btn_w, 28.0], btn_imp).clicked() {
+                                    action = Some(MediaBinAction::ImportRequested);
+                                }
+                            });
+                        });
+                    });
             } else {
-                ui.label(
-                    RichText::new("Eşleşen medya veya klasör bulunamadı")
-                        .color(Color32::from_rgb(0x80, 0x80, 0x90))
-                        .size(11.5),
-                );
+                egui::Frame::none()
+                    .fill(Color32::from_rgba_unmultiplied(24, 27, 38, 150))
+                    .stroke(Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(148, 163, 184, 30)))
+                    .rounding(egui::Rounding::same(8.0))
+                    .inner_margin(egui::Margin::symmetric(20.0, 16.0))
+                    .show(ui, |ui| {
+                        ui.set_max_width(300.0);
+                        ui.vertical_centered(|ui| {
+                            ui.label(RichText::new("🔍").size(24.0));
+                            ui.add_space(6.0);
+                            ui.label(
+                                RichText::new("Eşleşen Medya Bulunamadı")
+                                    .color(Color32::from_rgb(0xf1, 0xf5, 0xf9))
+                                    .size(13.0)
+                                    .strong(),
+                            );
+                            ui.add_space(4.0);
+                            ui.label(
+                                RichText::new("Arama kriterlerinize veya seçili filtreye uygun\nbir klip ya da klasör yok.")
+                                    .color(Color32::from_rgb(0x94, 0xa3, 0xb8))
+                                    .size(11.0),
+                            );
+                        });
+                    });
             }
         });
         return action;
