@@ -83,7 +83,7 @@ The workspace consists of 8 crates arranged in a strict directed acyclic depende
 ### `trim-media`
 - **Role:** Subprocess orchestration, media decoding, audio synthesis, and background analysis workers.
 - **Contents:**
-  - `ffmpeg.rs`: Binary resolution (`ffmpeg`, `ffprobe`), environment sanitization (Snap/Flatpak `LD_LIBRARY_PATH` stripping), and `ChildGuard`.
+  - `ffmpeg.rs`: Binary resolution (`ffmpeg`, `ffprobe`), portable binary detection, and `ChildGuard`.
   - `video.rs`: `VideoEngine`, `PlaybackStreamer`, `ReversePlaybackStreamer`, `AsyncFrameDecoder`, software compositing (Chroma Key, 3-Way Color Wheels, bilinear scaling, alpha blending).
   - `audio.rs`: `AudioMixer` (3-band biquad EQ, pitch-preserving tempo scaling, stereo panning, fade envelopes) and `AudioStreamPlayer`.
   - `thumbnail.rs` & `waveform.rs`: Asynchronous worker queues for visual asset generation.
