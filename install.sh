@@ -25,7 +25,7 @@ set -euo pipefail
 # Version & Repository Metadata
 # ------------------------------------------------------------------------------
 APP_NAME="triM."
-APP_ID="io.github.mozcelik14.triM"
+APP_ID="trim"
 VERSION="1.2.3"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" 2>/dev/null && pwd || true)"
 if [[ -n "${SCRIPT_DIR}" && -f "${SCRIPT_DIR}/Cargo.toml" ]]; then
@@ -518,11 +518,11 @@ do_install() {
     }
 
     # Install SVG icon
-    fetch_or_copy "io.github.mozcelik14.triM.svg" "${TARGET_DATA_DIR}/icons/hicolor/scalable/apps/${APP_ID}.svg"
+    fetch_or_copy "trim.svg" "${TARGET_DATA_DIR}/icons/hicolor/scalable/apps/${APP_ID}.svg"
     log_ok "Vektörel SVG simge kuruldu"
 
     # Install Metainfo XML
-    fetch_or_copy "io.github.mozcelik14.triM.metainfo.xml" "${TARGET_DATA_DIR}/metainfo/${APP_ID}.metainfo.xml"
+    fetch_or_copy "trim.metainfo.xml" "${TARGET_DATA_DIR}/metainfo/${APP_ID}.metainfo.xml"
 
     # Install PNG icons for standard desktop sizes
     for sz in 16 32 48 64 128 256 512; do

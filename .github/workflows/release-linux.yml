@@ -85,7 +85,7 @@ jobs:
           stage="$(mktemp -d)"
           trap 'rm -rf "$stage"' EXIT
           dpkg-deb -x dist/*.deb "$stage"
-          grep -Fqx 'Exec=/usr/bin/trim %F' "$stage/usr/share/applications/io.github.mozcelik14.triM.desktop"
+          grep -Fqx 'Exec=/usr/bin/trim %F' "$stage/usr/share/applications/trim.desktop"
           test -x "$stage/usr/bin/trim"
           # Headless GUI needs software OpenGL; timeout 124 means app remained open.
           set +e

@@ -18,7 +18,7 @@ Sürüm numarası Semantic Versioning (`MAJOR.MINOR.PATCH`) standardını takip 
    cargo check
    ```
 3. Dokümantasyon ve paketleme meta verileri:
-   - `io.github.mozcelik14.triM.metainfo.xml`
+   - `trim.metainfo.xml`
    - `.github/workflows/release-linux.yml` (varsayılan fallback sürüm)
    - `docs/index.html` ve `docs/js/main.js`
 

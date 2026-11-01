@@ -15,9 +15,9 @@ if [[ "${GITHUB_REF_TYPE:-}" == "tag" && "${GITHUB_REF_NAME:-}" != "v$VERSION" ]
   exit 1
 fi
 BIN="$ROOT/target/release/trim"
-DESKTOP="$ROOT/io.github.mozcelik14.triM.desktop"
-METAINFO="$ROOT/io.github.mozcelik14.triM.metainfo.xml"
-ICON="$ROOT/io.github.mozcelik14.triM.svg"
+DESKTOP="$ROOT/trim.desktop"
+METAINFO="$ROOT/trim.metainfo.xml"
+ICON="$ROOT/trim.svg"
 DIST="$ROOT/dist"
 mkdir -p "$DIST"
 for path in "$BIN" "$DESKTOP" "$METAINFO" "$ICON"; do
@@ -27,7 +27,7 @@ done
 
 # Keep AppStream version metadata in sync without hand-editing XML each release.
 METAINFO_SOURCE="$METAINFO"
-METAINFO="$ROOT/build/linux/io.github.mozcelik14.triM.metainfo.xml"
+METAINFO="$ROOT/build/linux/trim.metainfo.xml"
 mkdir -p "$(dirname "$METAINFO")"
 python3 - "$METAINFO_SOURCE" "$METAINFO" "$VERSION" <<'PY'
 import datetime
@@ -50,14 +50,14 @@ PY
 install_payload() {
   local root="$1"
   install -Dm755 "$BIN" "$root/usr/bin/trim"
-  install -Dm644 "$DESKTOP" "$root/usr/share/applications/io.github.mozcelik14.triM.desktop"
-  install -Dm644 "$METAINFO" "$root/usr/share/metainfo/io.github.mozcelik14.triM.metainfo.xml"
-  install -Dm644 "$ICON" "$root/usr/share/icons/hicolor/scalable/apps/io.github.mozcelik14.triM.svg"
+  install -Dm644 "$DESKTOP" "$root/usr/share/applications/trim.desktop"
+  install -Dm644 "$METAINFO" "$root/usr/share/metainfo/trim.metainfo.xml"
+  install -Dm644 "$ICON" "$root/usr/share/icons/hicolor/scalable/apps/trim.svg"
   local size
   for size in 16 32 48 64 128 256 512; do
     local image="$ROOT/resources/icons/trim_${size}x${size}.png"
     [[ -f "$image" ]] || continue
-    install -Dm644 "$image" "$root/usr/share/icons/hicolor/${size}x${size}/apps/io.github.mozcelik14.triM.png"
+    install -Dm644 "$image" "$root/usr/share/icons/hicolor/${size}x${size}/apps/trim.png"
   done
 }
 
@@ -120,7 +120,7 @@ build_deb() {
   install_payload "$stage"
   # A previously installed per-user ~/.local/bin/trim Python launcher can
   # shadow /usr/bin/trim on PATH; use an absolute Exec for distro packages.
-  sed -i 's|^Exec=trim |Exec=/usr/bin/trim |' "$stage/usr/share/applications/io.github.mozcelik14.triM.desktop"
+  sed -i 's|^Exec=trim |Exec=/usr/bin/trim |' "$stage/usr/share/applications/trim.desktop"
   mkdir -p "$stage/DEBIAN"
   cat > "$stage/DEBIAN/control" <<EOF
 Package: trim
@@ -147,10 +147,10 @@ build_rpm() {
   rm -rf "$top"
   mkdir -p "$top"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
   install -m755 "$BIN" "$top/SOURCES/trim"
-  cp "$DESKTOP" "$top/SOURCES/triM.desktop"
-  sed -i 's|^Exec=trim |Exec=/usr/bin/trim |' "$top/SOURCES/triM.desktop"
-  cp "$METAINFO" "$top/SOURCES/triM.metainfo.xml"
-  cp "$ICON" "$top/SOURCES/triM.svg"
+  cp "$DESKTOP" "$top/SOURCES/trim.desktop"
+  sed -i 's|^Exec=trim |Exec=/usr/bin/trim |' "$top/SOURCES/trim.desktop"
+  cp "$METAINFO" "$top/SOURCES/trim.metainfo.xml"
+  cp "$ICON" "$top/SOURCES/trim.svg"
   local size
   for size in 16 32 48 64 128 256 512; do
     local image="$ROOT/resources/icons/trim_${size}x${size}.png"
@@ -175,21 +175,21 @@ triM. is a native open-source desktop video editor written in Rust.
 
 %install
 install -Dm755 %{_sourcedir}/trim %{buildroot}%{_bindir}/trim
-install -Dm644 %{_sourcedir}/triM.desktop %{buildroot}%{_datadir}/applications/io.github.mozcelik14.triM.desktop
-install -Dm644 %{_sourcedir}/triM.metainfo.xml %{buildroot}%{_datadir}/metainfo/io.github.mozcelik14.triM.metainfo.xml
-install -Dm644 %{_sourcedir}/triM.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/io.github.mozcelik14.triM.svg
+install -Dm644 %{_sourcedir}/trim.desktop %{buildroot}%{_datadir}/applications/trim.desktop
+install -Dm644 %{_sourcedir}/trim.metainfo.xml %{buildroot}%{_datadir}/metainfo/trim.metainfo.xml
+install -Dm644 %{_sourcedir}/trim.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/trim.svg
 EOF
   for size in 16 32 48 64 128 256 512; do
     if [[ -f "$top/SOURCES/trim_${size}.png" ]]; then
-      echo "install -Dm644 %{_sourcedir}/trim_${size}.png %{buildroot}%{_datadir}/icons/hicolor/${size}x${size}/apps/io.github.mozcelik14.triM.png" >> "$top/SPECS/trim.spec"
+      echo "install -Dm644 %{_sourcedir}/trim_${size}.png %{buildroot}%{_datadir}/icons/hicolor/${size}x${size}/apps/trim.png" >> "$top/SPECS/trim.spec"
     fi
   done
   cat >> "$top/SPECS/trim.spec" <<'EOF'
 
 %files
 %{_bindir}/trim
-%{_datadir}/applications/io.github.mozcelik14.triM.desktop
-%{_datadir}/metainfo/io.github.mozcelik14.triM.metainfo.xml
+%{_datadir}/applications/trim.desktop
+%{_datadir}/metainfo/trim.metainfo.xml
 %{_datadir}/icons/hicolor/
 
 %changelog

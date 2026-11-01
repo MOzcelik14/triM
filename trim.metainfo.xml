@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.mozcelik14.triM</id>
+  <id>trim.desktop</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>triM.</name>
@@ -19,10 +19,10 @@
       <li>High-performance FFmpeg rendering pipeline</li>
     </ul>
   </description>
-  <developer id="io.github.mozcelik14">
+  <developer id="mozcelik14">
     <name>Muhammet Özçelik</name>
   </developer>
-  <launchable type="desktop-id">io.github.mozcelik14.triM.desktop</launchable>
+  <launchable type="desktop-id">trim.desktop</launchable>
   <url type="homepage">https://github.com/MOzcelik14/triM</url>
   <url type="bugtracker">https://github.com/MOzcelik14/triM/issues</url>
   <url type="vcs-browser">https://github.com/MOzcelik14/triM</url>
