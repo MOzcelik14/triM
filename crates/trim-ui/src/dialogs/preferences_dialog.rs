@@ -124,96 +124,118 @@ impl PreferencesDialog {
             .open(&mut is_open)
             .frame(window_frame)
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .fixed_size(Vec2::new(760.0, 500.0))
-            .resizable(false)
+            .default_size(Vec2::new(840.0, 560.0))
+            .min_size(Vec2::new(760.0, 480.0))
+            .resizable(true)
             .collapsible(false)
             .show(ctx, |ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(12.0, 12.0);
+                ui.spacing_mut().item_spacing = Vec2::new(10.0, 10.0);
+
+                let body_height = (ui.available_height() - 48.0).max(400.0);
 
                 // Two-column layout: Left navigation tabs, Right settings panel
-                ui.horizontal_top(|ui| {
-                    // Left Categories Sidebar (width ~200px)
-                    ui.allocate_ui(Vec2::new(210.0, 420.0), |ui| {
-                        Frame::none()
-                            .fill(Color32::from_rgb(24, 27, 37))
-                            .rounding(Rounding::same(8.0))
-                            .stroke(Stroke::new(1.0_f32, Color32::from_rgb(38, 44, 58)))
-                            .inner_margin(Margin::same(8.0))
-                            .show(ui, |ui| {
-                                ui.set_width(210.0);
-                                ui.set_height(420.0);
-                                ui.vertical(|ui| {
-                                    for cat in [
-                                        PreferencesCategory::General,
-                                        PreferencesCategory::Editing,
-                                        PreferencesCategory::Performance,
-                                        PreferencesCategory::Audio,
-                                        PreferencesCategory::Autosave,
-                                    ] {
-                                        let is_sel = self.active_category == cat;
-                                        let btn = Button::new(
-                                            RichText::new(cat.label(active_lang))
-                                                .font(FontId::proportional(13.0))
-                                                .color(if is_sel {
-                                                    Color32::from_rgb(70, 195, 245)
-                                                } else {
-                                                    Color32::from_rgb(180, 190, 205)
-                                                }),
-                                        )
-                                        .fill(if is_sel {
-                                            Color32::from_rgb(34, 42, 60)
-                                        } else {
-                                            Color32::TRANSPARENT
-                                        })
-                                        .rounding(Rounding::same(6.0))
-                                        .min_size(Vec2::new(194.0, 36.0));
+                ui.horizontal(|ui| {
+                    // Left Categories Sidebar (width 210px)
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(210.0, body_height),
+                        Layout::top_down(Align::Min),
+                        |ui| {
+                            Frame::none()
+                                .fill(Color32::from_rgb(24, 27, 37))
+                                .rounding(Rounding::same(8.0))
+                                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(38, 44, 58)))
+                                .inner_margin(Margin::same(8.0))
+                                .show(ui, |ui| {
+                                    ui.set_width(210.0);
+                                    ui.set_height(body_height);
+                                    ui.vertical(|ui| {
+                                        for cat in [
+                                            PreferencesCategory::General,
+                                            PreferencesCategory::Editing,
+                                            PreferencesCategory::Performance,
+                                            PreferencesCategory::Audio,
+                                            PreferencesCategory::Autosave,
+                                        ] {
+                                            let is_sel = self.active_category == cat;
+                                            let btn = Button::new(
+                                                RichText::new(cat.label(active_lang))
+                                                    .font(FontId::proportional(13.0))
+                                                    .color(if is_sel {
+                                                        Color32::from_rgb(70, 195, 245)
+                                                    } else {
+                                                        Color32::from_rgb(180, 190, 205)
+                                                    }),
+                                            )
+                                            .fill(if is_sel {
+                                                Color32::from_rgb(34, 42, 60)
+                                            } else {
+                                                Color32::TRANSPARENT
+                                            })
+                                            .rounding(Rounding::same(6.0))
+                                            .min_size(Vec2::new(194.0, 36.0));
 
-                                        if ui.add(btn).clicked() {
-                                            self.active_category = cat;
+                                            if ui.add(btn).clicked() {
+                                                self.active_category = cat;
+                                            }
+                                            ui.add_space(4.0);
                                         }
-                                        ui.add_space(4.0);
-                                    }
+                                    });
                                 });
-                            });
-                    });
+                        },
+                    );
 
-                    // Right Settings Body (width ~500px)
-                    ui.allocate_ui(Vec2::new(510.0, 420.0), |ui| {
-                        Frame::none()
-                            .fill(Color32::from_rgb(22, 25, 34))
-                            .rounding(Rounding::same(8.0))
-                            .stroke(Stroke::new(1.0_f32, Color32::from_rgb(38, 44, 58)))
-                            .inner_margin(Margin::same(18.0))
-                            .show(ui, |ui| {
-                                ui.set_width(510.0);
-                                ui.set_height(420.0);
+                    ui.separator();
 
-                                ScrollArea::vertical().show(ui, |ui| {
-                                    ui.set_width(474.0);
-                                    match self.active_category {
-                                        PreferencesCategory::General => {
-                                            self.render_general_tab(ui, active_lang);
-                                        }
-                                        PreferencesCategory::Editing => {
-                                            self.render_editing_tab(ui, active_lang);
-                                        }
-                                        PreferencesCategory::Performance => {
-                                            self.render_performance_tab(ui, active_lang);
-                                        }
-                                        PreferencesCategory::Audio => {
-                                            self.render_audio_tab(ui, active_lang);
-                                        }
-                                        PreferencesCategory::Autosave => {
-                                            self.render_autosave_tab(ui, active_lang);
-                                        }
-                                    }
+                    // Right Settings Body (fills remaining width)
+                    let right_width = (ui.available_width() - 4.0).max(480.0);
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(right_width, body_height),
+                        Layout::top_down(Align::Min),
+                        |ui| {
+                            Frame::none()
+                                .fill(Color32::from_rgb(22, 25, 34))
+                                .rounding(Rounding::same(8.0))
+                                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(38, 44, 58)))
+                                .inner_margin(Margin::same(18.0))
+                                .show(ui, |ui| {
+                                    ui.set_width(ui.available_width());
+                                    ui.set_height(body_height);
+
+                                    ScrollArea::vertical()
+                                        .auto_shrink([false, false])
+                                        .show(ui, |ui| {
+                                            ui.set_width(ui.available_width());
+                                            ui.vertical(|ui| {
+                                                match self.active_category {
+                                                    PreferencesCategory::General => {
+                                                        self.render_general_tab(ui, active_lang);
+                                                    }
+                                                    PreferencesCategory::Editing => {
+                                                        self.render_editing_tab(ui, active_lang);
+                                                    }
+                                                    PreferencesCategory::Performance => {
+                                                        self.render_performance_tab(
+                                                            ui,
+                                                            active_lang,
+                                                        );
+                                                    }
+                                                    PreferencesCategory::Audio => {
+                                                        self.render_audio_tab(ui, active_lang);
+                                                    }
+                                                    PreferencesCategory::Autosave => {
+                                                        self.render_autosave_tab(ui, active_lang);
+                                                    }
+                                                }
+                                            });
+                                        });
                                 });
-                            });
-                    });
+                        },
+                    );
                 });
 
-                ui.add_space(6.0);
+                ui.add_space(4.0);
                 ui.separator();
+                ui.add_space(4.0);
 
                 // Bottom Action Footer Bar
                 ui.horizontal(|ui| {
@@ -265,7 +287,15 @@ impl PreferencesDialog {
                             Language::Turkish => "İptal",
                             Language::English => "Cancel",
                         };
-                        if ui.button(cancel_label).clicked() {
+                        let cancel_btn = Button::new(
+                            RichText::new(cancel_label)
+                                .font(FontId::proportional(12.5))
+                                .color(Color32::from_rgb(200, 200, 210)),
+                        )
+                        .rounding(Rounding::same(6.0))
+                        .min_size(Vec2::new(80.0, 30.0));
+
+                        if ui.add(cancel_btn).clicked() {
                             action = Some(PreferencesAction::Close);
                             self.close();
                         }
@@ -293,11 +323,12 @@ impl PreferencesDialog {
             .strong()
             .color(Color32::WHITE),
         );
-        ui.add_space(8.0);
+        ui.add_space(10.0);
 
         Grid::new("pref_general_grid")
             .num_columns(2)
             .spacing([24.0, 14.0])
+            .min_col_width(200.0)
             .show(ui, |ui| {
                 // Language
                 ui.label(match lang {
@@ -307,6 +338,7 @@ impl PreferencesDialog {
                 let mut current_lang = Language::from_code(&self.draft.language);
                 ComboBox::from_id_salt("pref_lang_combo")
                     .selected_text(current_lang.label())
+                    .width(220.0)
                     .show_ui(ui, |ui| {
                         for l in Language::ALL {
                             if ui
@@ -327,6 +359,7 @@ impl PreferencesDialog {
                 let scale_label = format!("{:.0}%", self.draft.ui_scale * 100.0);
                 ComboBox::from_id_salt("pref_scale_combo")
                     .selected_text(scale_label)
+                    .width(220.0)
                     .show_ui(ui, |ui| {
                         for (factor, name) in [
                             (0.85, "85%"),
@@ -346,9 +379,9 @@ impl PreferencesDialog {
                 ui.end_row();
             });
 
-        ui.add_space(14.0);
+        ui.add_space(16.0);
         ui.separator();
-        ui.add_space(10.0);
+        ui.add_space(12.0);
 
         ui.label(
             RichText::new(match lang {
@@ -359,7 +392,7 @@ impl PreferencesDialog {
             .strong()
             .color(Color32::from_rgb(200, 210, 225)),
         );
-        ui.add_space(6.0);
+        ui.add_space(8.0);
 
         ui.checkbox(
             &mut self.draft.show_splash_screen,
@@ -368,6 +401,7 @@ impl PreferencesDialog {
                 Language::English => "Show cinematic startup splash screen on launch",
             },
         );
+        ui.add_space(6.0);
 
         ui.checkbox(
             &mut self.draft.show_welcome_on_startup,
@@ -388,11 +422,12 @@ impl PreferencesDialog {
             .strong()
             .color(Color32::WHITE),
         );
-        ui.add_space(8.0);
+        ui.add_space(10.0);
 
         Grid::new("pref_editing_grid")
             .num_columns(2)
             .spacing([24.0, 14.0])
+            .min_col_width(200.0)
             .show(ui, |ui| {
                 // Shortcut Profile
                 ui.label(match lang {
@@ -401,6 +436,7 @@ impl PreferencesDialog {
                 });
                 ComboBox::from_id_salt("pref_profile_combo")
                     .selected_text(&self.draft.shortcut_profile)
+                    .width(220.0)
                     .show_ui(ui, |ui| {
                         for p in ["triM", "Adobe Premiere Pro", "DaVinci Resolve"] {
                             ui.selectable_value(&mut self.draft.shortcut_profile, p.to_string(), p);
@@ -438,9 +474,20 @@ impl PreferencesDialog {
                 ui.end_row();
             });
 
-        ui.add_space(14.0);
+        ui.add_space(16.0);
         ui.separator();
-        ui.add_space(10.0);
+        ui.add_space(12.0);
+
+        ui.label(
+            RichText::new(match lang {
+                Language::Turkish => "Zaman Çizgisi Davranışı",
+                Language::English => "Timeline Behavior",
+            })
+            .font(FontId::proportional(14.0))
+            .strong()
+            .color(Color32::from_rgb(200, 210, 225)),
+        );
+        ui.add_space(8.0);
 
         ui.checkbox(
             &mut self.draft.snap_enabled_by_default,
@@ -449,6 +496,7 @@ impl PreferencesDialog {
                 Language::English => "Enable magnetic snapping by default",
             },
         );
+        ui.add_space(6.0);
 
         ui.checkbox(
             &mut self.draft.return_playhead_on_stop,
@@ -469,7 +517,7 @@ impl PreferencesDialog {
             .strong()
             .color(Color32::WHITE),
         );
-        ui.add_space(8.0);
+        ui.add_space(10.0);
 
         let detected = trim_media::detect_available_encoders();
         let auto_desc = if detected.has_nvidia_nvenc() {
@@ -487,6 +535,7 @@ impl PreferencesDialog {
         Grid::new("pref_perf_grid")
             .num_columns(2)
             .spacing([24.0, 14.0])
+            .min_col_width(200.0)
             .show(ui, |ui| {
                 // Hardware encoder
                 ui.label(match lang {
@@ -503,6 +552,7 @@ impl PreferencesDialog {
                 };
                 ComboBox::from_id_salt("pref_hw_combo")
                     .selected_text(cur_selected)
+                    .width(260.0)
                     .show_ui(ui, |ui| {
                         ui.selectable_value(
                             &mut self.draft.preferred_hw_accel,
@@ -558,49 +608,54 @@ impl PreferencesDialog {
                 ui.end_row();
             });
 
-        ui.add_space(8.0);
+        ui.add_space(14.0);
+
+        ui.label(
+            RichText::new(match lang {
+                Language::Turkish => "Sistem Donanım Hızlandırma Durumu",
+                Language::English => "System Hardware Acceleration Status",
+            })
+            .font(FontId::proportional(14.0))
+            .strong()
+            .color(Color32::from_rgb(200, 210, 225)),
+        );
+        ui.add_space(6.0);
 
         // Hardware Status Card
         Frame::none()
-            .fill(Color32::from_rgb(0x18, 0x18, 0x22))
+            .fill(Color32::from_rgb(0x18, 0x18, 0x24))
             .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x2d, 0x2d, 0x3d)))
             .rounding(Rounding::same(6.0))
-            .inner_margin(Margin::same(10.0))
+            .inner_margin(Margin::same(12.0))
             .show(ui, |ui| {
-                ui.label(
-                    RichText::new(match lang {
-                        Language::Turkish => "🔍 Sistem Donanım Hızlandırma Durumu",
-                        Language::English => "🔍 System Hardware Acceleration Status",
-                    })
-                    .size(12.0)
-                    .strong()
-                    .color(Color32::from_rgb(0x90, 0xb0, 0xe0)),
-                );
-                ui.add_space(6.0);
-                ui.horizontal_wrapped(|ui| {
-                    let render_badge = |ui: &mut egui::Ui, name: &str, active: bool| {
-                        let (icon, color) = if active {
-                            ("✅", Color32::from_rgb(0x60, 0xd0, 0x80))
-                        } else {
-                            ("❌", Color32::from_rgb(0xa0, 0x80, 0x80))
+                ui.set_width(ui.available_width());
+                ui.vertical(|ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(14.0, 8.0);
+                        let render_badge = |ui: &mut egui::Ui, name: &str, active: bool| {
+                            let (icon, color) = if active {
+                                ("✅", Color32::from_rgb(0x60, 0xd0, 0x80))
+                            } else {
+                                ("❌", Color32::from_rgb(0xa0, 0x80, 0x80))
+                            };
+                            ui.label(
+                                RichText::new(format!("{} {}", icon, name))
+                                    .font(FontId::proportional(12.0))
+                                    .color(color),
+                            );
                         };
-                        ui.colored_label(
-                            color,
-                            RichText::new(format!("{} {}", icon, name)).size(11.0),
-                        );
-                        ui.add_space(8.0);
-                    };
-                    render_badge(ui, "NVIDIA NVENC", detected.has_nvidia_nvenc());
-                    render_badge(ui, "Intel QuickSync", detected.has_intel_qsv());
-                    render_badge(ui, "Linux VA-API", detected.has_vaapi());
-                    render_badge(ui, "AMD AMF", detected.has_amd_amf());
-                    render_badge(ui, "CPU Fallback (x264)", true);
+                        render_badge(ui, "NVIDIA NVENC", detected.has_nvidia_nvenc());
+                        render_badge(ui, "Intel QuickSync", detected.has_intel_qsv());
+                        render_badge(ui, "Linux VA-API", detected.has_vaapi());
+                        render_badge(ui, "AMD AMF", detected.has_amd_amf());
+                        render_badge(ui, "CPU Fallback (x264)", true);
+                    });
                 });
             });
 
-        ui.add_space(14.0);
+        ui.add_space(16.0);
         ui.separator();
-        ui.add_space(10.0);
+        ui.add_space(12.0);
 
         ui.label(
             RichText::new(match lang {
@@ -611,7 +666,7 @@ impl PreferencesDialog {
             .strong()
             .color(Color32::from_rgb(200, 210, 225)),
         );
-        ui.add_space(6.0);
+        ui.add_space(8.0);
 
         ui.checkbox(
             &mut self.draft.use_proxies_by_default,
@@ -622,6 +677,7 @@ impl PreferencesDialog {
                 Language::English => "Enable 720p H.264 Smart Proxy preview by default",
             },
         );
+        ui.add_space(6.0);
 
         ui.checkbox(
             &mut self.draft.auto_generate_proxies,
@@ -642,11 +698,12 @@ impl PreferencesDialog {
             .strong()
             .color(Color32::WHITE),
         );
-        ui.add_space(8.0);
+        ui.add_space(10.0);
 
         Grid::new("pref_audio_grid")
             .num_columns(2)
             .spacing([24.0, 14.0])
+            .min_col_width(200.0)
             .show(ui, |ui| {
                 ui.label(match lang {
                     Language::Turkish => "Sınırlayıcı Tavanı (Ceiling):",
@@ -656,9 +713,20 @@ impl PreferencesDialog {
                 ui.end_row();
             });
 
-        ui.add_space(14.0);
+        ui.add_space(16.0);
         ui.separator();
-        ui.add_space(10.0);
+        ui.add_space(12.0);
+
+        ui.label(
+            RichText::new(match lang {
+                Language::Turkish => "Ses Koruma ve Dalga Formu",
+                Language::English => "Audio Protection & Waveforms",
+            })
+            .font(FontId::proportional(14.0))
+            .strong()
+            .color(Color32::from_rgb(200, 210, 225)),
+        );
+        ui.add_space(8.0);
 
         ui.checkbox(
             &mut self.draft.master_limiter_enabled,
@@ -671,6 +739,7 @@ impl PreferencesDialog {
                 }
             },
         );
+        ui.add_space(6.0);
 
         ui.checkbox(
             &mut self.draft.show_waveforms,
@@ -693,11 +762,12 @@ impl PreferencesDialog {
             .strong()
             .color(Color32::WHITE),
         );
-        ui.add_space(8.0);
+        ui.add_space(10.0);
 
         Grid::new("pref_autosave_grid")
             .num_columns(2)
             .spacing([24.0, 14.0])
+            .min_col_width(200.0)
             .show(ui, |ui| {
                 ui.label(match lang {
                     Language::Turkish => "Otomatik Kayıt Aralığı:",
@@ -717,6 +787,7 @@ impl PreferencesDialog {
 
                 ComboBox::from_id_salt("pref_autosave_combo")
                     .selected_text(cur_label)
+                    .width(220.0)
                     .show_ui(ui, |ui| {
                         for (sec, txt) in [
                             (
@@ -750,6 +821,7 @@ impl PreferencesDialog {
                 };
                 ComboBox::from_id_salt("pref_memory_combo")
                     .selected_text(mem_cur)
+                    .width(220.0)
                     .show_ui(ui, |ui| {
                         for (mb, label) in [
                             (
@@ -797,19 +869,44 @@ impl PreferencesDialog {
                 });
                 let bytes = self.cached_cache_size.unwrap_or(0);
                 let mb = bytes as f64 / (1024.0 * 1024.0);
-                ui.label(format!("{:.2} MB", mb));
+                ui.label(
+                    RichText::new(format!("{:.2} MB", mb))
+                        .strong()
+                        .color(Color32::from_rgb(120, 200, 240)),
+                );
                 ui.end_row();
             });
 
-        ui.add_space(14.0);
+        ui.add_space(16.0);
         ui.separator();
-        ui.add_space(10.0);
+        ui.add_space(12.0);
+
+        ui.label(
+            RichText::new(match lang {
+                Language::Turkish => "Disk Temizliği",
+                Language::English => "Disk Maintenance",
+            })
+            .font(FontId::proportional(14.0))
+            .strong()
+            .color(Color32::from_rgb(200, 210, 225)),
+        );
+        ui.add_space(8.0);
 
         let clear_label = match lang {
             Language::Turkish => "🗑️ Küçük Resim ve Dalgaboyu Önbelleğini Temizle",
             Language::English => "🗑️ Clear Thumbnail & Waveform Disk Cache",
         };
-        if ui.button(clear_label).clicked() {
+        let clear_btn = Button::new(
+            RichText::new(clear_label)
+                .font(FontId::proportional(12.0))
+                .color(Color32::from_rgb(240, 140, 140)),
+        )
+        .fill(Color32::from_rgb(40, 30, 35))
+        .stroke(Stroke::new(1.0_f32, Color32::from_rgb(100, 50, 60)))
+        .rounding(Rounding::same(6.0))
+        .min_size(Vec2::new(260.0, 30.0));
+
+        if ui.add(clear_btn).clicked() {
             if let Ok(()) = UserPreferences::clear_cache() {
                 self.cached_cache_size = Some(UserPreferences::cache_size_bytes());
                 self.status_feedback = Some(match lang {
@@ -835,5 +932,30 @@ mod tests {
         assert_eq!(dialog.draft.language, "tr");
         dialog.close();
         assert!(!dialog.is_open);
+    }
+
+    #[test]
+    fn test_preferences_dialog_render_all_categories_and_languages() {
+        let ctx = egui::Context::default();
+        let prefs = UserPreferences::default();
+
+        for lang in [Language::Turkish, Language::English] {
+            for cat in [
+                PreferencesCategory::General,
+                PreferencesCategory::Editing,
+                PreferencesCategory::Performance,
+                PreferencesCategory::Audio,
+                PreferencesCategory::Autosave,
+            ] {
+                let _ = ctx.run(Default::default(), |ctx| {
+                    let mut dialog = PreferencesDialog::default();
+                    dialog.open(&prefs);
+                    dialog.active_category = cat;
+                    let action = dialog.show(ctx, lang);
+                    assert!(action.is_none());
+                    assert!(dialog.is_open);
+                });
+            }
+        }
     }
 }
