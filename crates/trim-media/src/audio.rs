@@ -58,6 +58,18 @@ impl AudioMixer {
         self.last_mixed_end_time = None;
     }
 
+    /// Dynamically sets the maximum memory limit in bytes for the PCM audio buffer cache.
+    pub fn set_max_cache_bytes(&self, bytes: usize) {
+        if let Ok(mut c) = self.pcm_cache.write() {
+            c.set_max_bytes(bytes);
+        }
+    }
+
+    /// Returns current memory footprint of decoded PCM audio in bytes.
+    pub fn current_cache_bytes(&self) -> usize {
+        self.pcm_cache.read().map(|c| c.total_bytes()).unwrap_or(0)
+    }
+
     /// Inserts pre-decoded PCM stereo frames directly into the bounded cache (used by tests and synth generators).
     pub fn insert_cached_pcm(&self, key: impl Into<String>, pcm: Vec<[i16; 2]>) {
         let size_bytes = pcm.len() * 4;

@@ -72,6 +72,18 @@ impl<K: Hash + Eq + Clone, V> LruCache<K, V> {
         self.max_entries
     }
 
+    /// Dynamically adjusts maximum byte limit and evicts least recently used items if needed.
+    pub fn set_max_bytes(&mut self, max_bytes: usize) {
+        self.max_bytes = max_bytes.max(1);
+        self.evict_if_needed();
+    }
+
+    /// Dynamically adjusts maximum entry capacity and evicts least recently used items if needed.
+    pub fn set_max_entries(&mut self, max_entries: usize) {
+        self.max_entries = max_entries.max(1);
+        self.evict_if_needed();
+    }
+
     pub fn contains_key(&self, key: &K) -> bool {
         self.map.contains_key(key)
     }
@@ -312,5 +324,32 @@ mod tests {
         assert_eq!(removed, Some(20));
         assert_eq!(cache.len(), 0);
         assert_eq!(cache.total_bytes(), 0);
+    }
+
+    #[test]
+    fn test_lru_dynamic_resize() {
+        let mut cache = LruCache::with_capacity(4);
+        cache.insert("a", 1);
+        cache.insert("b", 2);
+        cache.insert("c", 3);
+        cache.insert("d", 4);
+        assert_eq!(cache.len(), 4);
+
+        // Shrink capacity to 2 -> should evict "a" and "b"
+        cache.set_max_entries(2);
+        assert_eq!(cache.len(), 2);
+        assert!(cache.contains_key(&"c"));
+        assert!(cache.contains_key(&"d"));
+
+        // Test dynamic byte limit reduction
+        let mut byte_cache = LruCache::with_byte_limit(1000);
+        byte_cache.insert_with_size("x", 1, 300);
+        byte_cache.insert_with_size("y", 2, 400);
+        assert_eq!(byte_cache.total_bytes(), 700);
+
+        byte_cache.set_max_bytes(350);
+        assert_eq!(byte_cache.len(), 1);
+        assert_eq!(byte_cache.total_bytes(), 400); // 1 item remaining
+        assert!(byte_cache.contains_key(&"y"));
     }
 }

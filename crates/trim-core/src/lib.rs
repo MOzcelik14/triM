@@ -7,6 +7,7 @@ pub mod lru;
 pub mod marker;
 pub mod media;
 pub mod paths;
+pub mod preferences;
 pub mod project;
 pub mod sequence;
 pub mod subtitles;
@@ -20,6 +21,7 @@ pub use keyframe::{interpolate_keyframes, Interpolation, Keyframe};
 pub use lru::LruCache;
 pub use marker::Marker;
 pub use media::{MediaItem, MediaType};
+pub use preferences::UserPreferences;
 pub use project::{Project, ProjectSettings};
 pub use sequence::{flatten_timeline_sequences, Sequence};
 pub use subtitles::{

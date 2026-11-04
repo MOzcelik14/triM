@@ -5,6 +5,7 @@ use crate::canvas::{
 };
 use crate::dialogs::*;
 use crate::file_dialog::FileDialogBridge;
+use crate::i18n::Language;
 use crate::inspector::{render_inspector_panel, InspectorAction};
 use crate::media_bin::{render_media_bin, LeftPanelTab, MediaBinAction, MediaFilterType};
 use crate::monitor::{ActiveTextOverlay, MonitorAction, MonitorMode, MonitorWidget};
@@ -25,6 +26,7 @@ use trim_commands::commands::*;
 use trim_commands::UndoStack;
 use trim_core::clip::{Clip, TextOverlay};
 use trim_core::media::MediaType;
+use trim_core::preferences::UserPreferences;
 use trim_core::project::Project;
 use trim_core::time::seconds_to_timecode;
 use trim_core::track::TrackType;
@@ -124,6 +126,8 @@ pub struct TrimApp {
     pub welcome_dialog: WelcomeDialog,
     pub splash_screen: SplashScreen,
     pub shortcuts_dialog: ShortcutsDialog,
+    pub preferences_dialog: PreferencesDialog,
+    pub preferences: UserPreferences,
     pub relink_dialog: RelinkDialog,
     pub render_queue_dialog: RenderQueueDialog,
     pub autosave_mgr: AutosaveManager,
@@ -216,6 +220,8 @@ impl Default for TrimApp {
             welcome_dialog: WelcomeDialog::default(),
             splash_screen: SplashScreen::default(),
             shortcuts_dialog: ShortcutsDialog::default(),
+            preferences_dialog: PreferencesDialog::default(),
+            preferences: UserPreferences::default(),
             relink_dialog: RelinkDialog::default(),
             render_queue_dialog: RenderQueueDialog::default(),
             autosave_mgr: AutosaveManager::default(),
@@ -250,13 +256,33 @@ impl Default for TrimApp {
 impl TrimApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         setup_theme(&cc.egui_ctx);
+        let prefs = UserPreferences::load();
+        if (prefs.ui_scale - 1.0).abs() > 0.01 {
+            cc.egui_ctx.set_pixels_per_point(prefs.ui_scale);
+        }
+
         let mut app = Self {
             gpu_compositor: cc
                 .gl
                 .as_ref()
                 .and_then(|gl| crate::gpu_compositor::GpuCompositor::new(gl.clone())),
+            snap_enabled: prefs.snap_enabled_by_default,
+            use_proxies: prefs.use_proxies_by_default,
+            preferences: prefs.clone(),
             ..Self::default()
         };
+
+        let budget_mb = prefs.max_memory_budget_mb.max(128);
+        app.audio_mixer.set_max_cache_bytes(budget_mb * 1024 * 1024);
+        app.video_engine
+            .set_frame_cache_capacity((budget_mb * 300 / 512).max(50));
+
+        if !prefs.show_splash_screen {
+            app.splash_screen.dismiss();
+        }
+        if !prefs.show_welcome_on_startup {
+            app.welcome_dialog.close();
+        }
 
         // Check crash recovery
         if let Some(rec_path) = app.autosave_mgr.check_recovery(&app.project) {
@@ -264,6 +290,11 @@ impl TrimApp {
         }
 
         app
+    }
+
+    /// Returns active UI language from user preferences.
+    pub fn lang(&self) -> Language {
+        Language::from_code(&self.preferences.language)
     }
 
     pub fn render_source_monitor(&mut self, source_ui: &mut egui::Ui) {
@@ -667,7 +698,9 @@ impl eframe::App for TrimApp {
                 let is_cut = i.events.iter().any(|e| matches!(e, egui::Event::Cut))
                     || ((i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::X));
 
-                if is_copy {
+                if (i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::Comma) {
+                    self.preferences_dialog.open(&self.preferences);
+                } else if is_copy {
                     do_copy = true;
                 } else if is_paste {
                     do_paste = true;
@@ -1030,6 +1063,7 @@ impl eframe::App for TrimApp {
         // -------------------------------------------------------------
         // Top Header: Premiere Pro Navigation Bar & Window Controls
         // -------------------------------------------------------------
+        let lang = self.lang();
         egui::TopBottomPanel::top("top_header").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
@@ -1043,13 +1077,13 @@ impl eframe::App for TrimApp {
                 );
                 ui.add_space(4.0);
 
-                // Dosya
-                ui.menu_button("Dosya", |ui| {
-                    if ui.button("Başlangıç Ekranı...").clicked() {
+                // Dosya / File
+                ui.menu_button(lang.t("menu_file"), |ui| {
+                    if ui.button(lang.t("menu_welcome")).clicked() {
                         self.welcome_dialog.open();
                         ui.close_menu();
                     }
-                    if ui.button("Yeni Boş Proje (Ctrl+N)").clicked() {
+                    if ui.button(lang.t("menu_new_project")).clicked() {
                         if self.has_unsaved_changes() {
                             let name = self.project.settings.name.clone();
                             self.close_confirm_dialog
@@ -1059,7 +1093,7 @@ impl eframe::App for TrimApp {
                         }
                         ui.close_menu();
                     }
-                    if ui.button("Proje Aç... (Ctrl+O)").clicked() {
+                    if ui.button(lang.t("menu_open_project")).clicked() {
                         if self.has_unsaved_changes() {
                             let name = self.project.settings.name.clone();
                             self.close_confirm_dialog
@@ -1070,72 +1104,57 @@ impl eframe::App for TrimApp {
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button("Kaydet (Ctrl+S)").clicked() {
+                    if ui.button(lang.t("menu_save")).clicked() {
                         self.save_project_dialog();
                         ui.close_menu();
                     }
-                    if ui.button("Farklı Kaydet...").clicked() {
+                    if ui.button(lang.t("menu_save_as")).clicked() {
                         self.save_project_as_dialog();
                         ui.close_menu();
                     }
-                    if ui
-                        .button("Projeyi Paketle / Arşivle... (Taşınabilir)")
-                        .clicked()
-                    {
+                    if ui.button(lang.t("menu_bundle")).clicked() {
                         self.bundle_project_dialog();
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button("Medya İçe Aktar... (Ctrl+I)").clicked() {
+                    if ui.button(lang.t("menu_import_media")).clicked() {
                         self.prompt_import_media();
                         ui.close_menu();
                     }
-                    if ui
-                        .button("Çevrimdışı Medyaları Yeniden Bağla (Relink)...")
-                        .clicked()
-                    {
+                    if ui.button(lang.t("menu_relink")).clicked() {
                         self.relink_dialog.open(&self.project);
                         ui.close_menu();
                     }
-                    if ui.button("Projeyi İçe Aktar (FCPXML / EDL)...").clicked() {
+                    if ui.button(lang.t("menu_import_interchange")).clicked() {
                         self.import_interchange_dialog();
                         ui.close_menu();
                     }
-                    if ui
-                        .button("Altyazı Dosyası İçe Aktar (.srt, .vtt)...")
-                        .clicked()
-                    {
+                    if ui.button(lang.t("menu_import_subtitles")).clicked() {
                         self.import_subtitles_dialog();
                         ui.close_menu();
                     }
-                    if ui.button("Altyazıları Dışa Aktar (.srt)...").clicked() {
+                    if ui.button(lang.t("menu_export_subtitles")).clicked() {
                         self.export_subtitles_dialog();
                         ui.close_menu();
                     }
-                    if ui
-                        .button("Projeyi EDL Olarak Dışa Aktar (.edl)...")
-                        .clicked()
-                    {
+                    if ui.button(lang.t("menu_export_edl")).clicked() {
                         self.export_edl_dialog();
                         ui.close_menu();
                     }
-                    if ui
-                        .button("Projeyi FCPXML Olarak Dışa Aktar (Premiere/DaVinci)...")
-                        .clicked()
-                    {
+                    if ui.button(lang.t("menu_export_fcpxml")).clicked() {
                         self.export_fcpxml_dialog();
                         ui.close_menu();
                     }
-                    if ui.button("Dışa Aktarma Stüdyosu... (Ctrl+M)").clicked() {
+                    if ui.button(lang.t("menu_export_studio")).clicked() {
                         self.export_dialog.open(&self.project);
                         ui.close_menu();
                     }
-                    if ui.button("📋 Render Kuyruğu... (Ctrl+Shift+E)").clicked() {
+                    if ui.button(lang.t("menu_render_queue")).clicked() {
                         self.render_queue_dialog.open();
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button("Çıkış (Ctrl+Q)").clicked() {
+                    if ui.button(lang.t("menu_exit")).clicked() {
                         if self.has_unsaved_changes() && !self.confirmed_exit {
                             let name = self.project.settings.name.clone();
                             self.close_confirm_dialog
@@ -1148,11 +1167,11 @@ impl eframe::App for TrimApp {
                     }
                 });
 
-                // Düzen
-                ui.menu_button("Düzen", |ui| {
+                // Düzen / Edit
+                ui.menu_button(lang.t("menu_edit"), |ui| {
                     let can_undo = self.undo_stack.can_undo();
                     if ui
-                        .add_enabled(can_undo, Button::new("Geri Al (Ctrl+Z)"))
+                        .add_enabled(can_undo, Button::new(lang.t("menu_undo")))
                         .clicked()
                     {
                         let _ = self.undo_stack.undo(&mut self.project.timeline);
@@ -1170,7 +1189,7 @@ impl eframe::App for TrimApp {
                     }
                     let can_redo = self.undo_stack.can_redo();
                     if ui
-                        .add_enabled(can_redo, Button::new("Yinele (Ctrl+Y)"))
+                        .add_enabled(can_redo, Button::new(lang.t("menu_redo")))
                         .clicked()
                     {
                         let _ = self.undo_stack.redo(&mut self.project.timeline);
@@ -1189,7 +1208,7 @@ impl eframe::App for TrimApp {
                     ui.separator();
                     let has_sel = !self.canvas_state.selected_clip_pairs.is_empty();
                     if ui
-                        .add_enabled(has_sel, Button::new("Kes (Ctrl+X)"))
+                        .add_enabled(has_sel, Button::new(lang.t("menu_cut")))
                         .clicked()
                     {
                         self.copy_selected_clips();
@@ -1200,7 +1219,7 @@ impl eframe::App for TrimApp {
                         ui.close_menu();
                     }
                     if ui
-                        .add_enabled(has_sel, Button::new("Kopyala (Ctrl+C)"))
+                        .add_enabled(has_sel, Button::new(lang.t("menu_copy")))
                         .clicked()
                     {
                         self.copy_selected_clips();
@@ -1211,55 +1230,49 @@ impl eframe::App for TrimApp {
                     }
                     let can_paste = !self.clipboard_clips.is_empty();
                     if ui
-                        .add_enabled(can_paste, Button::new("Yapıştır (Ctrl+V)"))
+                        .add_enabled(can_paste, Button::new(lang.t("menu_paste")))
                         .clicked()
                     {
                         self.paste_clipboard_clips();
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button("Seçilenleri Sil (Delete)").clicked() {
+                    if ui.button(lang.t("menu_delete")).clicked() {
                         self.delete_selected_clips();
                         ui.close_menu();
                     }
-                    if ui.button("Dalgalı Sil (Shift+Delete)").clicked() {
+                    if ui.button(lang.t("menu_ripple_delete")).clicked() {
                         self.ripple_delete_selected_clips();
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button("Tüm Klipleri Seç (Ctrl+A)").clicked() {
+                    if ui.button(lang.t("menu_select_all")).clicked() {
                         self.select_all_clips();
                         ui.close_menu();
                     }
-                    if ui.button("Seçimi Kaldır (Ctrl+D)").clicked() {
+                    if ui.button(lang.t("menu_deselect")).clicked() {
                         self.canvas_state.selected_clip_pairs.clear();
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button("Klipleri Bağla / Ayır (Ctrl+L)").clicked() {
+                    if ui.button(lang.t("menu_link_clips")).clicked() {
                         self.toggle_link_selected_clips();
                         ui.close_menu();
                     }
-                    if ui
-                        .button("Sessizlikleri Otomatik Kes (Jump-Cut)...")
-                        .clicked()
-                    {
+                    if ui.button(lang.t("menu_silence_cut")).clicked() {
                         self.open_silence_cut_dialog_for_selected();
                         ui.close_menu();
                     }
-                    if ui
-                        .button("🎙️ Lokal Whisper ile Otomatik Deşifre Et...")
-                        .clicked()
-                    {
+                    if ui.button(lang.t("menu_transcribe")).clicked() {
                         self.open_transcribe_dialog_for_selected();
                         ui.close_menu();
                     }
-                    if ui.button("📹 Ekran ve Web Kamerası Kaydet...").clicked() {
+                    if ui.button(lang.t("menu_screen_record")).clicked() {
                         self.open_screen_record_dialog();
                         ui.close_menu();
                     }
                     ui.separator();
-                    ui.menu_button("Klavye Kısayol Profili", |ui| {
+                    ui.menu_button(lang.t("menu_shortcut_profile"), |ui| {
                         for p in ShortcutProfile::ALL {
                             if ui
                                 .selectable_label(self.shortcut_profile == *p, p.label())
@@ -1271,41 +1284,49 @@ impl eframe::App for TrimApp {
                             }
                         }
                     });
+                    ui.separator();
+                    if ui.button(lang.t("menu_preferences")).clicked() {
+                        self.preferences_dialog.open(&self.preferences);
+                        ui.close_menu();
+                    }
                 });
 
-                // Sekans
-                ui.menu_button("Sekans", |ui| {
-                    if ui.button("Oynatma Çizgisinde Kes (S / Ctrl+K)").clicked() {
+                // Sekans / Sequence
+                ui.menu_button(lang.t("menu_sequence"), |ui| {
+                    if ui.button(lang.t("menu_split_playhead")).clicked() {
                         self.split_at_playhead_command();
                         ui.close_menu();
                     }
-                    if ui
-                        .button("🎬 Seçili Klipte Sahneleri Algıla ve Böl (Smart Cut)")
-                        .clicked()
-                    {
+                    if ui.button(lang.t("menu_smart_cut")).clicked() {
                         self.smart_scene_cut_selected_clip();
                         ui.close_menu();
                     }
-                    if ui.button("İşaretçi (Marker) Ekle / Kaldır (M)").clicked() {
+                    if ui.button(lang.t("menu_marker")).clicked() {
                         self.add_marker_at_playhead();
                         ui.close_menu();
                     }
-                    if ui
-                        .button(format!(
-                            "Manyetik Yapışma (N): {}",
+                    let snap_label = match lang {
+                        Language::English => {
                             if self.snap_enabled {
-                                "Açık"
+                                "Magnetic Snapping (N): Enabled"
                             } else {
-                                "Kapalı"
+                                "Magnetic Snapping (N): Disabled"
                             }
-                        ))
-                        .clicked()
-                    {
+                        }
+                        Language::Turkish => {
+                            if self.snap_enabled {
+                                "Manyetik Yapışma (N): Açık"
+                            } else {
+                                "Manyetik Yapışma (N): Kapalı"
+                            }
+                        }
+                    };
+                    if ui.button(snap_label).clicked() {
                         self.toggle_snap();
                         ui.close_menu();
                     }
                     ui.separator();
-                    ui.menu_button("En-Boy Oranı / Format", |ui| {
+                    ui.menu_button(lang.t("menu_aspect_ratio"), |ui| {
                         let curr = self.project.timeline.aspect_ratio();
                         for r in [
                             trim_core::AspectRatio::Wide16x9,
@@ -1325,104 +1346,121 @@ impl eframe::App for TrimApp {
                         }
                     });
                     if ui
-                        .checkbox(&mut self.show_safe_zones, "Güvenli Alan Rehber Çizgileri")
+                        .checkbox(&mut self.show_safe_zones, lang.t("menu_safe_zones"))
                         .clicked()
                     {
                         ui.close_menu();
                     }
                     ui.separator();
                     if ui
-                        .checkbox(
-                            &mut self.use_proxies,
-                            "⚡ Akıllı Proxy Önizleme (720p H.264)",
-                        )
+                        .checkbox(&mut self.use_proxies, lang.t("menu_proxies"))
                         .clicked()
                     {
                         self.video_engine.use_proxies = self.use_proxies;
                         self.video_engine.clear_cache();
                         self.last_rendered_dirty = true;
-                        let state_str = if self.use_proxies {
-                            "Açık"
-                        } else {
-                            "Kapalı"
+                        let state_str = match lang {
+                            Language::English => {
+                                if self.use_proxies {
+                                    "Enabled"
+                                } else {
+                                    "Disabled"
+                                }
+                            }
+                            Language::Turkish => {
+                                if self.use_proxies {
+                                    "Açık"
+                                } else {
+                                    "Kapalı"
+                                }
+                            }
                         };
-                        self.status_message = format!("⚡ Proxy Önizleme: {}", state_str);
+                        self.status_message = format!("⚡ Proxy: {}", state_str);
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button("Başa Git (Home)").clicked() {
+                    if ui.button(lang.t("menu_go_home")).clicked() {
                         self.seek(0.0);
                         ui.close_menu();
                     }
-                    if ui.button("Sona Git (End)").clicked() {
+                    if ui.button(lang.t("menu_go_end")).clicked() {
                         let dur = self.project.timeline.duration();
                         self.seek(dur);
                         ui.close_menu();
                     }
                 });
 
-                // Kanallar
-                ui.menu_button("Kanallar", |ui| {
-                    if ui.button("Video Kanalı Ekle (+ Video)").clicked() {
+                // Kanallar / Tracks
+                ui.menu_button(lang.t("menu_tracks"), |ui| {
+                    if ui.button(lang.t("menu_add_video_track")).clicked() {
                         self.add_video_track();
                         ui.close_menu();
                     }
-                    if ui.button("Ses Kanalı Ekle (+ Ses)").clicked() {
+                    if ui.button(lang.t("menu_add_audio_track")).clicked() {
                         self.add_audio_track();
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui
-                        .button("Tüm Kanal Yüksekliklerini Sıfırla (56px)")
-                        .clicked()
-                    {
+                    if ui.button(lang.t("menu_reset_track_heights")).clicked() {
                         self.canvas_state.track_heights.clear();
                         ui.close_menu();
                     }
                 });
 
-                // Pencere
-                ui.menu_button("Pencere", |ui| {
+                // Pencere / Window
+                ui.menu_button(lang.t("menu_window"), |ui| {
                     if ui
-                        .checkbox(
-                            &mut self.show_source_monitor,
-                            "Kaynak Monitörü (İkili Görünüm)",
-                        )
+                        .checkbox(&mut self.show_source_monitor, lang.t("menu_source_monitor"))
                         .clicked()
                     {
                         ui.close_menu();
                     }
-                    if ui.button("Çok Kanallı Ses Mikseri").clicked() {
+                    if ui.button(lang.t("menu_audio_mixer")).clicked() {
                         self.audio_mixer_dialog.toggle();
                         ui.close_menu();
                     }
-                    if ui.button("Metin / Başlık Editörü").clicked() {
+                    if ui.button(lang.t("menu_title_editor")).clicked() {
                         self.title_dialog.open();
                         ui.close_menu();
                     }
-                    if ui.button("Dışa Aktarma Stüdyosu").clicked() {
+                    if ui.button(lang.t("menu_export_studio")).clicked() {
                         self.export_dialog.open(&self.project);
                         ui.close_menu();
                     }
                 });
 
-                // Yardım
-                ui.menu_button("Yardım", |ui| {
-                    if ui.button("Klavye Kısayolları (F1)").clicked() {
+                // Yardım / Help
+                ui.menu_button(lang.t("menu_help"), |ui| {
+                    if ui.button(lang.t("menu_shortcuts_f1")).clicked() {
                         self.shortcuts_dialog.open();
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button("triM. Hakkında").clicked() {
+                    if ui.button(lang.t("menu_about")).clicked() {
                         self.show_about_dialog = true;
                         ui.close_menu();
                     }
                 });
 
-                // Right Side Controls: Quick Export + Mixer + Monitor view + Title
+                // Right Side Controls: Settings + Quick Export + Mixer + Monitor view + Title
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let settings_btn = Button::new(RichText::new("⚙").size(13.0)).fill(
+                        if self.preferences_dialog.is_open {
+                            Color32::from_rgb(0x28, 0x5a, 0x9e)
+                        } else {
+                            Color32::from_rgb(0x22, 0x22, 0x2c)
+                        },
+                    );
+                    if ui
+                        .add(settings_btn)
+                        .on_hover_text(lang.t("menu_preferences"))
+                        .clicked()
+                    {
+                        self.preferences_dialog.open(&self.preferences);
+                    }
+
                     let quick_exp_btn = Button::new(
-                        RichText::new("Dışa Aktar")
+                        RichText::new(lang.t("btn_export"))
                             .color(Color32::WHITE)
                             .size(11.5)
                             .strong(),
@@ -1430,31 +1468,31 @@ impl eframe::App for TrimApp {
                     .fill(Color32::from_rgb(0x28, 0x5a, 0x9e));
                     if ui
                         .add(quick_exp_btn)
-                        .on_hover_text("Dışa Aktarma Stüdyosu (Ctrl+M)")
+                        .on_hover_text(lang.t("menu_export_studio"))
                         .clicked()
                     {
                         self.export_dialog.open(&self.project);
                     }
 
-                    let mixer_btn = Button::new(RichText::new("Mikser").size(11.0)).fill(
-                        if self.audio_mixer_dialog.is_open {
+                    let mixer_btn = Button::new(RichText::new(lang.t("btn_mixer")).size(11.0))
+                        .fill(if self.audio_mixer_dialog.is_open {
                             Color32::from_rgb(0x2a, 0x54, 0x3d)
                         } else {
                             Color32::from_rgb(0x22, 0x22, 0x2c)
-                        },
-                    );
+                        });
                     if ui
                         .add(mixer_btn)
-                        .on_hover_text("Çok Kanallı Ses Mikserini Aç/Kapat")
+                        .on_hover_text(lang.t("menu_audio_mixer"))
                         .clicked()
                     {
                         self.audio_mixer_dialog.toggle();
                     }
 
-                    let mon_label = if self.show_source_monitor {
-                        "Tek Monitör"
-                    } else {
-                        "İkili Monitör"
+                    let mon_label = match (lang, self.show_source_monitor) {
+                        (Language::English, true) => "Single Monitor",
+                        (Language::English, false) => "Dual Monitor",
+                        (Language::Turkish, true) => "Tek Monitör",
+                        (Language::Turkish, false) => "İkili Monitör",
                     };
                     let mon_btn = Button::new(RichText::new(mon_label).size(11.0)).fill(
                         if self.show_source_monitor {
@@ -1465,9 +1503,7 @@ impl eframe::App for TrimApp {
                     );
                     if ui
                         .add(mon_btn)
-                        .on_hover_text(
-                            "Monitör Görünümünü Değiştir (İkili Monitör / Tek Sekans Monitörü)",
-                        )
+                        .on_hover_text(lang.t("menu_source_monitor"))
                         .clicked()
                     {
                         self.show_source_monitor = !self.show_source_monitor;
@@ -2564,7 +2600,7 @@ impl eframe::App for TrimApp {
                     let is_proj = self.active_left_tab == LeftPanelTab::Project;
                     let is_eff = self.active_left_tab == LeftPanelTab::Effects;
 
-                    let proj_btn = Button::new(RichText::new("Proje").size(11.5).strong().color(
+                    let proj_btn = Button::new(RichText::new(lang.t("tab_project")).size(11.5).strong().color(
                         if is_proj {
                             Color32::WHITE
                         } else {
@@ -2588,7 +2624,7 @@ impl eframe::App for TrimApp {
                         self.active_left_tab = LeftPanelTab::Project;
                     }
 
-                    let eff_btn = Button::new(RichText::new("Efektler").size(11.5).strong().color(
+                    let eff_btn = Button::new(RichText::new(lang.t("tab_effects")).size(11.5).strong().color(
                         if is_eff {
                             Color32::WHITE
                         } else {
@@ -3571,6 +3607,63 @@ impl eframe::App for TrimApp {
         // Keyboard Shortcuts Modal (F1)
         // -------------------------------------------------------------
         self.shortcuts_dialog.show(ctx, &mut self.shortcut_profile);
+
+        // -------------------------------------------------------------
+        // Preferences / Settings Modal (Ctrl+,)
+        // -------------------------------------------------------------
+        if let Some(act) = self.preferences_dialog.show(ctx, self.lang()) {
+            match act {
+                PreferencesAction::Save(new_prefs) => {
+                    let old_scale = self.preferences.ui_scale;
+                    let new_scale = new_prefs.ui_scale;
+                    let old_proxy = self.preferences.use_proxies_by_default;
+                    let new_proxy = new_prefs.use_proxies_by_default;
+                    let old_snap = self.preferences.snap_enabled_by_default;
+                    let new_snap = new_prefs.snap_enabled_by_default;
+
+                    if (old_scale - new_scale).abs() > 0.001 {
+                        ctx.set_pixels_per_point(new_scale);
+                    }
+                    if old_proxy != new_proxy {
+                        self.use_proxies = new_proxy;
+                        self.video_engine.use_proxies = new_proxy;
+                        self.video_engine.clear_cache();
+                        self.last_rendered_dirty = true;
+                    }
+                    if old_snap != new_snap {
+                        self.snap_enabled = new_snap;
+                    }
+
+                    match new_prefs.shortcut_profile.as_str() {
+                        "Adobe Premiere Pro" => {
+                            self.shortcut_profile = ShortcutProfile::PremierePro
+                        }
+                        "DaVinci Resolve" => {
+                            self.shortcut_profile = ShortcutProfile::DaVinciResolve
+                        }
+                        _ => self.shortcut_profile = ShortcutProfile::TrimDefault,
+                    }
+
+                    if self.preferences.max_memory_budget_mb != new_prefs.max_memory_budget_mb {
+                        let mb = new_prefs.max_memory_budget_mb.max(128);
+                        self.audio_mixer.set_max_cache_bytes(mb * 1024 * 1024);
+                        self.video_engine
+                            .set_frame_cache_capacity((mb * 300 / 512).max(50));
+                    }
+
+                    if let Err(e) = new_prefs.save() {
+                        self.status_message = format!("Tercihler kaydedilemedi: {}", e);
+                    } else {
+                        self.status_message = match new_prefs.language.as_str() {
+                            "en" => "Preferences saved successfully.".to_string(),
+                            _ => "Tercihler başarıyla kaydedildi.".to_string(),
+                        };
+                    }
+                    self.preferences = new_prefs;
+                }
+                PreferencesAction::Close => {}
+            }
+        }
 
         // -------------------------------------------------------------
         // Whisper Speech-to-Text Transcription Modal

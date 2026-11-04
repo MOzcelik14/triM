@@ -3,6 +3,7 @@
 pub mod audio_mixer_dialog;
 pub mod close_confirm_dialog;
 pub mod export_dialog;
+pub mod preferences_dialog;
 pub mod recovery_dialog;
 pub mod relink_dialog;
 pub mod render_queue_dialog;
@@ -18,6 +19,7 @@ pub mod welcome_dialog;
 pub use audio_mixer_dialog::{AudioMixerAction, AudioMixerDialog};
 pub use close_confirm_dialog::{CloseConfirmAction, CloseConfirmDialog, PendingCloseAction};
 pub use export_dialog::{ExportDialog, ExportDialogAction};
+pub use preferences_dialog::{PreferencesAction, PreferencesDialog};
 pub use recovery_dialog::{RecoveryAction, RecoveryDialog};
 pub use relink_dialog::{OfflineMediaEntry, RelinkDialog, RelinkDialogAction};
 pub use render_queue_dialog::{RenderQueueDialog, RenderQueueDialogAction};

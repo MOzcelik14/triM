@@ -56,6 +56,18 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.3.0" date="2026-11-04">
+      <description>
+        <p>triM. v1.3.0 - Tercihler / Ayarlar Merkezi, Coklu Dil Destegi (i18n) ve Donanim Durumu:</p>
+        <ul>
+          <li>Kapsamli Tercihler ve Ayarlar penceresi eklendi (Ctrl+, veya baslik cubugu disli simgesi).</li>
+          <li>Tam entegre Turkce (TR) ve Ingilizce (EN) coklu dil destegi (i18n) arayuze kazandirildi.</li>
+          <li>Dinamik RAM onbellegi butcesi yapilandirmasi (256 MB - 2048 MB) eklendi.</li>
+          <li>Gercek zamanli FFmpeg donanim hizlandirma durumu (NVENC, QSV, VAAPI, AMF) tespiti ve rozetleri eklendi.</li>
+          <li>Dokumantasyon ve derleme komutlari temizlendi.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.2.5" date="2026-11-01">
       <description>
         <p>triM. v1.2.5 - Açılış Splash Ekranı ve Modern Başlangıç Deneyimi:</p>

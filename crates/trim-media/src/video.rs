@@ -650,6 +650,13 @@ impl VideoEngine {
         self.is_decoding_seek = false;
     }
 
+    /// Dynamically sets the maximum number of frames held in the LRU frame cache.
+    pub fn set_frame_cache_capacity(&self, capacity: usize) {
+        if let Ok(mut fc) = self.frame_cache.write() {
+            fc.set_max_entries(capacity);
+        }
+    }
+
     pub fn get_image<P: AsRef<Path>>(&mut self, path: P) -> Option<Arc<RgbaImage>> {
         let p_str = path.as_ref().to_string_lossy().to_string();
         if !self.image_cache.contains_key(&p_str) {

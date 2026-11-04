@@ -6,6 +6,7 @@ pub mod color_wheel;
 pub mod dialogs;
 pub mod file_dialog;
 pub mod gpu_compositor;
+pub mod i18n;
 pub mod inspector;
 pub mod media_bin;
 pub mod monitor;
@@ -19,11 +20,12 @@ pub mod vu_meter;
 
 pub use app::TrimApp;
 pub use canvas::TimelineCanvasState;
-pub use dialogs::SplashScreen;
+pub use dialogs::{PreferencesAction, PreferencesDialog, SplashScreen};
 pub use file_dialog::{
     FileDialogBridge, FileDialogConfig, FileDialogMode, FileDialogRequest, FileDialogResponse,
 };
 pub use gpu_compositor::{GpuCompositor, LayerUniforms, GPU_PREVIEW_SCALE};
+pub use i18n::{tr, Language};
 pub use media_bin::LeftPanelTab;
 pub use shortcuts::ShortcutProfile;
 pub use theme::setup_theme;

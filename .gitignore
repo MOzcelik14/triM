@@ -13,3 +13,4 @@ build/
 *.deb
 .cache/
 target/
+.gemini/

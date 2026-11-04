@@ -52,7 +52,12 @@ triM, endüstri standardı NLE (Non-Linear Editor) iş akışlarını destekler.
 | `Ctrl + S` | Projeyi kaydet |
 | `Ctrl + Shift + S` | Farklı kaydet |
 | `Ctrl + I` | Medya dosyası içe aktar |
-| `Ctrl + E` | Dışa Aktarma Stüdyosu'nu aç (Render / Export) |
+| `Ctrl + M` | Dışa Aktarma Stüdyosu'nu aç (Render / Export) |
+| `Ctrl + Shift + E` | Render Kuyruğu penceresini aç |
+| `Ctrl + ,` | Tercihler / Ayarlar penceresini aç |
+| `Ctrl + L` | Seçili klipleri bağla / ayır (Link / Unlink) |
+| `Ctrl + A` | Tüm klipleri seç |
+| `Ctrl + D` | Seçimi kaldır |
 | `Ctrl + Z` | Geri al (Undo) |
 | `Ctrl + Y` veya `Ctrl + Shift + Z` | Yinele (Redo) |
 | `F1` | Kısayol referans penceresini aç / kapat |
