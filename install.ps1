@@ -121,10 +121,12 @@ if ($Uninstall) {
     Print-Banner
     Log-Step "1/2" "triM. Windows Bileşenleri Kaldırılıyor..."
 
-    $TargetExe = Join-Path $TargetBinDir "trim.exe"
-    if (Test-Path $TargetExe) {
-        Remove-Item -Force $TargetExe -ErrorAction SilentlyContinue
-        Log-Ok "İkili dosya kaldırıldı: $TargetExe"
+    foreach ($bin in @("trim.exe", "ffmpeg.exe", "ffprobe.exe", "ffplay.exe")) {
+        $binPath = Join-Path $TargetBinDir $bin
+        if (Test-Path $binPath) {
+            Remove-Item -Force $binPath -ErrorAction SilentlyContinue
+            Log-Ok "İkili dosya kaldırıldı: $bin"
+        }
     }
 
     # Remove Desktop Shortcut
@@ -146,9 +148,146 @@ if ($Uninstall) {
 
     Write-Host ""
     Write-Host "  $GREEN┌──$RESET $BOLD$WHITE`triM. Sistemden Başarıyla Kaldırıldı$RESET $GREEN─────────────────────────$RESET"
-    Write-Host "  $GREEN│$RESET  $GRAY`İkili dosya, Başlat Menüsü ve Masaüstü kısayolları temizlendi.$RESET"
+    Write-Host "  $GREEN│$RESET  $GRAY`İkili dosya, FFmpeg motoru, Başlat Menüsü ve Masaüstü kısayolları temizlendi.$RESET"
     Write-Host "  $GREEN└───────────────────────────────────────────────────────────────────────$RESET`n"
     exit 0
+}
+
+# ------------------------------------------------------------------------------
+# Helper: Ensure FFmpeg & FFprobe are Installed
+# ------------------------------------------------------------------------------
+function Ensure-FFmpeg-Installed {
+    param (
+        [string]$DestinationDir,
+        [string]$ExtractSourceDir = ""
+    )
+
+    $DestFfmpeg = Join-Path $DestinationDir "ffmpeg.exe"
+    $DestFfprobe = Join-Path $DestinationDir "ffprobe.exe"
+
+    # 1. Check if already present in destination directory
+    if ((Test-Path $DestFfmpeg) -and (Test-Path $DestFfprobe)) {
+        Log-Ok "FFmpeg ve FFprobe hedef dizinde hazır ($DestinationDir)"
+        return
+    }
+
+    # 2. Check if present in extracted source / zip directory
+    if (![string]::IsNullOrEmpty($ExtractSourceDir) -and (Test-Path $ExtractSourceDir)) {
+        $SourceFfmpeg = Get-ChildItem -Path $ExtractSourceDir -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
+        $SourceFfprobe = Get-ChildItem -Path $ExtractSourceDir -Filter "ffprobe.exe" -Recurse | Select-Object -First 1
+        if ($SourceFfmpeg -and $SourceFfprobe) {
+            Copy-Item -Path $SourceFfmpeg.FullName -Destination $DestFfmpeg -Force
+            Copy-Item -Path $SourceFfprobe.FullName -Destination $DestFfprobe -Force
+            $SourceFfplay = Get-ChildItem -Path $ExtractSourceDir -Filter "ffplay.exe" -Recurse | Select-Object -First 1
+            if ($SourceFfplay) {
+                Copy-Item -Path $SourceFfplay.FullName -Destination (Join-Path $DestinationDir "ffplay.exe") -Force
+            }
+            Log-Ok "FFmpeg ve FFprobe indirilen paketten yerleştirildi ($DestinationDir)"
+            return
+        }
+    }
+
+    # 3. Check if available on system PATH
+    $SysFfmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+    $SysFfprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
+    if ($SysFfmpeg -and $SysFfprobe) {
+        try {
+            Copy-Item -Path $SysFfmpeg.Source -Destination $DestFfmpeg -Force
+            Copy-Item -Path $SysFfprobe.Source -Destination $DestFfprobe -Force
+            Log-Ok "Sistemdeki FFmpeg ikilileri triM klasörüne entegre edildi"
+            return
+        } catch {
+            Log-Ok "Sistem FFmpeg ikilisi kullanılacak: $($SysFfmpeg.Source)"
+            return
+        }
+    }
+
+    # 4. If missing, automatically download and install official static FFmpeg
+    Log-Info "FFmpeg sistemde bulunamadı. triM. için FFmpeg resmi kararlı sürümü kuruluyor..."
+
+    $Installed = $false
+
+    # Strategy A: winget
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        try {
+            Log-Info "winget ile Gyan.FFmpeg kuruluyor..."
+            $proc = Start-Process -FilePath "winget" -ArgumentList "install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements --silent" -Wait -PassThru -NoNewWindow
+            if ($proc.ExitCode -eq 0) {
+                $SysFfmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
+                $SysFfprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
+                if ($SysFfmpeg -and $SysFfprobe) {
+                    Copy-Item -Path $SysFfmpeg.Source -Destination $DestFfmpeg -Force
+                    Copy-Item -Path $SysFfprobe.Source -Destination $DestFfprobe -Force
+                    Log-Ok "FFmpeg winget ile başarıyla kuruldu ve entegre edildi!"
+                    $Installed = $true
+                }
+            }
+        } catch {
+            Log-Warn "winget kurulumu atlandı, doğrudan taşınabilir paket indirilmesine geçiliyor."
+        }
+    }
+
+    # Strategy B: Direct download of Gyan FFmpeg release essentials zip
+    if (-not $Installed) {
+        try {
+            Log-Info "Resmi taşınabilir FFmpeg paketi indiriliyor (Gyan.dev)..."
+            $FfTempZip = Join-Path $env:TEMP ("ffmpeg-" + [guid]::NewGuid().ToString().Substring(0, 8) + ".zip")
+            $FfTempExtract = Join-Path $env:TEMP ("ffmpeg-extract-" + [guid]::NewGuid().ToString().Substring(0, 8))
+            New-Item -ItemType Directory -Path $FfTempExtract -Force | Out-Null
+
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $FfTempZip -UseBasicParsing
+
+            Log-Info "FFmpeg paketi açılıyor..."
+            Expand-Archive -Path $FfTempZip -DestinationPath $FfTempExtract -Force
+
+            $FoundFfmpeg = Get-ChildItem -Path $FfTempExtract -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
+            $FoundFfprobe = Get-ChildItem -Path $FfTempExtract -Filter "ffprobe.exe" -Recurse | Select-Object -First 1
+            $FoundFfplay = Get-ChildItem -Path $FfTempExtract -Filter "ffplay.exe" -Recurse | Select-Object -First 1
+
+            if ($FoundFfmpeg -and $FoundFfprobe) {
+                Copy-Item -Path $FoundFfmpeg.FullName -Destination $DestFfmpeg -Force
+                Copy-Item -Path $FoundFfprobe.FullName -Destination $DestFfprobe -Force
+                if ($FoundFfplay) {
+                    Copy-Item -Path $FoundFfplay.FullName -Destination (Join-Path $DestinationDir "ffplay.exe") -Force
+                }
+                Log-Ok "FFmpeg ve FFprobe başarıyla kuruldu: $DestinationDir"
+                $Installed = $true
+            }
+
+            Remove-Item -Recurse -Force $FfTempZip -ErrorAction SilentlyContinue
+            Remove-Item -Recurse -Force $FfTempExtract -ErrorAction SilentlyContinue
+        } catch {
+            Log-Warn "Gyan.dev üzerinden indirme başarısız oldu, GitHub aynası deneniyor..."
+            try {
+                $FfTempZip = Join-Path $env:TEMP ("ffmpeg-gh-" + [guid]::NewGuid().ToString().Substring(0, 8) + ".zip")
+                $FfTempExtract = Join-Path $env:TEMP ("ffmpeg-gh-ext-" + [guid]::NewGuid().ToString().Substring(0, 8))
+                New-Item -ItemType Directory -Path $FfTempExtract -Force | Out-Null
+
+                Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile $FfTempZip -UseBasicParsing
+                Expand-Archive -Path $FfTempZip -DestinationPath $FfTempExtract -Force
+
+                $FoundFfmpeg = Get-ChildItem -Path $FfTempExtract -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
+                $FoundFfprobe = Get-ChildItem -Path $FfTempExtract -Filter "ffprobe.exe" -Recurse | Select-Object -First 1
+                $FoundFfplay = Get-ChildItem -Path $FfTempExtract -Filter "ffplay.exe" -Recurse | Select-Object -First 1
+
+                if ($FoundFfmpeg -and $FoundFfprobe) {
+                    Copy-Item -Path $FoundFfmpeg.FullName -Destination $DestFfmpeg -Force
+                    Copy-Item -Path $FoundFfprobe.FullName -Destination $DestFfprobe -Force
+                    if ($FoundFfplay) {
+                        Copy-Item -Path $FoundFfplay.FullName -Destination (Join-Path $DestinationDir "ffplay.exe") -Force
+                    }
+                    Log-Ok "FFmpeg ve FFprobe GitHub aynasından kuruldu: $DestinationDir"
+                    $Installed = $true
+                }
+
+                Remove-Item -Recurse -Force $FfTempZip -ErrorAction SilentlyContinue
+                Remove-Item -Recurse -Force $FfTempExtract -ErrorAction SilentlyContinue
+            } catch {
+                Log-Err "FFmpeg otomatik kurulamadı: $_"
+            }
+        }
+    }
 }
 
 # ------------------------------------------------------------------------------
@@ -163,19 +302,18 @@ $Arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
 Log-Ok "İşletim Sistemi: Windows ($Arch)"
 
 $FfmpegCmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
+$DestFfmpeg = Join-Path $TargetBinDir "ffmpeg.exe"
 if ($FfmpegCmd) {
     try {
         $FfVersion = (& ffmpeg -version 2>$null | Select-Object -First 1) -replace "ffmpeg version ([^ ]+).*", '$1'
-        Log-Ok "FFmpeg tespit edildi ($GRAY`v$FfVersion$RESET)"
+        Log-Ok "FFmpeg sistem ortamında tespit edildi ($GRAY`v$FfVersion$RESET)"
     } catch {
         Log-Ok "FFmpeg tespit edildi"
     }
+} elseif (Test-Path $DestFfmpeg) {
+    Log-Ok "FFmpeg hedef klasörde mevcut ($DestFfmpeg)"
 } else {
-    Log-Warn "FFmpeg sisteminizde (PATH) bulunamadı!"
-    Write-Host "     $GRAY`triM. video çözümleme, dalga formu çıkarma ve dışa aktarma için FFmpeg kullanır.$RESET"
-    Write-Host "     $GRAY`Kurulum sonrasında tek bir komutla kolayca yükleyebilirsiniz:$RESET"
-    Write-Host "     $CYAN`• winget install Gyan.FFmpeg$RESET"
-    Write-Host "     $GRAY`veya https://ffmpeg.org/download.html adresinden indirip 'ffmpeg.exe'yi triM klasörüne atabilirsiniz.$RESET"
+    Log-Info "FFmpeg sistemde henüz yok — Kurulum sırasında triM. ile birlikte otomatik yüklenecek."
 }
 
 # Determine if in git clone
@@ -260,13 +398,16 @@ if ($InRepo -and -not $Build -and (Test-Path (Join-Path $RepoRoot "target\releas
     }
 }
 
-# Step 3: Desktop & Filesystem Integration
-Log-Step "3/4" "Windows Masaüstü Entegrasyonu ve Kısayollar Kuruluyor"
+# Step 3: Desktop, Filesystem & FFmpeg Integration
+Log-Step "3/4" "Windows Masaüstü Entegrasyonu ve FFmpeg Kuruluyor"
 
 New-Item -ItemType Directory -Path $TargetBinDir -Force | Out-Null
 $FinalExe = Join-Path $TargetBinDir "trim.exe"
 Copy-Item -Path $BuiltBinary -Destination $FinalExe -Force
 Log-Ok "İkili dosya yerleştirildi: $FinalExe"
+
+# Ensure FFmpeg and FFprobe are present alongside trim.exe
+Ensure-FFmpeg-Installed -DestinationDir $TargetBinDir -ExtractSourceDir $TempDir
 
 # Download or copy icon
 $IconDir = Join-Path $InstallDir "resources"

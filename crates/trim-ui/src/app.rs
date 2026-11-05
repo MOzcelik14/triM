@@ -157,6 +157,7 @@ pub struct TrimApp {
     pub last_saved_undo_len: usize,
     pub file_dialog_bridge: FileDialogBridge,
     pub clipboard_clips: Vec<(trim_core::track::TrackType, f64, trim_core::clip::Clip)>,
+    pub ffmpeg_missing_alert: bool,
 }
 
 impl Default for TrimApp {
@@ -249,6 +250,7 @@ impl Default for TrimApp {
             last_saved_undo_len: 0,
             file_dialog_bridge: FileDialogBridge::default(),
             clipboard_clips: Vec::new(),
+            ffmpeg_missing_alert: false,
         }
     }
 }
@@ -287,6 +289,13 @@ impl TrimApp {
         // Check crash recovery
         if let Some(rec_path) = app.autosave_mgr.check_recovery(&app.project) {
             app.recovery_dialog.prompt(rec_path);
+        }
+
+        // Check FFmpeg & FFprobe media engine availability
+        let ffmpeg_ok = trim_media::is_ffmpeg_available() && trim_media::is_ffprobe_available();
+        if !ffmpeg_ok {
+            log::warn!("FFmpeg or FFprobe binaries not detected at startup!");
+            app.ffmpeg_missing_alert = true;
         }
 
         app
@@ -4090,6 +4099,93 @@ impl eframe::App for TrimApp {
                 self.bin_dialog = None;
             } else {
                 self.bin_dialog = Some(state);
+            }
+        }
+
+        // -------------------------------------------------------------
+        // FFmpeg Missing Diagnostic Modal
+        // -------------------------------------------------------------
+        if self.ffmpeg_missing_alert && !self.splash_screen.is_active {
+            let mut is_open = self.ffmpeg_missing_alert;
+            let title = match self.lang() {
+                Language::Turkish => "⚠️ triM. — FFmpeg Medya Motoru Bulunamadı",
+                Language::English => "⚠️ triM. — FFmpeg Media Engine Not Found",
+            };
+            egui::Window::new(title)
+                .id(egui::Id::new("ffmpeg_missing_modal"))
+                .open(&mut is_open)
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .resizable(false)
+                .collapsible(false)
+                .fixed_size(egui::Vec2::new(500.0, 300.0))
+                .show(ctx, |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(8.0);
+                        ui.label(
+                            egui::RichText::new("⚠️")
+                                .size(32.0)
+                                .color(egui::Color32::from_rgb(240, 180, 50)),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(match self.lang() {
+                                Language::Turkish => "FFmpeg veya FFprobe Bulunamadı!",
+                                Language::English => "FFmpeg or FFprobe Not Detected!",
+                            })
+                            .font(egui::FontId::proportional(15.0))
+                            .strong()
+                            .color(egui::Color32::WHITE),
+                        );
+                    });
+
+                    ui.add_space(10.0);
+                    let info_text = match self.lang() {
+                        Language::Turkish => "triM. video çözümleme, oynatma, dalga formu çıkarma ve dışa aktarma için FFmpeg ve FFprobe motoruna ihtiyaç duyar.\n\nNasıl çözebilirsiniz:\n1. Windows installer ile kurun (install.ps1 otomatik FFmpeg kurar)\n2. PowerShell'de şunu çalıştırın: winget install Gyan.FFmpeg\n3. Ya da ffmpeg.exe ve ffprobe.exe dosyalarını trim.exe yanına kopyalayın.",
+                        Language::English => "triM. requires FFmpeg and FFprobe binaries for video decoding, preview playback, waveform extraction, and exporting.\n\nHow to resolve:\n1. Run install.ps1 (automatically bundles and configures FFmpeg)\n2. Run in PowerShell: winget install Gyan.FFmpeg\n3. Or place ffmpeg.exe & ffprobe.exe next to trim.exe.",
+                    };
+                    ui.label(
+                        egui::RichText::new(info_text)
+                            .size(12.0)
+                            .color(egui::Color32::from_rgb(210, 215, 225)),
+                    );
+
+                    ui.add_space(14.0);
+                    ui.separator();
+                    ui.add_space(8.0);
+
+                    ui.horizontal(|ui| {
+                        let retry_lbl = match self.lang() {
+                            Language::Turkish => "🔄 Tekrar Kontrol Et",
+                            Language::English => "🔄 Check Again",
+                        };
+                        if ui.button(retry_lbl).clicked() {
+                            if trim_media::is_ffmpeg_available() && trim_media::is_ffprobe_available() {
+                                self.ffmpeg_missing_alert = false;
+                                self.status_message = match self.lang() {
+                                    Language::Turkish => "FFmpeg başarıyla tespit edildi! Sistem hazır.".to_string(),
+                                    Language::English => "FFmpeg detected successfully! System ready.".to_string(),
+                                };
+                            } else {
+                                self.status_message = match self.lang() {
+                                    Language::Turkish => "FFmpeg hala tespit edilemedi. Lütfen dosyaları trim.exe yanına kopyalayın.".to_string(),
+                                    Language::English => "FFmpeg still not detected. Please copy files next to trim.exe.".to_string(),
+                                };
+                            }
+                        }
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let close_lbl = match self.lang() {
+                                Language::Turkish => "Yine de Devam Et",
+                                Language::English => "Continue Anyway",
+                            };
+                            if ui.button(close_lbl).clicked() {
+                                self.ffmpeg_missing_alert = false;
+                            }
+                        });
+                    });
+                });
+            if !is_open {
+                self.ffmpeg_missing_alert = false;
             }
         }
 

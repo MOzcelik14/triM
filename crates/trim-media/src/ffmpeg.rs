@@ -117,6 +117,24 @@ pub fn ffplay_cmd() -> Command {
     create_command("ffplay")
 }
 
+/// Checks whether `ffmpeg` is available and executable.
+pub fn is_ffmpeg_available() -> bool {
+    ffmpeg_cmd()
+        .arg("-version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Checks whether `ffprobe` is available and executable.
+pub fn is_ffprobe_available() -> bool {
+    ffprobe_cmd()
+        .arg("-version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// Continuously drains a child process's stderr in a dedicated background worker
 /// to prevent OS pipe buffer exhaustion (e.g. 64KB Linux default) and avoid process deadlocks.
 pub fn drain_stderr(stderr: Option<std::process::ChildStderr>, thread_name: &'static str) {

@@ -85,11 +85,16 @@ I built triM. to serve that need. The user interface is rendered using `egui` an
 - **Audio Output:** PipeWire (`pw-cat`), PulseAudio (`paplay`), or ALSA (`aplay`) on Linux; DirectSound / waveOut on Windows
 
 ### Pre-built Binaries
-Download `.deb`, `.rpm`, `.AppImage` (Linux) or `.zip` (Windows) packages from [GitHub Releases](https://github.com/MOzcelik14/triM/releases).
+Download `.deb`, `.rpm`, `.AppImage` (Linux) or `.zip` (Windows) packages from [GitHub Releases](https://github.com/MOzcelik14/triM/releases). Windows release ZIPs come pre-bundled with portable FFmpeg and FFprobe binaries—no external setup required.
 
 One-line installation on Linux:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash
+```
+
+One-line installation on Windows (PowerShell):
+```powershell
+iwr -useb https://raw.githubusercontent.com/MOzcelik14/triM/master/install.ps1 | iex
 ```
 
 ### Building From Source

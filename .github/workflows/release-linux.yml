@@ -155,6 +155,68 @@ jobs:
         run: cargo test --workspace --locked
       - name: Build Windows binary
         run: cargo build --locked --release -p trim-app
+      - name: Acquire FFmpeg binaries for Windows release bundle
+        shell: pwsh
+        run: |
+          $stageBin = Join-Path $env:TEMP "ffmpeg-bin"
+          New-Item -ItemType Directory -Path $stageBin -Force | Out-Null
+
+          # Strategy 1: Check runner preinstalled binaries
+          $ff = (Get-Command ffmpeg -ErrorAction SilentlyContinue)?.Source
+          $probe = (Get-Command ffprobe -ErrorAction SilentlyContinue)?.Source
+          $play = (Get-Command ffplay -ErrorAction SilentlyContinue)?.Source
+
+          if (-not $ff -and (Test-Path "C:\ProgramData\chocolatey\bin\ffmpeg.exe")) {
+            $ff = "C:\ProgramData\chocolatey\bin\ffmpeg.exe"
+          }
+          if (-not $probe -and (Test-Path "C:\ProgramData\chocolatey\bin\ffprobe.exe")) {
+            $probe = "C:\ProgramData\chocolatey\bin\ffprobe.exe"
+          }
+          if (-not $play -and (Test-Path "C:\ProgramData\chocolatey\bin\ffplay.exe")) {
+            $play = "C:\ProgramData\chocolatey\bin\ffplay.exe"
+          }
+
+          # Strategy 2: Chocolatey installation
+          if (-not $ff -or -not $probe) {
+            Write-Host "Installing FFmpeg via Chocolatey..."
+            choco install ffmpeg -y --no-progress
+            if (Test-Path "C:\ProgramData\chocolatey\bin\ffmpeg.exe") {
+              $ff = "C:\ProgramData\chocolatey\bin\ffmpeg.exe"
+            }
+            if (Test-Path "C:\ProgramData\chocolatey\bin\ffprobe.exe") {
+              $probe = "C:\ProgramData\chocolatey\bin\ffprobe.exe"
+            }
+            if (Test-Path "C:\ProgramData\chocolatey\bin\ffplay.exe") {
+              $play = "C:\ProgramData\chocolatey\bin\ffplay.exe"
+            }
+          }
+
+          # Strategy 3: Official static essentials download
+          if (-not $ff -or -not $probe) {
+            Write-Host "Downloading official FFmpeg release essentials..."
+            $ffZip = Join-Path $env:TEMP "ffmpeg-essentials.zip"
+            $ffExt = Join-Path $env:TEMP "ffmpeg-essentials-ext"
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $ffZip -UseBasicParsing
+            Expand-Archive -Path $ffZip -DestinationPath $ffExt -Force
+            $ff = (Get-ChildItem -Path $ffExt -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1)?.FullName
+            $probe = (Get-ChildItem -Path $ffExt -Filter "ffprobe.exe" -Recurse | Select-Object -First 1)?.FullName
+            $play = (Get-ChildItem -Path $ffExt -Filter "ffplay.exe" -Recurse | Select-Object -First 1)?.FullName
+          }
+
+          Write-Host "Acquired FFmpeg: $ff"
+          Write-Host "Acquired FFprobe: $probe"
+
+          if (-not $ff -or -not $probe) {
+            Write-Error "FFmpeg/FFprobe binaries could not be acquired for Windows packaging."
+            exit 1
+          }
+
+          Copy-Item -Path $ff -Destination (Join-Path $stageBin "ffmpeg.exe") -Force
+          Copy-Item -Path $probe -Destination (Join-Path $stageBin "ffprobe.exe") -Force
+          if ($play -and (Test-Path $play)) {
+            Copy-Item -Path $play -Destination (Join-Path $stageBin "ffplay.exe") -Force
+          }
       - name: Package Windows ZIP
         shell: pwsh
         run: |
@@ -169,24 +231,38 @@ jobs:
           if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
           New-Item -ItemType Directory -Path (Join-Path $stage "bin") -Force | Out-Null
+
           Copy-Item -Path "target\release\trim.exe" -Destination $stage -Force
           Copy-Item -Path "resources" -Destination $stage -Recurse -Force
           Copy-Item -Path "README.md" -Destination $stage -Force
           Copy-Item -Path "install.ps1" -Destination $stage -Force
+
+          # Copy FFmpeg binaries to root and bin/ of package
+          $stageBin = Join-Path $env:TEMP "ffmpeg-bin"
+          if (Test-Path $stageBin) {
+            Copy-Item -Path "$stageBin\*.exe" -Destination $stage -Force
+            Copy-Item -Path "$stageBin\*.exe" -Destination (Join-Path $stage "bin") -Force
+          }
+
+          # Verify mandatory binaries
+          if (-not (Test-Path (Join-Path $stage "trim.exe"))) { throw "trim.exe missing from package" }
+          if (-not (Test-Path (Join-Path $stage "ffmpeg.exe"))) { throw "ffmpeg.exe missing from package root" }
+          if (-not (Test-Path (Join-Path $stage "ffprobe.exe"))) { throw "ffprobe.exe missing from package root" }
+          if (-not (Test-Path (Join-Path $stage "bin\ffmpeg.exe"))) { throw "ffmpeg.exe missing from package bin/" }
+          if (-not (Test-Path (Join-Path $stage "bin\ffprobe.exe"))) { throw "ffprobe.exe missing from package bin/" }
+
           $runtimeNotes = @"
           triM. v$ver (Windows x86_64 MSVC)
           ===================================
-          Calisma Zamani Bagimliliklari (FFmpeg / FFprobe / FFplay):
-          1. Sistem geneli kurulum (Onerilen):
-             winget install Gyan.FFmpeg
-          2. Tasinabilir (Portable) kurulum:
-             ffmpeg.exe, ffprobe.exe ve ffplay.exe dosyalarini dogrudan trim.exe yanina
-             veya altindaki .\bin\ klasorune kopyalayin.
-             triM. calisma zamaninda sirasiyla su konumlari otomatik tarar:
-             - TRIM_FFMPEG_PATH / TRIM_FFPROBE_PATH / TRIM_FFPLAY_PATH ortam degiskenleri
-             - <uygulama_dizini>\ffmpeg.exe ve <uygulama_dizini>\bin\ffmpeg.exe
-             - %LOCALAPPDATA%\triM\bin\ffmpeg.exe
-             - Sistem PATH degiskeni
+          Bu paket, triM. ile birlikte calismaya hazir tasinabilir FFmpeg ve FFprobe
+          ikili dosyalarini icermektedir (ffmpeg.exe, ffprobe.exe).
+          Ekstra bir kuruluma gerek kalmadan dogrudan trim.exe calistirilabilir.
+
+          Calisma Zamani Arama Sirasi:
+          1. <uygulama_dizini>\ffmpeg.exe ve <uygulama_dizini>\bin\ffmpeg.exe
+          2. %LOCALAPPDATA%\triM\bin\ffmpeg.exe
+          3. TRIM_FFMPEG_PATH / TRIM_FFPROBE_PATH ortam degiskenleri
+          4. Sistem PATH degiskeni
           "@
           Set-Content -Path (Join-Path $stage "WINDOWS_RUNTIME.txt") -Value $runtimeNotes -Encoding UTF8
           Compress-Archive -Path "$stage\*" -DestinationPath "dist\triM-$ver-windows-x86_64.zip" -Force

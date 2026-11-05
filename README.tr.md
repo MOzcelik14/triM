@@ -85,11 +85,16 @@ triM'i bu amaçla geliştirdim. Arayüzü `egui`/`eframe` ile çiziyor, video ve
 - **Ses Çıktısı:** Linux'ta PipeWire (`pw-cat`), PulseAudio (`paplay`) veya ALSA (`aplay`); Windows'ta DirectSound / waveOut
 
 ### Hazır İkili Dosyalar
-[GitHub Sürümler](https://github.com/MOzcelik14/triM/releases) sayfasından Linux için `.deb`, `.rpm`, `.AppImage` veya Windows için `.zip` paketlerini indirebilirsiniz.
+[GitHub Sürümler](https://github.com/MOzcelik14/triM/releases) sayfasından Linux için `.deb`, `.rpm`, `.AppImage` veya Windows için `.zip` paketlerini indirebilirsiniz. Windows ZIP paketleri taşınabilir FFmpeg ve FFprobe motorlarıyla birlikte gelir—ekstra kurulum gerektirmez.
 
 Linux üzerinde tek komutla kurulum:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash
+```
+
+Windows üzerinde tek komutla kurulum (PowerShell):
+```powershell
+iwr -useb https://raw.githubusercontent.com/MOzcelik14/triM/master/install.ps1 | iex
 ```
 
 ### Kaynaktan Derleme
