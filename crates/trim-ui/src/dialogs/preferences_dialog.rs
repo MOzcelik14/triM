@@ -201,33 +201,29 @@ impl PreferencesDialog {
                                     ui.set_width(ui.available_width());
                                     ui.set_height(body_height);
 
-                                    ScrollArea::vertical()
-                                        .auto_shrink([false, false])
-                                        .show(ui, |ui| {
+                                    ScrollArea::vertical().auto_shrink([false, false]).show(
+                                        ui,
+                                        |ui| {
                                             ui.set_width(ui.available_width());
-                                            ui.vertical(|ui| {
-                                                match self.active_category {
-                                                    PreferencesCategory::General => {
-                                                        self.render_general_tab(ui, active_lang);
-                                                    }
-                                                    PreferencesCategory::Editing => {
-                                                        self.render_editing_tab(ui, active_lang);
-                                                    }
-                                                    PreferencesCategory::Performance => {
-                                                        self.render_performance_tab(
-                                                            ui,
-                                                            active_lang,
-                                                        );
-                                                    }
-                                                    PreferencesCategory::Audio => {
-                                                        self.render_audio_tab(ui, active_lang);
-                                                    }
-                                                    PreferencesCategory::Autosave => {
-                                                        self.render_autosave_tab(ui, active_lang);
-                                                    }
+                                            ui.vertical(|ui| match self.active_category {
+                                                PreferencesCategory::General => {
+                                                    self.render_general_tab(ui, active_lang);
+                                                }
+                                                PreferencesCategory::Editing => {
+                                                    self.render_editing_tab(ui, active_lang);
+                                                }
+                                                PreferencesCategory::Performance => {
+                                                    self.render_performance_tab(ui, active_lang);
+                                                }
+                                                PreferencesCategory::Audio => {
+                                                    self.render_audio_tab(ui, active_lang);
+                                                }
+                                                PreferencesCategory::Autosave => {
+                                                    self.render_autosave_tab(ui, active_lang);
                                                 }
                                             });
-                                        });
+                                        },
+                                    );
                                 });
                         },
                     );
