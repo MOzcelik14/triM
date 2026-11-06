@@ -56,6 +56,19 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.3.1" date="2026-11-06">
+      <description>
+        <p>triM. v1.3.1 "Karadeniz" - İş Akışı İyileştirmeleri ve Zafiyet Çözümleri:</p>
+        <ul>
+          <li>Medya havuzuna doğrudan sürükle-bırak (drag and drop) ile tekli/çoklu dosya ve klasör içe aktarma desteği.</li>
+          <li>Sony ZV-E10 II ve benzeri kameraların XAVC S LPCM çok kanallı ve meta veri içeren ses akışlarını çözme desteği (-dn, -sn, -map 0:a:0?).</li>
+          <li>Program monitörü için tam ekran (fullscreen) önizleme modu (F11, ekran çift tık, ESC butonu).</li>
+          <li>Normal seçim imlecindeyken metne çift tıklayarak anında düzenleme (doğrudan Text Tool geçişi).</li>
+          <li>Genişletilmiş font ailesi seçenekleri (Sans-Serif, Serif, Monospace, Impact, Montserrat) ve Kalın/İtalik butonları.</li>
+          <li>Zaman çizelgesi üzerinde bağımsız ve şeffaf metin klipleri mimarisi (video/görsel kliplerinde gereksiz titler gizlendi).</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.3.0" date="2026-11-04">
       <description>
         <p>triM. v1.3.0 - Tercihler / Ayarlar Merkezi, Coklu Dil Destegi (i18n) ve Donanim Durumu:</p>

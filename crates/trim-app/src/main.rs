@@ -13,13 +13,18 @@ fn main() -> Result<(), eframe::Error> {
     if args.len() > 1 {
         match args[1].as_str() {
             "--version" | "-v" => {
-                println!("triM. v{}", env!("CARGO_PKG_VERSION"));
+                println!(
+                    "triM. v{} \"{}\"",
+                    env!("CARGO_PKG_VERSION"),
+                    trim_core::VERSION_CODENAME
+                );
                 return Ok(());
             }
             "--help" | "-h" => {
                 println!(
-                    "triM. v{} - Hafif Masaüstü Video Düzenleyici (Rust NLE)",
-                    env!("CARGO_PKG_VERSION")
+                    "triM. v{} \"{}\" - Hafif Masaüstü Video Düzenleyici (Rust NLE)",
+                    env!("CARGO_PKG_VERSION"),
+                    trim_core::VERSION_CODENAME
                 );
                 println!("\nKullanım: trim [DOSYA]");
                 println!("\nSeçenekler:");
@@ -33,12 +38,17 @@ fn main() -> Result<(), eframe::Error> {
     }
 
     log::info!(
-        "Starting triM. v{} (Rust Desktop NLE)...",
-        env!("CARGO_PKG_VERSION")
+        "Starting triM. v{} \"{}\" (Rust Desktop NLE)...",
+        env!("CARGO_PKG_VERSION"),
+        trim_core::VERSION_CODENAME
     );
 
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title(format!("triM. v{}", env!("CARGO_PKG_VERSION")))
+        .with_title(format!(
+            "triM. v{} \"{}\"",
+            env!("CARGO_PKG_VERSION"),
+            trim_core::VERSION_CODENAME
+        ))
         .with_inner_size([1366.0, 850.0])
         .with_min_inner_size([1024.0, 600.0]);
 

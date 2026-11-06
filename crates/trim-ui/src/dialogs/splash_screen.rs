@@ -203,8 +203,9 @@ impl SplashScreen {
                                             .show(ui, |ui| {
                                                 ui.label(
                                                     RichText::new(format!(
-                                                        "v{}",
-                                                        env!("CARGO_PKG_VERSION")
+                                                        "v{} · {}",
+                                                        env!("CARGO_PKG_VERSION"),
+                                                        trim_core::VERSION_CODENAME
                                                     ))
                                                     .font(FontId::monospace(11.5))
                                                     .strong()
