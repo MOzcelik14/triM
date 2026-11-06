@@ -184,6 +184,130 @@ impl TrimApp {
         }
     }
 
+    pub fn import_media_path<P: AsRef<std::path::Path>>(&mut self, path: P) {
+        let p = path.as_ref();
+        if p.is_dir() {
+            let mut files = Vec::new();
+            collect_media_files_recursive(p, 0, &mut files);
+            files.sort();
+            let count = files.len();
+            for f in files {
+                self.import_media_file(&f);
+            }
+            if count > 0 {
+                self.status_message = format!("Klasörden {} medya dosyası içe aktarıldı", count);
+            }
+        } else if p.is_file() {
+            self.import_media_file(p);
+        }
+    }
+}
+
+fn collect_media_files_recursive(
+    dir: &std::path::Path,
+    depth: usize,
+    out: &mut Vec<std::path::PathBuf>,
+) {
+    if depth > 6 {
+        return;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    const SUPPORTED_EXTS: &[&str] = &[
+        "mp4", "mov", "mkv", "webm", "m4v", "avi", "ts", "mts", "m2ts", "mp3", "wav", "aac",
+        "flac", "ogg", "m4a", "png", "jpg", "jpeg", "webp", "bmp", "tiff", "gif",
+    ];
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_media_files_recursive(&path, depth + 1, out);
+        } else if path.is_file() {
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                if SUPPORTED_EXTS.iter().any(|&s| s.eq_ignore_ascii_case(ext)) {
+                    out.push(path);
+                }
+            }
+        }
+    }
+}
+
+pub fn parse_dropped_paths(file: &egui::DroppedFile) -> Vec<std::path::PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(p) = &file.path {
+        paths.push(p.clone());
+    }
+    if paths.is_empty() {
+        if !file.name.is_empty() {
+            if let Some(p) = uri_or_str_to_path(&file.name) {
+                paths.push(p);
+            }
+        }
+        if let Some(bytes) = &file.bytes {
+            if let Ok(text) = std::str::from_utf8(bytes) {
+                for line in text.lines() {
+                    let line = line.trim();
+                    if !line.is_empty() {
+                        if let Some(p) = uri_or_str_to_path(line) {
+                            paths.push(p);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    paths
+}
+
+fn percent_decode(s: &str) -> String {
+    let mut bytes = Vec::with_capacity(s.len());
+    let mut iter = s.bytes();
+    while let Some(b) = iter.next() {
+        if b == b'%' {
+            let h1 = iter.next();
+            let h2 = iter.next();
+            if let (Some(h1), Some(h2)) = (h1, h2) {
+                if let Ok(hex) =
+                    u8::from_str_radix(std::str::from_utf8(&[h1, h2]).unwrap_or(""), 16)
+                {
+                    bytes.push(hex);
+                    continue;
+                }
+                bytes.push(b'%');
+                bytes.push(h1);
+                bytes.push(h2);
+            } else {
+                bytes.push(b'%');
+            }
+        } else {
+            bytes.push(b);
+        }
+    }
+    String::from_utf8_lossy(&bytes).to_string()
+}
+
+fn uri_or_str_to_path(s: &str) -> Option<std::path::PathBuf> {
+    let s = s.trim();
+    let decoded = percent_decode(s);
+    let path_str = if let Some(stripped) = decoded.strip_prefix("file://") {
+        if cfg!(windows) && stripped.starts_with('/') && stripped.chars().nth(2) == Some(':') {
+            &stripped[1..]
+        } else {
+            stripped
+        }
+    } else {
+        decoded.as_str()
+    };
+    let p = std::path::PathBuf::from(path_str);
+    if p.exists() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+impl TrimApp {
     pub fn prompt_import_media(&mut self) {
         let config = FileDialogConfig::pick_file("Medya Dosyası Seç")
             .add_filter(

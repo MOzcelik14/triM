@@ -41,14 +41,23 @@ pub enum MonitorAction {
         pos_y: f32,
     },
     TextContentEdited(String),
+    TextDoubleClick {
+        pos_x: f32,
+        pos_y: f32,
+    },
+    ToggleFullscreen,
 }
 
 /// Approximate on-screen bounding box of a text overlay (used for Selection tool hit-testing).
 fn overlay_hit_rect(painter: &egui::Painter, frame_rect: Rect, ov: &ActiveTextOverlay) -> Rect {
     let scaled_font_size = (ov.font_size * (frame_rect.height() / 1080.0)).clamp(10.0, 160.0);
+    let family = match ov.font_family.as_str() {
+        "Monospace" => egui::FontFamily::Monospace,
+        _ => egui::FontFamily::Proportional,
+    };
     let galley = painter.layout_no_wrap(
         ov.text.clone(),
-        egui::FontId::proportional(scaled_font_size),
+        egui::FontId::new(scaled_font_size, family),
         Color32::WHITE,
     );
     let size = Vec2::new(galley.size().x.max(40.0), galley.size().y.max(24.0));
@@ -74,6 +83,9 @@ pub struct ActiveTextOverlay {
     pub progress: f32,
     pub motion_style: trim_core::clip::MotionTitleStyle,
     pub subtitle_text: Option<String>,
+    pub font_family: String,
+    pub bold: bool,
+    pub italic: bool,
 }
 
 impl Default for ActiveTextOverlay {
@@ -92,6 +104,9 @@ impl Default for ActiveTextOverlay {
             progress: 0.0,
             motion_style: trim_core::clip::MotionTitleStyle::None,
             subtitle_text: None,
+            font_family: "Sans-Serif".to_string(),
+            bold: false,
+            italic: false,
         }
     }
 }
@@ -460,6 +475,17 @@ impl<'a> MonitorWidget<'a> {
                         pos_y: (ny - offset.y).clamp(0.02, 0.98),
                     });
                 }
+            } else if response.double_clicked() {
+                if let Some(p) = response.interact_pointer_pos() {
+                    if let Some(ov) = hit_overlay(p) {
+                        action = Some(MonitorAction::TextDoubleClick {
+                            pos_x: ov.pos_x,
+                            pos_y: ov.pos_y,
+                        });
+                    } else if frame_rect.contains(p) {
+                        action = Some(MonitorAction::ToggleFullscreen);
+                    }
+                }
             } else if response.clicked() {
                 if let Some(p) = response.interact_pointer_pos() {
                     if let Some(ov) = hit_overlay(p) {
@@ -482,7 +508,11 @@ impl<'a> MonitorWidget<'a> {
             }
             let scaled_font_size =
                 (ov.font_size * (frame_rect.height() / 1080.0)).clamp(10.0, 160.0);
-            let font = egui::FontId::proportional(scaled_font_size);
+            let family = match ov.font_family.as_str() {
+                "Monospace" => egui::FontFamily::Monospace,
+                _ => egui::FontFamily::Proportional,
+            };
+            let font = egui::FontId::new(scaled_font_size, family);
             let target_x = frame_rect.left() + frame_rect.width() * ov.pos_x.clamp(0.0, 1.0);
             let target_y = frame_rect.top() + frame_rect.height() * ov.pos_y.clamp(0.0, 1.0);
 
@@ -1249,6 +1279,22 @@ impl<'a> MonitorWidget<'a> {
                                         }
                                     }
                                 });
+                        }
+
+                        ui.add_space(2.0);
+                        let btn_fs = egui::Button::new(
+                            RichText::new("⛶")
+                                .size(13.0)
+                                .color(Color32::from_rgb(0xc0, 0xc5, 0xd0)),
+                        )
+                        .min_size(Vec2::new(26.0, 24.0))
+                        .fill(Color32::from_rgb(0x22, 0x22, 0x2a));
+                        if ui
+                            .add(btn_fs)
+                            .on_hover_text("Tam Ekran Önizleme (F11)")
+                            .clicked()
+                        {
+                            action = Some(MonitorAction::ToggleFullscreen);
                         }
                     }
                 }

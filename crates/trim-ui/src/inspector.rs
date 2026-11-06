@@ -184,11 +184,6 @@ pub fn render_inspector_panel(
 
                 // 6. Giriş / Çıkış ve Geçişler
                 render_transitions_card(ui, clip, &mut action);
-
-                if clip.text_overlay.is_none() {
-                    ui.add_space(6.0);
-                    render_titler_card(ui, clip, &mut action);
-                }
             }
             ui.add_space(8.0);
         });
@@ -1844,6 +1839,50 @@ fn render_titler_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
                 {
                     *action = Some(InspectorAction::ClipModified);
                 }
+
+                prop_row(ui, "Yazı Tipi (Font)", |ui| {
+                    let mut changed = false;
+                    egui::ComboBox::from_id_salt("inspector_font_family")
+                        .selected_text(&txt.font_family)
+                        .show_ui(ui, |ui| {
+                            for font in ["Sans-Serif", "Serif", "Monospace", "Impact", "Montserrat"]
+                            {
+                                if ui
+                                    .selectable_value(&mut txt.font_family, font.to_string(), font)
+                                    .changed()
+                                {
+                                    changed = true;
+                                }
+                            }
+                        });
+
+                    ui.add_space(4.0);
+                    let bold_btn =
+                        Button::new(RichText::new("B").size(11.0).strong()).fill(if txt.bold {
+                            Color32::from_rgb(0x28, 0x5a, 0x9e)
+                        } else {
+                            Color32::from_rgb(0x1f, 0x23, 0x30)
+                        });
+                    if ui.add_sized([22.0, 18.0], bold_btn).clicked() {
+                        txt.bold = !txt.bold;
+                        changed = true;
+                    }
+
+                    let italic_btn =
+                        Button::new(RichText::new("I").size(11.0).italics()).fill(if txt.italic {
+                            Color32::from_rgb(0x28, 0x5a, 0x9e)
+                        } else {
+                            Color32::from_rgb(0x1f, 0x23, 0x30)
+                        });
+                    if ui.add_sized([22.0, 18.0], italic_btn).clicked() {
+                        txt.italic = !txt.italic;
+                        changed = true;
+                    }
+
+                    if changed {
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                });
 
                 prop_row(ui, "Yazı Boyutu", |ui| {
                     if ui

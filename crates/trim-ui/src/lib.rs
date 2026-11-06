@@ -1551,4 +1551,61 @@ mod tests {
         assert!(app.project.remove_sequence(&dup_id));
         assert_eq!(app.project.sequences.len(), 2);
     }
+
+    #[test]
+    fn test_parse_dropped_paths() {
+        use crate::app::media_actions::parse_dropped_paths;
+
+        // Path directly provided
+        let f1 = egui::DroppedFile {
+            name: "test.mp4".into(),
+            path: Some(std::path::PathBuf::from("/tmp/test.mp4")),
+            last_modified: None,
+            bytes: None,
+            mime: String::new(),
+        };
+        let p1 = parse_dropped_paths(&f1);
+        assert_eq!(p1, vec![std::path::PathBuf::from("/tmp/test.mp4")]);
+
+        // Path inside name with file:// URI (URL-decoded space)
+        let f2 = egui::DroppedFile {
+            name: "file:///tmp/sony_sim.mp4".into(),
+            path: None,
+            last_modified: None,
+            bytes: None,
+            mime: String::new(),
+        };
+        let p2 = parse_dropped_paths(&f2);
+        if std::path::Path::new("/tmp/sony_sim.mp4").exists() {
+            assert_eq!(p2, vec![std::path::PathBuf::from("/tmp/sony_sim.mp4")]);
+        }
+    }
+
+    #[test]
+    fn test_fullscreen_monitor_toggle_and_shortcuts() {
+        let mut app = TrimApp::default();
+        assert!(!app.is_monitor_fullscreen);
+
+        app.is_monitor_fullscreen = true;
+        assert!(app.is_monitor_fullscreen);
+
+        app.is_monitor_fullscreen = false;
+        assert!(!app.is_monitor_fullscreen);
+    }
+
+    #[test]
+    fn test_title_dialog_font_options_and_action() {
+        use crate::dialogs::title_dialog::TitleDialog;
+        let mut dlg = TitleDialog::default();
+        assert_eq!(dlg.font_family, "Sans-Serif");
+        assert!(!dlg.bold);
+        assert!(!dlg.italic);
+
+        dlg.font_family = "Montserrat".to_string();
+        dlg.bold = true;
+        dlg.italic = false;
+
+        assert_eq!(dlg.font_family, "Montserrat");
+        assert!(dlg.bold);
+    }
 }

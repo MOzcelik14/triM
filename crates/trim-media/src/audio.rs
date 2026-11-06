@@ -391,11 +391,15 @@ fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
     let mut cmd = crate::ffmpeg::ffmpeg_cmd();
     cmd.args([
         "-v",
-        "quiet",
+        "error",
         "-y",
         "-i",
         path.to_str().unwrap_or(""),
         "-vn",
+        "-dn",
+        "-sn",
+        "-map",
+        "0:a:0?",
         "-f",
         "s16le",
         "-ac",
@@ -413,9 +417,41 @@ fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
     if let Some(mut stdout) = guard.take_stdout() {
         let _ = stdout.read_to_end(&mut raw_bytes);
     }
-    let status = guard.wait().ok()?;
+    let _ = guard.wait();
 
-    if !status.success() || raw_bytes.len() < 4 {
+    // Fallback: if primary stream map yielded no data, try general audio selection
+    if raw_bytes.len() < 4 {
+        let mut fallback_cmd = crate::ffmpeg::ffmpeg_cmd();
+        fallback_cmd
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                path.to_str().unwrap_or(""),
+                "-vn",
+                "-dn",
+                "-sn",
+                "-f",
+                "s16le",
+                "-ac",
+                "2",
+                "-ar",
+                &SAMPLE_RATE.to_string(),
+                "pipe:1",
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+
+        if let Ok(mut fb_guard) = crate::ffmpeg::ChildGuard::spawn(&mut fallback_cmd) {
+            if let Some(mut stdout) = fb_guard.take_stdout() {
+                let _ = stdout.read_to_end(&mut raw_bytes);
+            }
+            let _ = fb_guard.wait();
+        }
+    }
+
+    if raw_bytes.len() < 4 {
         return None;
     }
 
@@ -745,6 +781,20 @@ mod tests {
                     ratio
                 );
             }
+        }
+    }
+
+    #[test]
+    fn test_decode_sony_multichannel_audio() {
+        if !crate::is_ffmpeg_available() {
+            return;
+        }
+        let test_path = std::path::Path::new("/tmp/sony_sim.mp4");
+        if test_path.is_file() {
+            let pcm = decode_audio_to_pcm(test_path);
+            assert!(pcm.is_some(), "Should decode 4ch Sony-like audio");
+            let frames = pcm.unwrap();
+            assert!(!frames.is_empty(), "Decoded frames should not be empty");
         }
     }
 }

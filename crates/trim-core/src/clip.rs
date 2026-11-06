@@ -370,6 +370,16 @@ pub struct TextOverlay {
     pub motion_style: MotionTitleStyle,
     #[serde(default)]
     pub subtitle_text: Option<String>,
+    #[serde(default = "default_font_family")]
+    pub font_family: String,
+    #[serde(default)]
+    pub bold: bool,
+    #[serde(default)]
+    pub italic: bool,
+}
+
+fn default_font_family() -> String {
+    "Sans-Serif".to_string()
 }
 
 fn default_font_size() -> f32 {
@@ -405,6 +415,9 @@ impl Default for TextOverlay {
             highlight_color: default_highlight_color(),
             motion_style: MotionTitleStyle::None,
             subtitle_text: None,
+            font_family: default_font_family(),
+            bold: false,
+            italic: false,
         }
     }
 }
@@ -993,5 +1006,30 @@ mod tests {
         assert!(!legacy_clip.has_crop());
         assert_eq!(legacy_clip.crop_left, 0.0);
         assert_eq!(legacy_clip.crop_bottom, 0.0);
+    }
+
+    #[test]
+    fn test_text_overlay_font_and_styling_defaults() {
+        let mut ov = TextOverlay::default();
+        assert_eq!(ov.font_family, "Sans-Serif");
+        assert!(!ov.bold);
+        assert!(!ov.italic);
+
+        ov.font_family = "Impact".to_string();
+        ov.bold = true;
+        ov.italic = true;
+
+        let json = serde_json::to_string(&ov).unwrap();
+        let deserialized: TextOverlay = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.font_family, "Impact");
+        assert!(deserialized.bold);
+        assert!(deserialized.italic);
+
+        // Backward compatibility: JSON without font fields should deserialize to defaults
+        let legacy_json = r#"{"content":"Legacy Title","font_size":40.0}"#;
+        let legacy: TextOverlay = serde_json::from_str(legacy_json).unwrap();
+        assert_eq!(legacy.font_family, "Sans-Serif");
+        assert!(!legacy.bold);
+        assert!(!legacy.italic);
     }
 }

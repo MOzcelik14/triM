@@ -35,6 +35,9 @@ pub struct TitleDialog {
     pub has_box: bool,
     pub duration: f64,
     pub motion_style: MotionTitleStyle,
+    pub font_family: String,
+    pub bold: bool,
+    pub italic: bool,
 }
 
 impl Default for TitleDialog {
@@ -51,6 +54,9 @@ impl Default for TitleDialog {
             has_box: false,
             duration: 5.0,
             motion_style: MotionTitleStyle::None,
+            font_family: "Sans-Serif".to_string(),
+            bold: false,
+            italic: false,
         }
     }
 }
@@ -66,6 +72,9 @@ pub enum TitleDialogAction {
         duration: f64,
         motion_style: MotionTitleStyle,
         subtitle_text: Option<String>,
+        font_family: String,
+        bold: bool,
+        italic: bool,
     },
 }
 
@@ -190,6 +199,45 @@ impl TitleDialog {
                 // 4. Formatting & Styling
                 ui.group(|ui| {
                     ui.strong("Biçimlendirme & Stil");
+
+                    ui.horizontal(|ui| {
+                        ui.label("Yazı Tipi (Font):");
+                        egui::ComboBox::from_id_salt("title_font_family")
+                            .selected_text(&self.font_family)
+                            .show_ui(ui, |ui| {
+                                for font in
+                                    ["Sans-Serif", "Serif", "Monospace", "Impact", "Montserrat"]
+                                {
+                                    ui.selectable_value(
+                                        &mut self.font_family,
+                                        font.to_string(),
+                                        font,
+                                    );
+                                }
+                            });
+
+                        ui.add_space(8.0);
+                        let bold_btn =
+                            Button::new(RichText::new("B").strong()).fill(if self.bold {
+                                Color32::from_rgb(0x28, 0x5a, 0x9e)
+                            } else {
+                                Color32::from_rgb(0x24, 0x24, 0x2e)
+                            });
+                        if ui.add_sized([26.0, 22.0], bold_btn).clicked() {
+                            self.bold = !self.bold;
+                        }
+
+                        let italic_btn =
+                            Button::new(RichText::new("I").italics()).fill(if self.italic {
+                                Color32::from_rgb(0x28, 0x5a, 0x9e)
+                            } else {
+                                Color32::from_rgb(0x24, 0x24, 0x2e)
+                            });
+                        if ui.add_sized([26.0, 22.0], italic_btn).clicked() {
+                            self.italic = !self.italic;
+                        }
+                    });
+
                     ui.horizontal(|ui| {
                         ui.label("Yazı Boyutu:");
                         ui.add(Slider::new(&mut self.font_size, 16..=140).suffix(" pt"));
@@ -252,6 +300,9 @@ impl TitleDialog {
                             duration: self.duration,
                             motion_style: self.motion_style,
                             subtitle_text: sub,
+                            font_family: self.font_family.clone(),
+                            bold: self.bold,
+                            italic: self.italic,
                         });
                         self.is_open = false;
                     }

@@ -181,11 +181,15 @@ fn extract_and_cache_waveform(
     let mut cmd = crate::ffmpeg::ffmpeg_cmd();
     cmd.args([
         "-v",
-        "quiet",
+        "error",
         "-y",
         "-i",
         path.to_str().unwrap_or(""),
         "-vn",
+        "-dn",
+        "-sn",
+        "-map",
+        "0:a:0?",
         "-ac",
         "1",
         "-ar",
@@ -204,6 +208,37 @@ fn extract_and_cache_waveform(
         let _ = stdout.read_to_end(&mut raw_pcm);
     }
     let _ = guard.wait();
+
+    if raw_pcm.len() < 80 {
+        let mut fb_cmd = crate::ffmpeg::ffmpeg_cmd();
+        fb_cmd
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-i",
+                path.to_str().unwrap_or(""),
+                "-vn",
+                "-dn",
+                "-sn",
+                "-ac",
+                "1",
+                "-ar",
+                &sample_rate.to_string(),
+                "-f",
+                "s16le",
+                "-",
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+
+        if let Ok(mut fb_guard) = crate::ffmpeg::ChildGuard::spawn(&mut fb_cmd) {
+            if let Some(mut stdout) = fb_guard.take_stdout() {
+                let _ = stdout.read_to_end(&mut raw_pcm);
+            }
+            let _ = fb_guard.wait();
+        }
+    }
 
     if raw_pcm.len() < 80 {
         return None;

@@ -297,6 +297,25 @@ impl TimelineExporter {
                 String::new()
             };
 
+            let font_style = match (txt.bold, txt.italic) {
+                (true, true) => ":style=Bold Italic",
+                (true, false) => ":style=Bold",
+                (false, true) => ":style=Italic",
+                (false, false) => "",
+            };
+            let font_part = if txt.font_family != "Sans-Serif" || !font_style.is_empty() {
+                let fam = match txt.font_family.as_str() {
+                    "Serif" => "Serif",
+                    "Monospace" => "Monospace",
+                    "Impact" => "Impact",
+                    "Montserrat" => "Montserrat",
+                    _ => "Sans-Serif",
+                };
+                format!(":font='{fam}'{font_style}")
+            } else {
+                String::new()
+            };
+
             match txt.motion_style {
                 MotionTitleStyle::Typewriter => {
                     let chars: Vec<char> = txt.content.chars().collect();
@@ -307,7 +326,7 @@ impl TimelineExporter {
 
                     if total_chars <= 1 {
                         f.push(format!(
-                            "drawtext=text='{sanitized}':fontsize={font_size}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                            "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
                         ));
                     } else {
                         for i in 1..=total_chars {
@@ -329,7 +348,7 @@ impl TimelineExporter {
                                 format!(":enable='gte(t,{:.4})'", st)
                             };
                             f.push(format!(
-                                "drawtext=text='{sub_sanitized}':fontsize={font_size}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}{enable_clause}"
+                                "drawtext=text='{sub_sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}{enable_clause}"
                             ));
                         }
                     }
@@ -349,7 +368,7 @@ impl TimelineExporter {
                             );
                             let sub_enable = format!(":enable='gte(t,{:.4})'", type_dur);
                             f.push(format!(
-                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}{sub_enable}"
+                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}{font_part}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}{sub_enable}"
                             ));
                         }
                     }
@@ -364,7 +383,7 @@ impl TimelineExporter {
                     );
                     let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
                     f.push(format!(
-                        "drawtext=text='{sanitized}':fontsize={font_size}:fontcolor={font_color}:x='{x_expr}':y={y_expr}{shadow_part}{box_part}"
+                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x='{x_expr}':y={y_expr}{shadow_part}{box_part}"
                     ));
 
                     if let Some(sub) = &txt.subtitle_text {
@@ -386,7 +405,7 @@ impl TimelineExporter {
                                 txt.pos_x.clamp(0.0, 1.0)
                             );
                             f.push(format!(
-                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}:fontcolor=0xc8d7e6dc:x='{sub_x_expr}':y={sub_y}{shadow_part}"
+                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}{font_part}:fontcolor=0xc8d7e6dc:x='{sub_x_expr}':y={sub_y}{shadow_part}"
                             ));
                         }
                     }
@@ -396,7 +415,7 @@ impl TimelineExporter {
                     let x_expr = format!("(w-text_w)*{:.3}", txt.pos_x.clamp(0.0, 1.0));
                     let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
                     f.push(format!(
-                        "drawtext=text='{sanitized}':fontsize={size_expr}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                        "drawtext=text='{sanitized}':fontsize={size_expr}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
                     ));
 
                     if let Some(sub) = &txt.subtitle_text {
@@ -413,7 +432,7 @@ impl TimelineExporter {
                                 font_size as f64 * 1.25
                             );
                             f.push(format!(
-                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}"
+                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}{font_part}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}"
                             ));
                         }
                     }
@@ -422,7 +441,7 @@ impl TimelineExporter {
                     let x_expr = format!("w-(t/{dur:.4})*(w+text_w)");
                     let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
                     f.push(format!(
-                        "drawtext=text='{sanitized}':fontsize={font_size}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
                     ));
                 }
                 MotionTitleStyle::BoxReveal => {
@@ -431,14 +450,14 @@ impl TimelineExporter {
                     let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
                     let enable_clause = format!(":enable='gte(t,{:.4})'", reveal_t);
                     f.push(format!(
-                        "drawtext=text='{sanitized}':fontsize={font_size}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}{enable_clause}"
+                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}{enable_clause}"
                     ));
                 }
                 MotionTitleStyle::None => {
                     let x_expr = format!("(w-text_w)*{:.3}", txt.pos_x.clamp(0.0, 1.0));
                     let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
                     f.push(format!(
-                        "drawtext=text='{sanitized}':fontsize={font_size}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
                     ));
 
                     if let Some(sub) = &txt.subtitle_text {

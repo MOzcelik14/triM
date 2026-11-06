@@ -269,6 +269,31 @@ pub fn render_media_bin(
 
     ui.separator();
 
+    let is_os_dragging = ui.ctx().input(|i| !i.raw.hovered_files.is_empty());
+    if is_os_dragging {
+        let avail_rect = ui.available_rect_before_wrap();
+        if avail_rect.width() > 30.0 && avail_rect.height() > 30.0 {
+            let painter = ui.painter();
+            painter.rect_filled(
+                avail_rect,
+                8.0,
+                Color32::from_rgba_unmultiplied(30, 80, 160, 45),
+            );
+            painter.rect_stroke(
+                avail_rect,
+                8.0,
+                Stroke::new(2.0_f32, Color32::from_rgb(56, 160, 240)),
+            );
+            painter.text(
+                avail_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "📥 Dosyaları Medya Havuzuna Bırakın",
+                egui::FontId::proportional(14.0),
+                Color32::from_rgb(230, 240, 255),
+            );
+        }
+    }
+
     // 4. Empty State check
     if project.media_pool.is_empty() && project.bins.is_empty() {
         let avail_h = ui.available_height();

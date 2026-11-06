@@ -158,6 +158,7 @@ pub struct TrimApp {
     pub file_dialog_bridge: FileDialogBridge,
     pub clipboard_clips: Vec<(trim_core::track::TrackType, f64, trim_core::clip::Clip)>,
     pub ffmpeg_missing_alert: bool,
+    pub is_monitor_fullscreen: bool,
 }
 
 impl Default for TrimApp {
@@ -251,6 +252,7 @@ impl Default for TrimApp {
             file_dialog_bridge: FileDialogBridge::default(),
             clipboard_clips: Vec::new(),
             ffmpeg_missing_alert: false,
+            is_monitor_fullscreen: false,
         }
     }
 }
@@ -455,6 +457,9 @@ impl TrimApp {
                         progress,
                         motion_style: txt.motion_style,
                         subtitle_text: txt.subtitle_text.clone(),
+                        font_family: txt.font_family.clone(),
+                        bold: txt.bold,
+                        italic: txt.italic,
                     });
                 }
             }
@@ -560,6 +565,15 @@ impl TrimApp {
                 MonitorAction::TextSelectAt { pos_x, pos_y } => {
                     self.handle_monitor_text_select(pos_x, pos_y);
                 }
+                MonitorAction::TextDoubleClick { pos_x, pos_y } => {
+                    self.handle_monitor_text_select(pos_x, pos_y);
+                    self.current_edit_tool = EditTool::Type;
+                    self.canvas_state.active_tool = EditTool::Type;
+                    self.status_message = "Metin Düzenleme Modu (T)".to_string();
+                }
+                MonitorAction::ToggleFullscreen => {
+                    self.is_monitor_fullscreen = !self.is_monitor_fullscreen;
+                }
                 MonitorAction::TextContentEdited(content) => {
                     self.handle_monitor_text_content_changed(content);
                 }
@@ -597,13 +611,16 @@ impl eframe::App for TrimApp {
         }
 
         // Window drag & drop files from OS file manager
-        ctx.input(|i| {
+        let dropped_paths: Vec<std::path::PathBuf> = ctx.input(|i| {
+            let mut paths = Vec::new();
             for file in &i.raw.dropped_files {
-                if let Some(path) = &file.path {
-                    self.import_media_file(path);
-                }
+                paths.extend(crate::app::media_actions::parse_dropped_paths(file));
             }
+            paths
         });
+        for path in dropped_paths {
+            self.import_media_path(&path);
+        }
 
         // Autosave check
         if self.last_autosave.elapsed().as_secs() >= 60 && self.project.is_dirty {
@@ -707,7 +724,11 @@ impl eframe::App for TrimApp {
                 let is_cut = i.events.iter().any(|e| matches!(e, egui::Event::Cut))
                     || ((i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::X));
 
-                if (i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::Comma) {
+                if i.key_pressed(Key::F11) {
+                    self.is_monitor_fullscreen = !self.is_monitor_fullscreen;
+                } else if self.is_monitor_fullscreen && i.key_pressed(Key::Escape) {
+                    self.is_monitor_fullscreen = false;
+                } else if (i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::Comma) {
                     self.preferences_dialog.open(&self.preferences);
                 } else if is_copy {
                     do_copy = true;
@@ -1067,6 +1088,13 @@ impl eframe::App for TrimApp {
             if do_paste {
                 self.paste_clipboard_clips();
             }
+        }
+
+        if self.is_monitor_fullscreen {
+            self.render_fullscreen_monitor(ctx);
+            self.splash_screen.show(ctx);
+            suppress_linux_ime_for_text_input(ctx);
+            return;
         }
 
         // -------------------------------------------------------------
@@ -3293,6 +3321,9 @@ impl eframe::App for TrimApp {
                     duration,
                     motion_style,
                     subtitle_text,
+                    font_family,
+                    bold,
+                    italic,
                 } => {
                     if let Some(out_png) = generate_title_image(
                         &text,
@@ -3412,6 +3443,9 @@ impl eframe::App for TrimApp {
                                         has_shadow,
                                         motion_style,
                                         subtitle_text,
+                                        font_family,
+                                        bold,
+                                        italic,
                                         ..Default::default()
                                     });
                                     if motion_style

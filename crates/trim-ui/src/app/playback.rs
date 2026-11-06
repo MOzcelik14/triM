@@ -1,7 +1,7 @@
 //! Playback controls, frame stepping, shuttle speeds, and clock synchronization.
 
 use crate::app::TrimApp;
-use egui::{ColorImage, TextureOptions};
+use egui::{Color32, ColorImage, Pos2, Rect, RichText, TextureOptions, Vec2};
 use std::time::Instant;
 use trim_core::media::MediaType;
 
@@ -303,5 +303,199 @@ impl TrimApp {
                     .request_seek(&media.file_path, self.source_state.current_time);
             }
         }
+    }
+
+    pub fn render_fullscreen_monitor(&mut self, ctx: &egui::Context) {
+        // Exit shortcuts
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::F11)) {
+            self.is_monitor_fullscreen = false;
+            return;
+        }
+
+        // Space to toggle play/pause
+        if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+            self.toggle_play();
+        }
+        // Left / Right arrow for frame step
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
+            let fps = self.project.timeline.fps.max(1.0);
+            self.seek((self.current_time - 1.0 / fps).max(0.0));
+        }
+        if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+            let fps = self.project.timeline.fps.max(1.0);
+            let dur = self.project.timeline.duration();
+            self.seek((self.current_time + 1.0 / fps).min(dur));
+        }
+
+        egui::CentralPanel::default()
+            .frame(egui::Frame::none().fill(Color32::BLACK))
+            .show(ctx, |ui| {
+                let avail_rect = ui.available_rect_before_wrap();
+                let ar = (self.project.timeline.width as f32
+                    / self.project.timeline.height.max(1) as f32)
+                    .clamp(0.2, 5.0);
+
+                let monitor_bounds = Rect::from_min_max(
+                    avail_rect.min,
+                    Pos2::new(avail_rect.max.x, avail_rect.max.y - 56.0),
+                );
+
+                let video_rect = {
+                    let w = monitor_bounds.width();
+                    let h = monitor_bounds.height();
+                    let (vw, vh) = if w / h > ar { (h * ar, h) } else { (w, w / ar) };
+                    Rect::from_center_size(monitor_bounds.center(), Vec2::new(vw, vh))
+                };
+
+                let painter = ui.painter();
+
+                if let Some(tex) = &self.monitor_texture {
+                    painter.image(
+                        tex.id(),
+                        video_rect,
+                        Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+                        Color32::WHITE,
+                    );
+                } else {
+                    painter.rect_filled(video_rect, 0.0, Color32::from_rgb(12, 12, 16));
+                    painter.text(
+                        video_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        if self.is_playing {
+                            "Oynatılıyor..."
+                        } else {
+                            "Önizleme Yükleniyor..."
+                        },
+                        egui::FontId::proportional(14.0),
+                        Color32::from_rgb(0x80, 0x80, 0x90),
+                    );
+                }
+
+                // Double click on screen toggles fullscreen
+                let screen_resp = ui.interact(
+                    avail_rect,
+                    ui.id().with("fs_bg_interact"),
+                    egui::Sense::click(),
+                );
+                if screen_resp.double_clicked() {
+                    self.is_monitor_fullscreen = false;
+                }
+
+                // Top Exit Badge
+                let exit_btn_rect = Rect::from_min_size(
+                    Pos2::new(avail_rect.max.x - 180.0, avail_rect.min.y + 12.0),
+                    Vec2::new(168.0, 28.0),
+                );
+                let is_hover_top = ui.rect_contains_pointer(exit_btn_rect.expand(20.0));
+                let badge_alpha = if is_hover_top { 240 } else { 140 };
+
+                painter.rect_filled(
+                    exit_btn_rect,
+                    6.0,
+                    Color32::from_rgba_unmultiplied(20, 20, 28, badge_alpha),
+                );
+                painter.text(
+                    exit_btn_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "ESC / F11: Tam Ekrandan Çık",
+                    egui::FontId::proportional(11.0),
+                    Color32::from_rgb(220, 225, 235),
+                );
+                let exit_resp = ui.interact(
+                    exit_btn_rect,
+                    ui.id().with("fs_exit_btn"),
+                    egui::Sense::click(),
+                );
+                if exit_resp.clicked() {
+                    self.is_monitor_fullscreen = false;
+                }
+
+                // Bottom floating transport bar
+                let bar_rect = Rect::from_min_max(
+                    Pos2::new(avail_rect.min.x, avail_rect.max.y - 52.0),
+                    avail_rect.max,
+                );
+                painter.rect_filled(
+                    bar_rect,
+                    0.0,
+                    Color32::from_rgba_unmultiplied(14, 16, 22, 230),
+                );
+
+                ui.allocate_new_ui(egui::UiBuilder::new().max_rect(bar_rect), |ui| {
+                    ui.horizontal_centered(|ui| {
+                        ui.add_space(16.0);
+                        let play_sym = if self.is_playing { "⏸" } else { "▶" };
+                        let btn_play = egui::Button::new(
+                            RichText::new(play_sym)
+                                .size(15.0)
+                                .strong()
+                                .color(Color32::WHITE),
+                        )
+                        .fill(Color32::from_rgb(0xe0, 0x7a, 0x38))
+                        .min_size(Vec2::new(34.0, 26.0));
+                        if ui.add(btn_play).clicked() {
+                            self.toggle_play();
+                        }
+
+                        let btn_prev = egui::Button::new(RichText::new("⏴").size(12.0))
+                            .fill(Color32::from_rgb(0x24, 0x24, 0x30))
+                            .min_size(Vec2::new(26.0, 24.0));
+                        if ui.add(btn_prev).on_hover_text("1 Kare Geri").clicked() {
+                            let fps = self.project.timeline.fps.max(1.0);
+                            self.seek((self.current_time - 1.0 / fps).max(0.0));
+                        }
+
+                        let btn_next = egui::Button::new(RichText::new("⏵").size(12.0))
+                            .fill(Color32::from_rgb(0x24, 0x24, 0x30))
+                            .min_size(Vec2::new(26.0, 24.0));
+                        if ui.add(btn_next).on_hover_text("1 Kare İleri").clicked() {
+                            let fps = self.project.timeline.fps.max(1.0);
+                            let dur = self.project.timeline.duration();
+                            self.seek((self.current_time + 1.0 / fps).min(dur));
+                        }
+
+                        ui.add_space(8.0);
+                        let total_dur = self.project.timeline.duration().max(0.1);
+                        let cur_tc = trim_core::time::seconds_to_timecode(
+                            self.current_time,
+                            self.project.timeline.fps,
+                        );
+                        let tot_tc = trim_core::time::seconds_to_timecode(
+                            total_dur,
+                            self.project.timeline.fps,
+                        );
+                        ui.label(
+                            RichText::new(format!("{} / {}", cur_tc, tot_tc))
+                                .monospace()
+                                .size(12.0)
+                                .color(Color32::from_rgb(0xe0, 0x85, 0x38)),
+                        );
+
+                        ui.add_space(12.0);
+                        let mut seek_t = self.current_time;
+                        let slider = egui::Slider::new(&mut seek_t, 0.0..=total_dur)
+                            .show_value(false)
+                            .trailing_fill(true);
+                        let slider_resp = ui.add_sized([ui.available_width() - 80.0, 18.0], slider);
+                        if slider_resp.changed() {
+                            self.seek(seek_t);
+                        }
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.add_space(16.0);
+                            let btn_exit = egui::Button::new(RichText::new("⛶").size(14.0))
+                                .fill(Color32::from_rgb(0x28, 0x28, 0x34))
+                                .min_size(Vec2::new(30.0, 24.0));
+                            if ui
+                                .add(btn_exit)
+                                .on_hover_text("Tam Ekrandan Çık (F11)")
+                                .clicked()
+                            {
+                                self.is_monitor_fullscreen = false;
+                            }
+                        });
+                    });
+                });
+            });
     }
 }
