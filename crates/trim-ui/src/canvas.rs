@@ -49,6 +49,7 @@ pub struct TimelineCanvasState {
     pub drag_orig_sin: f64,
     pub drag_orig_sout: f64,
     pub drag_orig_vol: f64,
+    pub drag_orig_fade: f64,
     pub batch_orig_ins: Vec<(String, String, f64)>, // (track_id, clip_id, orig_in)
 
     pub rubberband_start: Option<Pos2>,
@@ -58,6 +59,7 @@ pub struct TimelineCanvasState {
     pub track_heights: std::collections::HashMap<String, f32>,
     pub selected_gap: Option<(String, f64, f64)>, // (track_id, gap_start, gap_end)
     pub scroll_offset: Vec2,
+    pub pending_scroll_x: Option<f32>,
     pub pending_scroll_y: Option<f32>,
     pub drag_kf_index: Option<usize>,
     pub drag_orig_keyframes: Vec<trim_core::keyframe::Keyframe>,
@@ -81,6 +83,7 @@ impl Default for TimelineCanvasState {
             drag_orig_sin: 0.0,
             drag_orig_sout: 0.0,
             drag_orig_vol: 1.0,
+            drag_orig_fade: 0.0,
             batch_orig_ins: Vec::new(),
             rubberband_start: None,
             rubberband_rect: None,
@@ -89,6 +92,7 @@ impl Default for TimelineCanvasState {
             track_heights: std::collections::HashMap::new(),
             selected_gap: None,
             scroll_offset: Vec2::ZERO,
+            pending_scroll_x: None,
             pending_scroll_y: None,
             drag_kf_index: None,
             drag_orig_keyframes: Vec::new(),
@@ -178,6 +182,13 @@ pub enum CanvasAction {
         shifted_clips: Vec<(String, String, f64, f64)>,
     },
     ClipModified,
+    SetClipFade {
+        track_id: String,
+        clip_id: String,
+        is_fade_in: bool,
+        old_fade: f64,
+        new_fade: f64,
+    },
     SetClipKeyframes {
         track_id: String,
         clip_id: String,
@@ -192,6 +203,7 @@ pub enum CanvasAction {
         track_id: String,
         clip_id: String,
         cut_time: f64,
+        split_linked: bool,
     },
     CreateTitleAtTime(f64),
     Pan(f32),
@@ -1290,6 +1302,7 @@ pub fn render_timeline_canvas(
             // Check tool-specific actions first
             match state.active_tool {
                 EditTool::Razor => {
+                    let is_alt = ui.input(|i| i.modifiers.alt);
                     let hit = find_clip_at_pos(project, state, rect, pos);
                     if let Some((tr_id, cl_id, _)) = hit {
                         if let Some(tr) = project.timeline.get_track_by_id(&tr_id) {
@@ -1310,6 +1323,7 @@ pub fn render_timeline_canvas(
                                             track_id: tr_id,
                                             clip_id: cl_id,
                                             cut_time: cut_t,
+                                            split_linked: !is_alt,
                                         });
                                         return (response, action);
                                     }
@@ -1458,6 +1472,11 @@ pub fn render_timeline_canvas(
                         state.drag_orig_sin = cl.source_in;
                         state.drag_orig_sout = cl.effective_source_out();
                         state.drag_orig_vol = cl.volume;
+                        state.drag_orig_fade = if mode == DragMode::FadeIn {
+                            cl.fade_in
+                        } else {
+                            cl.fade_out
+                        };
                         state.drag_orig_keyframes =
                             cl.keyframes.get("volume").cloned().unwrap_or_default();
                         state.drag_kf_index = None;
@@ -2176,8 +2195,43 @@ pub fn render_timeline_canvas(
                     }
                 }
             }
-            DragMode::FadeIn | DragMode::FadeOut => {
-                action = Some(CanvasAction::ClipModified);
+            DragMode::FadeIn => {
+                if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id) {
+                    if let Some(tr) = project.timeline.get_track_by_id(tr_id) {
+                        if let Some(cl) = tr.get_clip_by_id(cl_id) {
+                            if (cl.fade_in - state.drag_orig_fade).abs() > 1e-4 {
+                                action = Some(CanvasAction::SetClipFade {
+                                    track_id: tr_id.clone(),
+                                    clip_id: cl_id.clone(),
+                                    is_fade_in: true,
+                                    old_fade: state.drag_orig_fade,
+                                    new_fade: cl.fade_in,
+                                });
+                            } else {
+                                action = Some(CanvasAction::ClipModified);
+                            }
+                        }
+                    }
+                }
+            }
+            DragMode::FadeOut => {
+                if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id) {
+                    if let Some(tr) = project.timeline.get_track_by_id(tr_id) {
+                        if let Some(cl) = tr.get_clip_by_id(cl_id) {
+                            if (cl.fade_out - state.drag_orig_fade).abs() > 1e-4 {
+                                action = Some(CanvasAction::SetClipFade {
+                                    track_id: tr_id.clone(),
+                                    clip_id: cl_id.clone(),
+                                    is_fade_in: false,
+                                    old_fade: state.drag_orig_fade,
+                                    new_fade: cl.fade_out,
+                                });
+                            } else {
+                                action = Some(CanvasAction::ClipModified);
+                            }
+                        }
+                    }
+                }
             }
             DragMode::VolumeRubberband => {
                 if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id) {
@@ -2271,7 +2325,7 @@ pub fn render_timeline_canvas(
                     .clicked()
                 {
                     action = Some(CanvasAction::CloseGap {
-                        track_id: Some(tr_id.clone()),
+                        track_id: None,
                         gap_start,
                         gap_end,
                     });
@@ -2279,9 +2333,12 @@ pub fn render_timeline_canvas(
                 }
             });
 
-            if ui.button("⏩ Tüm Kanallardaki Boşluğu Kapat").clicked() {
+            if ui
+                .button("⏩ Yalnızca Bu Kanalın Boşluğunu Kapat")
+                .clicked()
+            {
                 action = Some(CanvasAction::CloseGap {
-                    track_id: None,
+                    track_id: Some(tr_id.clone()),
                     gap_start,
                     gap_end,
                 });

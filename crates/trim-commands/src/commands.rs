@@ -331,13 +331,78 @@ impl Command for TrimClipCommand {
 // -----------------------------------------------------------------------------
 // 5. SplitClipCommand
 // -----------------------------------------------------------------------------
+fn split_single_clip_core(
+    orig: &Clip,
+    split_time: f64,
+    reuse_right_id: Option<String>,
+) -> (Clip, Clip, String) {
+    let split_source = orig.map_timeline_to_source(split_time);
+    let left_dur = split_time - orig.timeline_in;
+
+    // Partition keyframes between left and right parts
+    let mut left_kfs = std::collections::HashMap::new();
+    let mut right_kfs = std::collections::HashMap::new();
+    for (prop, list) in &orig.keyframes {
+        let mut l_list = Vec::new();
+        let mut r_list = Vec::new();
+        for k in list {
+            if k.time <= left_dur {
+                l_list.push(k.clone());
+            } else {
+                let mut r_k = k.clone();
+                r_k.time = (r_k.time - left_dur).max(0.0);
+                r_list.push(r_k);
+            }
+        }
+        if !l_list.is_empty() {
+            left_kfs.insert(prop.clone(), l_list);
+        }
+        if !r_list.is_empty() {
+            right_kfs.insert(prop.clone(), r_list);
+        }
+    }
+
+    // Left clip keeps original clip id
+    let mut left_clip = orig.clone();
+    left_clip.timeline_out = split_time;
+    if !orig.reverse {
+        left_clip.source_out = Some(split_source);
+    } else {
+        left_clip.source_in = split_source;
+    }
+    left_clip.fade_out = 0.0;
+    left_clip.transition_out = None;
+    left_clip.keyframes = left_kfs;
+
+    // Right clip preserves ID if re-executing (Redo), or gets new UUID on first execute
+    let mut right_clip = orig.clone();
+    let r_id = reuse_right_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    right_clip.id = r_id.clone();
+    right_clip.timeline_in = split_time;
+    if !orig.reverse {
+        right_clip.source_in = split_source;
+    } else {
+        right_clip.source_out = Some(split_source);
+    }
+    right_clip.fade_in = 0.0;
+    right_clip.transition_in = None;
+    right_clip.keyframes = right_kfs;
+
+    (left_clip, right_clip, r_id)
+}
+
 #[derive(Debug, Clone)]
 pub struct SplitClipCommand {
     pub track_id: String,
     pub clip_id: String,
     pub split_time: f64,
+    pub split_linked: bool,
     pub original_clip: Option<Clip>,
     pub right_clip_id: Option<String>,
+    pub companion_track_id: Option<String>,
+    pub companion_clip_id: Option<String>,
+    pub original_companion_clip: Option<Clip>,
+    pub companion_right_clip_id: Option<String>,
 }
 
 impl SplitClipCommand {
@@ -346,9 +411,19 @@ impl SplitClipCommand {
             track_id: track_id.into(),
             clip_id: clip_id.into(),
             split_time,
+            split_linked: true,
             original_clip: None,
             right_clip_id: None,
+            companion_track_id: None,
+            companion_clip_id: None,
+            original_companion_clip: None,
+            companion_right_clip_id: None,
         }
+    }
+
+    pub fn with_split_linked(mut self, split_linked: bool) -> Self {
+        self.split_linked = split_linked;
+        self
     }
 }
 
@@ -368,67 +443,75 @@ impl Command for SplitClipCommand {
             ));
         }
 
-        let split_source = orig.map_timeline_to_source(self.split_time);
-        let left_dur = self.split_time - orig.timeline_in;
-
-        // Partition keyframes between left and right parts
-        let mut left_kfs = std::collections::HashMap::new();
-        let mut right_kfs = std::collections::HashMap::new();
-        for (prop, list) in &orig.keyframes {
-            let mut l_list = Vec::new();
-            let mut r_list = Vec::new();
-            for k in list {
-                if k.time <= left_dur {
-                    l_list.push(k.clone());
-                } else {
-                    let mut r_k = k.clone();
-                    r_k.time = (r_k.time - left_dur).max(0.0);
-                    r_list.push(r_k);
+        // Check if there is a linked companion clip on another unlocked track
+        let mut companion_opt = None;
+        if self.split_linked {
+            if let Some(ref gid) = orig.linked_group_id {
+                for t in &timeline.tracks {
+                    if t.id != self.track_id && !t.locked {
+                        for c in &t.clips {
+                            if c.linked_group_id.as_ref() == Some(gid)
+                                && self.split_time > c.timeline_in + 0.02
+                                && self.split_time < c.timeline_out - 0.02
+                            {
+                                companion_opt = Some((t.id.clone(), c.clone()));
+                                break;
+                            }
+                        }
+                    }
+                    if companion_opt.is_some() {
+                        break;
+                    }
                 }
             }
-            if !l_list.is_empty() {
-                left_kfs.insert(prop.clone(), l_list);
-            }
-            if !r_list.is_empty() {
-                right_kfs.insert(prop.clone(), r_list);
-            }
         }
 
-        // Left clip keeps original clip id
-        let mut left_clip = orig.clone();
-        left_clip.timeline_out = self.split_time;
-        if !orig.reverse {
-            left_clip.source_out = Some(split_source);
+        // Generate new link groups if companion exists
+        let (new_left_gid, new_right_gid) = if companion_opt.is_some() {
+            (
+                Some(uuid::Uuid::new_v4().to_string()),
+                Some(uuid::Uuid::new_v4().to_string()),
+            )
         } else {
-            left_clip.source_in = split_source;
-        }
-        left_clip.fade_out = 0.0;
-        left_clip.transition_out = None;
-        left_clip.keyframes = left_kfs;
+            (orig.linked_group_id.clone(), orig.linked_group_id.clone())
+        };
 
-        // Right clip preserves ID if re-executing (Redo), or gets new UUID on first execute
-        let mut right_clip = orig.clone();
-        let r_id = self
-            .right_clip_id
-            .clone()
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        right_clip.id = r_id.clone();
-        right_clip.timeline_in = self.split_time;
-        if !orig.reverse {
-            right_clip.source_in = split_source;
-        } else {
-            right_clip.source_out = Some(split_source);
-        }
-        right_clip.fade_in = 0.0;
-        right_clip.transition_in = None;
-        right_clip.keyframes = right_kfs;
+        let (mut left_clip, mut right_clip, r_id) =
+            split_single_clip_core(&orig, self.split_time, self.right_clip_id.clone());
+        left_clip.linked_group_id = new_left_gid.clone();
+        right_clip.linked_group_id = new_right_gid.clone();
         self.right_clip_id = Some(r_id);
-
         self.original_clip = Some(orig);
 
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
         track.remove_clip(&self.clip_id);
         track.add_clip(left_clip);
         track.add_clip(right_clip);
+
+        // If companion exists, split it as well
+        if let Some((comp_tr_id, comp_orig)) = companion_opt {
+            let (mut comp_left, mut comp_right, comp_r_id) = split_single_clip_core(
+                &comp_orig,
+                self.split_time,
+                self.companion_right_clip_id.clone(),
+            );
+            comp_left.linked_group_id = new_left_gid;
+            comp_right.linked_group_id = new_right_gid;
+
+            self.companion_track_id = Some(comp_tr_id.clone());
+            self.companion_clip_id = Some(comp_orig.id.clone());
+            self.companion_right_clip_id = Some(comp_r_id);
+            self.original_companion_clip = Some(comp_orig.clone());
+
+            if let Some(comp_track) = timeline.get_track_by_id_mut(&comp_tr_id) {
+                comp_track.remove_clip(&comp_orig.id);
+                comp_track.add_clip(comp_left);
+                comp_track.add_clip(comp_right);
+            }
+        }
+
         Ok(())
     }
 
@@ -443,6 +526,20 @@ impl Command for SplitClipCommand {
             }
             track.add_clip(orig);
         }
+
+        if let (Some(comp_tr_id), Some(comp_orig)) = (
+            self.companion_track_id.as_ref(),
+            self.original_companion_clip.take(),
+        ) {
+            if let Some(comp_track) = timeline.get_track_by_id_mut(comp_tr_id) {
+                comp_track.remove_clip(&comp_orig.id);
+                if let Some(comp_r_id) = &self.companion_right_clip_id {
+                    comp_track.remove_clip(comp_r_id);
+                }
+                comp_track.add_clip(comp_orig);
+            }
+        }
+
         Ok(())
     }
 
@@ -588,8 +685,11 @@ impl Command for BatchSplitClipCommand {
 pub struct RippleDeleteCommand {
     pub track_id: String,
     pub clip_id: String,
+    pub ripple_all_unlocked: bool,
     pub removed_clip: Option<Clip>,
+    pub removed_companion_clip: Option<(String, Clip)>,
     pub shift_amount: f64,
+    pub shifted_clips: Vec<(String, String, f64)>, // (track_id, clip_id, orig_in)
 }
 
 impl RippleDeleteCommand {
@@ -597,9 +697,17 @@ impl RippleDeleteCommand {
         Self {
             track_id: track_id.into(),
             clip_id: clip_id.into(),
+            ripple_all_unlocked: true,
             removed_clip: None,
+            removed_companion_clip: None,
             shift_amount: 0.0,
+            shifted_clips: Vec::new(),
         }
+    }
+
+    pub fn with_all_unlocked(mut self, all_unlocked: bool) -> Self {
+        self.ripple_all_unlocked = all_unlocked;
+        self
     }
 }
 
@@ -614,35 +722,84 @@ impl Command for RippleDeleteCommand {
 
         let dur = clip.duration();
         let cut_point = clip.timeline_out;
+        let linked_gid = clip.linked_group_id.clone();
         self.shift_amount = dur;
         self.removed_clip = Some(clip);
+        self.shifted_clips.clear();
 
-        // Shift subsequent clips left
-        for c in &mut track.clips {
-            if c.timeline_in >= cut_point - 1e-4 {
-                c.move_to(c.timeline_in - dur);
+        // If there's a linked companion clip on another unlocked track, remove it as well
+        if let Some(ref gid) = linked_gid {
+            for t in &mut timeline.tracks {
+                if t.id != self.track_id && !t.locked {
+                    if let Some(pos) = t
+                        .clips
+                        .iter()
+                        .position(|c| c.linked_group_id.as_ref() == Some(gid))
+                    {
+                        let comp = t.clips.remove(pos);
+                        self.removed_companion_clip = Some((t.id.clone(), comp));
+                        break;
+                    }
+                }
             }
         }
-        track.sort_clips();
+
+        if self.ripple_all_unlocked {
+            for t in &mut timeline.tracks {
+                if !t.locked {
+                    for c in &mut t.clips {
+                        if c.timeline_in >= cut_point - 1e-4 {
+                            self.shifted_clips
+                                .push((t.id.clone(), c.id.clone(), c.timeline_in));
+                            c.move_to((c.timeline_in - dur).max(0.0));
+                        }
+                    }
+                    t.sort_clips();
+                }
+            }
+        } else {
+            let track = timeline
+                .get_track_by_id_mut(&self.track_id)
+                .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+            for c in &mut track.clips {
+                if c.timeline_in >= cut_point - 1e-4 {
+                    self.shifted_clips
+                        .push((self.track_id.clone(), c.id.clone(), c.timeline_in));
+                    c.move_to((c.timeline_in - dur).max(0.0));
+                }
+            }
+            track.sort_clips();
+        }
+
         Ok(())
     }
 
     fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        // Restore all shifted clips back to their exact original positions
+        for (t_id, c_id, orig_in) in &self.shifted_clips {
+            if let Some(t) = timeline.get_track_by_id_mut(t_id) {
+                if let Some(c) = t.get_clip_by_id_mut(c_id) {
+                    c.move_to(*orig_in);
+                }
+                t.sort_clips();
+            }
+        }
+
+        // Restore companion clip if removed
+        if let Some((comp_tr_id, comp_clip)) = self.removed_companion_clip.take() {
+            if let Some(comp_track) = timeline.get_track_by_id_mut(&comp_tr_id) {
+                comp_track.add_clip(comp_clip);
+            }
+        }
+
+        // Restore primary clip
         if let Some(clip) = self.removed_clip.take() {
-            let cut_point = clip.timeline_out;
-            let dur = self.shift_amount;
             let track = timeline
                 .get_track_by_id_mut(&self.track_id)
                 .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
-
-            // Shift subsequent clips back right
-            for c in &mut track.clips {
-                if c.timeline_in >= cut_point - dur - 1e-4 {
-                    c.move_to(c.timeline_in + dur);
-                }
-            }
             track.add_clip(clip);
         }
+
         Ok(())
     }
 
@@ -846,8 +1003,11 @@ pub struct RippleTrimHeadCommand {
     pub track_id: String,
     pub clip_id: String,
     pub playhead_time: f64,
+    pub ripple_all_unlocked: bool,
     pub orig_bounds: Option<(f64, f64, f64, f64)>,
+    pub companion_bounds: Option<(String, String, f64, f64, f64, f64)>,
     pub shift_amount: f64,
+    pub shifted_clips: Vec<(String, String, f64)>,
 }
 
 impl RippleTrimHeadCommand {
@@ -860,9 +1020,17 @@ impl RippleTrimHeadCommand {
             track_id: track_id.into(),
             clip_id: clip_id.into(),
             playhead_time,
+            ripple_all_unlocked: true,
             orig_bounds: None,
+            companion_bounds: None,
             shift_amount: 0.0,
+            shifted_clips: Vec::new(),
         }
+    }
+
+    pub fn with_all_unlocked(mut self, all_unlocked: bool) -> Self {
+        self.ripple_all_unlocked = all_unlocked;
+        self
     }
 }
 
@@ -879,6 +1047,7 @@ impl Command for RippleTrimHeadCommand {
         let orig_out = clip.timeline_out;
         let orig_sin = clip.source_in;
         let orig_sout = clip.effective_source_out();
+        let linked_gid = clip.linked_group_id.clone();
         self.orig_bounds = Some((orig_in, orig_out, orig_sin, orig_sout));
 
         let dt = self.playhead_time - orig_in;
@@ -891,31 +1060,98 @@ impl Command for RippleTrimHeadCommand {
         clip.trim_in(self.playhead_time);
         clip.move_to(orig_in); // shorten duration
         self.shift_amount = dt;
+        self.shifted_clips.clear();
 
-        // Shift subsequent clips left
-        for c in &mut track.clips {
-            if c.id != self.clip_id && c.timeline_in >= orig_out - 1e-4 {
-                c.move_to(c.timeline_in - dt);
+        // Also trim companion clip if linked
+        if let Some(ref gid) = linked_gid {
+            for t in &mut timeline.tracks {
+                if t.id != self.track_id && !t.locked {
+                    if let Some(comp) = t
+                        .clips
+                        .iter_mut()
+                        .find(|c| c.linked_group_id.as_ref() == Some(gid))
+                    {
+                        self.companion_bounds = Some((
+                            t.id.clone(),
+                            comp.id.clone(),
+                            comp.timeline_in,
+                            comp.timeline_out,
+                            comp.source_in,
+                            comp.effective_source_out(),
+                        ));
+                        comp.trim_in(self.playhead_time);
+                        comp.move_to(orig_in);
+                        break;
+                    }
+                }
             }
         }
-        track.sort_clips();
+
+        let ignore_c_id = self.clip_id.clone();
+        let ignore_comp_id = self
+            .companion_bounds
+            .as_ref()
+            .map(|(_, id, _, _, _, _)| id.clone());
+
+        if self.ripple_all_unlocked {
+            for t in &mut timeline.tracks {
+                if !t.locked {
+                    for c in &mut t.clips {
+                        if c.id != ignore_c_id
+                            && Some(&c.id) != ignore_comp_id.as_ref()
+                            && c.timeline_in >= orig_out - 1e-4
+                        {
+                            self.shifted_clips
+                                .push((t.id.clone(), c.id.clone(), c.timeline_in));
+                            c.move_to((c.timeline_in - dt).max(0.0));
+                        }
+                    }
+                    t.sort_clips();
+                }
+            }
+        } else {
+            let track = timeline
+                .get_track_by_id_mut(&self.track_id)
+                .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+            for c in &mut track.clips {
+                if c.id != ignore_c_id && c.timeline_in >= orig_out - 1e-4 {
+                    self.shifted_clips
+                        .push((self.track_id.clone(), c.id.clone(), c.timeline_in));
+                    c.move_to((c.timeline_in - dt).max(0.0));
+                }
+            }
+            track.sort_clips();
+        }
+
         Ok(())
     }
 
     fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
-        if let Some((oin, oout, osin, osout)) = self.orig_bounds {
-            let dt = self.shift_amount;
+        for (t_id, c_id, orig_in) in &self.shifted_clips {
+            if let Some(t) = timeline.get_track_by_id_mut(t_id) {
+                if let Some(c) = t.get_clip_by_id_mut(c_id) {
+                    c.move_to(*orig_in);
+                }
+                t.sort_clips();
+            }
+        }
+
+        if let Some((comp_tr_id, comp_id, cin, cout, csin, csout)) = self.companion_bounds.take() {
+            if let Some(t) = timeline.get_track_by_id_mut(&comp_tr_id) {
+                if let Some(comp) = t.get_clip_by_id_mut(&comp_id) {
+                    comp.timeline_in = cin;
+                    comp.timeline_out = cout;
+                    comp.source_in = csin;
+                    comp.source_out = Some(csout);
+                }
+                t.sort_clips();
+            }
+        }
+
+        if let Some((oin, oout, osin, osout)) = self.orig_bounds.take() {
             let track = timeline
                 .get_track_by_id_mut(&self.track_id)
                 .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
-
-            // Shift subsequent clips back right
-            for c in &mut track.clips {
-                if c.id != self.clip_id && c.timeline_in >= oout - dt - 1e-4 {
-                    c.move_to(c.timeline_in + dt);
-                }
-            }
-
             if let Some(clip) = track.get_clip_by_id_mut(&self.clip_id) {
                 clip.timeline_in = oin;
                 clip.timeline_out = oout;
@@ -924,6 +1160,7 @@ impl Command for RippleTrimHeadCommand {
             }
             track.sort_clips();
         }
+
         Ok(())
     }
 
@@ -940,8 +1177,11 @@ pub struct RippleTrimTailCommand {
     pub track_id: String,
     pub clip_id: String,
     pub playhead_time: f64,
+    pub ripple_all_unlocked: bool,
     pub orig_bounds: Option<(f64, f64, f64, f64)>,
+    pub companion_bounds: Option<(String, String, f64, f64, f64, f64)>,
     pub shift_amount: f64,
+    pub shifted_clips: Vec<(String, String, f64)>,
 }
 
 impl RippleTrimTailCommand {
@@ -954,9 +1194,17 @@ impl RippleTrimTailCommand {
             track_id: track_id.into(),
             clip_id: clip_id.into(),
             playhead_time,
+            ripple_all_unlocked: true,
             orig_bounds: None,
+            companion_bounds: None,
             shift_amount: 0.0,
+            shifted_clips: Vec::new(),
         }
+    }
+
+    pub fn with_all_unlocked(mut self, all_unlocked: bool) -> Self {
+        self.ripple_all_unlocked = all_unlocked;
+        self
     }
 }
 
@@ -973,6 +1221,7 @@ impl Command for RippleTrimTailCommand {
         let orig_out = clip.timeline_out;
         let orig_sin = clip.source_in;
         let orig_sout = clip.effective_source_out();
+        let linked_gid = clip.linked_group_id.clone();
         self.orig_bounds = Some((orig_in, orig_out, orig_sin, orig_sout));
 
         let dt = orig_out - self.playhead_time;
@@ -984,31 +1233,97 @@ impl Command for RippleTrimTailCommand {
 
         clip.trim_out(self.playhead_time);
         self.shift_amount = dt;
+        self.shifted_clips.clear();
 
-        // Shift subsequent clips left
-        for c in &mut track.clips {
-            if c.id != self.clip_id && c.timeline_in >= orig_out - 1e-4 {
-                c.move_to(c.timeline_in - dt);
+        // Also trim companion clip if linked
+        if let Some(ref gid) = linked_gid {
+            for t in &mut timeline.tracks {
+                if t.id != self.track_id && !t.locked {
+                    if let Some(comp) = t
+                        .clips
+                        .iter_mut()
+                        .find(|c| c.linked_group_id.as_ref() == Some(gid))
+                    {
+                        self.companion_bounds = Some((
+                            t.id.clone(),
+                            comp.id.clone(),
+                            comp.timeline_in,
+                            comp.timeline_out,
+                            comp.source_in,
+                            comp.effective_source_out(),
+                        ));
+                        comp.trim_out(self.playhead_time);
+                        break;
+                    }
+                }
             }
         }
-        track.sort_clips();
+
+        let ignore_c_id = self.clip_id.clone();
+        let ignore_comp_id = self
+            .companion_bounds
+            .as_ref()
+            .map(|(_, id, _, _, _, _)| id.clone());
+
+        if self.ripple_all_unlocked {
+            for t in &mut timeline.tracks {
+                if !t.locked {
+                    for c in &mut t.clips {
+                        if c.id != ignore_c_id
+                            && Some(&c.id) != ignore_comp_id.as_ref()
+                            && c.timeline_in >= orig_out - 1e-4
+                        {
+                            self.shifted_clips
+                                .push((t.id.clone(), c.id.clone(), c.timeline_in));
+                            c.move_to((c.timeline_in - dt).max(0.0));
+                        }
+                    }
+                    t.sort_clips();
+                }
+            }
+        } else {
+            let track = timeline
+                .get_track_by_id_mut(&self.track_id)
+                .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+            for c in &mut track.clips {
+                if c.id != ignore_c_id && c.timeline_in >= orig_out - 1e-4 {
+                    self.shifted_clips
+                        .push((self.track_id.clone(), c.id.clone(), c.timeline_in));
+                    c.move_to((c.timeline_in - dt).max(0.0));
+                }
+            }
+            track.sort_clips();
+        }
+
         Ok(())
     }
 
     fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
-        if let Some((oin, oout, osin, osout)) = self.orig_bounds {
-            let dt = self.shift_amount;
+        for (t_id, c_id, orig_in) in &self.shifted_clips {
+            if let Some(t) = timeline.get_track_by_id_mut(t_id) {
+                if let Some(c) = t.get_clip_by_id_mut(c_id) {
+                    c.move_to(*orig_in);
+                }
+                t.sort_clips();
+            }
+        }
+
+        if let Some((comp_tr_id, comp_id, cin, cout, csin, csout)) = self.companion_bounds.take() {
+            if let Some(t) = timeline.get_track_by_id_mut(&comp_tr_id) {
+                if let Some(comp) = t.get_clip_by_id_mut(&comp_id) {
+                    comp.timeline_in = cin;
+                    comp.timeline_out = cout;
+                    comp.source_in = csin;
+                    comp.source_out = Some(csout);
+                }
+                t.sort_clips();
+            }
+        }
+
+        if let Some((oin, oout, osin, osout)) = self.orig_bounds.take() {
             let track = timeline
                 .get_track_by_id_mut(&self.track_id)
                 .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
-
-            // Shift subsequent clips back right
-            for c in &mut track.clips {
-                if c.id != self.clip_id && c.timeline_in >= oout - dt - 1e-4 {
-                    c.move_to(c.timeline_in + dt);
-                }
-            }
-
             if let Some(clip) = track.get_clip_by_id_mut(&self.clip_id) {
                 clip.timeline_in = oin;
                 clip.timeline_out = oout;
@@ -1017,6 +1332,7 @@ impl Command for RippleTrimTailCommand {
             }
             track.sort_clips();
         }
+
         Ok(())
     }
 
@@ -2044,5 +2360,203 @@ impl Command for SetClipKeyframesCommand {
 
     fn name(&self) -> &str {
         "Anahtar Kareleri Değiştir"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 27. SetClipFadeCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct SetClipFadeCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub is_fade_in: bool,
+    pub old_fade: f64,
+    pub new_fade: f64,
+}
+
+impl SetClipFadeCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        is_fade_in: bool,
+        old_fade: f64,
+        new_fade: f64,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            is_fade_in,
+            old_fade,
+            new_fade,
+        }
+    }
+}
+
+impl Command for SetClipFadeCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        if self.is_fade_in {
+            clip.fade_in = self.new_fade;
+        } else {
+            clip.fade_out = self.new_fade;
+        }
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        if self.is_fade_in {
+            clip.fade_in = self.old_fade;
+        } else {
+            clip.fade_out = self.old_fade;
+        }
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        if self.is_fade_in {
+            "Fade In Ayarla"
+        } else {
+            "Fade Out Ayarla"
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 28. SetTextOverlayPositionCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct SetTextOverlayPositionCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub old_pos: (f32, f32),
+    pub new_pos: (f32, f32),
+}
+
+impl SetTextOverlayPositionCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_pos: (f32, f32),
+        new_pos: (f32, f32),
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            old_pos,
+            new_pos,
+        }
+    }
+}
+
+impl Command for SetTextOverlayPositionCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        if let Some(ref mut txt) = clip.text_overlay {
+            txt.pos_x = self.new_pos.0;
+            txt.pos_y = self.new_pos.1;
+        }
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        if let Some(ref mut txt) = clip.text_overlay {
+            txt.pos_x = self.old_pos.0;
+            txt.pos_y = self.old_pos.1;
+        }
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Metin Konumunu Değiştir"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 29. SetTextOverlayContentCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct SetTextOverlayContentCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub old_content: String,
+    pub new_content: String,
+    pub old_name: String,
+    pub new_name: String,
+}
+
+impl SetTextOverlayContentCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_content: impl Into<String>,
+        new_content: impl Into<String>,
+        old_name: impl Into<String>,
+        new_name: impl Into<String>,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            old_content: old_content.into(),
+            new_content: new_content.into(),
+            old_name: old_name.into(),
+            new_name: new_name.into(),
+        }
+    }
+}
+
+impl Command for SetTextOverlayContentCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        if let Some(ref mut txt) = clip.text_overlay {
+            txt.content = self.new_content.clone();
+        }
+        clip.name = self.new_name.clone();
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        if let Some(ref mut txt) = clip.text_overlay {
+            txt.content = self.old_content.clone();
+        }
+        clip.name = self.old_name.clone();
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Metin İçeriğini Değiştir"
     }
 }

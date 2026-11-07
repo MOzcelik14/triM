@@ -156,9 +156,16 @@ pub struct TrimApp {
     pub confirmed_exit: bool,
     pub last_saved_undo_len: usize,
     pub file_dialog_bridge: FileDialogBridge,
-    pub clipboard_clips: Vec<(trim_core::track::TrackType, f64, trim_core::clip::Clip)>,
+    pub clipboard_clips: Vec<(
+        trim_core::track::TrackType,
+        usize,
+        f64,
+        trim_core::clip::Clip,
+    )>,
     pub ffmpeg_missing_alert: bool,
     pub is_monitor_fullscreen: bool,
+    pub monitor_text_drag_orig_pos: Option<(String, String, (f32, f32))>,
+    pub monitor_text_edit_orig_content: Option<(String, String, String, String)>,
 }
 
 impl Default for TrimApp {
@@ -253,6 +260,8 @@ impl Default for TrimApp {
             clipboard_clips: Vec::new(),
             ffmpeg_missing_alert: false,
             is_monitor_fullscreen: false,
+            monitor_text_drag_orig_pos: None,
+            monitor_text_edit_orig_content: None,
         }
     }
 }
@@ -560,7 +569,46 @@ impl TrimApp {
                     self.handle_monitor_text_click(pos_x, pos_y);
                 }
                 MonitorAction::TextPositionDrag { pos_x, pos_y } => {
+                    if self.monitor_text_drag_orig_pos.is_none() {
+                        if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first()
+                        {
+                            if let Some(tr) = self.project.timeline.get_track_by_id(tr_id) {
+                                if let Some(cl) = tr.get_clip_by_id(cl_id) {
+                                    if let Some(ref txt) = cl.text_overlay {
+                                        self.monitor_text_drag_orig_pos = Some((
+                                            tr_id.clone(),
+                                            cl_id.clone(),
+                                            (txt.pos_x, txt.pos_y),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
                     self.handle_monitor_text_drag(pos_x, pos_y);
+                }
+                MonitorAction::TextPositionDragEnded => {
+                    if let Some((tr_id, cl_id, orig_pos)) = self.monitor_text_drag_orig_pos.take() {
+                        if let Some(tr) = self.project.timeline.get_track_by_id(&tr_id) {
+                            if let Some(cl) = tr.get_clip_by_id(&cl_id) {
+                                if let Some(ref txt) = cl.text_overlay {
+                                    let cur_pos = (txt.pos_x, txt.pos_y);
+                                    if (cur_pos.0 - orig_pos.0).abs() > 1e-4
+                                        || (cur_pos.1 - orig_pos.1).abs() > 1e-4
+                                    {
+                                        let cmd = Box::new(
+                                            trim_commands::SetTextOverlayPositionCommand::new(
+                                                tr_id, cl_id, orig_pos, cur_pos,
+                                            ),
+                                        );
+                                        let _ =
+                                            self.undo_stack.push(cmd, &mut self.project.timeline);
+                                        self.project.mark_dirty();
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 MonitorAction::TextSelectAt { pos_x, pos_y } => {
                     self.handle_monitor_text_select(pos_x, pos_y);
@@ -575,7 +623,51 @@ impl TrimApp {
                     self.is_monitor_fullscreen = !self.is_monitor_fullscreen;
                 }
                 MonitorAction::TextContentEdited(content) => {
+                    if self.monitor_text_edit_orig_content.is_none() {
+                        if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first()
+                        {
+                            if let Some(tr) = self.project.timeline.get_track_by_id(tr_id) {
+                                if let Some(cl) = tr.get_clip_by_id(cl_id) {
+                                    if let Some(ref txt) = cl.text_overlay {
+                                        self.monitor_text_edit_orig_content = Some((
+                                            tr_id.clone(),
+                                            cl_id.clone(),
+                                            txt.content.clone(),
+                                            cl.name.clone(),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
                     self.handle_monitor_text_content_changed(content);
+                }
+                MonitorAction::TextEditingCompleted => {
+                    if let Some((tr_id, cl_id, orig_content, orig_name)) =
+                        self.monitor_text_edit_orig_content.take()
+                    {
+                        if let Some(tr) = self.project.timeline.get_track_by_id(&tr_id) {
+                            if let Some(cl) = tr.get_clip_by_id(&cl_id) {
+                                if let Some(ref txt) = cl.text_overlay {
+                                    if txt.content != orig_content {
+                                        let cmd = Box::new(
+                                            trim_commands::SetTextOverlayContentCommand::new(
+                                                tr_id,
+                                                cl_id,
+                                                orig_content,
+                                                txt.content.clone(),
+                                                orig_name,
+                                                cl.name.clone(),
+                                            ),
+                                        );
+                                        let _ =
+                                            self.undo_stack.push(cmd, &mut self.project.timeline);
+                                        self.project.mark_dirty();
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -925,7 +1017,7 @@ impl eframe::App for TrimApp {
                         || (self.shortcut_profile == ShortcutProfile::DaVinciResolve
                             && i.key_pressed(Key::Delete));
                     if self.canvas_state.selected_gap.is_some() {
-                        self.close_selected_gap(is_ripple);
+                        self.close_selected_gap(true);
                     } else if is_ripple {
                         if let Some((tr_id, cl_id)) =
                             self.canvas_state.selected_clip_pairs.first().cloned()
@@ -992,6 +1084,21 @@ impl eframe::App for TrimApp {
                     self.seek(0.0);
                 } else if i.key_pressed(Key::End) {
                     self.seek(self.project.timeline.duration());
+                } else if (i.modifiers.ctrl || i.modifiers.command)
+                    && (i.key_pressed(Key::Plus) || i.key_pressed(Key::Equals))
+                    || (!i.modifiers.ctrl
+                        && !i.modifiers.command
+                        && !i.modifiers.alt
+                        && (i.key_pressed(Key::Plus) || i.key_pressed(Key::Equals)))
+                {
+                    self.zoom_timeline(1.25, None, None);
+                } else if (i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::Minus)
+                    || (!i.modifiers.ctrl
+                        && !i.modifiers.command
+                        && !i.modifiers.alt
+                        && i.key_pressed(Key::Minus))
+                {
+                    self.zoom_timeline(0.8, None, None);
                 } else if !i.modifiers.ctrl
                     && (i.key_pressed(Key::N)
                         || (i.key_pressed(Key::S)
@@ -1834,7 +1941,7 @@ impl eframe::App for TrimApp {
                             [70.0, 18.0],
                             egui::Slider::new(
                                 &mut self.canvas_state.pixels_per_second,
-                                15.0..=300.0,
+                                15.0..=350.0,
                             )
                             .show_value(false),
                         );
@@ -1873,7 +1980,7 @@ impl eframe::App for TrimApp {
                         }
                     }
 
-                    let current_scroll_x = self.canvas_state.scroll_offset.x;
+                    let current_scroll_x = self.canvas_state.pending_scroll_x.unwrap_or(self.canvas_state.scroll_offset.x);
                     let current_scroll_y = self.canvas_state.scroll_offset.y;
 
                     // 1. Vertical Toolbar (Fixed width 42px for 32x32 tools)
@@ -2149,6 +2256,10 @@ impl eframe::App for TrimApp {
                                 .id_salt("timeline_canvas_both_scroll")
                                 .auto_shrink([false, false]);
 
+                            let prev_scroll_y = self.canvas_state.scroll_offset.y;
+                            if let Some(target_x) = self.canvas_state.pending_scroll_x.take() {
+                                canvas_scroll = canvas_scroll.horizontal_scroll_offset(target_x);
+                            }
                             if let Some(target_y) = self.canvas_state.pending_scroll_y.take() {
                                 canvas_scroll = canvas_scroll.vertical_scroll_offset(target_y);
                             }
@@ -2168,6 +2279,35 @@ impl eframe::App for TrimApp {
 
                             self.canvas_state.scroll_offset = canvas_scroll_out.state.offset;
 
+                            // Handle Ctrl + MouseWheel timeline zooming centered under the cursor
+                            let canvas_rect = canvas_scroll_out.inner_rect;
+                            let is_hovering_canvas = ui
+                                .input(|i| i.pointer.hover_pos())
+                                .map(|p| canvas_rect.contains(p))
+                                .unwrap_or(false);
+                            let (ctrl, raw_scroll, zoom_delta) = ui.input(|i| (
+                                i.modifiers.ctrl || i.modifiers.command,
+                                i.raw_scroll_delta,
+                                i.zoom_delta(),
+                            ));
+
+                            if is_hovering_canvas && ctrl && (raw_scroll.y != 0.0 || zoom_delta != 1.0) {
+                                self.canvas_state.pending_scroll_y = Some(prev_scroll_y);
+                                let factor = if zoom_delta != 1.0 {
+                                    zoom_delta
+                                } else if raw_scroll.y > 0.0 {
+                                    1.15
+                                } else {
+                                    1.0 / 1.15
+                                };
+                                if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+                                    let view_x = pos.x - canvas_rect.left();
+                                    let content_x = self.canvas_state.scroll_offset.x + view_x;
+                                    let time = (content_x / self.canvas_state.pixels_per_second).max(0.0) as f64;
+                                    self.zoom_timeline(factor, Some(time), Some(view_x));
+                                }
+                            }
+
                             if let Some(act) = canvas_scroll_out.inner {
                                     match act {
                                         CanvasAction::Seek(t) => self.seek(t),
@@ -2186,6 +2326,25 @@ impl eframe::App for TrimApp {
                                         } => {
                                             let cmd = Box::new(SetClipVolumeCommand::new(
                                                 track_id, clip_id, old_volume, new_volume,
+                                            ));
+                                            let _ = self
+                                                .undo_stack
+                                                .push(cmd, &mut self.project.timeline);
+                                            self.project.mark_dirty();
+                                        }
+                                        CanvasAction::SetClipFade {
+                                            track_id,
+                                            clip_id,
+                                            is_fade_in,
+                                            old_fade,
+                                            new_fade,
+                                        } => {
+                                            let cmd = Box::new(trim_commands::SetClipFadeCommand::new(
+                                                track_id,
+                                                clip_id,
+                                                is_fade_in,
+                                                old_fade,
+                                                new_fade,
                                             ));
                                             let _ = self
                                                 .undo_stack
@@ -2326,10 +2485,12 @@ impl eframe::App for TrimApp {
                                             track_id,
                                             clip_id,
                                             cut_time,
+                                            split_linked,
                                         } => {
-                                            let cmd = Box::new(SplitClipCommand::new(
-                                                track_id, clip_id, cut_time,
-                                            ));
+                                            let cmd = Box::new(
+                                                SplitClipCommand::new(track_id, clip_id, cut_time)
+                                                    .with_split_linked(split_linked),
+                                            );
                                             match self
                                                 .undo_stack
                                                 .push(cmd, &mut self.project.timeline)

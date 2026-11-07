@@ -932,4 +932,186 @@ mod tests {
         let c1 = tl.tracks[0].get_clip_by_id(&clip_id).unwrap();
         assert_eq!(c1.keyframes.get("volume"), Some(&kfs));
     }
+
+    #[test]
+    fn test_split_clip_with_linked_companion() {
+        let mut tl = TimelineModel::default();
+        let v1_id = tl.add_new_video_track();
+        let _a1_id = tl.add_new_audio_track();
+
+        let orig_grp = "grp-sync-1".to_string();
+        let mut cv = Clip::new("m_video", 0.0, 10.0);
+        cv.linked_group_id = Some(orig_grp.clone());
+        let cv_id = cv.id.clone();
+
+        let mut ca = Clip::new("m_audio", 0.0, 10.0);
+        ca.linked_group_id = Some(orig_grp.clone());
+        let ca_id = ca.id.clone();
+
+        tl.tracks[0].add_clip(cv);
+        tl.tracks[1].add_clip(ca);
+
+        let mut stack = UndoStack::new();
+        let split_cmd = Box::new(SplitClipCommand::new(&v1_id, &cv_id, 4.0));
+        assert!(stack.push(split_cmd, &mut tl).is_ok());
+
+        // Both V1 and A1 should now have 2 clips each
+        assert_eq!(tl.tracks[0].clips.len(), 2);
+        assert_eq!(tl.tracks[1].clips.len(), 2);
+
+        let v_left = tl.tracks[0].clips.iter().find(|c| c.id == cv_id).unwrap();
+        let a_left = tl.tracks[1].clips.iter().find(|c| c.id == ca_id).unwrap();
+        assert_eq!(v_left.timeline_out, 4.0);
+        assert_eq!(a_left.timeline_out, 4.0);
+        assert!(v_left.linked_group_id.is_some());
+        assert_eq!(v_left.linked_group_id, a_left.linked_group_id);
+
+        let v_right = tl.tracks[0].clips.iter().find(|c| c.id != cv_id).unwrap();
+        let a_right = tl.tracks[1].clips.iter().find(|c| c.id != ca_id).unwrap();
+        assert_eq!(v_right.timeline_in, 4.0);
+        assert_eq!(a_right.timeline_in, 4.0);
+        assert!(v_right.linked_group_id.is_some());
+        assert_eq!(v_right.linked_group_id, a_right.linked_group_id);
+
+        // Left and right groups must be separate!
+        assert_ne!(v_left.linked_group_id, v_right.linked_group_id);
+
+        // Undo restores both single clips with original linked group
+        assert!(stack.undo(&mut tl).unwrap());
+        assert_eq!(tl.tracks[0].clips.len(), 1);
+        assert_eq!(tl.tracks[1].clips.len(), 1);
+        let restored_v = tl.tracks[0].get_clip_by_id(&cv_id).unwrap();
+        let restored_a = tl.tracks[1].get_clip_by_id(&ca_id).unwrap();
+        assert_eq!(restored_v.duration(), 10.0);
+        assert_eq!(restored_a.duration(), 10.0);
+        assert_eq!(restored_v.linked_group_id.as_ref(), Some(&orig_grp));
+        assert_eq!(restored_a.linked_group_id.as_ref(), Some(&orig_grp));
+    }
+
+    #[test]
+    fn test_ripple_delete_with_linked_companion_multitrack() {
+        let mut tl = TimelineModel::default();
+        let v1_id = tl.add_new_video_track();
+        let _a1_id = tl.add_new_audio_track();
+        let orig_grp = "grp-sync-ripple".to_string();
+
+        // Clip 1: V1 + A1 linked (0.0 to 3.0)
+        let mut cv1 = Clip::new("m1", 0.0, 3.0);
+        let mut ca1 = Clip::new("m1_audio", 0.0, 3.0);
+        cv1.linked_group_id = Some(orig_grp.clone());
+        ca1.linked_group_id = Some(orig_grp.clone());
+        let cv1_id = cv1.id.clone();
+        let ca1_id = ca1.id.clone();
+
+        // Clip 2: V1 + A1 (5.0 to 10.0) downstream
+        let cv2 = Clip::new("m2", 5.0, 10.0);
+        let ca2 = Clip::new("m2_audio", 5.0, 10.0);
+        let cv2_id = cv2.id.clone();
+        let ca2_id = ca2.id.clone();
+
+        tl.tracks[0].add_clip(cv1);
+        tl.tracks[0].add_clip(cv2);
+        tl.tracks[1].add_clip(ca1);
+        tl.tracks[1].add_clip(ca2);
+
+        let mut stack = UndoStack::new();
+        // Ripple delete cv1 from V1
+        let cmd = Box::new(RippleDeleteCommand::new(&v1_id, &cv1_id));
+        assert!(stack.push(cmd, &mut tl).is_ok());
+
+        // cv1 and linked ca1 should BOTH be removed!
+        assert!(tl.tracks[0].get_clip_by_id(&cv1_id).is_none());
+        assert!(tl.tracks[1].get_clip_by_id(&ca1_id).is_none());
+
+        // Downstream clips on both tracks should have shifted left by 3.0 seconds (from 5.0 to 2.0)
+        let shifted_v2 = tl.tracks[0].get_clip_by_id(&cv2_id).unwrap();
+        let shifted_a2 = tl.tracks[1].get_clip_by_id(&ca2_id).unwrap();
+        assert_eq!(shifted_v2.timeline_in, 2.0);
+        assert_eq!(shifted_v2.timeline_out, 7.0);
+        assert_eq!(shifted_a2.timeline_in, 2.0);
+        assert_eq!(shifted_a2.timeline_out, 7.0);
+
+        // Undo
+        assert!(stack.undo(&mut tl).unwrap());
+        assert!(tl.tracks[0].get_clip_by_id(&cv1_id).is_some());
+        assert!(tl.tracks[1].get_clip_by_id(&ca1_id).is_some());
+        let restored_v2 = tl.tracks[0].get_clip_by_id(&cv2_id).unwrap();
+        let restored_a2 = tl.tracks[1].get_clip_by_id(&ca2_id).unwrap();
+        assert_eq!(restored_v2.timeline_in, 5.0);
+        assert_eq!(restored_a2.timeline_in, 5.0);
+    }
+
+    #[test]
+    fn test_fade_and_text_overlay_commands() {
+        let mut tl = TimelineModel::default();
+        let v1_id = tl.add_new_video_track();
+        let mut clip = Clip::new("m_title", 0.0, 5.0);
+        clip.fade_in = 0.5;
+        clip.fade_out = 1.0;
+        let overlay = trim_core::clip::TextOverlay {
+            content: "İlk Başlık".to_string(),
+            pos_x: 0.5,
+            pos_y: 0.8,
+            ..Default::default()
+        };
+        clip.text_overlay = Some(overlay);
+        let cl_id = clip.id.clone();
+        tl.tracks[0].add_clip(clip);
+
+        let mut stack = UndoStack::new();
+
+        // 1. Set fade in command
+        let cmd_fade = Box::new(SetClipFadeCommand::new(&v1_id, &cl_id, true, 0.5, 1.5));
+        stack.push(cmd_fade, &mut tl).unwrap();
+        assert_eq!(tl.tracks[0].get_clip_by_id(&cl_id).unwrap().fade_in, 1.5);
+        assert!(stack.undo(&mut tl).unwrap());
+        assert_eq!(tl.tracks[0].get_clip_by_id(&cl_id).unwrap().fade_in, 0.5);
+
+        // 2. Set text overlay position command
+        let cmd_pos = Box::new(SetTextOverlayPositionCommand::new(
+            &v1_id,
+            &cl_id,
+            (0.5, 0.8),
+            (0.2, 0.3),
+        ));
+        stack.push(cmd_pos, &mut tl).unwrap();
+        let txt = tl.tracks[0]
+            .get_clip_by_id(&cl_id)
+            .unwrap()
+            .text_overlay
+            .clone()
+            .unwrap();
+        assert_eq!(txt.pos_x, 0.2);
+        assert_eq!(txt.pos_y, 0.3);
+        assert!(stack.undo(&mut tl).unwrap());
+        let txt_undone = tl.tracks[0]
+            .get_clip_by_id(&cl_id)
+            .unwrap()
+            .text_overlay
+            .clone()
+            .unwrap();
+        assert_eq!(txt_undone.pos_x, 0.5);
+        assert_eq!(txt_undone.pos_y, 0.8);
+
+        // 3. Set text overlay content command
+        let cmd_content = Box::new(SetTextOverlayContentCommand::new(
+            &v1_id,
+            &cl_id,
+            "İlk Başlık",
+            "Yeni Başlık",
+            "m_title",
+            "Metin: Yeni Başlık",
+        ));
+        stack.push(cmd_content, &mut tl).unwrap();
+        let c = tl.tracks[0].get_clip_by_id(&cl_id).unwrap();
+        assert_eq!(c.text_overlay.as_ref().unwrap().content, "Yeni Başlık");
+        assert_eq!(c.name, "Metin: Yeni Başlık");
+        assert!(stack.undo(&mut tl).unwrap());
+        let c_undone = tl.tracks[0].get_clip_by_id(&cl_id).unwrap();
+        assert_eq!(
+            c_undone.text_overlay.as_ref().unwrap().content,
+            "İlk Başlık"
+        );
+        assert_eq!(c_undone.name, "m_title");
+    }
 }

@@ -489,15 +489,35 @@ impl TrimApp {
         self.project.mark_dirty();
     }
 
-    /// Copies currently selected timeline clips into the internal clipboard.
+    /// Copies currently selected timeline clips into the internal clipboard preserving relative track hierarchy.
     pub fn copy_selected_clips(&mut self) {
         if self.canvas_state.selected_clip_pairs.is_empty() {
             self.status_message = "Kopyalanacak klip seçilmedi".to_string();
             return;
         }
 
+        let mut v_tracks = self.project.timeline.get_video_tracks();
+        v_tracks.sort_by_key(|t| {
+            t.name
+                .strip_prefix('V')
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0)
+        });
+        let v_ids: Vec<String> = v_tracks.iter().map(|t| t.id.clone()).collect();
+
+        let mut a_tracks = self.project.timeline.get_audio_tracks();
+        a_tracks.sort_by_key(|t| {
+            t.name
+                .strip_prefix('A')
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0)
+        });
+        let a_ids: Vec<String> = a_tracks.iter().map(|t| t.id.clone()).collect();
+
         let mut clips_to_copy = Vec::new();
         let mut min_in = f64::MAX;
+        let mut min_v_idx = usize::MAX;
+        let mut min_a_idx = usize::MAX;
 
         for (tr_id, cl_id) in &self.canvas_state.selected_clip_pairs {
             if let Some(track) = self.project.timeline.get_track_by_id(tr_id) {
@@ -505,7 +525,26 @@ impl TrimApp {
                     if clip.timeline_in < min_in {
                         min_in = clip.timeline_in;
                     }
-                    clips_to_copy.push((track.track_type, clip.clone()));
+                    match track.track_type {
+                        trim_core::track::TrackType::Video => {
+                            let idx = v_ids.iter().position(|id| id == tr_id).unwrap_or(0);
+                            min_v_idx = min_v_idx.min(idx);
+                            clips_to_copy.push((
+                                trim_core::track::TrackType::Video,
+                                idx,
+                                clip.clone(),
+                            ));
+                        }
+                        trim_core::track::TrackType::Audio => {
+                            let idx = a_ids.iter().position(|id| id == tr_id).unwrap_or(0);
+                            min_a_idx = min_a_idx.min(idx);
+                            clips_to_copy.push((
+                                trim_core::track::TrackType::Audio,
+                                idx,
+                                clip.clone(),
+                            ));
+                        }
+                    }
                 }
             }
         }
@@ -516,16 +555,20 @@ impl TrimApp {
 
         self.clipboard_clips = clips_to_copy
             .into_iter()
-            .map(|(tt, clip)| {
+            .map(|(tt, idx, clip)| {
                 let rel_offset = (clip.timeline_in - min_in).max(0.0);
-                (tt, rel_offset, clip)
+                let rel_tr = match tt {
+                    trim_core::track::TrackType::Video => idx.saturating_sub(min_v_idx),
+                    trim_core::track::TrackType::Audio => idx.saturating_sub(min_a_idx),
+                };
+                (tt, rel_tr, rel_offset, clip)
             })
             .collect();
 
         self.status_message = format!("📋 Kopyalandı: {} klip", self.clipboard_clips.len());
     }
 
-    /// Pastes clips from the clipboard starting at the playhead (`current_time`) onto the target track.
+    /// Pastes clips from the clipboard starting at the playhead (`current_time`) preserving track hierarchy.
     pub fn paste_clipboard_clips(&mut self) {
         if self.clipboard_clips.is_empty() {
             self.status_message = "Panoda yapıştırılacak klip yok".to_string();
@@ -538,29 +581,91 @@ impl TrimApp {
         let mut linked_id_map: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
 
-        let mut max_out = paste_time;
-        for (track_type, rel_offset, clip) in &self.clipboard_clips {
-            let target_track_id = match track_type {
-                trim_core::track::TrackType::Video => self.target_video_track.clone(),
-                trim_core::track::TrackType::Audio => self.target_audio_track.clone(),
-            };
+        let mut v_tracks = self.project.timeline.get_video_tracks();
+        v_tracks.sort_by_key(|t| {
+            t.name
+                .strip_prefix('V')
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0)
+        });
+        let mut v_ids: Vec<String> = v_tracks.iter().map(|t| t.id.clone()).collect();
 
-            let final_track_id =
-                if let Some(tr) = self.project.timeline.get_track_by_id(&target_track_id) {
-                    if tr.track_type == *track_type && !tr.locked {
-                        target_track_id
-                    } else {
-                        self.project
-                            .timeline
-                            .tracks
-                            .iter()
-                            .find(|t| t.track_type == *track_type && !t.locked)
-                            .map(|t| t.id.clone())
-                            .unwrap_or(target_track_id)
+        let mut a_tracks = self.project.timeline.get_audio_tracks();
+        a_tracks.sort_by_key(|t| {
+            t.name
+                .strip_prefix('A')
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(0)
+        });
+        let mut a_ids: Vec<String> = a_tracks.iter().map(|t| t.id.clone()).collect();
+
+        let base_v_idx = v_ids
+            .iter()
+            .position(|id| id == &self.target_video_track)
+            .unwrap_or(0);
+        let base_a_idx = a_ids
+            .iter()
+            .position(|id| id == &self.target_audio_track)
+            .unwrap_or(0);
+
+        let mut max_out = paste_time;
+        for (track_type, rel_track, rel_offset, clip) in &self.clipboard_clips {
+            let final_track_id = match track_type {
+                trim_core::track::TrackType::Video => {
+                    let desired_idx = base_v_idx + rel_track;
+                    while v_ids.len() <= desired_idx {
+                        let new_id = self.project.timeline.add_new_video_track();
+                        v_ids.push(new_id);
                     }
-                } else {
-                    target_track_id
-                };
+                    let tr_id = &v_ids[desired_idx];
+                    if let Some(tr) = self.project.timeline.get_track_by_id(tr_id) {
+                        if !tr.locked {
+                            tr_id.clone()
+                        } else {
+                            v_ids
+                                .iter()
+                                .find(|id| {
+                                    self.project
+                                        .timeline
+                                        .get_track_by_id(id)
+                                        .map(|t| !t.locked)
+                                        .unwrap_or(false)
+                                })
+                                .cloned()
+                                .unwrap_or_else(|| tr_id.clone())
+                        }
+                    } else {
+                        tr_id.clone()
+                    }
+                }
+                trim_core::track::TrackType::Audio => {
+                    let desired_idx = base_a_idx + rel_track;
+                    while a_ids.len() <= desired_idx {
+                        let new_id = self.project.timeline.add_new_audio_track();
+                        a_ids.push(new_id);
+                    }
+                    let tr_id = &a_ids[desired_idx];
+                    if let Some(tr) = self.project.timeline.get_track_by_id(tr_id) {
+                        if !tr.locked {
+                            tr_id.clone()
+                        } else {
+                            a_ids
+                                .iter()
+                                .find(|id| {
+                                    self.project
+                                        .timeline
+                                        .get_track_by_id(id)
+                                        .map(|t| !t.locked)
+                                        .unwrap_or(false)
+                                })
+                                .cloned()
+                                .unwrap_or_else(|| tr_id.clone())
+                        }
+                    } else {
+                        tr_id.clone()
+                    }
+                }
+            };
 
             let mut new_clip = clip.clone();
             let new_clip_id = uuid::Uuid::new_v4().to_string();
@@ -606,5 +711,38 @@ impl TrimApp {
                 count, paste_time, max_out
             );
         }
+    }
+
+    /// Zooms the timeline in or out by `factor`, centered at `focus_time` (or playhead if None).
+    /// If `focus_view_x` is provided, ensures the point remains under the cursor screen position.
+    pub fn zoom_timeline(
+        &mut self,
+        factor: f32,
+        focus_time: Option<f64>,
+        focus_view_x: Option<f32>,
+    ) {
+        let old_pps = self.canvas_state.pixels_per_second;
+        let new_pps = (old_pps * factor).clamp(15.0, 350.0);
+        if (new_pps - old_pps).abs() < 1e-3 {
+            return;
+        }
+        self.canvas_state.pixels_per_second = new_pps;
+
+        let scroll_x = self.canvas_state.scroll_offset.x;
+        let (target_time, view_x) = match (focus_time, focus_view_x) {
+            (Some(t), Some(vx)) => (t, vx),
+            (Some(t), None) => {
+                let vx = ((t as f32 * old_pps) - scroll_x).max(0.0);
+                (t, vx)
+            }
+            (None, _) => {
+                let t = self.current_time;
+                let vx = ((t as f32 * old_pps) - scroll_x).max(0.0);
+                (t, vx)
+            }
+        };
+
+        let new_scroll_x = ((target_time as f32 * new_pps) - view_x).max(0.0);
+        self.canvas_state.pending_scroll_x = Some(new_scroll_x);
     }
 }

@@ -674,13 +674,61 @@ impl TimelineExporter {
         range: Option<(f64, f64)>,
     ) -> Result<(Vec<String>, f64), String> {
         let flattened_tl = project.get_flattened_timeline();
-        let timeline = &flattened_tl;
+        let orig_total_duration = flattened_tl.duration();
+        let (eff_start, eff_duration) = if let Some((start, end)) = range {
+            let s = start.max(0.0).min(orig_total_duration);
+            let e = end.max(s).min(orig_total_duration);
+            let d = (e - s).max(0.001);
+            (Some(s), d)
+        } else {
+            (None, orig_total_duration)
+        };
+
+        // Filter and re-align timeline clips so only clips within the range are processed
+        let timeline_storage;
+        let timeline: &trim_core::timeline::TimelineModel = if let Some(start) = eff_start {
+            let mut range_tl = flattened_tl.clone();
+            let range_end = start + eff_duration;
+            for track in &mut range_tl.tracks {
+                let mut adjusted_clips = Vec::new();
+                for clip in &track.clips {
+                    if clip.timeline_out <= start + 1e-4 || clip.timeline_in >= range_end - 1e-4 {
+                        continue;
+                    }
+                    let mut c = clip.clone();
+                    let front_cut = (start - c.timeline_in).max(0.0);
+                    let eff_in = (c.timeline_in - start).max(0.0);
+                    let eff_out = (c.timeline_out - start).min(eff_duration);
+
+                    c.timeline_in = eff_in;
+                    c.timeline_out = eff_out;
+                    c.source_in += front_cut * c.speed;
+                    let new_dur = (eff_out - eff_in).max(0.001);
+                    c.source_out = Some(c.source_in + new_dur * c.speed);
+
+                    if front_cut > 0.0 {
+                        c.fade_in = (c.fade_in - front_cut).max(0.0);
+                    }
+                    let back_cut = (clip.timeline_out - range_end).max(0.0);
+                    if back_cut > 0.0 {
+                        c.fade_out = (c.fade_out - back_cut).max(0.0);
+                    }
+                    adjusted_clips.push(c);
+                }
+                track.clips = adjusted_clips;
+            }
+            timeline_storage = range_tl;
+            &timeline_storage
+        } else {
+            &flattened_tl
+        };
+
         let video_tracks = timeline.get_video_tracks();
         if video_tracks.is_empty() {
             return Err("Projede video kanalı bulunamadı".to_string());
         }
 
-        let total_duration = timeline.duration();
+        let total_duration = eff_duration;
         let has_any_clip = timeline.tracks.iter().any(|t| {
             t.clips
                 .iter()
@@ -848,19 +896,6 @@ impl TimelineExporter {
             "-r".into(),
             format!("{}", out_fps),
         ]);
-
-        let (eff_start, eff_duration) = if let Some((start, end)) = range {
-            let s = start.max(0.0).min(total_duration);
-            let e = end.max(s).min(total_duration);
-            let d = (e - s).max(0.001);
-            (Some(s), d)
-        } else {
-            (None, total_duration)
-        };
-
-        if let Some(start) = eff_start {
-            cmd.extend(vec!["-ss".into(), format!("{:.6}", start)]);
-        }
 
         cmd.extend(vec![
             "-t".into(),
@@ -1706,7 +1741,15 @@ mod tests {
         v.media_type = MediaType::Video;
         let vid_id = v.id.clone();
         proj.add_media(v);
+
+        let mut v_outside = MediaItem::new("/tmp/outside_ignored.mp4");
+        v_outside.media_type = MediaType::Video;
+        let outside_id = v_outside.id.clone();
+        proj.add_media(v_outside);
+
         proj.timeline.tracks[0].add_clip(Clip::new(&vid_id, 0.0, 10.0));
+        // Clip completely after range (20.0 to 25.0)
+        proj.timeline.tracks[0].add_clip(Clip::new(&outside_id, 20.0, 25.0));
 
         let preset = ExportPreset::default();
         let (cmd, dur) = TimelineExporter::build_export_pipeline_range(
@@ -1720,6 +1763,12 @@ mod tests {
         assert!(
             (dur - 5.0).abs() < 1e-4,
             "Effective duration should be 5.0s"
+        );
+
+        // Outside clip must be completely excluded!
+        assert!(
+            !cmd.iter().any(|arg| arg.contains("outside_ignored.mp4")),
+            "Clips outside the in/out range must not be loaded into ffmpeg"
         );
 
         let ss_idx = cmd.iter().rposition(|a| a == "-ss");

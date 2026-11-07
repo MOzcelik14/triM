@@ -56,6 +56,19 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.3.2" date="2026-11-07">
+      <description>
+        <p>triM. v1.3.2 - Kurgu İş Akışı İyileştirmeleri ve Düzeltmeler:</p>
+        <ul>
+          <li>Bağlı video ve ses klipleri için eş zamanlı jiletle kesme (Razor Split) ve otomatik yeniden bağlama desteği.</li>
+          <li>Çok izli (multitrack) ripple delete ve dalgalı boşluk kapatma (Shift+Delete / G tuşu) ile tüm izleri senkron kaydırma.</li>
+          <li>İmleç merkezli akıcı zaman çizelgesi yakınlaştırma (Ctrl + Mouse Wheel) ve +, -, = klavye kısayolları.</li>
+          <li>Opaklık/Fade geçişleri ve ekrandaki metin sürükleme / düzenleme eylemleri için tam Undo/Redo (Geri/İleri Al) desteği.</li>
+          <li>Çoklu iz kopyalama ve yapıştırmada bağıl iz hiyerarşisinin korunması ve otomatik yeni iz açılması.</li>
+          <li>Giriş/Çıkış (In/Out) aralık dışa aktarımında yalnızca seçili aralığın işlenmesiyle ultra hızlı render mimarisi.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.3.1" date="2026-11-06">
       <description>
         <p>triM. v1.3.1 "Karadeniz" - İş Akışı İyileştirmeleri ve Zafiyet Çözümleri:</p>

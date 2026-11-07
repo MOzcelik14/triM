@@ -45,6 +45,8 @@ pub enum MonitorAction {
         pos_x: f32,
         pos_y: f32,
     },
+    TextPositionDragEnded,
+    TextEditingCompleted,
     ToggleFullscreen,
 }
 
@@ -413,6 +415,8 @@ impl<'a> MonitorWidget<'a> {
                                 pos_x: norm_x,
                                 pos_y: norm_y,
                             });
+                        } else if response.drag_stopped() {
+                            action = Some(MonitorAction::TextPositionDragEnded);
                         }
                     }
                 }
@@ -475,6 +479,8 @@ impl<'a> MonitorWidget<'a> {
                         pos_y: (ny - offset.y).clamp(0.02, 0.98),
                     });
                 }
+            } else if response.drag_stopped() {
+                action = Some(MonitorAction::TextPositionDragEnded);
             } else if response.double_clicked() {
                 if let Some(p) = response.interact_pointer_pos() {
                     if let Some(ov) = hit_overlay(p) {
@@ -902,6 +908,8 @@ impl<'a> MonitorWidget<'a> {
                 );
                 if resp.changed() {
                     action = Some(MonitorAction::TextContentEdited(edit_txt));
+                } else if resp.lost_focus() {
+                    action = Some(MonitorAction::TextEditingCompleted);
                 }
             }
         }

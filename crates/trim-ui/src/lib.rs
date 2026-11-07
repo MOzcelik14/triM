@@ -1115,6 +1115,54 @@ mod tests {
     }
 
     #[test]
+    fn test_multitrack_copy_and_paste_preserves_hierarchy() {
+        let mut app = app::TrimApp::default();
+        let v1_id = app.target_video_track.clone();
+        let v2_id = app.project.timeline.add_new_video_track();
+
+        // Add clip on V1 (0.0 to 3.0) and clip on V2 (1.0 to 4.0)
+        let mut c1 = trim_core::clip::Clip::new("m_v1", 0.0, 3.0);
+        c1.id = "c_v1".to_string();
+        let mut c2 = trim_core::clip::Clip::new("m_v2", 1.0, 4.0);
+        c2.id = "c_v2".to_string();
+
+        app.project
+            .timeline
+            .get_track_by_id_mut(&v1_id)
+            .unwrap()
+            .add_clip(c1);
+        app.project
+            .timeline
+            .get_track_by_id_mut(&v2_id)
+            .unwrap()
+            .add_clip(c2);
+
+        // Select both clips across V1 and V2
+        app.canvas_state.selected_clip_pairs = vec![
+            (v1_id.clone(), "c_v1".to_string()),
+            (v2_id.clone(), "c_v2".to_string()),
+        ];
+        app.copy_selected_clips();
+        assert_eq!(app.clipboard_clips.len(), 2);
+
+        // Paste at time = 10.0 starting at V1
+        app.current_time = 10.0;
+        app.target_video_track = v1_id.clone();
+        app.paste_clipboard_clips();
+
+        // V1 should have 2 clips, V2 should have 2 clips!
+        let t_v1 = app.project.timeline.get_track_by_id(&v1_id).unwrap();
+        let t_v2 = app.project.timeline.get_track_by_id(&v2_id).unwrap();
+        assert_eq!(t_v1.clips.len(), 2);
+        assert_eq!(t_v2.clips.len(), 2);
+
+        let pasted_v1 = t_v1.clips.iter().find(|c| c.id != "c_v1").unwrap();
+        let pasted_v2 = t_v2.clips.iter().find(|c| c.id != "c_v2").unwrap();
+        assert_eq!(pasted_v1.timeline_in, 10.0);
+        assert_eq!(pasted_v2.timeline_in, 11.0); // relative time offset preserved!
+    }
+
+    #[test]
     fn test_slip_edit_tool() {
         use crate::canvas::{find_clip_at_pos, DragMode};
         use crate::toolbar::EditTool;
