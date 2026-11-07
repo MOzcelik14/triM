@@ -270,9 +270,12 @@ impl TrimApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         setup_theme(&cc.egui_ctx);
         let prefs = UserPreferences::load();
-        if (prefs.ui_scale - 1.0).abs() > 0.01 {
-            cc.egui_ctx.set_pixels_per_point(prefs.ui_scale);
-        }
+        cc.egui_ctx.set_pixels_per_point(prefs.ui_scale);
+
+        // Pre-warm hardware encoder detection in background so preferences/export dialogs are instant
+        std::thread::spawn(|| {
+            let _ = trim_media::detect_available_encoders();
+        });
 
         let mut app = Self {
             gpu_compositor: cc
@@ -4016,18 +4019,12 @@ impl eframe::App for TrimApp {
                     color: Color32::from_black_alpha(180),
                 });
 
-            let gpu_status = if self.gpu_compositor.is_some() {
-                "OpenGL 3.3 FBO Shader (Aktif)"
-            } else {
-                "CPU Yazılım Birleştirici (Fallback)"
-            };
-
             egui::Window::new("triM. Hakkında")
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
                 .order(egui::Order::Foreground)
-                .fixed_size(Vec2::new(450.0, 340.0))
+                .fixed_size(Vec2::new(520.0, 340.0))
                 .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
                 .frame(about_frame)
                 .show(ctx, |ui| {
@@ -4036,11 +4033,11 @@ impl eframe::App for TrimApp {
                         ui.horizontal(|ui| {
                             ui.label(
                                 RichText::new("triM.")
-                                    .size(30.0)
+                                    .size(32.0)
                                     .strong()
                                     .color(Color32::from_rgb(0xe0, 0x7a, 0x38)),
                             );
-                            ui.add_space(6.0);
+                            ui.add_space(8.0);
                             egui::Frame::none()
                                 .fill(Color32::from_rgb(0x28, 0x1e, 0x18))
                                 .rounding(egui::Rounding::same(6.0))
@@ -4055,7 +4052,7 @@ impl eframe::App for TrimApp {
                                             "v{}",
                                             env!("CARGO_PKG_VERSION")
                                         ))
-                                        .size(11.0)
+                                        .size(11.5)
                                         .strong()
                                         .color(Color32::from_rgb(0xf2, 0x9b, 0x5e)),
                                     );
@@ -4072,26 +4069,9 @@ impl eframe::App for TrimApp {
                                 .show(ui, |ui| {
                                     ui.label(
                                         RichText::new(trim_core::VERSION_CODENAME)
-                                            .size(11.0)
+                                            .size(11.5)
                                             .strong()
                                             .color(Color32::from_rgb(0x56, 0xd0, 0x8a)),
-                                    );
-                                });
-                            ui.add_space(4.0);
-                            egui::Frame::none()
-                                .fill(Color32::from_rgb(0x1b, 0x24, 0x34))
-                                .rounding(egui::Rounding::same(6.0))
-                                .stroke(Stroke::new(
-                                    1.0_f32,
-                                    Color32::from_rgb(0x32, 0x4e, 0x78),
-                                ))
-                                .inner_margin(egui::Margin::symmetric(8.0, 3.0))
-                                .show(ui, |ui| {
-                                    ui.label(
-                                        RichText::new("RUST NATIVE NLE")
-                                            .size(10.0)
-                                            .strong()
-                                            .color(Color32::from_rgb(0x68, 0xb0, 0xf8)),
                                     );
                                 });
                         });
@@ -4099,15 +4079,15 @@ impl eframe::App for TrimApp {
                         ui.add_space(4.0);
                         ui.label(
                             RichText::new(
-                                "Düşük gecikmeli, bağımsız ve modern masaüstü video kurgu stüdyosu.",
+                                "Modern, bağımsız ve hafif masaüstü video düzenleyicisi.",
                             )
-                            .size(12.0)
+                            .size(13.0)
                             .color(Color32::from_rgb(0x9a, 0x9e, 0xb2)),
                         );
 
-                        ui.add_space(12.0);
+                        ui.add_space(14.0);
 
-                        // Technical Specs Box
+                        // Developer & Copyright Card
                         egui::Frame::none()
                             .fill(Color32::from_rgb(0x11, 0x12, 0x17))
                             .rounding(egui::Rounding::same(8.0))
@@ -4115,42 +4095,65 @@ impl eframe::App for TrimApp {
                                 1.0_f32,
                                 Color32::from_rgb(0x25, 0x28, 0x34),
                             ))
-                            .inner_margin(egui::Margin::symmetric(14.0, 12.0))
+                            .inner_margin(egui::Margin::symmetric(16.0, 14.0))
                             .show(ui, |ui| {
-                                ui.set_min_width(400.0);
-                                egui::Grid::new("about_specs_grid")
+                                ui.set_min_width(470.0);
+                                egui::Grid::new("about_info_grid")
                                     .num_columns(2)
-                                    .spacing([16.0, 7.0])
+                                    .spacing([18.0, 8.0])
                                     .show(ui, |ui| {
-                                        let rows = [
-                                            ("Görüntü Hattı:", gpu_status),
-                                            (
-                                                "Ses DSP Motoru:",
-                                                "48 kHz Stereo · 5 ms Lookahead Limiter",
-                                            ),
-                                            (
-                                                "Medya Çekirdeği:",
-                                                "FFmpeg / FFprobe · 720p H.264 Proxy",
-                                            ),
-                                            ("Derleme & Dil:", "Rust 2021 · egui / glow"),
-                                            ("Lisans:", "GPL-3.0-or-later (Açık Kaynak)"),
-                                            ("Geliştirici:", "MOzcelik14"),
-                                        ];
-                                        for (k, v) in rows {
-                                            ui.label(
-                                                RichText::new(k)
-                                                    .size(11.0)
-                                                    .strong()
-                                                    .color(Color32::from_rgb(0x82, 0x86, 0x9a)),
-                                            );
-                                            ui.label(
-                                                RichText::new(v)
-                                                    .size(11.0)
-                                                    .monospace()
-                                                    .color(Color32::from_rgb(0xdc, 0xe0, 0xee)),
-                                            );
-                                            ui.end_row();
-                                        }
+                                        ui.label(
+                                            RichText::new("Geliştirici:")
+                                                .size(12.0)
+                                                .strong()
+                                                .color(Color32::from_rgb(0x82, 0x86, 0x9a)),
+                                        );
+                                        ui.label(
+                                            RichText::new("Murat Özçelik (MOzcelik14)")
+                                                .size(12.0)
+                                                .strong()
+                                                .color(Color32::from_rgb(0xf0, 0xf4, 0xfc)),
+                                        );
+                                        ui.end_row();
+
+                                        ui.label(
+                                            RichText::new("Telif Hakkı:")
+                                                .size(12.0)
+                                                .strong()
+                                                .color(Color32::from_rgb(0x82, 0x86, 0x9a)),
+                                        );
+                                        ui.label(
+                                            RichText::new("© 2026 Murat Özçelik. Tüm hakları saklıdır.")
+                                                .size(12.0)
+                                                .color(Color32::from_rgb(0xdc, 0xe0, 0xee)),
+                                        );
+                                        ui.end_row();
+
+                                        ui.label(
+                                            RichText::new("Lisans:")
+                                                .size(12.0)
+                                                .strong()
+                                                .color(Color32::from_rgb(0x82, 0x86, 0x9a)),
+                                        );
+                                        ui.label(
+                                            RichText::new("GNU General Public License v3.0 veya üzeri (Açık Kaynak)")
+                                                .size(12.0)
+                                                .color(Color32::from_rgb(0xa0, 0xdb, 0xa0)),
+                                        );
+                                        ui.end_row();
+
+                                        ui.label(
+                                            RichText::new("Vizyon:")
+                                                .size(12.0)
+                                                .strong()
+                                                .color(Color32::from_rgb(0x82, 0x86, 0x9a)),
+                                        );
+                                        ui.label(
+                                            RichText::new("Kullanıcı gizliliğine ve doğrudan donanım performansına odaklanan özgür video stüdyosu.")
+                                                .size(11.5)
+                                                .color(Color32::from_rgb(0x94, 0xa3, 0xb8)),
+                                        );
+                                        ui.end_row();
                                     });
                             });
 
@@ -4158,13 +4161,39 @@ impl eframe::App for TrimApp {
 
                         // Bottom Action Buttons
                         ui.horizontal(|ui| {
-                            let gh_btn = Button::new(
-                                RichText::new("🌐 GitHub Deposu")
+                            let web_btn = Button::new(
+                                RichText::new("🌐 Web Sitesi")
                                     .size(11.5)
                                     .strong()
                                     .color(Color32::from_rgb(0xd8, 0xdc, 0xec)),
                             )
-                            .min_size(Vec2::new(140.0, 32.0))
+                            .min_size(Vec2::new(115.0, 32.0))
+                            .rounding(egui::Rounding::same(6.0))
+                            .fill(Color32::from_rgb(0x22, 0x25, 0x32))
+                            .stroke(Stroke::new(
+                                1.0_f32,
+                                Color32::from_rgb(0x36, 0x3a, 0x4c),
+                            ));
+
+                            if ui
+                                .add(web_btn)
+                                .on_hover_text("https://mozcelik14.github.io/triM")
+                                .clicked()
+                            {
+                                ctx.open_url(egui::OpenUrl::new_tab(
+                                    "https://mozcelik14.github.io/triM",
+                                ));
+                            }
+
+                            ui.add_space(6.0);
+
+                            let gh_btn = Button::new(
+                                RichText::new("🐙 GitHub")
+                                    .size(11.5)
+                                    .strong()
+                                    .color(Color32::from_rgb(0xd8, 0xdc, 0xec)),
+                            )
+                            .min_size(Vec2::new(105.0, 32.0))
                             .rounding(egui::Rounding::same(6.0))
                             .fill(Color32::from_rgb(0x22, 0x25, 0x32))
                             .stroke(Stroke::new(

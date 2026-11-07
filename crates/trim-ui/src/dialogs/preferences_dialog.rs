@@ -70,7 +70,7 @@ impl PreferencesDialog {
         self.draft = current.clone();
         self.is_open = true;
         self.active_category = PreferencesCategory::General;
-        self.cached_cache_size = Some(UserPreferences::cache_size_bytes());
+        self.cached_cache_size = None;
         self.status_feedback = None;
     }
 
@@ -124,20 +124,19 @@ impl PreferencesDialog {
             .open(&mut is_open)
             .frame(window_frame)
             .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .default_size(Vec2::new(840.0, 560.0))
-            .min_size(Vec2::new(760.0, 480.0))
-            .resizable(true)
+            .fixed_size(Vec2::new(760.0, 520.0))
+            .resizable(false)
             .collapsible(false)
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(10.0, 10.0);
 
-                let body_height = (ui.available_height() - 48.0).max(400.0);
+                let body_height = 420.0;
 
                 // Two-column layout: Left navigation tabs, Right settings panel
                 ui.horizontal(|ui| {
-                    // Left Categories Sidebar (width 210px)
+                    // Left Categories Sidebar (width 200px)
                     ui.allocate_ui_with_layout(
-                        Vec2::new(210.0, body_height),
+                        Vec2::new(200.0, body_height),
                         Layout::top_down(Align::Min),
                         |ui| {
                             Frame::none()
@@ -146,7 +145,7 @@ impl PreferencesDialog {
                                 .stroke(Stroke::new(1.0_f32, Color32::from_rgb(38, 44, 58)))
                                 .inner_margin(Margin::same(8.0))
                                 .show(ui, |ui| {
-                                    ui.set_width(210.0);
+                                    ui.set_width(200.0);
                                     ui.set_height(body_height);
                                     ui.vertical(|ui| {
                                         for cat in [
@@ -172,7 +171,7 @@ impl PreferencesDialog {
                                                 Color32::TRANSPARENT
                                             })
                                             .rounding(Rounding::same(6.0))
-                                            .min_size(Vec2::new(194.0, 36.0));
+                                            .min_size(Vec2::new(184.0, 36.0));
 
                                             if ui.add(btn).clicked() {
                                                 self.active_category = cat;
@@ -186,10 +185,9 @@ impl PreferencesDialog {
 
                     ui.separator();
 
-                    // Right Settings Body (fills remaining width)
-                    let right_width = (ui.available_width() - 4.0).max(480.0);
+                    // Right Settings Body (width 510px)
                     ui.allocate_ui_with_layout(
-                        Vec2::new(right_width, body_height),
+                        Vec2::new(510.0, body_height),
                         Layout::top_down(Align::Min),
                         |ui| {
                             Frame::none()
@@ -198,13 +196,13 @@ impl PreferencesDialog {
                                 .stroke(Stroke::new(1.0_f32, Color32::from_rgb(38, 44, 58)))
                                 .inner_margin(Margin::same(18.0))
                                 .show(ui, |ui| {
-                                    ui.set_width(ui.available_width());
+                                    ui.set_width(510.0);
                                     ui.set_height(body_height);
 
                                     ScrollArea::vertical().auto_shrink([false, false]).show(
                                         ui,
                                         |ui| {
-                                            ui.set_width(ui.available_width());
+                                            ui.set_width(490.0);
                                             ui.vertical(|ui| match self.active_category {
                                                 PreferencesCategory::General => {
                                                     self.render_general_tab(ui, active_lang);
@@ -359,13 +357,14 @@ impl PreferencesDialog {
                     .show_ui(ui, |ui| {
                         for (factor, name) in [
                             (0.85, "85%"),
-                            (1.0, "100% (Standart)"),
-                            (1.10, "110%"),
-                            (1.25, "125% (Yüksek DPI)"),
+                            (1.0, "100% (Kompakt)"),
+                            (1.08, "108% (Standart Önerilen)"),
+                            (1.20, "120% (Büyük)"),
+                            (1.35, "135% (Yüksek DPI)"),
                             (1.50, "150%"),
                         ] {
                             if ui
-                                .selectable_label((self.draft.ui_scale - factor).abs() < 0.01, name)
+                                .selectable_label((self.draft.ui_scale - factor).abs() < 0.02, name)
                                 .clicked()
                             {
                                 self.draft.ui_scale = factor;
@@ -863,6 +862,9 @@ impl PreferencesDialog {
                     Language::Turkish => "Mevcut Disk Önbelleği:",
                     Language::English => "Current Disk Cache Size:",
                 });
+                if self.cached_cache_size.is_none() {
+                    self.cached_cache_size = Some(UserPreferences::cache_size_bytes());
+                }
                 let bytes = self.cached_cache_size.unwrap_or(0);
                 let mb = bytes as f64 / (1024.0 * 1024.0);
                 ui.label(

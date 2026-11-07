@@ -62,7 +62,7 @@ impl Default for UserPreferences {
             use_proxies_by_default: false,
             auto_generate_proxies: false,
             default_still_duration_secs: 5.0,
-            ui_scale: 1.0,
+            ui_scale: 1.08,
             limiter_ceiling_db: -0.1,
             master_limiter_enabled: true,
             show_waveforms: true,
@@ -151,7 +151,7 @@ mod tests {
         assert!(prefs.show_welcome_on_startup);
         assert_eq!(prefs.shortcut_profile, "triM");
         assert_eq!(prefs.autosave_interval_secs, 60);
-        assert_eq!(prefs.ui_scale, 1.0);
+        assert_eq!(prefs.ui_scale, 1.08);
     }
 
     #[test]

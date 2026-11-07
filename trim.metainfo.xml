@@ -56,6 +56,18 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.3.3" date="2026-11-07">
+      <description>
+        <p>triM. v1.3.3 - Arayüz İyileştirmeleri ve Ayarlar Optimizasyonu:</p>
+        <ul>
+          <li>Genişletilmiş ve daha rahat okunabilir tipografi ve kontrol elemanları (%108 varsayılan ölçek ve artırılmış buton boşlukları).</li>
+          <li>Sabit ve kararlı ayarlar penceresi düzeni; layout titremeleri ve arka plan önbellek gecikmeleri tamamen giderildi.</li>
+          <li>Medya havuzuna dosya sürüklerken oluşan boş havuz kartı çakışması çözüldü; tam ekran ışıklı bırakma alanı eklendi.</li>
+          <li>Yenilenmiş Hakkında (About) penceresi: Geliştirici Murat Özçelik ve resmi telif hakları bilgisi eklendi.</li>
+          <li>Arayüzdeki teknik kurgu motoru ve derleme detayları temizlenerek sade ve profesyonel kullanıcı deneyimi sağlandı.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.3.2" date="2026-11-07">
       <description>
         <p>triM. v1.3.2 - Kurgu İş Akışı İyileştirmeleri ve Düzeltmeler:</p>

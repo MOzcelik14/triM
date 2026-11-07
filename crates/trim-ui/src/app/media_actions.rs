@@ -416,7 +416,7 @@ impl TrimApp {
         let source_in = clip.source_in;
         let source_out = clip.effective_source_out();
 
-        self.status_message = "Sahneler taranıyor (FFmpeg)...".to_string();
+        self.status_message = "Sahneler taranıyor...".to_string();
 
         match trim_media::detect_scene_changes(&media_path, source_in, source_out, 0.40) {
             Ok(source_cuts) => {

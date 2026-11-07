@@ -44,10 +44,7 @@ impl SplashScreen {
                     "Grafik alt yapısı ve GPU gölgelendiricileri başlatılıyor...",
                     0.20,
                 ),
-                (
-                    "FFmpeg medya motoru ve donanım kodlayıcıları taranıyor...",
-                    0.45,
-                ),
+                ("Donanım hızlandırma ve medya motoru taranıyor...", 0.45),
                 (
                     "Düşük gecikmeli ses motoru ve master limiter yükleniyor...",
                     0.70,
@@ -223,7 +220,7 @@ impl SplashScreen {
                                     );
 
                                     ui.label(
-                                        RichText::new("NATIVE RUST & FFMPEG NLE ENGINE")
+                                        RichText::new("MODERN MASAÜSTÜ VİDEO DÜZENLEYİCİSİ")
                                             .font(FontId::monospace(10.0))
                                             .color(Color32::from_rgb(85, 105, 130)),
                                     );

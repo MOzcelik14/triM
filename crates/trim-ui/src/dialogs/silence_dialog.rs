@@ -174,7 +174,7 @@ impl SilenceDialog {
                     let analyze_btn = Button::new(RichText::new("🔍 Analiz Et").strong());
                     if ui.add_enabled(!self.is_analyzing, analyze_btn).clicked() {
                         self.is_analyzing = true;
-                        self.status_text = "FFmpeg ile ses dalgası taranıyor...".to_string();
+                        self.status_text = "Ses dalgaları taranıyor...".to_string();
                         action = Some(SilenceDialogAction::DetectRequested {
                             track_id: self.track_id.clone(),
                             clip_id: self.clip_id.clone(),

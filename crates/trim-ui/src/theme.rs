@@ -56,6 +56,24 @@ pub fn setup_theme(ctx: &egui::Context) {
 
     ctx.set_visuals(visuals);
 
+    let mut style = (*ctx.style()).clone();
+    style.text_styles = [
+        (egui::TextStyle::Heading, egui::FontId::proportional(19.0)),
+        (
+            egui::TextStyle::Name("Subheading".into()),
+            egui::FontId::proportional(16.0),
+        ),
+        (egui::TextStyle::Body, egui::FontId::proportional(13.5)),
+        (egui::TextStyle::Button, egui::FontId::proportional(13.5)),
+        (egui::TextStyle::Monospace, egui::FontId::monospace(12.5)),
+        (egui::TextStyle::Small, egui::FontId::proportional(11.0)),
+    ]
+    .into();
+    style.spacing.button_padding = egui::vec2(7.0, 4.0);
+    style.spacing.item_spacing = egui::vec2(7.0, 5.0);
+    style.spacing.interact_size = egui::vec2(40.0, 22.0);
+    ctx.set_style(style);
+
     // Load system symbol/unicode fonts if available so that glyphs never render as empty squares
     let mut fonts = egui::FontDefinitions::default();
     let sys_fonts = [

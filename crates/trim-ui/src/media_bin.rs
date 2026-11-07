@@ -271,27 +271,37 @@ pub fn render_media_bin(
 
     let is_os_dragging = ui.ctx().input(|i| !i.raw.hovered_files.is_empty());
     if is_os_dragging {
-        let avail_rect = ui.available_rect_before_wrap();
-        if avail_rect.width() > 30.0 && avail_rect.height() > 30.0 {
-            let painter = ui.painter();
-            painter.rect_filled(
-                avail_rect,
-                8.0,
-                Color32::from_rgba_unmultiplied(30, 80, 160, 45),
-            );
-            painter.rect_stroke(
-                avail_rect,
-                8.0,
-                Stroke::new(2.0_f32, Color32::from_rgb(56, 160, 240)),
-            );
-            painter.text(
-                avail_rect.center(),
-                egui::Align2::CENTER_CENTER,
-                "📥 Dosyaları Medya Havuzuna Bırakın",
-                egui::FontId::proportional(14.0),
-                Color32::from_rgb(230, 240, 255),
-            );
-        }
+        let avail_h = ui.available_height().max(240.0);
+        let top_space = ((avail_h - 200.0) * 0.38).clamp(24.0, 160.0);
+        ui.add_space(top_space);
+
+        ui.vertical_centered(|ui| {
+            egui::Frame::none()
+                .fill(Color32::from_rgba_unmultiplied(18, 48, 96, 230))
+                .stroke(Stroke::new(2.0_f32, Color32::from_rgb(56, 160, 240)))
+                .rounding(egui::Rounding::same(12.0))
+                .inner_margin(egui::Margin::symmetric(28.0, 24.0))
+                .show(ui, |ui| {
+                    ui.set_max_width(340.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(RichText::new("📥").size(36.0));
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new("Dosyaları Buraya Bırakın")
+                                .color(Color32::WHITE)
+                                .size(15.0)
+                                .strong(),
+                        );
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new("Medya havuzuna doğrudan eklenecek")
+                                .color(Color32::from_rgb(180, 215, 255))
+                                .size(11.5),
+                        );
+                    });
+                });
+        });
+        return action;
     }
 
     // 4. Empty State check
