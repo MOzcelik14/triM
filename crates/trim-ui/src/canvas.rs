@@ -901,23 +901,40 @@ pub fn render_timeline_canvas(
                 speed_badge
             );
 
-            let header_rect = Rect::from_min_size(
-                Pos2::new(clip_rect.left() + 2.0, clip_rect.top() + 2.0),
-                Vec2::new((clip_rect.width() - 4.0).max(4.0), 16.0),
-            );
-            painter.rect_filled(
-                header_rect,
-                2.0,
-                Color32::from_rgba_premultiplied(16, 18, 24, 150),
-            );
+            let header_w = (clip_rect.width() - 4.0).max(0.0);
+            if header_w > 0.0 {
+                let header_rect = Rect::from_min_size(
+                    Pos2::new(clip_rect.left() + 2.0, clip_rect.top() + 2.0),
+                    Vec2::new(header_w, 16.0),
+                );
+                painter.rect_filled(
+                    header_rect,
+                    2.0,
+                    Color32::from_rgba_premultiplied(16, 18, 24, 150),
+                );
 
-            painter.text(
-                Pos2::new(clip_rect.left() + 10.0, clip_rect.top() + 4.0),
-                egui::Align2::LEFT_TOP,
-                title_str,
-                egui::FontId::proportional(11.0),
-                Color32::WHITE,
-            );
+                let right_pad = if clip.linked_group_id.is_some() && clip_rect.width() > 65.0 {
+                    50.0
+                } else {
+                    4.0
+                };
+                let text_max_x = (clip_rect.right() - right_pad).max(clip_rect.left() + 4.0);
+                let text_clip_rect = Rect::from_min_max(
+                    Pos2::new(clip_rect.left() + 2.0, clip_rect.top()),
+                    Pos2::new(text_max_x, clip_rect.bottom()),
+                );
+
+                if text_clip_rect.width() >= 12.0 {
+                    let text_painter = painter.with_clip_rect(text_clip_rect);
+                    text_painter.text(
+                        Pos2::new(clip_rect.left() + 8.0, clip_rect.top() + 4.0),
+                        egui::Align2::LEFT_TOP,
+                        title_str,
+                        egui::FontId::proportional(11.0),
+                        Color32::WHITE,
+                    );
+                }
+            }
 
             // Sync offset badge for linked clips
             if let Some(ref gid) = clip.linked_group_id {

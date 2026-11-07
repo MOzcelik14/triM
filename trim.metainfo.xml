@@ -56,6 +56,15 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.3.4" date="2026-11-07">
+      <description>
+        <p>triM. v1.3.4 - Zaman Çizelgesi Klip Başlığı Taşma ve Çakışma Düzeltmesi:</p>
+        <ul>
+          <li>Zaman çizelgesindeki klip isimlerinin ve süre rozetlerinin klip sınırları dışına taşması ve komşu kliplerle çakışması engellendi.</li>
+          <li>Klip başlık alanı için dinamik kırpma (scissor clipping) uygulanarak metinlerin daima klip genişliği içinde kalması sağlandı.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.3.3" date="2026-11-07">
       <description>
         <p>triM. v1.3.3 - Arayüz İyileştirmeleri ve Ayarlar Optimizasyonu:</p>
