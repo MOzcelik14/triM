@@ -14,7 +14,10 @@ pub mod video;
 pub mod voiceover;
 pub mod waveform;
 
-pub use analyzer::{FFprobeAnalyzer, ProbeError};
+pub use analyzer::{
+    detect_forced_pcm_input_codec, inspect_mp4_pcm_atoms, FFprobeAnalyzer, ForcedPcmInputInfo,
+    ProbeError,
+};
 pub use audio::{AudioMixer, AudioStreamPlayer, SAMPLE_RATE};
 pub use dsp::LookaheadLimiter;
 pub use ffmpeg::{

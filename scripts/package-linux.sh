@@ -131,7 +131,7 @@ Priority: optional
 Architecture: amd64
 Maintainer: triM. contributors <198776086+MOzcelik14@users.noreply.github.com>
 Depends: ffmpeg, libc6, libx11-6, libgl1, libasound2 | libasound2t64
-Recommends: pipewire-bin | alsa-utils
+Recommends: pipewire-bin | pulseaudio-utils | alsa-utils
 Homepage: https://github.com/MOzcelik14/triM
 Description: Native open-source video editor for Linux
  triM. is a native desktop video editor written in Rust.

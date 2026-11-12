@@ -16,10 +16,11 @@ pub fn generate_proxy<P: AsRef<Path>, Q: AsRef<Path>>(
     let out_str = out.to_string_lossy().to_string();
 
     let mut cmd = crate::ffmpeg::ffmpeg_cmd();
+    cmd.args(["-y", "-v", "error", "-ignore_unknown"]);
+    if let Some(info) = crate::analyzer::detect_forced_pcm_input_codec(src) {
+        cmd.args(["-c:a", info.codec]);
+    }
     cmd.args([
-        "-y",
-        "-v",
-        "error",
         "-i",
         &src_str,
         "-vf",

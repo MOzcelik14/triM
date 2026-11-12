@@ -60,6 +60,8 @@ pub struct SourceMonitorState {
     pub mark_in: Option<f64>,
     pub mark_out: Option<f64>,
     pub is_playing: bool,
+    pub clock_start: Option<Instant>,
+    pub clock_start_time: f64,
     pub texture: Option<TextureHandle>,
     pub last_decoded_time: Option<f64>,
     pub last_decoded_id: Option<String>,
@@ -364,10 +366,32 @@ impl TrimApp {
             match act {
                 MonitorAction::ImportMedia => self.prompt_import_media(),
                 MonitorAction::TogglePlay => {
-                    self.source_state.is_playing = !self.source_state.is_playing
+                    if self.source_state.is_playing {
+                        self.source_state.is_playing = false;
+                        self.source_state.clock_start = None;
+                        self.audio_player.stop();
+                        self.vu_state.reset();
+                    } else {
+                        if self.is_playing {
+                            self.pause();
+                        }
+                        if source_dur > 0.0 && self.source_state.current_time >= source_dur {
+                            self.source_state.current_time =
+                                self.source_state.mark_in.unwrap_or(0.0);
+                        }
+                        self.source_state.is_playing = true;
+                        self.source_state.clock_start = Some(Instant::now());
+                        self.source_state.clock_start_time = self.source_state.current_time;
+                        self.audio_player.prepare();
+                    }
                 }
                 MonitorAction::StepFrame(d) => {
-                    self.source_state.is_playing = false;
+                    if self.source_state.is_playing {
+                        self.source_state.is_playing = false;
+                        self.source_state.clock_start = None;
+                        self.audio_player.stop();
+                        self.vu_state.reset();
+                    }
                     let new_t = (self.source_state.current_time + (d as f64 / source_fps.max(1.0)))
                         .clamp(0.0, source_dur);
                     self.source_state.current_time = new_t;
@@ -384,15 +408,28 @@ impl TrimApp {
                 }
                 MonitorAction::GoToIn => {
                     self.source_state.current_time = self.source_state.mark_in.unwrap_or(0.0);
+                    if self.source_state.is_playing {
+                        self.source_state.clock_start = Some(Instant::now());
+                        self.source_state.clock_start_time = self.source_state.current_time;
+                    }
                 }
                 MonitorAction::GoToOut => {
                     self.source_state.current_time =
                         self.source_state.mark_out.unwrap_or(source_dur);
+                    if self.source_state.is_playing {
+                        self.source_state.clock_start = Some(Instant::now());
+                        self.source_state.clock_start_time = self.source_state.current_time;
+                    }
                 }
                 MonitorAction::InsertToTimeline => self.insert_source_to_timeline(false),
                 MonitorAction::OverwriteToTimeline => self.insert_source_to_timeline(true),
                 MonitorAction::Seek(t) => {
-                    self.source_state.is_playing = false;
+                    if self.source_state.is_playing {
+                        self.source_state.is_playing = false;
+                        self.source_state.clock_start = None;
+                        self.audio_player.stop();
+                        self.vu_state.reset();
+                    }
                     self.source_state.current_time = t.clamp(0.0, source_dur);
                 }
                 _ => {}
@@ -3677,9 +3714,19 @@ impl eframe::App for TrimApp {
                         self.source_state.media_id = None;
                         self.source_state.texture = None;
                         self.source_state.is_playing = false;
+                        self.source_state.clock_start = None;
                         self.resolve_default_target_tracks();
-                        for item in self.project.media_pool.values() {
-                            if item.media_type == MediaType::Audio || item.audio_channels > 0 {
+                        for item in self.project.media_pool.values_mut() {
+                            if item.media_type == MediaType::Video && !item.has_audio() {
+                                if let Ok(probed) = FFprobeAnalyzer::analyze(&item.file_path) {
+                                    if probed.has_audio() {
+                                        item.audio_codec = probed.audio_codec;
+                                        item.audio_channels = probed.audio_channels;
+                                        item.audio_sample_rate = probed.audio_sample_rate;
+                                    }
+                                }
+                            }
+                            if item.has_audio() {
                                 self.audio_mixer.preload_audio_async(&item.file_path);
                             }
                         }

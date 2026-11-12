@@ -1,10 +1,11 @@
 //! Audio decoding, multi-track PCM mixing, lookahead brickwall limiting, and dual VU meter RMS level analysis.
 
 pub use crate::dsp::limiter::LookaheadLimiter;
+use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process::Stdio;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use trim_core::lru::LruCache;
 use trim_core::media::MediaType;
 use trim_core::project::Project;
@@ -18,6 +19,7 @@ pub type PcmCache = Arc<RwLock<LruCache<String, PcmAudioBuffer>>>;
 #[derive(Clone)]
 pub struct AudioMixer {
     pcm_cache: PcmCache,
+    in_flight: Arc<(Mutex<HashSet<String>>, Condvar)>,
     pub limiter: LookaheadLimiter,
     last_mixed_end_time: Option<f64>,
     mix_scratch: Vec<[f32; 2]>,
@@ -44,6 +46,7 @@ impl AudioMixer {
         let lookahead_len = limiter.lookahead_samples();
         Self {
             pcm_cache: Arc::new(RwLock::new(LruCache::with_byte_limit(MAX_PCM_CACHE_BYTES))),
+            in_flight: Arc::new((Mutex::new(HashSet::new()), Condvar::new())),
             limiter,
             last_mixed_end_time: None,
             // Pre-allocate 1 second (48,000 stereo frames) to avoid hot-path allocations during playback ticks
@@ -83,17 +86,35 @@ impl AudioMixer {
         let path = file_path.as_ref().to_path_buf();
         let path_str = path.to_string_lossy().to_string();
         let cache_clone = self.pcm_cache.clone();
+        let in_flight_clone = self.in_flight.clone();
 
         std::thread::spawn(move || {
             if let Ok(c) = cache_clone.read() {
-                if c.contains_key(&path_str) {
+                if c.peek(&path_str).and_then(|v| v.as_ref()).is_some() {
                     return;
                 }
             }
+            {
+                let (lock, _) = &*in_flight_clone;
+                let Ok(mut set) = lock.lock() else { return };
+                if set.contains(&path_str) {
+                    return;
+                }
+                set.insert(path_str.clone());
+            }
+
             let pcm = decode_audio_to_pcm(&path).map(Arc::new);
-            let size_bytes = pcm.as_ref().map(|a| a.len() * 4).unwrap_or(32);
-            if let Ok(mut c) = cache_clone.write() {
-                c.insert_with_size(path_str, pcm, size_bytes);
+            if let Some(ref arc_pcm) = pcm {
+                let size_bytes = arc_pcm.len() * 4;
+                if let Ok(mut c) = cache_clone.write() {
+                    c.insert_with_size(path_str.clone(), Some(arc_pcm.clone()), size_bytes);
+                }
+            }
+
+            let (lock, cvar) = &*in_flight_clone;
+            if let Ok(mut set) = lock.lock() {
+                set.remove(&path_str);
+                cvar.notify_all();
             }
         });
     }
@@ -104,15 +125,39 @@ impl AudioMixer {
         let path_str = path.to_string_lossy().to_string();
 
         if let Ok(mut c) = self.pcm_cache.write() {
-            if let Some(opt) = c.get(&path_str) {
-                return opt.clone();
+            if let Some(Some(arc_pcm)) = c.get(&path_str) {
+                return Some(arc_pcm.clone());
+            }
+        }
+
+        // Wait if a background preload thread is already decoding this exact file
+        {
+            let (lock, cvar) = &*self.in_flight;
+            if let Ok(mut set) = lock.lock() {
+                while set.contains(&path_str) {
+                    set = cvar.wait(set).unwrap_or_else(|e| e.into_inner());
+                }
+                if let Ok(mut c) = self.pcm_cache.write() {
+                    if let Some(Some(arc_pcm)) = c.get(&path_str) {
+                        return Some(arc_pcm.clone());
+                    }
+                }
+                set.insert(path_str.clone());
             }
         }
 
         let pcm = decode_audio_to_pcm(path).map(Arc::new);
-        let size_bytes = pcm.as_ref().map(|a| a.len() * 4).unwrap_or(32);
-        if let Ok(mut c) = self.pcm_cache.write() {
-            c.insert_with_size(path_str, pcm.clone(), size_bytes);
+        if let Some(ref arc_pcm) = pcm {
+            let size_bytes = arc_pcm.len() * 4;
+            if let Ok(mut c) = self.pcm_cache.write() {
+                c.insert_with_size(path_str.clone(), Some(arc_pcm.clone()), size_bytes);
+            }
+        }
+
+        let (lock, cvar) = &*self.in_flight;
+        if let Ok(mut set) = lock.lock() {
+            set.remove(&path_str);
+            cvar.notify_all();
         }
         pcm
     }
@@ -131,10 +176,12 @@ impl AudioMixer {
         let inv_i16 = 1.0_f32 / 32768.0_f32;
 
         for track in &flattened_tl.tracks {
-            if track.track_type != trim_core::track::TrackType::Audio {
+            let is_audio_track = track.track_type == trim_core::track::TrackType::Audio;
+            let is_video_track = track.track_type == trim_core::track::TrackType::Video;
+            if !is_audio_track && !is_video_track {
                 continue;
             }
-            if track.muted {
+            if track.muted || (is_video_track && !track.visible) {
                 continue;
             }
             if has_solo && !track.solo {
@@ -148,6 +195,27 @@ impl AudioMixer {
                 }
                 if clip.timeline_out <= w_start || clip.timeline_in >= w_end {
                     continue;
+                }
+
+                // For video tracks, only mix audio if this video clip was never given a companion
+                // audio clip on an Audio track (e.g. imported before Sony ipcm audio detection).
+                if is_video_track {
+                    if clip.linked_group_id.is_some() {
+                        continue;
+                    }
+                    let has_audio_companion = flattened_tl
+                        .tracks
+                        .iter()
+                        .filter(|t| t.track_type == trim_core::track::TrackType::Audio)
+                        .flat_map(|t| t.clips.iter())
+                        .any(|ac| {
+                            ac.media_id == clip.media_id
+                                && ac.timeline_out > clip.timeline_in
+                                && ac.timeline_in < clip.timeline_out
+                        });
+                    if has_audio_companion {
+                        continue;
+                    }
                 }
 
                 let media_item = match project.get_media(&clip.media_id) {
@@ -379,6 +447,61 @@ impl AudioMixer {
         (interleaved, db_l, db_r)
     }
 
+    /// Renders stereo PCM audio and VU levels for a single standalone media file (used by Source Monitor).
+    pub fn render_source_media_interval(
+        &self,
+        file_path: &str,
+        t_start: f64,
+        t_end: f64,
+    ) -> (Vec<i16>, f32, f32) {
+        if t_end <= t_start {
+            return (Vec::new(), -60.0, -60.0);
+        }
+        let num_samples = ((t_end - t_start) * SAMPLE_RATE as f64).round() as usize;
+        if num_samples == 0 {
+            return (Vec::new(), -60.0, -60.0);
+        }
+
+        let Some(pcm) = self.get_audio_pcm(file_path) else {
+            return (vec![0i16; num_samples * 2], -60.0, -60.0);
+        };
+        if pcm.is_empty() {
+            return (vec![0i16; num_samples * 2], -60.0, -60.0);
+        }
+
+        let start_idx = (t_start.max(0.0) * SAMPLE_RATE as f64).round() as usize;
+        let mut interleaved = Vec::with_capacity(num_samples * 2);
+        let mut sum_sq_l = 0.0_f64;
+        let mut sum_sq_r = 0.0_f64;
+        let inv_i16 = 1.0_f64 / 32768.0_f64;
+
+        for i in 0..num_samples {
+            let idx = start_idx + i;
+            let [l, r] = if idx < pcm.len() { pcm[idx] } else { [0, 0] };
+            interleaved.push(l);
+            interleaved.push(r);
+            let nl = (l as f64) * inv_i16;
+            let nr = (r as f64) * inv_i16;
+            sum_sq_l += nl * nl;
+            sum_sq_r += nr * nr;
+        }
+
+        let rms_l = (sum_sq_l / num_samples as f64).sqrt();
+        let rms_r = (sum_sq_r / num_samples as f64).sqrt();
+        let db_l = if rms_l > 1e-4 {
+            (-60.0_f32).max((20.0 * (rms_l as f32).log10()).min(0.0))
+        } else {
+            -60.0
+        };
+        let db_r = if rms_r > 1e-4 {
+            (-60.0_f32).max((20.0 * (rms_r as f32).log10()).min(0.0))
+        } else {
+            -60.0
+        };
+
+        (interleaved, db_l, db_r)
+    }
+
     pub fn clear_cache(&mut self) {
         if let Ok(mut c) = self.pcm_cache.write() {
             c.clear();
@@ -387,19 +510,28 @@ impl AudioMixer {
     }
 }
 
-fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
+fn run_ffmpeg_pcm_decode(
+    path_str: &str,
+    forced_input_codec: Option<&str>,
+    stream_map: Option<&str>,
+) -> Vec<u8> {
     let mut cmd = crate::ffmpeg::ffmpeg_cmd();
     cmd.args([
         "-v",
         "error",
         "-y",
-        "-i",
-        path.to_str().unwrap_or(""),
-        "-vn",
-        "-dn",
-        "-sn",
-        "-map",
-        "0:a:0?",
+        "-ignore_unknown",
+        "-err_detect",
+        "ignore_err",
+    ]);
+    if let Some(codec) = forced_input_codec {
+        cmd.args(["-c:a", codec]);
+    }
+    cmd.args(["-i", path_str, "-vn", "-dn", "-sn"]);
+    if let Some(map_spec) = stream_map {
+        cmd.args(["-map", map_spec]);
+    }
+    cmd.args([
         "-f",
         "s16le",
         "-ac",
@@ -411,43 +543,64 @@ fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
     .stdout(Stdio::piped())
     .stderr(Stdio::null());
 
-    let mut guard = crate::ffmpeg::ChildGuard::spawn(&mut cmd).ok()?;
-
     let mut raw_bytes = Vec::new();
-    if let Some(mut stdout) = guard.take_stdout() {
-        let _ = stdout.read_to_end(&mut raw_bytes);
+    if let Ok(mut guard) = crate::ffmpeg::ChildGuard::spawn(&mut cmd) {
+        if let Some(mut stdout) = guard.take_stdout() {
+            let _ = stdout.read_to_end(&mut raw_bytes);
+        }
+        let _ = guard.wait();
     }
-    let _ = guard.wait();
+    raw_bytes
+}
 
-    // Fallback: if primary stream map yielded no data, try general audio selection
+fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
+    let path_str = path.to_str().unwrap_or("");
+    if path_str.is_empty() {
+        return None;
+    }
+
+    // 1. Check if the file has an MP4/MOV raw PCM atom (such as Sony XAVC S `ipcm` / `lpcm` / `twos` / `in24`)
+    // that requires an explicit input decoder on older FFmpeg builds (e.g. Pop!_OS 22.04 FFmpeg 4.4).
+    let detected_pcm = crate::analyzer::detect_forced_pcm_input_codec(path);
+
+    let mut raw_bytes = if let Some(info) = detected_pcm {
+        let b = run_ffmpeg_pcm_decode(path_str, Some(info.codec), Some("0:a:0?"));
+        if b.len() >= 4 {
+            b
+        } else {
+            run_ffmpeg_pcm_decode(path_str, None, Some("0:a:0?"))
+        }
+    } else {
+        run_ffmpeg_pcm_decode(path_str, None, Some("0:a:0?"))
+    };
+
+    // 2. Fallback: general audio stream selection without explicit stream map
     if raw_bytes.len() < 4 {
-        let mut fallback_cmd = crate::ffmpeg::ffmpeg_cmd();
-        fallback_cmd
-            .args([
-                "-v",
-                "error",
-                "-y",
-                "-i",
-                path.to_str().unwrap_or(""),
-                "-vn",
-                "-dn",
-                "-sn",
-                "-f",
-                "s16le",
-                "-ac",
-                "2",
-                "-ar",
-                &SAMPLE_RATE.to_string(),
-                "pipe:1",
-            ])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+        raw_bytes = run_ffmpeg_pcm_decode(path_str, None, None);
+    }
 
-        if let Ok(mut fb_guard) = crate::ffmpeg::ChildGuard::spawn(&mut fallback_cmd) {
-            if let Some(mut stdout) = fb_guard.take_stdout() {
-                let _ = stdout.read_to_end(&mut raw_bytes);
+    // 3. Fallback: iterate over Sony / QuickTime uncompressed PCM input decoders
+    if raw_bytes.len() < 4 {
+        for &codec in &[
+            "pcm_s16be",
+            "pcm_s24be",
+            "pcm_s16le",
+            "pcm_s24le",
+            "pcm_s32be",
+            "pcm_f32be",
+        ] {
+            if detected_pcm.is_some_and(|d| d.codec == codec) {
+                // Already tried with 0:a:0?, try without stream map
+                raw_bytes = run_ffmpeg_pcm_decode(path_str, Some(codec), None);
+            } else {
+                raw_bytes = run_ffmpeg_pcm_decode(path_str, Some(codec), Some("0:a:0?"));
+                if raw_bytes.len() < 4 {
+                    raw_bytes = run_ffmpeg_pcm_decode(path_str, Some(codec), None);
+                }
             }
-            let _ = fb_guard.wait();
+            if raw_bytes.len() >= 4 {
+                break;
+            }
         }
     }
 
@@ -468,9 +621,11 @@ fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
 
 /// Cross-platform audio stream player writing 48kHz 16-bit stereo PCM.
 /// - Linux: PipeWire (`pw-cat`) -> PulseAudio (`paplay`) -> ALSA (`aplay`) -> `ffplay`
+///   Automatically fails over to the next backend if a spawned player exits prematurely (`BrokenPipe`).
 /// - Windows: `ffplay.exe` (`CREATE_NO_WINDOW`, low-delay WASAPI/DirectSound output) with silent fallback
 pub struct AudioStreamPlayer {
     child: Option<crate::ffmpeg::ChildGuard>,
+    backend_index: usize,
     backend_unavailable: bool,
 }
 
@@ -484,12 +639,16 @@ impl AudioStreamPlayer {
     pub fn new() -> Self {
         Self {
             child: None,
+            backend_index: 0,
             backend_unavailable: false,
         }
     }
 
     #[cfg(target_os = "windows")]
-    fn spawn_platform_player() -> std::io::Result<crate::ffmpeg::ChildGuard> {
+    fn spawn_backend(start_idx: usize) -> Option<(usize, crate::ffmpeg::ChildGuard)> {
+        if start_idx > 0 {
+            return None;
+        }
         let mut ffplay = crate::ffmpeg::ffplay_cmd();
         ffplay
             .args([
@@ -514,93 +673,116 @@ impl AudioStreamPlayer {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         crate::ffmpeg::ChildGuard::spawn(&mut ffplay)
+            .ok()
+            .map(|c| (0, c))
     }
 
     #[cfg(not(target_os = "windows"))]
-    fn spawn_platform_player() -> std::io::Result<crate::ffmpeg::ChildGuard> {
-        let mut pw_cmd = crate::ffmpeg::create_command("pw-cat");
-        pw_cmd
-            .args([
-                "-p",
-                "--format=s16",
-                "--rate=48000",
-                "--channels=2",
-                "--latency=20ms",
-                "-",
-            ])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+    fn spawn_backend(start_idx: usize) -> Option<(usize, crate::ffmpeg::ChildGuard)> {
+        for idx in start_idx..4 {
+            let res = match idx {
+                0 => {
+                    let mut pw_cmd = crate::ffmpeg::create_command("pw-cat");
+                    pw_cmd
+                        .args([
+                            "-p",
+                            "--format=s16",
+                            "--rate=48000",
+                            "--channels=2",
+                            "--latency=20ms",
+                            "-",
+                        ])
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null());
+                    crate::ffmpeg::ChildGuard::spawn(&mut pw_cmd)
+                }
+                1 => {
+                    let mut paplay_cmd = crate::ffmpeg::create_command("paplay");
+                    paplay_cmd
+                        .args([
+                            "--raw",
+                            "--format=s16le",
+                            "--rate=48000",
+                            "--channels=2",
+                            "--latency-msec=25",
+                        ])
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null());
+                    crate::ffmpeg::ChildGuard::spawn(&mut paplay_cmd)
+                }
+                2 => {
+                    let mut aplay_cmd = crate::ffmpeg::create_command("aplay");
+                    aplay_cmd
+                        .args([
+                            "-q",
+                            "-t",
+                            "raw",
+                            "-c",
+                            "2",
+                            "-f",
+                            "S16_LE",
+                            "-r",
+                            "48000",
+                            "--buffer-time=25000",
+                            "--period-time=5000",
+                            "-",
+                        ])
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null());
+                    crate::ffmpeg::ChildGuard::spawn(&mut aplay_cmd)
+                }
+                _ => {
+                    let mut ffplay = crate::ffmpeg::ffplay_cmd();
+                    ffplay
+                        .args([
+                            "-nodisp",
+                            "-autoexit",
+                            "-loglevel",
+                            "quiet",
+                            "-f",
+                            "s16le",
+                            "-ar",
+                            "48000",
+                            "-ac",
+                            "2",
+                            "-i",
+                            "-",
+                        ])
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null());
+                    crate::ffmpeg::ChildGuard::spawn(&mut ffplay)
+                }
+            };
 
-        crate::ffmpeg::ChildGuard::spawn(&mut pw_cmd)
-            .or_else(|_| {
-                let mut paplay_cmd = crate::ffmpeg::create_command("paplay");
-                paplay_cmd
-                    .args([
-                        "--raw",
-                        "--format=s16le",
-                        "--rate=48000",
-                        "--channels=2",
-                        "--latency-msec=25",
-                    ])
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null());
-                crate::ffmpeg::ChildGuard::spawn(&mut paplay_cmd)
-            })
-            .or_else(|_| {
-                let mut aplay_cmd = crate::ffmpeg::create_command("aplay");
-                aplay_cmd
-                    .args([
-                        "-q",
-                        "-t",
-                        "raw",
-                        "-c",
-                        "2",
-                        "-f",
-                        "S16_LE",
-                        "-r",
-                        "48000",
-                        "--buffer-time=25000",
-                        "--period-time=5000",
-                        "-",
-                    ])
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null());
-                crate::ffmpeg::ChildGuard::spawn(&mut aplay_cmd)
-            })
-            .or_else(|_| {
-                let mut ffplay = crate::ffmpeg::ffplay_cmd();
-                ffplay
-                    .args([
-                        "-nodisp",
-                        "-autoexit",
-                        "-loglevel",
-                        "quiet",
-                        "-f",
-                        "s16le",
-                        "-ar",
-                        "48000",
-                        "-ac",
-                        "2",
-                        "-i",
-                        "-",
-                    ])
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null());
-                crate::ffmpeg::ChildGuard::spawn(&mut ffplay)
-            })
+            if let Ok(mut guard) = res {
+                // Verify the child didn't immediately exit on launch
+                if guard.try_wait().ok().flatten().is_none() {
+                    return Some((idx, guard));
+                }
+            }
+        }
+        None
     }
 
     fn ensure_started(&mut self) -> Option<&mut std::process::ChildStdin> {
+        if let Some(ref mut c) = self.child {
+            if c.try_wait().ok().flatten().is_some() {
+                self.child = None;
+                self.backend_index += 1;
+            }
+        }
+
         if self.child.is_none() && !self.backend_unavailable {
-            match Self::spawn_platform_player() {
-                Ok(c) => {
+            match Self::spawn_backend(self.backend_index) {
+                Some((idx, c)) => {
+                    self.backend_index = idx;
                     self.child = Some(c);
                 }
-                Err(_) => {
+                None => {
                     // Prevent repeated process-spawn attempts during the same playback session
                     self.backend_unavailable = true;
                 }
@@ -616,21 +798,36 @@ impl AudioStreamPlayer {
         let _ = self.ensure_started();
     }
 
-    /// Writes raw 16-bit stereo PCM samples to the active audio device.
+    /// Writes raw 16-bit stereo PCM samples to the active audio device, failing over to the
+    /// next platform backend (`pw-cat` -> `paplay` -> `aplay` -> `ffplay`) if a pipe breaks.
     pub fn write_samples(&mut self, samples: &[i16]) {
         if samples.is_empty() {
             return;
         }
 
-        if let Some(stdin) = self.ensure_started() {
-            let mut byte_buf = Vec::with_capacity(samples.len() * 2);
-            for &s in samples {
-                byte_buf.extend_from_slice(&s.to_le_bytes());
+        let mut byte_buf = Vec::with_capacity(samples.len() * 2);
+        for &s in samples {
+            byte_buf.extend_from_slice(&s.to_le_bytes());
+        }
+
+        while !self.backend_unavailable {
+            let write_ok = if let Some(stdin) = self.ensure_started() {
+                stdin.write_all(&byte_buf).is_ok()
+            } else {
+                false
+            };
+
+            if write_ok {
+                break;
             }
 
-            if stdin.write_all(&byte_buf).is_err() {
-                self.stop();
+            if let Some(mut c) = self.child.take() {
+                let _ = c.kill();
             }
+            if self.backend_unavailable {
+                break;
+            }
+            self.backend_index += 1;
         }
     }
 
@@ -785,16 +982,63 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_sony_multichannel_audio() {
+    fn test_decode_sony_ipcm_unrecognized_mp4_audio() {
         if !crate::is_ffmpeg_available() {
             return;
         }
-        let test_path = std::path::Path::new("/tmp/sony_sim.mp4");
-        if test_path.is_file() {
-            let pcm = decode_audio_to_pcm(test_path);
-            assert!(pcm.is_some(), "Should decode 4ch Sony-like audio");
-            let frames = pcm.unwrap();
-            assert!(!frames.is_empty(), "Decoded frames should not be empty");
+        let tmp_mov = std::env::temp_dir().join("trim_test_sony_twos.mov");
+        let tmp_mp4 = std::env::temp_dir().join("trim_test_sony_ipcm.mp4");
+
+        // Generate a 0.2s stereo 48kHz pcm_s16be MOV and patch its sample entry tag to `ipcm`
+        // (without a pcmC box), reproducing how Pop!_OS 22.04 (FFmpeg 4.4) sees Sony XAVC S MP4s.
+        let status = crate::ffmpeg::ffmpeg_cmd()
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000:duration=0.2",
+                "-ac",
+                "2",
+                "-c:a",
+                "pcm_s16be",
+            ])
+            .arg(&tmp_mov)
+            .status();
+
+        if status.is_ok_and(|s| s.success()) {
+            if let Ok(mut bytes) = std::fs::read(&tmp_mov) {
+                if let Some(pos) = bytes.windows(4).position(|w| w == b"twos") {
+                    bytes[pos..pos + 4].copy_from_slice(b"ipcm");
+                    let _ = std::fs::write(&tmp_mp4, &bytes);
+
+                    let info = crate::analyzer::detect_forced_pcm_input_codec(&tmp_mp4);
+                    assert!(info.is_some(), "Should detect ipcm PCM info");
+                    assert_eq!(info.unwrap().codec, "pcm_s16be");
+
+                    let pcm = decode_audio_to_pcm(&tmp_mp4);
+                    assert!(
+                        pcm.is_some(),
+                        "Should decode Sony ipcm MP4 audio via forced pcm_s16be"
+                    );
+                    let frames = pcm.unwrap();
+                    assert!(!frames.is_empty(), "Decoded PCM frames should not be empty");
+                    let max_amp = frames
+                        .iter()
+                        .map(|f| f[0].unsigned_abs())
+                        .max()
+                        .unwrap_or(0);
+                    assert!(
+                        max_amp > 1000,
+                        "Decoded sine wave should be audible, got max_amp={}",
+                        max_amp
+                    );
+                }
+            }
         }
+        let _ = std::fs::remove_file(&tmp_mov);
+        let _ = std::fs::remove_file(&tmp_mp4);
     }
 }

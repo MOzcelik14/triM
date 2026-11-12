@@ -171,25 +171,29 @@ fn get_cache_path_static(cache_dir: &Path, file_path: &Path, points_per_second: 
     cache_dir.join(format!("{}.dat", hash))
 }
 
-fn extract_and_cache_waveform(
-    cache_dir: &Path,
-    cache_path: &Path,
-    path: &Path,
-    points_per_second: u32,
-) -> Option<Vec<[f32; 2]>> {
-    let sample_rate = points_per_second * 40;
+fn run_ffmpeg_waveform_decode(
+    path_str: &str,
+    sample_rate: u32,
+    forced_input_codec: Option<&str>,
+    stream_map: Option<&str>,
+) -> Vec<u8> {
     let mut cmd = crate::ffmpeg::ffmpeg_cmd();
     cmd.args([
         "-v",
         "error",
         "-y",
-        "-i",
-        path.to_str().unwrap_or(""),
-        "-vn",
-        "-dn",
-        "-sn",
-        "-map",
-        "0:a:0?",
+        "-ignore_unknown",
+        "-err_detect",
+        "ignore_err",
+    ]);
+    if let Some(codec) = forced_input_codec {
+        cmd.args(["-c:a", codec]);
+    }
+    cmd.args(["-i", path_str, "-vn", "-dn", "-sn"]);
+    if let Some(map_spec) = stream_map {
+        cmd.args(["-map", map_spec]);
+    }
+    cmd.args([
         "-ac",
         "1",
         "-ar",
@@ -201,42 +205,62 @@ fn extract_and_cache_waveform(
     .stdout(Stdio::piped())
     .stderr(Stdio::null());
 
-    let mut guard = crate::ffmpeg::ChildGuard::spawn(&mut cmd).ok()?;
-
     let mut raw_pcm = Vec::new();
-    if let Some(mut stdout) = guard.take_stdout() {
-        let _ = stdout.read_to_end(&mut raw_pcm);
+    if let Ok(mut guard) = crate::ffmpeg::ChildGuard::spawn(&mut cmd) {
+        if let Some(mut stdout) = guard.take_stdout() {
+            let _ = stdout.read_to_end(&mut raw_pcm);
+        }
+        let _ = guard.wait();
     }
-    let _ = guard.wait();
+    raw_pcm
+}
+
+fn extract_and_cache_waveform(
+    cache_dir: &Path,
+    cache_path: &Path,
+    path: &Path,
+    points_per_second: u32,
+) -> Option<Vec<[f32; 2]>> {
+    let path_str = path.to_str().unwrap_or("");
+    if path_str.is_empty() {
+        return None;
+    }
+
+    let sample_rate = points_per_second * 40;
+    let detected_pcm = crate::analyzer::detect_forced_pcm_input_codec(path);
+
+    let mut raw_pcm = if let Some(info) = detected_pcm {
+        let b = run_ffmpeg_waveform_decode(path_str, sample_rate, Some(info.codec), Some("0:a:0?"));
+        if b.len() >= 80 {
+            b
+        } else {
+            run_ffmpeg_waveform_decode(path_str, sample_rate, None, Some("0:a:0?"))
+        }
+    } else {
+        run_ffmpeg_waveform_decode(path_str, sample_rate, None, Some("0:a:0?"))
+    };
 
     if raw_pcm.len() < 80 {
-        let mut fb_cmd = crate::ffmpeg::ffmpeg_cmd();
-        fb_cmd
-            .args([
-                "-v",
-                "error",
-                "-y",
-                "-i",
-                path.to_str().unwrap_or(""),
-                "-vn",
-                "-dn",
-                "-sn",
-                "-ac",
-                "1",
-                "-ar",
-                &sample_rate.to_string(),
-                "-f",
-                "s16le",
-                "-",
-            ])
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+        raw_pcm = run_ffmpeg_waveform_decode(path_str, sample_rate, None, None);
+    }
 
-        if let Ok(mut fb_guard) = crate::ffmpeg::ChildGuard::spawn(&mut fb_cmd) {
-            if let Some(mut stdout) = fb_guard.take_stdout() {
-                let _ = stdout.read_to_end(&mut raw_pcm);
+    if raw_pcm.len() < 80 {
+        for &codec in &[
+            "pcm_s16be",
+            "pcm_s24be",
+            "pcm_s16le",
+            "pcm_s24le",
+            "pcm_s32be",
+            "pcm_f32be",
+        ] {
+            raw_pcm =
+                run_ffmpeg_waveform_decode(path_str, sample_rate, Some(codec), Some("0:a:0?"));
+            if raw_pcm.len() < 80 {
+                raw_pcm = run_ffmpeg_waveform_decode(path_str, sample_rate, Some(codec), None);
             }
-            let _ = fb_guard.wait();
+            if raw_pcm.len() >= 80 {
+                break;
+            }
         }
     }
 

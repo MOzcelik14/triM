@@ -57,10 +57,11 @@ pub fn find_whisper_executable() -> Option<PathBuf> {
 /// Extracts a clean 16kHz mono WAV file optimized for Whisper speech-to-text inference.
 pub fn extract_audio_for_whisper(media_path: &Path, output_wav: &Path) -> Result<(), String> {
     let mut cmd = crate::ffmpeg::ffmpeg_cmd();
-    cmd.arg("-y")
-        .arg("-v")
-        .arg("error")
-        .arg("-i")
+    cmd.args(["-y", "-v", "error", "-ignore_unknown"]);
+    if let Some(info) = crate::analyzer::detect_forced_pcm_input_codec(media_path) {
+        cmd.args(["-c:a", info.codec]);
+    }
+    cmd.arg("-i")
         .arg(media_path)
         .arg("-vn")
         .arg("-ar")

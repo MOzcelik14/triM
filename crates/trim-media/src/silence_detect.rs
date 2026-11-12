@@ -30,6 +30,10 @@ pub fn detect_silence_regions(
         cmd.arg("-to").arg(format!("{:.3}", source_out));
     }
 
+    if let Some(info) = crate::analyzer::detect_forced_pcm_input_codec(media_path) {
+        cmd.args(["-c:a", info.codec]);
+    }
+
     cmd.arg("-i")
         .arg(media_path)
         .arg("-vn")

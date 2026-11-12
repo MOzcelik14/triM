@@ -56,6 +56,18 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.4.0" date="2026-11-12">
+      <description>
+        <p>triM. v1.4.0 - Sony Kamera (XAVC S / XAVC HS) Ses Çözümleme, Linux Ses Failover ve Kaynak Monitörü Ses Desteği:</p>
+        <ul>
+          <li>Sony kameraların (ZV-E10, FX3, FX30, A7 IV, A6700 vb.) MP4/MOV kapsayıcılarındaki ipcm, lpcm ve twos Big-Endian PCM (16-bit / 24-bit / 32-bit) ses akışlarını doğrudan MP4 atom analizi (stsd, pcmC, stsz) ile tanıma ve çözme desteği.</li>
+          <li>Pop!_OS ve Ubuntu LTS gibi dağıtımlarda bilinmeyen codec veya sıfır kanal raporlanan Sony kamera videolarında otomatik PCM çözücü ve yedek zinciri desteği (oynatma, dalga formu, proxy, sessizlik algılama, altyazı ve dışa aktarma).</li>
+          <li>Linux ses çıkışında (PipeWire pw-cat, PulseAudio paplay, ALSA aplay) otomatik arka uç yedekleme (failover) mekanizması.</li>
+          <li>Kaynak Monitörü (Source Monitor) önizlemelerinde gerçek zamanlı ses oynatma ve canlı VU metre desteği.</li>
+          <li>Önceden kaydedilmiş projelerde eksik kalmış ses meta verilerini proje açılışında otomatik onarma ve ses kanalı olmasa bile V1 üzerindeki video seslerini çalabilme.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.3.4" date="2026-11-07">
       <description>
         <p>triM. v1.3.4 - Zaman Çizelgesi Klip Başlığı Taşma ve Çakışma Düzeltmesi:</p>

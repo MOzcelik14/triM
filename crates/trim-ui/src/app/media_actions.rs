@@ -136,7 +136,7 @@ impl TrimApp {
             Ok(mut item) => {
                 let name = item.name.clone();
                 let file_path = item.file_path.clone();
-                let has_audio = item.media_type == MediaType::Audio || item.audio_channels > 0;
+                let has_audio = item.has_audio();
                 let m_id = item.id.clone();
 
                 let has_any_video_media = self
@@ -678,7 +678,7 @@ impl TrimApp {
             || self
                 .project
                 .get_media(m_id)
-                .map(|m| m.audio_channels > 0)
+                .map(|m| m.has_audio())
                 .unwrap_or(false);
         let is_video_track = self
             .project

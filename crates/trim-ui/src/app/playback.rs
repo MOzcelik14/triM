@@ -16,6 +16,10 @@ impl TrimApp {
     }
 
     pub fn play(&mut self) {
+        if self.source_state.is_playing {
+            self.source_state.is_playing = false;
+            self.source_state.clock_start = None;
+        }
         let dur = self.project.timeline.duration();
         if dur > 0.0 {
             if self.playback_speed >= 0.0 && self.current_time >= dur {
@@ -230,17 +234,64 @@ impl TrimApp {
             self.source_state.texture = None;
             return;
         };
-        let Some(media) = self.project.get_media(m_id) else {
+        let Some((media_duration, media_type, media_path, media_has_audio)) = self
+            .project
+            .get_media(m_id)
+            .map(|m| (m.duration, m.media_type, m.file_path.clone(), m.has_audio()))
+        else {
             self.source_state.texture = None;
             return;
         };
 
         if self.source_state.is_playing {
-            let dt = 1.0 / 30.0;
-            self.source_state.current_time += dt;
-            if self.source_state.current_time >= media.duration {
+            let prev_t = self.source_state.current_time;
+            let cur_t = if let Some(start) = self.source_state.clock_start {
+                self.source_state.clock_start_time + start.elapsed().as_secs_f64()
+            } else {
+                let now = Instant::now();
+                self.source_state.clock_start = Some(now);
+                self.source_state.clock_start_time = prev_t;
+                prev_t + (1.0 / 60.0)
+            };
+
+            let end_limit = self
+                .source_state
+                .mark_out
+                .filter(|&mo| mo > self.source_state.mark_in.unwrap_or(0.0))
+                .unwrap_or(media_duration);
+
+            if end_limit > 0.0 && cur_t >= end_limit {
                 self.source_state.current_time = self.source_state.mark_in.unwrap_or(0.0);
                 self.source_state.is_playing = false;
+                self.source_state.clock_start = None;
+                self.audio_player.stop();
+                self.vu_state.reset();
+            } else {
+                self.source_state.current_time = cur_t;
+                if media_has_audio && !self.is_playing {
+                    let (mut samples, mut db_l, mut db_r) = self
+                        .audio_mixer
+                        .render_source_media_interval(&media_path, prev_t, cur_t);
+                    let master_vol = self.audio_mixer_dialog.master_volume;
+                    if (master_vol - 1.0).abs() > 1e-4 {
+                        for s in &mut samples {
+                            *s = ((*s as f32) * master_vol)
+                                .round()
+                                .clamp(i16::MIN as f32, i16::MAX as f32)
+                                as i16;
+                        }
+                        if master_vol <= 0.0001 {
+                            db_l = -60.0;
+                            db_r = -60.0;
+                        } else {
+                            let gain_db = 20.0 * master_vol.log10();
+                            db_l = (db_l + gain_db).clamp(-60.0, 0.0);
+                            db_r = (db_r + gain_db).clamp(-60.0, 0.0);
+                        }
+                    }
+                    self.vu_state.set_levels(db_l, db_r);
+                    self.audio_player.write_samples(&samples);
+                }
             }
             ctx.request_repaint();
         }
@@ -278,8 +329,8 @@ impl TrimApp {
         };
 
         if needs_decode {
-            if media.media_type == MediaType::Image {
-                if let Ok(dyn_img) = image::open(&media.file_path) {
+            if media_type == MediaType::Image {
+                if let Ok(dyn_img) = image::open(&media_path) {
                     let frame = dyn_img.to_rgba8();
                     let color_image = ColorImage::from_rgba_unmultiplied(
                         [frame.width() as usize, frame.height() as usize],
@@ -297,10 +348,10 @@ impl TrimApp {
                     self.source_state.last_decoded_id = Some(m_id.clone());
                     self.source_state.last_decoded_time = Some(self.source_state.current_time);
                 }
-            } else if media.media_type == MediaType::Video {
+            } else if media_type == MediaType::Video {
                 self.source_state
                     .decoder
-                    .request_seek(&media.file_path, self.source_state.current_time);
+                    .request_seek(&media_path, self.source_state.current_time);
             }
         }
     }

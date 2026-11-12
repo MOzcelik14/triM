@@ -814,14 +814,24 @@ impl TimelineExporter {
                     ])
                 } else {
                     let (src_start, src_dur) = source_window(clip);
-                    inputs.push([
+                    let mut in_args = vec![
                         "-ss".into(),
                         format!("{:.6}", src_start),
                         "-t".into(),
                         format!("{:.6}", src_dur),
-                        "-i".into(),
-                        media.file_path.clone(),
-                    ])
+                    ];
+                    if wants_audio
+                        && matches!(
+                            media.audio_codec.as_str(),
+                            "pcm_s16be" | "pcm_s24be" | "pcm_s32be" | "pcm_f32be"
+                        )
+                    {
+                        in_args.push("-c:a".into());
+                        in_args.push(media.audio_codec.clone());
+                    }
+                    in_args.push("-i".into());
+                    in_args.push(media.file_path.clone());
+                    inputs.push(in_args)
                 };
 
                 if wants_video {
