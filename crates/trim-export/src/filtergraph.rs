@@ -142,45 +142,9 @@ impl TimelineExporter {
         filters
     }
 
-    /// Video filter chain for one clip, producing an RGBA stream whose PTS is
-    /// already shifted to the clip's timeline position.
-    fn clip_video_chain(
-        clip: &Clip,
-        media: &MediaItem,
-        out_w: u32,
-        out_h: u32,
-        out_fps: f64,
-    ) -> String {
-        let dur = clip.duration();
-        let mut f: Vec<String> = Vec::new();
-
-        let is_image = media.media_type == MediaType::Image;
-        if !is_image && clip.reverse {
-            f.push("reverse".into());
-        }
-        if !is_image && (clip.speed - 1.0).abs() > 0.001 {
-            f.push(format!("setpts=(PTS-STARTPTS)/{:.6}", clip.speed));
-        } else {
-            f.push("setpts=PTS-STARTPTS".into());
-        }
-        f.push(format!("fps={}", out_fps));
-        f.push(format!("trim=duration={:.6}", dur));
-        f.push("setpts=PTS-STARTPTS".into());
-
-        // Scale: preview fits the frame into the canvas, then multiplies by
-        // clip.scale. Video frames are letterboxed (opaque bars) in preview,
-        // images keep their own alpha and aspect ratio.
-        let scale = clip.get_property_at_time("scale", 0.0).max(0.05);
-        let box_w = ((out_w as f64) * scale).round().max(2.0) as u32;
-        let box_h = ((out_h as f64) * scale).round().max(2.0) as u32;
-        f.push(format!(
-            "scale={box_w}:{box_h}:force_original_aspect_ratio=decrease"
-        ));
-        if !is_image {
-            f.push(format!("pad={box_w}:{box_h}:(ow-iw)/2:(oh-ih)/2:black"));
-        }
-        f.push("setsar=1".into());
-
+    /// Color grading filter list shared by regular video clips and Adjustment Layers.
+    fn clip_color_filters(clip: &Clip) -> Vec<String> {
+        let mut f = Vec::new();
         if clip.temperature.abs() > 1e-4 || clip.tint.abs() > 1e-4 {
             let [wbr, wbg, wbb] =
                 trim_core::color::white_balance_gains(clip.temperature as f32, clip.tint as f32);
@@ -245,6 +209,68 @@ impl TimelineExporter {
                 ));
             }
         }
+        f
+    }
+
+    /// Writes a single channel (`0` = R/ClipAlpha, `1` = G/ColorAndEffects) of an RGBA buffer
+    /// as a binary P5 PGM grayscale image for FFmpeg `-loop 1 -i` mask input.
+    fn write_mask_pgm(
+        path: &std::path::Path,
+        w: u32,
+        h: u32,
+        rgba: &[u8],
+        channel: usize,
+    ) -> std::io::Result<()> {
+        use std::io::Write;
+        let mut file = std::fs::File::create(path)?;
+        write!(file, "P5\n{w} {h}\n255\n")?;
+        let mut gray = Vec::with_capacity((w as usize) * (h as usize));
+        for px in rgba.as_chunks::<4>().0 {
+            gray.push(px[channel]);
+        }
+        file.write_all(&gray)
+    }
+
+    /// Video filter chain for one clip, producing an RGBA stream whose PTS is
+    /// already shifted to the clip's timeline position.
+    fn clip_video_chain(
+        clip: &Clip,
+        media: &MediaItem,
+        out_w: u32,
+        out_h: u32,
+        out_fps: f64,
+    ) -> String {
+        let dur = clip.duration();
+        let mut f: Vec<String> = Vec::new();
+
+        let is_image = media.media_type == MediaType::Image;
+        if !is_image && clip.reverse {
+            f.push("reverse".into());
+        }
+        if !is_image && (clip.speed - 1.0).abs() > 0.001 {
+            f.push(format!("setpts=(PTS-STARTPTS)/{:.6}", clip.speed));
+        } else {
+            f.push("setpts=PTS-STARTPTS".into());
+        }
+        f.push(format!("fps={}", out_fps));
+        f.push(format!("trim=duration={:.6}", dur));
+        f.push("setpts=PTS-STARTPTS".into());
+
+        // Scale: preview fits the frame into the canvas, then multiplies by
+        // clip.scale. Video frames are letterboxed (opaque bars) in preview,
+        // images keep their own alpha and aspect ratio.
+        let scale = clip.get_property_at_time("scale", 0.0).max(0.05);
+        let box_w = ((out_w as f64) * scale).round().max(2.0) as u32;
+        let box_h = ((out_h as f64) * scale).round().max(2.0) as u32;
+        f.push(format!(
+            "scale={box_w}:{box_h}:force_original_aspect_ratio=decrease"
+        ));
+        if !is_image {
+            f.push(format!("pad={box_w}:{box_h}:(ow-iw)/2:(oh-ih)/2:black"));
+        }
+        f.push("setsar=1".into());
+
+        f.extend(Self::clip_color_filters(clip));
 
         f.push("format=rgba".into());
 
@@ -794,6 +820,113 @@ impl TimelineExporter {
                 if dur <= 0.0 {
                     continue;
                 }
+
+                // Helper closure-like preparation for masks on video/adjustment clips
+                let has_alpha_mask = clip
+                    .masks
+                    .iter()
+                    .any(|m| m.enabled && m.target == trim_core::MaskTarget::ClipAlpha);
+                let has_fx_mask = clip
+                    .masks
+                    .iter()
+                    .any(|m| m.enabled && m.target == trim_core::MaskTarget::ColorAndEffects);
+
+                if clip.is_adjustment_layer() {
+                    if track.track_type != TrackType::Video || !track.visible {
+                        continue;
+                    }
+                    let t0 = clip.timeline_in;
+                    let t1 = clip.timeline_out;
+                    let op = clip.get_property_at_time("opacity", 0.0).clamp(0.0, 1.0);
+                    if op <= 0.001 {
+                        continue;
+                    }
+
+                    let mut alpha_mask_idx: Option<usize> = None;
+                    let mut fx_mask_idx: Option<usize> = None;
+                    if has_alpha_mask || has_fx_mask {
+                        let mask_rgba =
+                            trim_core::mask::rasterize_masks_rgba(&clip.masks, out_w, out_h, 0.0);
+                        if has_alpha_mask {
+                            let p = std::env::temp_dir()
+                                .join(format!("trim_mask_alpha_{}.pgm", clip.id));
+                            if Self::write_mask_pgm(&p, out_w, out_h, &mask_rgba, 0).is_ok() {
+                                alpha_mask_idx = Some(inputs.push([
+                                    "-loop".into(),
+                                    "1".into(),
+                                    "-framerate".into(),
+                                    format!("{out_fps}"),
+                                    "-t".into(),
+                                    format!("{total_duration:.6}"),
+                                    "-i".into(),
+                                    p.to_string_lossy().to_string(),
+                                ]));
+                            }
+                        }
+                        if has_fx_mask {
+                            let p =
+                                std::env::temp_dir().join(format!("trim_mask_fx_{}.pgm", clip.id));
+                            if Self::write_mask_pgm(&p, out_w, out_h, &mask_rgba, 1).is_ok() {
+                                fx_mask_idx = Some(inputs.push([
+                                    "-loop".into(),
+                                    "1".into(),
+                                    "-framerate".into(),
+                                    format!("{out_fps}"),
+                                    "-t".into(),
+                                    format!("{total_duration:.6}"),
+                                    "-i".into(),
+                                    p.to_string_lossy().to_string(),
+                                ]));
+                            }
+                        }
+                    }
+
+                    overlay_count += 1;
+                    let k = overlay_count;
+                    let bg_lbl = format!("adj_bg_{k}");
+                    let in_lbl = format!("adj_in_{k}");
+                    filters.push(format!("[{last_video}]split[{bg_lbl}][{in_lbl}]"));
+
+                    let color_filters = Self::clip_color_filters(clip);
+                    let graded_lbl = if color_filters.is_empty() {
+                        in_lbl
+                    } else {
+                        let gl = format!("adj_gr_{k}");
+                        filters.push(format!(
+                            "[{in_lbl}]format=rgb24,{}[{gl}]",
+                            color_filters.join(",")
+                        ));
+                        gl
+                    };
+
+                    let fx_lbl = if let Some(fx_i) = fx_mask_idx {
+                        let fl = format!("adj_fx_{k}");
+                        filters.push(format!(
+                            "[{bg_lbl}]format=yuv420p[adj_bg_y_{k}];[{graded_lbl}]format=yuv420p[adj_gr_y_{k}];[{fx_i}:v]format=gray[adj_fm_{k}];[adj_bg_y_{k}][adj_gr_y_{k}][adj_fm_{k}]maskedmerge=enable='between(t,{t0:.6},{t1:.6})'[{fl}]"
+                        ));
+                        fl
+                    } else {
+                        let fl = format!("adj_fy_{k}");
+                        filters.push(format!("[{graded_lbl}]format=yuv420p[{fl}]"));
+                        fl
+                    };
+
+                    let next = format!("base{k}");
+                    let blend_mode = clip.blend_mode.ffmpeg_mode();
+                    if let Some(a_i) = alpha_mask_idx {
+                        let bl = format!("adj_bl_{k}");
+                        filters.push(format!(
+                            "[{bg_lbl}]format=yuv420p[adj_bgy_{k}];[adj_bgy_{k}][{fx_lbl}]blend=all_mode={blend_mode}:all_opacity={op:.4}:enable='between(t,{t0:.6},{t1:.6})':eof_action=pass[{bl}];[{a_i}:v]format=gray[adj_am_{k}];[adj_bgy_{k}][{bl}][adj_am_{k}]maskedmerge=enable='between(t,{t0:.6},{t1:.6})'[{next}]"
+                        ));
+                    } else {
+                        filters.push(format!(
+                            "[{bg_lbl}]format=yuv420p[adj_bgy_{k}];[adj_bgy_{k}][{fx_lbl}]blend=all_mode={blend_mode}:all_opacity={op:.4}:enable='between(t,{t0:.6},{t1:.6})':eof_action=pass[{next}]"
+                        ));
+                    }
+                    last_video = next;
+                    continue;
+                }
+
                 let Some(media) = project.get_media(&clip.media_id) else {
                     continue;
                 };
@@ -847,11 +980,64 @@ impl TimelineExporter {
                     let clip_label = format!("cv{input_idx}");
                     filters.push(format!("[{input_idx}:v]{chain}[{clip_label}]"));
                     let (x, y) = Self::overlay_position(clip, out_w, out_h);
+
+                    let mut alpha_mask_idx: Option<usize> = None;
+                    if has_alpha_mask {
+                        let mask_rgba =
+                            trim_core::mask::rasterize_masks_rgba(&clip.masks, out_w, out_h, 0.0);
+                        let p =
+                            std::env::temp_dir().join(format!("trim_mask_alpha_{}.pgm", clip.id));
+                        if Self::write_mask_pgm(&p, out_w, out_h, &mask_rgba, 0).is_ok() {
+                            alpha_mask_idx = Some(inputs.push([
+                                "-loop".into(),
+                                "1".into(),
+                                "-framerate".into(),
+                                format!("{out_fps}"),
+                                "-t".into(),
+                                format!("{total_duration:.6}"),
+                                "-i".into(),
+                                p.to_string_lossy().to_string(),
+                            ]));
+                        }
+                    }
+
                     overlay_count += 1;
-                    let next = format!("base{overlay_count}");
-                    filters.push(format!(
-                        "[{last_video}][{clip_label}]overlay=x={x}:y={y}:eval=frame:eof_action=pass[{next}]"
-                    ));
+                    let k = overlay_count;
+                    let next = format!("base{k}");
+                    let t0 = clip.timeline_in;
+                    let t1 = clip.timeline_out;
+
+                    if clip.blend_mode != trim_core::BlendMode::Normal || alpha_mask_idx.is_some() {
+                        let blend_mode = clip.blend_mode.ffmpeg_mode();
+                        let bg_lbl = format!("cbg_{k}");
+                        let bg_dup = format!("cbgd_{k}");
+                        let ov_lbl = format!("cov_{k}");
+                        filters.push(format!(
+                            "[{last_video}]format=yuv420p,split[{bg_lbl}][{bg_dup}];[{bg_dup}][{clip_label}]overlay=x={x}:y={y}:eval=frame:eof_action=pass[{ov_lbl}]"
+                        ));
+
+                        let blended_lbl = if clip.blend_mode != trim_core::BlendMode::Normal {
+                            let bl = format!("cbl_{k}");
+                            filters.push(format!(
+                                "[{bg_lbl}][{ov_lbl}]blend=all_mode={blend_mode}:all_opacity=1.0:enable='between(t,{t0:.6},{t1:.6})':eof_action=pass[{bl}]"
+                            ));
+                            bl
+                        } else {
+                            ov_lbl
+                        };
+
+                        if let Some(a_i) = alpha_mask_idx {
+                            filters.push(format!(
+                                "[{a_i}:v]format=gray[cam_{k}];[{bg_lbl}][{blended_lbl}][cam_{k}]maskedmerge=enable='between(t,{t0:.6},{t1:.6})'[{next}]"
+                            ));
+                        } else {
+                            filters.push(format!("[{blended_lbl}]null[{next}]"));
+                        }
+                    } else {
+                        filters.push(format!(
+                            "[{last_video}][{clip_label}]overlay=x={x}:y={y}:eval=frame:eof_action=pass[{next}]"
+                        ));
+                    }
                     last_video = next;
                 }
 
@@ -1915,6 +2101,63 @@ mod tests {
         assert!(
             fg.contains("colorbalance=rs=-0.12"),
             "should include Kodak 2383 look filter: {fg}"
+        );
+    }
+
+    #[test]
+    fn test_compositing_blend_mask_adjustment_layer_filtergraph() {
+        let mut proj = Project::new("CompTest");
+        let mut m = MediaItem::new("/tmp/fake_video.mp4");
+        m.media_type = MediaType::Video;
+        m.duration = 5.0;
+        let m_id = m.id.clone();
+        proj.add_media(m);
+
+        let mut base_clip = Clip::new(&m_id, 0.0, 5.0);
+        base_clip.blend_mode = trim_core::BlendMode::Screen;
+        let mut alpha_mask = trim_core::Mask::new(trim_core::MaskShape::Rectangle, "Box");
+        alpha_mask.target = trim_core::MaskTarget::ClipAlpha;
+        base_clip.masks.push(alpha_mask);
+        proj.timeline.tracks[0].add_clip(base_clip);
+
+        let mut adj = Clip::new_adjustment_layer(1.0, 4.0);
+        adj.brightness = 0.15;
+        adj.blend_mode = trim_core::BlendMode::Overlay;
+        let mut fx_mask = trim_core::Mask::new(trim_core::MaskShape::Ellipse, "Spot");
+        fx_mask.target = trim_core::MaskTarget::ColorAndEffects;
+        adj.masks.push(fx_mask);
+        proj.timeline.add_new_video_track();
+        proj.timeline
+            .tracks
+            .iter_mut()
+            .rfind(|t| t.track_type == TrackType::Video)
+            .unwrap()
+            .add_clip(adj);
+
+        let preset = ExportPreset::default();
+        let (cmd, _) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out_comp.mp4").unwrap();
+        let fg = cmd
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd[idx + 1])
+            .unwrap();
+
+        assert!(
+            fg.contains("blend=all_mode=screen"),
+            "Missing Screen blend: {fg}"
+        );
+        assert!(
+            fg.contains("blend=all_mode=overlay"),
+            "Missing Overlay blend on AdjLayer: {fg}"
+        );
+        assert!(
+            fg.contains("maskedmerge"),
+            "Missing maskedmerge for masks: {fg}"
+        );
+        assert!(
+            fg.contains("eq=brightness=0.150"),
+            "Missing AdjLayer color filter: {fg}"
         );
     }
 }

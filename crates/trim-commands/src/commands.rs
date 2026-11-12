@@ -2665,3 +2665,153 @@ impl Command for SetClipColorGradingCommand {
         "Renk Düzenlemesini Değiştir"
     }
 }
+
+// -----------------------------------------------------------------------------
+// 31. SetClipBlendModeCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct SetClipBlendModeCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub old_blend_mode: trim_core::BlendMode,
+    pub new_blend_mode: trim_core::BlendMode,
+}
+
+impl SetClipBlendModeCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_blend_mode: trim_core::BlendMode,
+        new_blend_mode: trim_core::BlendMode,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            old_blend_mode,
+            new_blend_mode,
+        }
+    }
+}
+
+impl Command for SetClipBlendModeCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.blend_mode = self.new_blend_mode;
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.blend_mode = self.old_blend_mode;
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Karışım Modunu Değiştir"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 32. SetClipMasksCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct SetClipMasksCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub old_masks: Vec<trim_core::Mask>,
+    pub new_masks: Vec<trim_core::Mask>,
+}
+
+impl SetClipMasksCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_masks: Vec<trim_core::Mask>,
+        new_masks: Vec<trim_core::Mask>,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            old_masks,
+            new_masks,
+        }
+    }
+}
+
+impl Command for SetClipMasksCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.masks = self.new_masks.clone();
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        clip.masks = self.old_masks.clone();
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Maskeleri Güncelle"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 33. AddAdjustmentLayerCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct AddAdjustmentLayerCommand {
+    pub track_id: String,
+    pub clip: Clip,
+}
+
+impl AddAdjustmentLayerCommand {
+    pub fn new(track_id: impl Into<String>, clip: Clip) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip,
+        }
+    }
+}
+
+impl Command for AddAdjustmentLayerCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        track.add_clip(self.clip.clone());
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        track.remove_clip(&self.clip.id);
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Ayar Katmanı Ekle"
+    }
+}

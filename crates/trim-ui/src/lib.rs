@@ -11,6 +11,7 @@ pub mod inspector;
 pub mod media_bin;
 pub mod monitor;
 pub mod ruler;
+pub mod scopes_panel;
 pub mod shortcuts;
 pub mod theme;
 pub mod toolbar;

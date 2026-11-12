@@ -34,6 +34,12 @@ out vec4 frag_color;
 
 uniform sampler2D u_frame_tex;
 uniform sampler2D u_lut_tex;
+uniform sampler2D u_backdrop_tex;
+uniform sampler2D u_mask_tex;
+
+uniform int u_has_mask;
+uniform int u_blend_mode;
+uniform int u_is_adjustment_layer;
 
 uniform vec2 u_canvas_size;
 uniform vec2 u_clip_center;
@@ -88,48 +94,91 @@ vec3 s_curve_vec(vec3 x, float strength) {
     return cx + (s - cx) * strength;
 }
 
-void main() {
-    vec2 canvas_px = v_canvas_uv * u_canvas_size;
-    vec2 rel = canvas_px - u_clip_center;
+float blend_chan(float b, float t, int mode) {
+    if (mode == 1) return b * t; // Multiply
+    if (mode == 2) return 1.0 - (1.0 - b) * (1.0 - t); // Screen
+    if (mode == 3) return (b < 0.5) ? (2.0 * b * t) : (1.0 - 2.0 * (1.0 - b) * (1.0 - t)); // Overlay
+    if (mode == 4) { // SoftLight (W3C)
+        if (t <= 0.5) {
+            return b - (1.0 - 2.0 * t) * b * (1.0 - b);
+        } else {
+            float d = (b <= 0.25) ? (((16.0 * b - 12.0) * b + 4.0) * b) : sqrt(b);
+            return b + (2.0 * t - 1.0) * (d - b);
+        }
+    }
+    if (mode == 5) return (t < 0.5) ? (2.0 * b * t) : (1.0 - 2.0 * (1.0 - b) * (1.0 - t)); // HardLight
+    if (mode == 6) return min(1.0, b + t); // Add
+    if (mode == 7) return max(0.0, b - t); // Subtract
+    if (mode == 8) return abs(b - t); // Difference
+    if (mode == 9) return min(b, t); // Darken
+    if (mode == 10) return max(b, t); // Lighten
+    return t; // Normal
+}
 
-    float cos_r = cos(-u_rotation_rad);
-    float sin_r = sin(-u_rotation_rad);
-    vec2 rot_rel = vec2(
-        rel.x * cos_r - rel.y * sin_r,
-        rel.x * sin_r + rel.y * cos_r
+vec3 apply_blend_mode(vec3 base, vec3 top, int mode) {
+    if (mode == 0) return top;
+    return vec3(
+        blend_chan(base.r, top.r, mode),
+        blend_chan(base.g, top.g, mode),
+        blend_chan(base.b, top.b, mode)
     );
+}
 
-    vec2 uv = (rot_rel / max(u_clip_size, vec2(1.0))) + vec2(0.5);
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
-        discard;
-    }
-    if (uv.x < u_crop.x || uv.x > (1.0 - u_crop.z) || uv.y < u_crop.y || uv.y > (1.0 - u_crop.w)) {
-        discard;
-    }
+void main() {
+    vec3 rgb;
+    float a;
 
-    if (u_wipe_mode == 1 && uv.x > u_fade_factor) {
-        discard;
-    }
-    if (u_wipe_mode == 2 && uv.x < (1.0 - u_fade_factor)) {
-        discard;
-    }
+    if (u_is_adjustment_layer == 1) {
+        vec4 bd = texture(u_backdrop_tex, v_canvas_uv);
+        rgb = bd.rgb;
+        a = u_opacity;
+    } else {
+        vec2 canvas_px = v_canvas_uv * u_canvas_size;
+        vec2 rel = canvas_px - u_clip_center;
 
-    vec4 texel = texture(u_frame_tex, uv);
-    vec3 rgb = texel.rgb;
-    float a = texel.a * u_opacity;
+        float cos_r = cos(-u_rotation_rad);
+        float sin_r = sin(-u_rotation_rad);
+        vec2 rot_rel = vec2(
+            rel.x * cos_r - rel.y * sin_r,
+            rel.x * sin_r + rel.y * cos_r
+        );
 
-    if (u_ck_enabled == 1) {
-        float dist = distance(rgb, u_ck_color);
-        if (dist < u_ck_similarity) {
+        vec2 uv = (rot_rel / max(u_clip_size, vec2(1.0))) + vec2(0.5);
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
             discard;
-        } else if (dist < u_ck_similarity + u_ck_smoothness) {
-            a *= (dist - u_ck_similarity) / u_ck_smoothness;
+        }
+        if (uv.x < u_crop.x || uv.x > (1.0 - u_crop.z) || uv.y < u_crop.y || uv.y > (1.0 - u_crop.w)) {
+            discard;
+        }
+
+        if (u_wipe_mode == 1 && uv.x > u_fade_factor) {
+            discard;
+        }
+        if (u_wipe_mode == 2 && uv.x < (1.0 - u_fade_factor)) {
+            discard;
+        }
+
+        vec4 texel = texture(u_frame_tex, uv);
+        rgb = texel.rgb;
+        a = texel.a * u_opacity;
+
+        if (u_ck_enabled == 1) {
+            float dist = distance(rgb, u_ck_color);
+            if (dist < u_ck_similarity) {
+                discard;
+            } else if (dist < u_ck_similarity + u_ck_smoothness) {
+                a *= (dist - u_ck_similarity) / u_ck_smoothness;
+            }
         }
     }
 
+    vec2 mask_val = (u_has_mask == 1) ? texture(u_mask_tex, v_canvas_uv).rg : vec2(1.0, 1.0);
+    a *= mask_val.r;
     if (a <= 0.001) {
         discard;
     }
+
+    vec3 ungraded_rgb = rgb;
 
     if (u_cw_enabled == 1) {
         float luma = dot(rgb, vec3(0.299, 0.587, 0.114));
@@ -325,11 +374,21 @@ void main() {
         rgb = sample_3d_lut(rgb, u_lut_size);
     }
 
+    if (u_has_mask == 1) {
+        rgb = mix(ungraded_rgb, rgb, mask_val.g);
+    }
+
     if (u_dip_white > 0.0) {
         rgb = mix(rgb, vec3(1.0), u_dip_white);
     }
 
-    frag_color = vec4(rgb, a);
+    if (u_blend_mode != 0 || u_is_adjustment_layer == 1) {
+        vec3 base = texture(u_backdrop_tex, v_canvas_uv).rgb;
+        vec3 blended = apply_blend_mode(base, rgb, u_blend_mode);
+        frag_color = vec4(mix(base, blended, a), 1.0);
+    } else {
+        frag_color = vec4(rgb, a);
+    }
 }
 "#;
 
@@ -361,6 +420,8 @@ pub struct LayerUniforms {
     pub saturation: f32,
     pub lut_preset: i32,
     pub crop: [f32; 4],
+    pub blend_mode: i32,
+    pub is_adjustment_layer: bool,
 }
 
 impl LayerUniforms {
@@ -544,6 +605,8 @@ impl LayerUniforms {
                 clip.crop_right.clamp(0.0, 1.0),
                 clip.crop_bottom.clamp(0.0, 1.0),
             ],
+            blend_mode: clip.blend_mode.shader_id(),
+            is_adjustment_layer: clip.is_adjustment_layer(),
         })
     }
 }
@@ -555,6 +618,8 @@ pub struct GpuCompositor {
     vao: glow::VertexArray,
     fbo: glow::Framebuffer,
     fbo_texture: glow::Texture,
+    backdrop_fbo: glow::Framebuffer,
+    backdrop_texture: glow::Texture,
     fbo_internal_format: i32,
     supports_srgb_framebuffer: bool,
     fbo_texture_registered: bool,
@@ -567,6 +632,9 @@ pub struct GpuCompositor {
     lut_cache: HashMap<String, Option<CubeLut3D>>,
     uploaded_lut_path: Option<String>,
     uploaded_lut_size: u32,
+    mask_texture: glow::Texture,
+    mask_tex_dims: (u32, u32),
+    mask_cache: HashMap<String, (u64, Vec<u8>, u32, u32)>,
 }
 
 impl GpuCompositor {
@@ -723,10 +791,66 @@ impl GpuCompositor {
                 return None;
             }
 
+            let backdrop_texture = match Self::create_texture_with_format(
+                &gl,
+                fbo_width,
+                fbo_height,
+                fbo_internal_format,
+            ) {
+                Ok(t) => t,
+                Err(e) => {
+                    log::error!("GPU Compositor: Backdrop dokusu oluşturulamadı: {}", e);
+                    gl.delete_framebuffer(fbo);
+                    gl.delete_texture(fbo_texture);
+                    gl.delete_vertex_array(vao);
+                    gl.delete_program(program);
+                    return None;
+                }
+            };
+
+            let backdrop_fbo = match gl.create_framebuffer() {
+                Ok(f) => f,
+                Err(e) => {
+                    log::error!("GPU Compositor: Backdrop FBO oluşturulamadı: {}", e);
+                    gl.delete_texture(backdrop_texture);
+                    gl.delete_framebuffer(fbo);
+                    gl.delete_texture(fbo_texture);
+                    gl.delete_vertex_array(vao);
+                    gl.delete_program(program);
+                    return None;
+                }
+            };
+
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(backdrop_fbo));
+            gl.framebuffer_texture_2d(
+                glow::FRAMEBUFFER,
+                glow::COLOR_ATTACHMENT0,
+                glow::TEXTURE_2D,
+                Some(backdrop_texture),
+                0,
+            );
+            let bd_status = gl.check_framebuffer_status(glow::FRAMEBUFFER);
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            if bd_status != glow::FRAMEBUFFER_COMPLETE {
+                log::error!(
+                    "GPU Compositor: Backdrop FBO tamamlanamadı (status: 0x{:X})",
+                    bd_status
+                );
+                gl.delete_framebuffer(backdrop_fbo);
+                gl.delete_texture(backdrop_texture);
+                gl.delete_framebuffer(fbo);
+                gl.delete_texture(fbo_texture);
+                gl.delete_vertex_array(vao);
+                gl.delete_program(program);
+                return None;
+            }
+
             let layer_texture = match Self::create_rgba_texture(&gl, 640, 360) {
                 Ok(t) => t,
                 Err(e) => {
                     log::error!("GPU Compositor: Katman dokusu oluşturulamadı: {}", e);
+                    gl.delete_framebuffer(backdrop_fbo);
+                    gl.delete_texture(backdrop_texture);
                     gl.delete_framebuffer(fbo);
                     gl.delete_texture(fbo_texture);
                     gl.delete_vertex_array(vao);
@@ -740,6 +864,24 @@ impl GpuCompositor {
                 Err(e) => {
                     log::error!("GPU Compositor: LUT dokusu oluşturulamadı: {}", e);
                     gl.delete_texture(layer_texture);
+                    gl.delete_framebuffer(backdrop_fbo);
+                    gl.delete_texture(backdrop_texture);
+                    gl.delete_framebuffer(fbo);
+                    gl.delete_texture(fbo_texture);
+                    gl.delete_vertex_array(vao);
+                    gl.delete_program(program);
+                    return None;
+                }
+            };
+
+            let mask_texture = match Self::create_rgba_texture(&gl, 320, 180) {
+                Ok(t) => t,
+                Err(e) => {
+                    log::error!("GPU Compositor: Maske dokusu oluşturulamadı: {}", e);
+                    gl.delete_texture(lut_texture);
+                    gl.delete_texture(layer_texture);
+                    gl.delete_framebuffer(backdrop_fbo);
+                    gl.delete_texture(backdrop_texture);
                     gl.delete_framebuffer(fbo);
                     gl.delete_texture(fbo_texture);
                     gl.delete_vertex_array(vao);
@@ -754,6 +896,8 @@ impl GpuCompositor {
                 vao,
                 fbo,
                 fbo_texture,
+                backdrop_fbo,
+                backdrop_texture,
                 fbo_internal_format,
                 supports_srgb_framebuffer,
                 fbo_texture_registered: false,
@@ -766,6 +910,9 @@ impl GpuCompositor {
                 lut_cache: HashMap::new(),
                 uploaded_lut_path: None,
                 uploaded_lut_size: 0,
+                mask_texture,
+                mask_tex_dims: (320, 180),
+                mask_cache: HashMap::new(),
             })
         }
     }
@@ -828,19 +975,20 @@ impl GpuCompositor {
         }
         self.fbo_width = target_w.max(16);
         self.fbo_height = target_h.max(16);
-        self.gl
-            .bind_texture(glow::TEXTURE_2D, Some(self.fbo_texture));
-        self.gl.tex_image_2d(
-            glow::TEXTURE_2D,
-            0,
-            self.fbo_internal_format,
-            self.fbo_width as i32,
-            self.fbo_height as i32,
-            0,
-            glow::RGBA,
-            glow::UNSIGNED_BYTE,
-            None,
-        );
+        for tex in [self.fbo_texture, self.backdrop_texture] {
+            self.gl.bind_texture(glow::TEXTURE_2D, Some(tex));
+            self.gl.tex_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                self.fbo_internal_format,
+                self.fbo_width as i32,
+                self.fbo_height as i32,
+                0,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                None,
+            );
+        }
         self.gl.bind_texture(glow::TEXTURE_2D, None);
     }
 
@@ -933,8 +1081,108 @@ impl GpuCompositor {
         (true, n as i32)
     }
 
+    unsafe fn prepare_clip_masks(
+        &mut self,
+        clip: &Clip,
+        current_time: f64,
+        logical_w: u32,
+        logical_h: u32,
+    ) -> bool {
+        let has_enabled = clip.masks.iter().any(|m| m.enabled);
+        if !has_enabled {
+            return false;
+        }
+        let clip_time = (current_time - clip.timeline_in).max(0.0);
+        let mask_w = (logical_w / 2).max(160);
+        let mask_h = (logical_h / 2).max(90);
+
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        mask_w.hash(&mut hasher);
+        mask_h.hash(&mut hasher);
+        let any_kf = clip.masks.iter().any(|m| !m.keyframes.is_empty());
+        if any_kf {
+            (clip_time * 60.0).round().to_bits().hash(&mut hasher);
+        }
+        for m in &clip.masks {
+            m.id.hash(&mut hasher);
+            m.enabled.hash(&mut hasher);
+            (m.shape as u8).hash(&mut hasher);
+            (m.target as u8).hash(&mut hasher);
+            m.invert.hash(&mut hasher);
+            m.pos_x.to_bits().hash(&mut hasher);
+            m.pos_y.to_bits().hash(&mut hasher);
+            m.scale_x.to_bits().hash(&mut hasher);
+            m.scale_y.to_bits().hash(&mut hasher);
+            m.rotation.to_bits().hash(&mut hasher);
+            m.feather.to_bits().hash(&mut hasher);
+            m.opacity.to_bits().hash(&mut hasher);
+            m.expansion.to_bits().hash(&mut hasher);
+            m.vertices.len().hash(&mut hasher);
+            for v in &m.vertices {
+                v.pos[0].to_bits().hash(&mut hasher);
+                v.pos[1].to_bits().hash(&mut hasher);
+                v.in_tangent[0].to_bits().hash(&mut hasher);
+                v.in_tangent[1].to_bits().hash(&mut hasher);
+                v.out_tangent[0].to_bits().hash(&mut hasher);
+                v.out_tangent[1].to_bits().hash(&mut hasher);
+            }
+            m.keyframes.len().hash(&mut hasher);
+        }
+        let key_hash = hasher.finish();
+
+        let needs_raster = match self.mask_cache.get(&clip.id) {
+            Some((h, _, w, h_dim)) => *h != key_hash || *w != mask_w || *h_dim != mask_h,
+            None => true,
+        };
+        if needs_raster {
+            let rgba =
+                trim_core::mask::rasterize_masks_rgba(&clip.masks, mask_w, mask_h, clip_time);
+            self.mask_cache
+                .insert(clip.id.clone(), (key_hash, rgba, mask_w, mask_h));
+        }
+
+        if let Some((_, rgba, w, h)) = self.mask_cache.get(&clip.id) {
+            self.gl.active_texture(glow::TEXTURE3);
+            self.gl
+                .bind_texture(glow::TEXTURE_2D, Some(self.mask_texture));
+            self.gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
+            if self.mask_tex_dims != (*w, *h) {
+                self.gl.tex_image_2d(
+                    glow::TEXTURE_2D,
+                    0,
+                    glow::RGBA8 as i32,
+                    *w as i32,
+                    *h as i32,
+                    0,
+                    glow::RGBA,
+                    glow::UNSIGNED_BYTE,
+                    Some(rgba),
+                );
+                self.mask_tex_dims = (*w, *h);
+            } else {
+                self.gl.tex_sub_image_2d(
+                    glow::TEXTURE_2D,
+                    0,
+                    0,
+                    0,
+                    *w as i32,
+                    *h as i32,
+                    glow::RGBA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelUnpackData::Slice(rgba),
+                );
+            }
+            self.gl.active_texture(glow::TEXTURE0);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Composites all visible `layers` onto the off-screen FBO using the GLSL shader pipeline
-    /// (`GL_SRC_ALPHA`, `GL_ONE_MINUS_SRC_ALPHA`) and returns the bound `egui::TextureId`.
+    /// (supporting ping-pong backdrop reads for blend modes, adjustment layers, and masks)
+    /// and returns the bound `egui::TextureId`.
     pub fn render_layers(
         &mut self,
         project: &Project,
@@ -987,6 +1235,12 @@ impl GpuCompositor {
             if let Some(loc) = self.gl.get_uniform_location(self.program, "u_lut_tex") {
                 self.gl.uniform_1_i32(Some(&loc), 1);
             }
+            if let Some(loc) = self.gl.get_uniform_location(self.program, "u_backdrop_tex") {
+                self.gl.uniform_1_i32(Some(&loc), 2);
+            }
+            if let Some(loc) = self.gl.get_uniform_location(self.program, "u_mask_tex") {
+                self.gl.uniform_1_i32(Some(&loc), 3);
+            }
 
             for layer in layers {
                 let Some(u) = LayerUniforms::from_clip(
@@ -1000,13 +1254,54 @@ impl GpuCompositor {
                     continue;
                 };
 
-                self.upload_layer_frame(&layer.frame);
+                let needs_backdrop = u.blend_mode != 0 || u.is_adjustment_layer;
+                if needs_backdrop {
+                    self.gl
+                        .bind_framebuffer(glow::READ_FRAMEBUFFER, Some(self.fbo));
+                    self.gl
+                        .bind_framebuffer(glow::DRAW_FRAMEBUFFER, Some(self.backdrop_fbo));
+                    self.gl.blit_framebuffer(
+                        0,
+                        0,
+                        self.fbo_width as i32,
+                        self.fbo_height as i32,
+                        0,
+                        0,
+                        self.fbo_width as i32,
+                        self.fbo_height as i32,
+                        glow::COLOR_BUFFER_BIT,
+                        glow::NEAREST,
+                    );
+                    self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.fbo));
+                    self.gl.disable(glow::BLEND);
+                    self.gl.active_texture(glow::TEXTURE2);
+                    self.gl
+                        .bind_texture(glow::TEXTURE_2D, Some(self.backdrop_texture));
+                    self.gl.active_texture(glow::TEXTURE0);
+                } else {
+                    self.gl.enable(glow::BLEND);
+                }
+
+                if !u.is_adjustment_layer {
+                    self.upload_layer_frame(&layer.frame);
+                }
+                let has_mask =
+                    self.prepare_clip_masks(&layer.clip, current_time, logical_w, logical_h);
                 let (custom_lut_enabled, lut_size) =
                     self.prepare_custom_lut(layer.clip.custom_lut_path.as_deref());
 
                 let gl = &self.gl;
                 let prog = self.program;
 
+                if let Some(loc) = gl.get_uniform_location(prog, "u_has_mask") {
+                    gl.uniform_1_i32(Some(&loc), i32::from(has_mask));
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_blend_mode") {
+                    gl.uniform_1_i32(Some(&loc), u.blend_mode);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_is_adjustment_layer") {
+                    gl.uniform_1_i32(Some(&loc), i32::from(u.is_adjustment_layer));
+                }
                 if let Some(loc) = gl.get_uniform_location(prog, "u_canvas_size") {
                     gl.uniform_2_f32(Some(&loc), u.canvas_size[0], u.canvas_size[1]);
                 }
@@ -1088,6 +1383,10 @@ impl GpuCompositor {
 
             self.gl.bind_vertex_array(None);
             self.gl.use_program(None);
+            self.gl.active_texture(glow::TEXTURE3);
+            self.gl.bind_texture(glow::TEXTURE_2D, None);
+            self.gl.active_texture(glow::TEXTURE2);
+            self.gl.bind_texture(glow::TEXTURE_2D, None);
             self.gl.active_texture(glow::TEXTURE1);
             self.gl.bind_texture(glow::TEXTURE_2D, None);
             self.gl.active_texture(glow::TEXTURE0);
@@ -1109,13 +1408,42 @@ impl GpuCompositor {
 
         self.egui_texture_id
     }
+
+    /// Reads back the current composited FBO frame into an RGBA8 buffer for real-time color scopes.
+    pub fn readback_fbo_rgba(&self) -> Option<(Vec<u8>, u32, u32)> {
+        if self.fbo_width == 0 || self.fbo_height == 0 {
+            return None;
+        }
+        let w = self.fbo_width;
+        let h = self.fbo_height;
+        let byte_len = (w as usize) * (h as usize) * 4;
+        let mut buf = vec![0u8; byte_len];
+        unsafe {
+            self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.fbo));
+            self.gl.pixel_store_i32(glow::PACK_ALIGNMENT, 1);
+            self.gl.read_pixels(
+                0,
+                0,
+                w as i32,
+                h as i32,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelPackData::Slice(&mut buf),
+            );
+            self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+        }
+        Some((buf, w, h))
+    }
 }
 
 impl Drop for GpuCompositor {
     fn drop(&mut self) {
         unsafe {
+            self.gl.delete_texture(self.mask_texture);
             self.gl.delete_texture(self.layer_texture);
             self.gl.delete_texture(self.lut_texture);
+            self.gl.delete_framebuffer(self.backdrop_fbo);
+            self.gl.delete_texture(self.backdrop_texture);
             self.gl.delete_framebuffer(self.fbo);
             if !self.fbo_texture_registered {
                 self.gl.delete_texture(self.fbo_texture);

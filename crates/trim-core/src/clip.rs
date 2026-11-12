@@ -481,6 +481,12 @@ pub struct Clip {
     pub crop_bottom: f32,
     #[serde(default)]
     pub nested_sequence_id: Option<String>,
+    #[serde(default)]
+    pub blend_mode: crate::compositing::BlendMode,
+    #[serde(default)]
+    pub clip_kind: crate::compositing::ClipKind,
+    #[serde(default)]
+    pub masks: Vec<crate::mask::Mask>,
 }
 
 fn default_speed() -> f64 {
@@ -537,6 +543,35 @@ impl Default for Clip {
             crop_top: 0.0,
             crop_bottom: 0.0,
             nested_sequence_id: None,
+            blend_mode: crate::compositing::BlendMode::default(),
+            clip_kind: crate::compositing::ClipKind::default(),
+            masks: Vec::new(),
+        }
+    }
+}
+
+impl Clip {
+    /// Returns true if this clip is an adjustment layer (media-less compositing layer).
+    pub fn is_adjustment_layer(&self) -> bool {
+        matches!(
+            self.clip_kind,
+            crate::compositing::ClipKind::AdjustmentLayer
+        )
+    }
+
+    /// Creates a new adjustment layer clip spanning `[timeline_in, timeline_out)`.
+    pub fn new_adjustment_layer(timeline_in: f64, timeline_out: f64) -> Self {
+        let duration = (timeline_out - timeline_in).max(0.0);
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: "Ayar Katmanı".to_string(),
+            media_id: String::new(),
+            timeline_in,
+            timeline_out,
+            source_in: 0.0,
+            source_out: Some(duration),
+            clip_kind: crate::compositing::ClipKind::AdjustmentLayer,
+            ..Self::default()
         }
     }
 }

@@ -1114,4 +1114,70 @@ mod tests {
         );
         assert_eq!(c_undone.name, "m_title");
     }
+
+    #[test]
+    fn test_compositing_commands_undo_redo() {
+        let mut tl = TimelineModel::default();
+        let v1_id = tl.tracks[0].id.clone();
+        let mut stack = UndoStack::new();
+
+        let adj = Clip::new_adjustment_layer(1.0, 6.0);
+        let adj_id = adj.id.clone();
+        stack
+            .push(
+                Box::new(AddAdjustmentLayerCommand::new(&v1_id, adj)),
+                &mut tl,
+            )
+            .unwrap();
+        assert_eq!(tl.tracks[0].clips.len(), 1);
+        assert!(tl.tracks[0]
+            .get_clip_by_id(&adj_id)
+            .unwrap()
+            .is_adjustment_layer());
+
+        // Blend mode change + undo/redo
+        stack
+            .push(
+                Box::new(SetClipBlendModeCommand::new(
+                    &v1_id,
+                    &adj_id,
+                    trim_core::BlendMode::Normal,
+                    trim_core::BlendMode::Overlay,
+                )),
+                &mut tl,
+            )
+            .unwrap();
+        assert_eq!(
+            tl.tracks[0].get_clip_by_id(&adj_id).unwrap().blend_mode,
+            trim_core::BlendMode::Overlay
+        );
+        assert!(stack.undo(&mut tl).unwrap());
+        assert_eq!(
+            tl.tracks[0].get_clip_by_id(&adj_id).unwrap().blend_mode,
+            trim_core::BlendMode::Normal
+        );
+
+        // Masks change + undo/redo
+        let mask = trim_core::Mask::new(trim_core::MaskShape::Ellipse, "Vignette");
+        stack
+            .push(
+                Box::new(SetClipMasksCommand::new(
+                    &v1_id,
+                    &adj_id,
+                    Vec::new(),
+                    vec![mask.clone()],
+                )),
+                &mut tl,
+            )
+            .unwrap();
+        assert_eq!(tl.tracks[0].get_clip_by_id(&adj_id).unwrap().masks.len(), 1);
+        assert!(stack.undo(&mut tl).unwrap());
+        assert_eq!(tl.tracks[0].get_clip_by_id(&adj_id).unwrap().masks.len(), 0);
+
+        // Undo adjustment layer creation
+        assert!(stack.undo(&mut tl).unwrap());
+        assert!(tl.tracks[0].clips.is_empty());
+        assert!(stack.redo(&mut tl).unwrap());
+        assert_eq!(tl.tracks[0].clips.len(), 1);
+    }
 }

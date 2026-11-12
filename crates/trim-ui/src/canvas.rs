@@ -401,6 +401,12 @@ pub fn render_timeline_canvas(
                         (b as f32 * 0.70) as u8,
                     )
                 }
+            } else if clip.is_adjustment_layer() {
+                if is_sel {
+                    Color32::from_rgb(0x9b, 0x3b, 0xd8)
+                } else {
+                    Color32::from_rgb(0x6e, 0x28, 0x9c)
+                }
             } else if clip.text_overlay.is_some() {
                 if is_sel {
                     Color32::from_rgb(0x8a, 0x48, 0xa5)
@@ -428,7 +434,7 @@ pub fn render_timeline_canvas(
 
             let is_offline = match project.get_media(&clip.media_id) {
                 Some(m) => !std::path::Path::new(&m.file_path).exists(),
-                None => clip.text_overlay.is_none(),
+                None => clip.text_overlay.is_none() && !clip.is_adjustment_layer(),
             };
 
             let fill_color = if is_offline {
@@ -880,7 +886,9 @@ pub fn render_timeline_canvas(
                 (None, Some(_)) => " -⧗",
                 (None, None) => "",
             };
-            let title_prefix = if clip.is_nested_sequence() {
+            let title_prefix = if clip.is_adjustment_layer() {
+                "✨ "
+            } else if clip.is_nested_sequence() {
                 "🎞️ "
             } else if clip.text_overlay.is_some() {
                 "🅃 "

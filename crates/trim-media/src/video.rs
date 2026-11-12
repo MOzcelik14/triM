@@ -821,6 +821,14 @@ impl VideoEngine {
         let mut layers = Vec::with_capacity(visible_clips.len());
 
         for (_track, clip) in visible_clips {
+            if clip.is_adjustment_layer() {
+                let sentinel = Arc::new(ImageBuffer::from_pixel(1, 1, Rgba([0, 0, 0, 0])));
+                layers.push(CompositorLayer {
+                    clip: clip.clone(),
+                    frame: sentinel,
+                });
+                continue;
+            }
             let media_item = match project.get_media(&clip.media_id) {
                 Some(m) => m,
                 None => continue,
@@ -1336,6 +1344,11 @@ impl VideoFrameDecoder {
         }
 
         for (_track, clip) in visible_clips {
+            if clip.is_adjustment_layer() {
+                let sentinel = ImageBuffer::from_pixel(1, 1, Rgba([0, 0, 0, 0]));
+                draw_clip_onto_canvas(&mut canvas, clip, &sentinel, timeline_time);
+                continue;
+            }
             let media_item = match project.get_media(&clip.media_id) {
                 Some(m) => m,
                 None => continue,
@@ -1405,6 +1418,68 @@ fn draw_clip_onto_canvas(
         return;
     }
 
+    let color_params = clip.color_grade_params();
+    let custom_lut = clip
+        .custom_lut_path
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .and_then(parse_cube_lut_file);
+    let has_masks = clip.masks.iter().any(|m| m.enabled);
+
+    if clip.is_adjustment_layer() {
+        let cw_u32 = canvas.width();
+        let ch_u32 = canvas.height();
+        if cw_u32 == 0 || ch_u32 == 0 {
+            return;
+        }
+        let has_color_adj = clip.has_color_adjustments();
+        let aspect = cw_u32 as f32 / ch_u32.max(1) as f32;
+        for cy in 0..ch_u32 {
+            let v = (cy as f32 + 0.5) / ch_u32 as f32;
+            for cx in 0..cw_u32 {
+                let u = (cx as f32 + 0.5) / cw_u32 as f32;
+                let (alpha_mask, color_mask) = if has_masks {
+                    trim_core::mask::evaluate_masks_at_uv(&clip.masks, [u, v], clip_time, aspect)
+                } else {
+                    (1.0, 1.0)
+                };
+                let eff_a = (eff_opacity as f32 * alpha_mask).clamp(0.0, 1.0);
+                if eff_a <= 0.0001 {
+                    continue;
+                }
+                let dst_px = canvas.get_pixel_mut(cx, cy);
+                let dr = dst_px[0] as f32;
+                let dg = dst_px[1] as f32;
+                let db = dst_px[2] as f32;
+
+                let [gr, gg, gb] = apply_clip_grading_rgb(
+                    dr,
+                    dg,
+                    db,
+                    clip,
+                    has_color_adj,
+                    &color_params,
+                    custom_lut.as_ref(),
+                );
+                let mr = dr + (gr - dr) * color_mask;
+                let mg = dg + (gg - dg) * color_mask;
+                let mb = db + (gb - db) * color_mask;
+
+                let [out_r, out_g, out_b, _] = trim_core::compositing::blend_rgba_over(
+                    [dr / 255.0, dg / 255.0, db / 255.0, 1.0],
+                    [mr / 255.0, mg / 255.0, mb / 255.0, eff_a],
+                    1.0,
+                    clip.blend_mode,
+                );
+                dst_px[0] = (out_r * 255.0).round().clamp(0.0, 255.0) as u8;
+                dst_px[1] = (out_g * 255.0).round().clamp(0.0, 255.0) as u8;
+                dst_px[2] = (out_b * 255.0).round().clamp(0.0, 255.0) as u8;
+                dst_px[3] = 255;
+            }
+        }
+        return;
+    }
+
     let cw = canvas.width() as f64;
     let ch = canvas.height() as f64;
     let fw = frame.width() as f64;
@@ -1461,6 +1536,8 @@ fn draw_clip_onto_canvas(
 
     let has_chromakey = clip.chromakey.as_ref().is_some_and(|ck| ck.enabled);
     let has_color_adj = clip.has_color_adjustments() || has_chromakey;
+    let has_clip_grading = clip.has_color_adjustments();
+    let has_blend_or_mask = clip.blend_mode != trim_core::BlendMode::Normal || has_masks;
     let has_special_trans =
         has_dip_white || wipe_left_active || wipe_right_active || slide_x_offset.abs() > 0.1;
 
@@ -1471,7 +1548,7 @@ fn draw_clip_onto_canvas(
         && (fw - cw).abs() < 0.001
         && (fh - ch).abs() < 0.001;
 
-    if is_fullscreen_fit && !has_color_adj && !has_special_trans {
+    if is_fullscreen_fit && !has_color_adj && !has_special_trans && !has_blend_or_mask {
         let alpha = eff_opacity as f32;
         let src_raw = frame.as_raw();
         let dst_raw: &mut [u8] = canvas.as_mut();
@@ -1490,13 +1567,6 @@ fn draw_clip_onto_canvas(
         }
         return;
     }
-
-    let color_params = clip.color_grade_params();
-    let custom_lut = clip
-        .custom_lut_path
-        .as_deref()
-        .filter(|s| !s.trim().is_empty())
-        .and_then(parse_cube_lut_file);
 
     for y in 0..final_h {
         let cy = final_y + y;
@@ -1555,52 +1625,31 @@ fn draw_clip_onto_canvas(
                 }
             }
 
-            if let Some(cw) = &clip.color_wheels {
-                let luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
-                let shadow_w = (1.0 - luma * 2.0).clamp(0.0, 1.0);
-                let hi_w = ((luma - 0.5) * 2.0).clamp(0.0, 1.0);
-                let mid_w = (1.0 - shadow_w - hi_w).clamp(0.0, 1.0);
-
-                let gamma_r = (cw.gamma[0] + cw.luminance[1]).max(0.0);
-                let gamma_g = (cw.gamma[1] + cw.luminance[1]).max(0.0);
-                let gamma_b = (cw.gamma[2] + cw.luminance[1]).max(0.0);
-
-                let gain_r = (cw.gain[0] + cw.luminance[2]).max(0.0);
-                let gain_g = (cw.gain[1] + cw.luminance[2]).max(0.0);
-                let gain_b = (cw.gain[2] + cw.luminance[2]).max(0.0);
-
-                r += (cw.lift[0] + cw.luminance[0]) * 128.0 * shadow_w;
-                g += (cw.lift[1] + cw.luminance[0]) * 128.0 * shadow_w;
-                b += (cw.lift[2] + cw.luminance[0]) * 128.0 * shadow_w;
-
-                r *= 1.0 + (gamma_r - 1.0) * mid_w;
-                g *= 1.0 + (gamma_g - 1.0) * mid_w;
-                b *= 1.0 + (gamma_b - 1.0) * mid_w;
-
-                r *= 1.0 + (gain_r - 1.0) * hi_w;
-                g *= 1.0 + (gain_g - 1.0) * hi_w;
-                b *= 1.0 + (gain_b - 1.0) * hi_w;
-
-                r = r.clamp(0.0, 255.0);
-                g = g.clamp(0.0, 255.0);
-                b = b.clamp(0.0, 255.0);
+            let (alpha_mask, color_mask) = if has_masks {
+                let u = (cx as f32 + 0.5) / cw as f32;
+                let v = (cy as f32 + 0.5) / ch as f32;
+                let aspect = (cw / ch.max(1.0)) as f32;
+                trim_core::mask::evaluate_masks_at_uv(&clip.masks, [u, v], clip_time, aspect)
+            } else {
+                (1.0, 1.0)
+            };
+            a *= alpha_mask;
+            if a <= 0.0001 {
+                continue;
             }
 
-            // Color adjustments (White Balance + Brightness/Contrast/Gamma + Saturation + Looks + 3D LUT)
-            if has_color_adj {
-                let [mut nr, mut ng, mut nb] = trim_core::color::apply_color_grade_normalized(
-                    r / 255.0,
-                    g / 255.0,
-                    b / 255.0,
-                    &color_params,
-                );
-                if let Some(ref lut) = custom_lut {
-                    [nr, ng, nb] = lut.sample(nr, ng, nb);
-                }
-                r = (nr * 255.0).clamp(0.0, 255.0);
-                g = (ng * 255.0).clamp(0.0, 255.0);
-                b = (nb * 255.0).clamp(0.0, 255.0);
-            }
+            let [gr, gg, gb] = apply_clip_grading_rgb(
+                r,
+                g,
+                b,
+                clip,
+                has_clip_grading,
+                &color_params,
+                custom_lut.as_ref(),
+            );
+            r += (gr - r) * color_mask;
+            g += (gg - g) * color_mask;
+            b += (gb - b) * color_mask;
 
             // Dip to white
             if dip_white_amt > 0.0 {
@@ -1609,18 +1658,84 @@ fn draw_clip_onto_canvas(
                 b = b + (255.0 - b) * dip_white_amt;
             }
 
-            // Alpha composite over canvas
+            // Blend & composite over canvas
             let dst_px = canvas.get_pixel_mut(cx as u32, cy as u32);
-            let dr = dst_px[0] as f32;
-            let dg = dst_px[1] as f32;
-            let db = dst_px[2] as f32;
+            let dr = dst_px[0] as f32 / 255.0;
+            let dg = dst_px[1] as f32 / 255.0;
+            let db = dst_px[2] as f32 / 255.0;
 
-            dst_px[0] = (r * a + dr * (1.0 - a)).round() as u8;
-            dst_px[1] = (g * a + dg * (1.0 - a)).round() as u8;
-            dst_px[2] = (b * a + db * (1.0 - a)).round() as u8;
+            let [out_r, out_g, out_b, _] = trim_core::compositing::blend_rgba_over(
+                [dr, dg, db, 1.0],
+                [r / 255.0, g / 255.0, b / 255.0, a],
+                1.0,
+                clip.blend_mode,
+            );
+            dst_px[0] = (out_r * 255.0).round().clamp(0.0, 255.0) as u8;
+            dst_px[1] = (out_g * 255.0).round().clamp(0.0, 255.0) as u8;
+            dst_px[2] = (out_b * 255.0).round().clamp(0.0, 255.0) as u8;
             dst_px[3] = 255;
         }
     }
+}
+
+/// Applies clip color wheels, color grade parameters, and optional 3D LUT to an RGB pixel in `[0.0, 255.0]`.
+#[inline]
+fn apply_clip_grading_rgb(
+    mut r: f32,
+    mut g: f32,
+    mut b: f32,
+    clip: &Clip,
+    has_color_adj: bool,
+    color_params: &trim_core::ColorGradeParams,
+    custom_lut: Option<&CubeLut3D>,
+) -> [f32; 3] {
+    if let Some(cw) = &clip.color_wheels {
+        let luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+        let shadow_w = (1.0 - luma * 2.0).clamp(0.0, 1.0);
+        let hi_w = ((luma - 0.5) * 2.0).clamp(0.0, 1.0);
+        let mid_w = (1.0 - shadow_w - hi_w).clamp(0.0, 1.0);
+
+        let gamma_r = (cw.gamma[0] + cw.luminance[1]).max(0.0);
+        let gamma_g = (cw.gamma[1] + cw.luminance[1]).max(0.0);
+        let gamma_b = (cw.gamma[2] + cw.luminance[1]).max(0.0);
+
+        let gain_r = (cw.gain[0] + cw.luminance[2]).max(0.0);
+        let gain_g = (cw.gain[1] + cw.luminance[2]).max(0.0);
+        let gain_b = (cw.gain[2] + cw.luminance[2]).max(0.0);
+
+        r += (cw.lift[0] + cw.luminance[0]) * 128.0 * shadow_w;
+        g += (cw.lift[1] + cw.luminance[0]) * 128.0 * shadow_w;
+        b += (cw.lift[2] + cw.luminance[0]) * 128.0 * shadow_w;
+
+        r *= 1.0 + (gamma_r - 1.0) * mid_w;
+        g *= 1.0 + (gamma_g - 1.0) * mid_w;
+        b *= 1.0 + (gamma_b - 1.0) * mid_w;
+
+        r *= 1.0 + (gain_r - 1.0) * hi_w;
+        g *= 1.0 + (gain_g - 1.0) * hi_w;
+        b *= 1.0 + (gain_b - 1.0) * hi_w;
+
+        r = r.clamp(0.0, 255.0);
+        g = g.clamp(0.0, 255.0);
+        b = b.clamp(0.0, 255.0);
+    }
+
+    if has_color_adj {
+        let [mut nr, mut ng, mut nb] = trim_core::color::apply_color_grade_normalized(
+            r / 255.0,
+            g / 255.0,
+            b / 255.0,
+            color_params,
+        );
+        if let Some(lut) = custom_lut {
+            [nr, ng, nb] = lut.sample(nr, ng, nb);
+        }
+        r = (nr * 255.0).clamp(0.0, 255.0);
+        g = (ng * 255.0).clamp(0.0, 255.0);
+        b = (nb * 255.0).clamp(0.0, 255.0);
+    }
+
+    [r, g, b]
 }
 
 /// Generates a synthetic title canvas image and saves to ~/.config/trim/titles/.
@@ -2193,6 +2308,68 @@ LUT_3D_SIZE 2
         assert!(
             temp > 10.0,
             "Blue-cast image should produce warm positive temperature compensation, got {temp}"
+        );
+    }
+
+    #[test]
+    fn test_cpu_blend_modes_masks_and_adjustment_layer() {
+        use trim_core::{BlendMode, Clip, Mask, MaskShape, MaskTarget};
+
+        // 1. BlendMode::Multiply over mid-gray (128) with red (255, 0, 0) => (128, 0, 0)
+        let mut canvas = ImageBuffer::from_pixel(16, 16, Rgba([128, 128, 128, 255]));
+        let top_frame = ImageBuffer::from_pixel(16, 16, Rgba([255, 0, 0, 255]));
+        let mut top_clip = Clip::new("m_top", 0.0, 5.0);
+        top_clip.blend_mode = BlendMode::Multiply;
+        draw_clip_onto_canvas(&mut canvas, &top_clip, &top_frame, 1.0);
+        let px = canvas.get_pixel(8, 8);
+        assert!(
+            px[0] > 120 && px[1] < 5 && px[2] < 5,
+            "Multiply failed: {:?}",
+            px
+        );
+
+        // 2. Rectangle ClipAlpha mask on top clip keeps corners untouched
+        let mut canvas_mask = ImageBuffer::from_pixel(32, 32, Rgba([10, 20, 30, 255]));
+        let white_frame = ImageBuffer::from_pixel(32, 32, Rgba([250, 250, 250, 255]));
+        let mut masked_clip = Clip::new("m_mask", 0.0, 5.0);
+        let mut rect_mask = Mask::new(MaskShape::Rectangle, "Center Box");
+        rect_mask.scale_x = 0.4;
+        rect_mask.scale_y = 0.4;
+        rect_mask.feather = 0.0;
+        rect_mask.target = MaskTarget::ClipAlpha;
+        masked_clip.masks.push(rect_mask);
+        draw_clip_onto_canvas(&mut canvas_mask, &masked_clip, &white_frame, 1.0);
+        assert!(
+            canvas_mask.get_pixel(16, 16)[0] > 240,
+            "Center inside mask should be white"
+        );
+        assert_eq!(
+            canvas_mask.get_pixel(1, 1)[0],
+            10,
+            "Corner outside mask should remain backdrop"
+        );
+
+        // 3. Adjustment Layer with brightness boost + ColorAndEffects mask affects only center
+        let mut canvas_adj = ImageBuffer::from_pixel(32, 32, Rgba([100, 100, 100, 255]));
+        let mut adj = Clip::new_adjustment_layer(0.0, 5.0);
+        adj.brightness = 0.4;
+        let mut adj_mask = Mask::new(MaskShape::Rectangle, "Grade Box");
+        adj_mask.scale_x = 0.4;
+        adj_mask.scale_y = 0.4;
+        adj_mask.feather = 0.0;
+        adj_mask.target = MaskTarget::ColorAndEffects;
+        adj.masks.push(adj_mask);
+        let sentinel = ImageBuffer::from_pixel(1, 1, Rgba([0, 0, 0, 0]));
+        draw_clip_onto_canvas(&mut canvas_adj, &adj, &sentinel, 1.0);
+        assert!(
+            canvas_adj.get_pixel(16, 16)[0] > 170,
+            "Adjustment layer center should be brightened: {:?}",
+            canvas_adj.get_pixel(16, 16)
+        );
+        assert_eq!(
+            canvas_adj.get_pixel(1, 1)[0],
+            100,
+            "Adjustment layer outside ColorAndEffects mask should keep backdrop"
         );
     }
 }

@@ -59,6 +59,18 @@ pub enum InspectorAction {
         old_crop: (f32, f32, f32, f32),
         new_crop: (f32, f32, f32, f32),
     },
+    SetBlendMode {
+        track_id: String,
+        clip_id: String,
+        old_blend_mode: trim_core::BlendMode,
+        new_blend_mode: trim_core::BlendMode,
+    },
+    SetMasks {
+        track_id: String,
+        clip_id: String,
+        old_masks: Vec<trim_core::Mask>,
+        new_masks: Vec<trim_core::Mask>,
+    },
 }
 
 const CARD_BG: Color32 = Color32::from_rgb(0x13, 0x15, 0x1c);
@@ -173,13 +185,30 @@ pub fn render_inspector_panel(
                 ui.add_space(6.0);
 
                 render_transitions_card(ui, clip, &mut action);
+            } else if clip.is_adjustment_layer() {
+                render_compositing_card(ui, &track_id, clip, clip_time, &mut action);
+                ui.add_space(6.0);
+
+                render_masks_card(ui, &track_id, clip, clip_time, &mut action);
+                ui.add_space(6.0);
+
+                render_color_card(ui, &track_id, clip, &mut action);
+                ui.add_space(6.0);
             } else {
-                // 2. Video Dönüşümü & Anahtar Kareler
+                // 2. Karışım Modu & Compositing
+                render_compositing_card(ui, &track_id, clip, clip_time, &mut action);
+                ui.add_space(6.0);
+
+                // 2a. Video Dönüşümü & Anahtar Kareler
                 render_transform_card(ui, &track_id, clip, clip_time, &mut action);
                 ui.add_space(6.0);
 
                 // 2b. Video Kırpma (Crop)
                 render_crop_card(ui, &track_id, clip, &mut action);
+                ui.add_space(6.0);
+
+                // 2c. Maskeler (Masks)
+                render_masks_card(ui, &track_id, clip, clip_time, &mut action);
                 ui.add_space(6.0);
 
                 // 3. Renk, LUT & Chroma Key
@@ -2678,6 +2707,424 @@ fn render_titler_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
             }
         },
     );
+}
+
+fn render_compositing_card(
+    ui: &mut Ui,
+    track_id: &str,
+    clip: &mut Clip,
+    clip_time: f64,
+    action: &mut Option<InspectorAction>,
+) {
+    let accent = if clip.is_adjustment_layer() {
+        Color32::from_rgb(0xb8, 0x58, 0xff)
+    } else {
+        ACCENT_BLUE
+    };
+    let title = if clip.is_adjustment_layer() {
+        "Ayar Katmanı & Karışım"
+    } else {
+        "Karışım Modu (Blend)"
+    };
+    let clip_id = clip.id.clone();
+    let is_adj = clip.is_adjustment_layer();
+
+    inspector_card(
+        ui,
+        "✨",
+        title,
+        accent,
+        move |ui| {
+            if is_adj {
+                render_badge(ui, "AYAR KATMANI", Color32::from_rgb(0xb8, 0x58, 0xff));
+            }
+        },
+        |ui| {
+            ui.horizontal(|ui| {
+                ui.add_sized(
+                    [LABEL_COL_W, 20.0],
+                    egui::Label::new(RichText::new("Karışım Modu").size(11.5).color(LABEL_COLOR)),
+                );
+                let mut selected = clip.blend_mode;
+                egui::ComboBox::from_id_salt(format!("blend_mode_{}", clip.id))
+                    .selected_text(selected.label())
+                    .width(ui.available_width().max(110.0))
+                    .show_ui(ui, |ui| {
+                        for mode in trim_core::BlendMode::ALL {
+                            if ui
+                                .selectable_value(&mut selected, *mode, mode.label())
+                                .clicked()
+                                && selected != clip.blend_mode
+                            {
+                                let old_blend_mode = clip.blend_mode;
+                                clip.blend_mode = selected;
+                                *action = Some(InspectorAction::SetBlendMode {
+                                    track_id: track_id.to_string(),
+                                    clip_id: clip_id.clone(),
+                                    old_blend_mode,
+                                    new_blend_mode: selected,
+                                });
+                            }
+                        }
+                    });
+            });
+
+            if clip.is_adjustment_layer() {
+                ui.add_space(4.0);
+                let op_drag_id = ui.make_persistent_id(format!("adj_op_drag_{}", clip.id));
+                let orig_op: Option<(f64, f64, f64, f64, f64)> =
+                    ui.data_mut(|d| d.get_temp(op_drag_id));
+                let cur_op = clip.get_property_at_time("opacity", clip_time);
+                let mut op_val = cur_op;
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        [LABEL_COL_W, 20.0],
+                        egui::Label::new(RichText::new("Opaklık").size(11.5).color(LABEL_COLOR)),
+                    );
+                    let resp = ui.add(
+                        egui::Slider::new(&mut op_val, 0.0..=1.0)
+                            .fixed_decimals(2)
+                            .show_value(true),
+                    );
+                    if resp.drag_started() {
+                        ui.data_mut(|d| {
+                            d.insert_temp(
+                                op_drag_id,
+                                (
+                                    clip.pos_x,
+                                    clip.pos_y,
+                                    clip.scale,
+                                    clip.rotation,
+                                    clip.opacity,
+                                ),
+                            )
+                        });
+                    }
+                    if resp.changed() {
+                        clip.opacity = op_val;
+                        sync_kf_value(clip, "opacity", clip_time, op_val);
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                    if resp.drag_stopped() {
+                        if let Some(old_t) = orig_op {
+                            let new_t = (
+                                clip.pos_x,
+                                clip.pos_y,
+                                clip.scale,
+                                clip.rotation,
+                                clip.opacity,
+                            );
+                            *action = Some(InspectorAction::SetTransform {
+                                track_id: track_id.to_string(),
+                                clip_id: clip_id.clone(),
+                                old_transform: old_t,
+                                new_transform: new_t,
+                            });
+                            ui.data_mut(|d| d.remove::<(f64, f64, f64, f64, f64)>(op_drag_id));
+                        }
+                    }
+                    render_kf_btn(ui, clip, "opacity", clip_time, op_val, action);
+                });
+            }
+        },
+    );
+}
+
+fn render_masks_card(
+    ui: &mut Ui,
+    track_id: &str,
+    clip: &mut Clip,
+    clip_time: f64,
+    action: &mut Option<InspectorAction>,
+) {
+    let clip_id = clip.id.clone();
+    let count_txt = format!("{} maske", clip.masks.len());
+    inspector_card(
+        ui,
+        "🎭",
+        "Maskeler",
+        ACCENT_TEAL,
+        move |ui| {
+            ui.label(RichText::new(count_txt).size(10.5).color(LABEL_COLOR));
+        },
+        |ui| {
+            ui.horizontal_wrapped(|ui| {
+                for (lbl, shape, name_base) in [
+                    (
+                        "+ Dikdörtgen",
+                        trim_core::MaskShape::Rectangle,
+                        "Dikdörtgen",
+                    ),
+                    ("+ Elips", trim_core::MaskShape::Ellipse, "Elips"),
+                    ("+ Bezier", trim_core::MaskShape::Bezier, "Bezier"),
+                ] {
+                    if ui
+                        .add(
+                            Button::new(RichText::new(lbl).size(10.5).color(Color32::WHITE))
+                                .fill(Color32::from_rgb(0x20, 0x26, 0x34))
+                                .rounding(Rounding::same(4.0)),
+                        )
+                        .clicked()
+                    {
+                        let old_masks = clip.masks.clone();
+                        let idx = clip.masks.len() + 1;
+                        let new_mask = trim_core::Mask::new(shape, format!("{name_base} {idx}"));
+                        clip.masks.push(new_mask);
+                        *action = Some(InspectorAction::SetMasks {
+                            track_id: track_id.to_string(),
+                            clip_id: clip_id.clone(),
+                            old_masks,
+                            new_masks: clip.masks.clone(),
+                        });
+                    }
+                }
+            });
+
+            if clip.masks.is_empty() {
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("Monitörden veya yukarıdan bir maske ekleyin.")
+                        .size(11.0)
+                        .color(LABEL_COLOR),
+                );
+                return;
+            }
+
+            let mut remove_idx: Option<usize> = None;
+            let mut commit_masks_snapshot: Option<Vec<trim_core::Mask>> = None;
+            let drag_id = ui.make_persistent_id(format!("mask_drag_{}", clip.id));
+            let orig_drag: Option<Vec<trim_core::Mask>> = ui.data_mut(|d| d.get_temp(drag_id));
+
+            for idx in 0..clip.masks.len() {
+                ui.add_space(6.0);
+                let mask_id = clip.masks[idx].id.clone();
+                let pre_edit = clip.masks.clone();
+
+                Frame::none()
+                    .fill(SUBCARD_BG)
+                    .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x20, 0x24, 0x30)))
+                    .rounding(Rounding::same(6.0))
+                    .inner_margin(Margin::symmetric(8.0, 6.0))
+                    .show(ui, |ui| {
+                        let m = &mut clip.masks[idx];
+                        ui.horizontal(|ui| {
+                            if ui.checkbox(&mut m.enabled, "").changed() {
+                                commit_masks_snapshot = Some(pre_edit.clone());
+                            }
+                            ui.label(
+                                RichText::new(format!("{} ({})", m.name, m.shape.label()))
+                                    .size(11.5)
+                                    .strong()
+                                    .color(Color32::WHITE),
+                            );
+                            ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui
+                                    .add(
+                                        Button::new(
+                                            RichText::new("🗑").size(10.5).color(Color32::WHITE),
+                                        )
+                                        .fill(Color32::from_rgb(0x3a, 0x20, 0x28))
+                                        .rounding(Rounding::same(4.0)),
+                                    )
+                                    .on_hover_text("Maskeyi Sil")
+                                    .clicked()
+                                {
+                                    remove_idx = Some(idx);
+                                }
+                            });
+                        });
+
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.add_sized(
+                                [62.0, 20.0],
+                                egui::Label::new(
+                                    RichText::new("Hedef").size(11.0).color(LABEL_COLOR),
+                                ),
+                            );
+                            let mut tgt = m.target;
+                            egui::ComboBox::from_id_salt(format!(
+                                "mask_tgt_{}_{}",
+                                clip_id, mask_id
+                            ))
+                            .selected_text(tgt.label())
+                            .width(120.0)
+                            .show_ui(ui, |ui| {
+                                for opt in [
+                                    trim_core::MaskTarget::ClipAlpha,
+                                    trim_core::MaskTarget::ColorAndEffects,
+                                ] {
+                                    if ui.selectable_value(&mut tgt, opt, opt.label()).clicked()
+                                        && tgt != m.target
+                                    {
+                                        m.target = tgt;
+                                        commit_masks_snapshot = Some(pre_edit.clone());
+                                    }
+                                }
+                            });
+                            if ui.checkbox(&mut m.invert, "Ters").changed() {
+                                commit_masks_snapshot = Some(pre_edit.clone());
+                            }
+                        });
+
+                        let eval = m.eval_at(clip_time);
+                        let mut p_x = eval.pos_x as f64;
+                        let mut p_y = eval.pos_y as f64;
+                        let mut s_x = eval.scale_x as f64;
+                        let mut s_y = eval.scale_y as f64;
+                        let mut rot = eval.rotation_deg as f64;
+                        let mut fth = eval.feather as f64;
+                        let mut exp = eval.expansion as f64;
+                        let mut op = eval.opacity as f64;
+
+                        let mut drag_started = false;
+                        let mut drag_stopped = false;
+                        let mut any_changed = false;
+
+                        let mut slider_row =
+                            |ui: &mut Ui,
+                             label: &str,
+                             val: &mut f64,
+                             range: std::ops::RangeInclusive<f64>,
+                             prop: &str,
+                             m_ref: &mut trim_core::Mask| {
+                                ui.horizontal(|ui| {
+                                    ui.add_sized(
+                                        [68.0, 18.0],
+                                        egui::Label::new(
+                                            RichText::new(label).size(10.5).color(LABEL_COLOR),
+                                        ),
+                                    );
+                                    let resp = ui.add(
+                                        egui::Slider::new(val, range)
+                                            .fixed_decimals(2)
+                                            .show_value(true),
+                                    );
+                                    if resp.drag_started() {
+                                        drag_started = true;
+                                    }
+                                    if resp.changed() {
+                                        any_changed = true;
+                                        match prop {
+                                            "pos_x" => m_ref.pos_x = *val,
+                                            "pos_y" => m_ref.pos_y = *val,
+                                            "scale_x" => m_ref.scale_x = *val,
+                                            "scale_y" => m_ref.scale_y = *val,
+                                            "rotation" => m_ref.rotation = *val,
+                                            "feather" => m_ref.feather = *val,
+                                            "expansion" => m_ref.expansion = *val,
+                                            "opacity" => m_ref.opacity = *val,
+                                            _ => {}
+                                        }
+                                        if let Some(kfs) = m_ref.keyframes.get_mut(prop) {
+                                            if let Some(kf) = kfs
+                                                .iter_mut()
+                                                .find(|k| (k.time - clip_time).abs() <= 0.05)
+                                            {
+                                                kf.value = *val;
+                                            }
+                                        }
+                                    }
+                                    if resp.drag_stopped() {
+                                        drag_stopped = true;
+                                    }
+                                    if render_mask_kf_btn(ui, m_ref, prop, clip_time, *val) {
+                                        commit_masks_snapshot = Some(pre_edit.clone());
+                                    }
+                                });
+                            };
+
+                        slider_row(ui, "Konum X", &mut p_x, 0.0..=1.0, "pos_x", m);
+                        slider_row(ui, "Konum Y", &mut p_y, 0.0..=1.0, "pos_y", m);
+                        slider_row(ui, "Genişlik", &mut s_x, 0.02..=2.0, "scale_x", m);
+                        slider_row(ui, "Yükseklik", &mut s_y, 0.02..=2.0, "scale_y", m);
+                        slider_row(ui, "Döndürme", &mut rot, -180.0..=180.0, "rotation", m);
+                        slider_row(ui, "Yumuşaklık", &mut fth, 0.0..=0.5, "feather", m);
+                        slider_row(ui, "Genişletme", &mut exp, -0.5..=0.5, "expansion", m);
+                        slider_row(ui, "Opaklık", &mut op, 0.0..=1.0, "opacity", m);
+
+                        if drag_started {
+                            ui.data_mut(|d| d.insert_temp(drag_id, pre_edit.clone()));
+                        }
+                        if any_changed {
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                        if drag_stopped {
+                            if let Some(ref old_m) = orig_drag {
+                                commit_masks_snapshot = Some(old_m.clone());
+                                ui.data_mut(|d| d.remove::<Vec<trim_core::Mask>>(drag_id));
+                            }
+                        }
+                    });
+            }
+
+            if let Some(rm_i) = remove_idx {
+                let old_masks = clip.masks.clone();
+                clip.masks.remove(rm_i);
+                *action = Some(InspectorAction::SetMasks {
+                    track_id: track_id.to_string(),
+                    clip_id,
+                    old_masks,
+                    new_masks: clip.masks.clone(),
+                });
+            } else if let Some(old_masks) = commit_masks_snapshot {
+                *action = Some(InspectorAction::SetMasks {
+                    track_id: track_id.to_string(),
+                    clip_id,
+                    old_masks,
+                    new_masks: clip.masks.clone(),
+                });
+            }
+        },
+    );
+}
+
+fn render_mask_kf_btn(
+    ui: &mut Ui,
+    mask: &mut trim_core::Mask,
+    prop: &str,
+    clip_time: f64,
+    val: f64,
+) -> bool {
+    let has_kf = mask
+        .keyframes
+        .get(prop)
+        .is_some_and(|list| list.iter().any(|k| (k.time - clip_time).abs() <= 0.05));
+    let (btn_txt, btn_col, bg_col) = if has_kf {
+        ("◆", Color32::WHITE, ACCENT_AMBER)
+    } else {
+        (
+            "◇",
+            Color32::from_rgb(0x88, 0x90, 0xa4),
+            Color32::from_rgb(0x1d, 0x20, 0x2b),
+        )
+    };
+    if ui
+        .add(
+            Button::new(RichText::new(btn_txt).size(10.0).strong().color(btn_col))
+                .fill(bg_col)
+                .rounding(Rounding::same(4.0))
+                .min_size(Vec2::new(20.0, 18.0)),
+        )
+        .on_hover_text("Maske Anahtar Karesi (Keyframe)")
+        .clicked()
+    {
+        if has_kf {
+            if let Some(list) = mask.keyframes.get_mut(prop) {
+                list.retain(|k| (k.time - clip_time).abs() > 0.05);
+            }
+        } else {
+            let list = mask.keyframes.entry(prop.to_string()).or_default();
+            list.push(trim_core::keyframe::Keyframe {
+                time: clip_time,
+                value: val,
+                interpolation: Interpolation::Linear,
+            });
+            list.sort_by(|a, b| a.time.total_cmp(&b.time));
+        }
+        return true;
+    }
+    false
 }
 
 fn render_kf_btn(

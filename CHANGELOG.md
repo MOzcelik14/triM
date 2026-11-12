@@ -2,6 +2,23 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [1.6.0] - 2026-11-12
+
+### Added
+- **Professional Color Scopes (`ScopesPanel`)**:
+  - Real-time RGBA frame analysis (`compute_scopes_rgba`) supporting **RGB Parade**, **Luma Waveform**, **Vectorscope** (with skin-tone line and 75% color targets), **RGB & Luma Histogram**, **False Color** (IRE exposure mapping), and **Zebra Exposure** overlays.
+  - Dedicated toggleable Scopes panel updated dynamically from GPU composited readback or CPU fallback frames as playback or clip selection changes.
+- **Mask System (`Rectangle`, `Ellipse`, `Bezier`)**:
+  - Full mask model (`Mask`, `MaskShape`, `MaskTarget`, `MaskVertex`) with position, scale, rotation, feather, expansion, opacity, invert, multi-mask compositing, and per-property keyframe interpolation.
+  - Interactive Program Monitor handles for dragging center, corner scale, rotation, and Bezier vertices/tangents, plus Inspector mask controls and keyframe diamonds (`SetClipMasksCommand`).
+- **Adjustment Layers**:
+  - Media-less `ClipKind::AdjustmentLayer` clips that apply color grading, masks, opacity, and blend modes to underlying composited video tracks (`AddAdjustmentLayerCommand`), with distinct purple/magenta timeline styling and `"✨ Ayar Katmanı Ekle"` in the `+ Kanal` menu.
+- **Blend Modes & Full Pipeline Parity**:
+  - Added 11 blend modes (`Normal`, `Multiply`, `Screen`, `Overlay`, `SoftLight`, `HardLight`, `Add`, `Subtract`, `Difference`, `Darken`, `Lighten`) with `SetClipBlendModeCommand` and full Undo/Redo support.
+  - Unified parity across the OpenGL GPU compositor (`backdrop_fbo` blit + mask textures), CPU software fallback renderer, and FFmpeg export filtergraph (`maskedmerge`, `blend`, `overlay`), with `#[serde(default)]` backward compatibility for existing `.trim` projects.
+
+---
+
 ## [1.5.1] - 2026-11-12
 
 ### Fixed

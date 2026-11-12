@@ -56,6 +56,17 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.6.0" date="2026-11-12">
+      <description>
+        <p>triM. v1.6.0 - Profesyonel Renk Analizi (Color Scopes), Maske Sistemi, Ayar Katmanları ve Karışım Modları:</p>
+        <ul>
+          <li>Profesyonel Renk Analiz Araçları (Color Scopes): Gerçek kare verisinden hesaplanan RGB Parade, Luma Waveform, Vectorscope, RGB/Luma Histogram, False Color ve Zebra Exposure araçlarıyla ayrı Scopes paneli.</li>
+          <li>Maske Sistemi: Dikdörtgen, Elips ve Bezier serbest maskeler; konum, ölçek, döndürme, yumuşatma (feather), genişleme, ters çevirme, çoklu maske, keyframe ve monitör üzerinde etkileşimli tutamaçlar.</li>
+          <li>Ayar Katmanları (Adjustment Layers): Altındaki video kanallarının kompozisyonunu renk düzeltme, maske ve karışım modlarıyla etkileyen medyasız zaman çizelgesi katmanları.</li>
+          <li>Karışım Modları (Blend Modes): Normal, Multiply, Screen, Overlay, Soft Light, Hard Light, Add, Subtract, Difference, Darken ve Lighten modları; GPU, CPU önizleme ve FFmpeg dışa aktarımında tam parite ve Geri/İleri Al (Undo/Redo) desteği.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.5.1" date="2026-11-12">
       <description>
         <p>triM. v1.5.1 - Tam Ekran Önizleme ve GPU Kare Render Düzeltmesi:</p>

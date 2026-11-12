@@ -10,6 +10,7 @@ use crate::inspector::{render_inspector_panel, InspectorAction};
 use crate::media_bin::{render_media_bin, LeftPanelTab, MediaBinAction, MediaFilterType};
 use crate::monitor::{ActiveTextOverlay, MonitorAction, MonitorMode, MonitorWidget};
 use crate::ruler::{render_time_ruler, RulerAction};
+use crate::scopes_panel::ScopesPanelState;
 use crate::shortcuts::ShortcutProfile;
 use crate::theme::*;
 use crate::toolbar::{render_vertical_toolbar, EditTool};
@@ -168,6 +169,7 @@ pub struct TrimApp {
     pub is_monitor_fullscreen: bool,
     pub monitor_text_drag_orig_pos: Option<(String, String, (f32, f32))>,
     pub monitor_text_edit_orig_content: Option<(String, String, String, String)>,
+    pub scopes_panel: ScopesPanelState,
 }
 
 impl Default for TrimApp {
@@ -264,6 +266,7 @@ impl Default for TrimApp {
             is_monitor_fullscreen: false,
             monitor_text_drag_orig_pos: None,
             monitor_text_edit_orig_content: None,
+            scopes_panel: ScopesPanelState::default(),
         }
     }
 }
@@ -533,6 +536,23 @@ impl TrimApp {
                     .map(|txt| txt.content.clone())
             };
 
+        let active_mask_overlay =
+            self.canvas_state
+                .selected_clip_pairs
+                .first()
+                .and_then(|(tr_id, cl_id)| {
+                    self.project
+                        .timeline
+                        .get_track_by_id(tr_id)
+                        .and_then(|t| t.get_clip_by_id(cl_id))
+                        .filter(|c| c.masks.iter().any(|m| m.enabled))
+                        .map(|c| crate::monitor::ActiveMaskOverlay {
+                            clip_id: c.id.clone(),
+                            masks: c.masks.clone(),
+                            clip_time: (self.current_time - c.timeline_in).max(0.0),
+                        })
+                });
+
         let (_p_resp, p_act) = MonitorWidget::new(
             MonitorMode::Program,
             "Sekans 01",
@@ -556,6 +576,7 @@ impl TrimApp {
         .text_overlays(active_text_overlays)
         .active_tool(self.current_edit_tool)
         .inline_text_edit(selected_text_content)
+        .mask_overlay(active_mask_overlay)
         .show(prog_ui);
 
         if let Some(act) = p_act {
@@ -666,6 +687,38 @@ impl TrimApp {
                 }
                 MonitorAction::ToggleFullscreen => {
                     self.is_monitor_fullscreen = !self.is_monitor_fullscreen;
+                }
+                MonitorAction::MasksEdited {
+                    clip_id,
+                    old_masks,
+                    new_masks,
+                    commit_undo,
+                } => {
+                    if let Some((tr_id, _)) = self
+                        .canvas_state
+                        .selected_clip_pairs
+                        .iter()
+                        .find(|(_, cid)| *cid == clip_id)
+                        .cloned()
+                    {
+                        if commit_undo {
+                            let cmd = Box::new(trim_commands::SetClipMasksCommand::new(
+                                tr_id, clip_id, old_masks, new_masks,
+                            ));
+                            let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                        } else if let Some(cl) = self
+                            .project
+                            .timeline
+                            .get_track_by_id_mut(&tr_id)
+                            .and_then(|t| t.get_clip_by_id_mut(&clip_id))
+                        {
+                            cl.masks = new_masks;
+                        }
+                        self.project.mark_dirty();
+                        self.last_rendered_monitor_frame = None;
+                        self.video_engine.last_rendered_frame = None;
+                        self.scopes_panel.mark_dirty();
+                    }
                 }
                 MonitorAction::TextContentEdited(content) => {
                     if self.monitor_text_edit_orig_content.is_none() {
@@ -1604,6 +1657,18 @@ impl eframe::App for TrimApp {
                     {
                         ui.close_menu();
                     }
+                    if ui
+                        .checkbox(
+                            &mut self.scopes_panel.is_open,
+                            "📊 Renk Kapsamları (Scopes)",
+                        )
+                        .clicked()
+                    {
+                        if self.scopes_panel.is_open {
+                            self.scopes_panel.mark_dirty();
+                        }
+                        ui.close_menu();
+                    }
                     if ui.button(lang.t("menu_audio_mixer")).clicked() {
                         self.audio_mixer_dialog.toggle();
                         ui.close_menu();
@@ -2040,6 +2105,7 @@ impl eframe::App for TrimApp {
                     let header_w = TRACK_HEADER_WIDTH;
                     let mut add_video_requested = false;
                     let mut add_audio_requested = false;
+                    let mut add_adjustment_layer_requested = false;
                     let mut reset_heights_requested = false;
 
                     ui.allocate_ui(Vec2::new(header_w, ui.available_height()), |ui| {
@@ -2091,6 +2157,11 @@ impl eframe::App for TrimApp {
                                                 if menu_ui.button("🎵 Ses Kanalı Ekle").clicked()
                                                 {
                                                     add_audio_requested = true;
+                                                    menu_ui.close_menu();
+                                                }
+                                                if menu_ui.button("✨ Ayar Katmanı Ekle").clicked()
+                                                {
+                                                    add_adjustment_layer_requested = true;
                                                     menu_ui.close_menu();
                                                 }
                                                 menu_ui.separator();
@@ -2242,6 +2313,34 @@ impl eframe::App for TrimApp {
                     }
                     if add_audio_requested {
                         self.add_audio_track();
+                    }
+                    if add_adjustment_layer_requested {
+                        let t0 = self.current_time.max(0.0);
+                        let t1 = t0 + 5.0;
+                        let target_track_id = self
+                            .project
+                            .timeline
+                            .get_video_tracks()
+                            .into_iter()
+                            .rev()
+                            .find(|t| !t.locked && !t.clips.iter().any(|c| c.timeline_in < t1 && c.timeline_out > t0))
+                            .map(|t| t.id.clone())
+                            .unwrap_or_else(|| self.project.timeline.add_new_video_track());
+                        let adj = Clip::new_adjustment_layer(t0, t1);
+                        let adj_id = adj.id.clone();
+                        let cmd = Box::new(trim_commands::AddAdjustmentLayerCommand::new(
+                            &target_track_id,
+                            adj,
+                        ));
+                        if self.undo_stack.push(cmd, &mut self.project.timeline).is_ok() {
+                            self.canvas_state.selected_clip_pairs =
+                                vec![(target_track_id, adj_id)];
+                            self.project.mark_dirty();
+                            self.last_rendered_monitor_frame = None;
+                            self.video_engine.last_rendered_frame = None;
+                            self.scopes_panel.mark_dirty();
+                            self.status_message = "✨ Ayar Katmanı eklendi".to_string();
+                        }
                     }
                     if reset_heights_requested {
                         self.canvas_state.track_heights.clear();
@@ -3374,6 +3473,40 @@ impl eframe::App for TrimApp {
                                     self.project.mark_dirty();
                                     self.last_rendered_monitor_frame = None;
                                     self.video_engine.last_rendered_frame = None;
+                                    self.scopes_panel.mark_dirty();
+                                }
+                                InspectorAction::SetBlendMode {
+                                    track_id,
+                                    clip_id,
+                                    old_blend_mode,
+                                    new_blend_mode,
+                                } => {
+                                    let cmd = Box::new(trim_commands::SetClipBlendModeCommand::new(
+                                        track_id,
+                                        clip_id,
+                                        old_blend_mode,
+                                        new_blend_mode,
+                                    ));
+                                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                    self.project.mark_dirty();
+                                    self.last_rendered_monitor_frame = None;
+                                    self.video_engine.last_rendered_frame = None;
+                                    self.scopes_panel.mark_dirty();
+                                }
+                                InspectorAction::SetMasks {
+                                    track_id,
+                                    clip_id,
+                                    old_masks,
+                                    new_masks,
+                                } => {
+                                    let cmd = Box::new(trim_commands::SetClipMasksCommand::new(
+                                        track_id, clip_id, old_masks, new_masks,
+                                    ));
+                                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                    self.project.mark_dirty();
+                                    self.last_rendered_monitor_frame = None;
+                                    self.video_engine.last_rendered_frame = None;
+                                    self.scopes_panel.mark_dirty();
                                 }
                                 InspectorAction::AutoWhiteBalance { track_id, clip_id } => {
                                     let clip_snapshot = self
@@ -3406,6 +3539,7 @@ impl eframe::App for TrimApp {
                                             self.project.mark_dirty();
                                             self.last_rendered_monitor_frame = None;
                                             self.video_engine.last_rendered_frame = None;
+                                            self.scopes_panel.mark_dirty();
                                             self.status_message = format!(
                                                 "✨ Otomatik Beyaz Dengesi uygulandı (Sıcaklık: {:+.1}, Ton: {:+.1})",
                                                 temp, tint
@@ -3422,6 +3556,21 @@ impl eframe::App for TrimApp {
                     }
                 }
             });
+
+        // -------------------------------------------------------------
+        // UPPER-RIGHT: Color Scopes (Independent resizable panel)
+        // -------------------------------------------------------------
+        if self.scopes_panel.is_open {
+            egui::SidePanel::right("scopes_panel")
+                .resizable(true)
+                .default_width(310.0)
+                .min_width(240.0)
+                .max_width(540.0)
+                .frame(egui::Frame::side_top_panel(&ctx.style()).inner_margin(8.0))
+                .show(ctx, |ui| {
+                    self.scopes_panel.show(ui);
+                });
+        }
 
         // -------------------------------------------------------------
         // UPPER-CENTER: Monitors (Fills the remaining upper workspace)

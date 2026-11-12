@@ -186,6 +186,9 @@ impl TrimApp {
                 self.monitor_gpu_texture_id = None;
                 self.monitor_texture = None;
                 self.last_rendered_monitor_frame = None;
+                if self.scopes_panel.is_open {
+                    self.scopes_panel.clear();
+                }
                 return;
             }
             if let Some(tex_id) =
@@ -193,6 +196,15 @@ impl TrimApp {
             {
                 self.monitor_gpu_texture_id = Some(tex_id);
                 self.monitor_texture = None;
+                if self.scopes_panel.is_open
+                    && (self.scopes_panel.needs_refresh
+                        || (self.scopes_panel.last_eval_time - self.current_time).abs() > 1e-4)
+                {
+                    if let Some((rgba, rw, rh)) = compositor.readback_fbo_rgba() {
+                        self.scopes_panel.update_from_rgba(ctx, &rgba, rw, rh);
+                        self.scopes_panel.last_eval_time = self.current_time;
+                    }
+                }
                 return;
             }
             log::warn!("GPU Compositor çalışma zamanı hatası; CPU fallback moduna geçiliyor.");
@@ -207,6 +219,18 @@ impl TrimApp {
         );
 
         if let Some(frame) = frame_opt {
+            if self.scopes_panel.is_open
+                && (self.scopes_panel.needs_refresh
+                    || (self.scopes_panel.last_eval_time - self.current_time).abs() > 1e-4)
+            {
+                self.scopes_panel.update_from_rgba(
+                    ctx,
+                    frame.as_raw(),
+                    frame.width(),
+                    frame.height(),
+                );
+                self.scopes_panel.last_eval_time = self.current_time;
+            }
             if let Some(last) = &self.last_rendered_monitor_frame {
                 if std::sync::Arc::ptr_eq(last, &frame) {
                     return;
@@ -226,6 +250,9 @@ impl TrimApp {
         } else {
             self.last_rendered_monitor_frame = None;
             self.monitor_texture = None;
+            if self.scopes_panel.is_open {
+                self.scopes_panel.clear();
+            }
         }
     }
 
