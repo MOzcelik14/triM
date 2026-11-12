@@ -56,6 +56,15 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.5.1" date="2026-11-12">
+      <description>
+        <p>triM. v1.5.1 - Tam Ekran Önizleme ve GPU Kare Render Düzeltmesi:</p>
+        <ul>
+          <li>Tam ekran önizleme modunda (F11 / çift tıklama) donanım hızlandırmalı GPU karelerinin siyah ekran olarak kalması ve sadece ses çalması sorunu giderildi; GPU ve CPU doku çözümlemesi tam kararlılıkla çalışıyor.</li>
+          <li>Tam ekran önizleme sırasında altyazı, alt bant (lower-third) ve hareketli başlık metin katmanlarının kare üzerine eksiksiz bindirilmesi sağlandı.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.5.0" date="2026-11-12">
       <description>
         <p>triM. v1.5.0 - Gelişmiş Renk Preset Sistemi (White Balance, Kontrast Presetleri ve Sinematik / Film / Yaratıcı Renk Görünümleri):</p>

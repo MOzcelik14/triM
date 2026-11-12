@@ -400,9 +400,13 @@ impl TrimApp {
 
                 let painter = ui.painter();
 
-                if let Some(tex) = &self.monitor_texture {
+                let active_tex_id = self
+                    .monitor_gpu_texture_id
+                    .or_else(|| self.monitor_texture.as_ref().map(|t| t.id()));
+
+                if let Some(tex_id) = active_tex_id {
                     painter.image(
-                        tex.id(),
+                        tex_id,
                         video_rect,
                         Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
                         Color32::WHITE,
@@ -421,6 +425,10 @@ impl TrimApp {
                         Color32::from_rgb(0x80, 0x80, 0x90),
                     );
                 }
+
+                // Render active subtitles / motion title overlays in fullscreen
+                let active_overlays = self.collect_active_text_overlays();
+                crate::monitor::draw_text_overlays_on_rect(painter, video_rect, &active_overlays);
 
                 // Double click on screen toggles fullscreen
                 let screen_resp = ui.interact(

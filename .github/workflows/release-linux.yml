@@ -222,7 +222,7 @@ jobs:
         run: |
           $rawVer = "${{ github.ref_name }}"
           if ([string]::IsNullOrEmpty($rawVer) -or $rawVer -notlike "v*") {
-            $ver = "1.5.0"
+            $ver = "1.5.1"
           } else {
             $ver = $rawVer.TrimStart('v')
           }

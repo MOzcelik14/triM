@@ -437,28 +437,7 @@ impl TrimApp {
         }
     }
 
-    pub fn render_program_monitor(&mut self, prog_ui: &mut egui::Ui) {
-        let has_clips = self
-            .project
-            .timeline
-            .tracks
-            .iter()
-            .any(|t| !t.clips.is_empty());
-        let prog_dur = self.project.timeline.duration();
-        let prog_fps = self.project.timeline.fps;
-        let prog_tc = seconds_to_timecode(self.current_time, prog_fps);
-        let prog_dur_tc = seconds_to_timecode(prog_dur, prog_fps);
-        let prog_aspect =
-            (self.project.timeline.width as f32 / self.project.timeline.height as f32).max(0.1);
-
-        let top_clip = self
-            .project
-            .timeline
-            .get_top_visible_video_clip_at(self.current_time);
-        let prog_label = top_clip
-            .and_then(|(_, c)| self.project.get_media(&c.media_id))
-            .map(|m| format!("{}x{} • {:.0}fps", m.width, m.height, m.fps));
-
+    pub fn collect_active_text_overlays(&self) -> Vec<ActiveTextOverlay> {
         let mut active_text_overlays = Vec::new();
         for track in self.project.timeline.get_video_tracks().iter().rev() {
             if !track.visible {
@@ -513,6 +492,32 @@ impl TrimApp {
                 }
             }
         }
+        active_text_overlays
+    }
+
+    pub fn render_program_monitor(&mut self, prog_ui: &mut egui::Ui) {
+        let has_clips = self
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .any(|t| !t.clips.is_empty());
+        let prog_dur = self.project.timeline.duration();
+        let prog_fps = self.project.timeline.fps;
+        let prog_tc = seconds_to_timecode(self.current_time, prog_fps);
+        let prog_dur_tc = seconds_to_timecode(prog_dur, prog_fps);
+        let prog_aspect =
+            (self.project.timeline.width as f32 / self.project.timeline.height as f32).max(0.1);
+
+        let top_clip = self
+            .project
+            .timeline
+            .get_top_visible_video_clip_at(self.current_time);
+        let prog_label = top_clip
+            .and_then(|(_, c)| self.project.get_media(&c.media_id))
+            .map(|m| format!("{}x{} • {:.0}fps", m.width, m.height, m.fps));
+
+        let active_text_overlays = self.collect_active_text_overlays();
 
         let selected_text_content =
             if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first() {

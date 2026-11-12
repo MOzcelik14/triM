@@ -1,6 +1,6 @@
 # triM.
 
-[![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)](Cargo.toml)
+[![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)](Cargo.toml)
 [![Codename](https://img.shields.io/badge/codename-Karadeniz-teal.svg)](Cargo.toml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey.svg)](#system-requirements)

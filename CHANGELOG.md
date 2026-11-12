@@ -2,6 +2,15 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [1.5.1] - 2026-11-12
+
+### Fixed
+- **Fullscreen Preview GPU Composited Video Rendering**:
+  - Fixed a black screen bug in Fullscreen Preview (`F11` / double-click) where only audio would play while displaying "Önizleme Yükleniyor..." or "Oynatılıyor...". The fullscreen monitor now resolves both hardware GPU composited textures (`monitor_gpu_texture_id`) and CPU fallback textures with identical performance and quality.
+  - Added full overlay rendering support in fullscreen mode for active subtitles, captions, lower-thirds, and motion title graphics during playback and scrubbing.
+
+---
+
 ## [1.5.0] - 2026-11-12
 
 ### Added

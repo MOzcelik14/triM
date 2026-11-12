@@ -1642,6 +1642,46 @@ mod tests {
     }
 
     #[test]
+    fn test_fullscreen_monitor_gpu_texture_and_overlays() {
+        use trim_core::clip::Clip;
+        use trim_core::track::{Track, TrackType};
+
+        let mut app = TrimApp::default();
+        let ctx = egui::Context::default();
+
+        // Simulate GPU composited texture ID active, CPU texture None
+        app.monitor_gpu_texture_id = Some(egui::TextureId::User(42));
+        app.monitor_texture = None;
+        app.is_monitor_fullscreen = true;
+
+        // Render fullscreen monitor frame in egui context
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.render_fullscreen_monitor(ctx);
+        });
+
+        // Add a text overlay to timeline
+        let mut track = Track::new("V1", TrackType::Video);
+        let mut clip = Clip::new("m1", 0.0, 5.0);
+        clip.text_overlay = Some(trim_core::clip::TextOverlay {
+            content: "Tam Ekran Alt Yazı".to_string(),
+            font_size: 48.0,
+            ..Default::default()
+        });
+        track.add_clip(clip);
+        app.project.timeline.add_track(track);
+        app.current_time = 2.0;
+
+        let overlays = app.collect_active_text_overlays();
+        assert_eq!(overlays.len(), 1);
+        assert_eq!(overlays[0].text, "Tam Ekran Alt Yazı");
+
+        // Verify it renders cleanly in fullscreen monitor with overlays
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.render_fullscreen_monitor(ctx);
+        });
+    }
+
+    #[test]
     fn test_title_dialog_font_options_and_action() {
         use crate::dialogs::title_dialog::TitleDialog;
         let mut dlg = TitleDialog::default();
