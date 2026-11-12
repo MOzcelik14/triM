@@ -5,9 +5,11 @@ use egui::{
     Button, Color32, DragValue, Frame, Layout, Margin, RichText, Rounding, ScrollArea, Slider,
     Stroke, TextEdit, Ui, Vec2,
 };
+use trim_commands::commands::ClipColorGradingState;
 use trim_core::clip::{
-    AudioEqPreset, AudioVisualizerConfig, CaptionStyle, ChromaKeyConfig, Clip, ColorLabel,
-    ColorWheelsConfig, LutPreset, MotionTitleStyle, PanZoomPreset, TextOverlay, VisualizerStyle,
+    AudioEqPreset, AudioVisualizerConfig, BrightnessContrastPreset, CaptionStyle, ChromaKeyConfig,
+    Clip, ColorLabel, ColorWheelsConfig, LookCategory, LutPreset, MotionTitleStyle, PanZoomPreset,
+    TextOverlay, VisualizerStyle, WhiteBalancePreset,
 };
 use trim_core::keyframe::Interpolation;
 use trim_core::media::MediaType;
@@ -23,6 +25,16 @@ pub enum InspectorAction {
     ImportSubtitles,
     ExportSubtitles,
     SelectCustomLut(String),
+    AutoWhiteBalance {
+        track_id: String,
+        clip_id: String,
+    },
+    SetColorGrading {
+        track_id: String,
+        clip_id: String,
+        old_state: ClipColorGradingState,
+        new_state: ClipColorGradingState,
+    },
     SetTransform {
         track_id: String,
         clip_id: String,
@@ -1246,24 +1258,132 @@ fn render_speed_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspector
     );
 }
 
+fn draw_look_preset_thumbnail(ui: &mut Ui, rect: egui::Rect, preset: LutPreset) {
+    let painter = ui.painter();
+    painter.rect_filled(
+        rect,
+        Rounding::same(4.0),
+        Color32::from_rgb(0x0b, 0x0d, 0x12),
+    );
+
+    // Render 4 horizontal bands representing sky/cool, skin/warm, foliage/mid, and deep shadow
+    // passed directly through `preset.apply_rgb` for an authentic live look preview.
+    let sample_colors: [[f32; 3]; 4] = [
+        [0.24, 0.56, 0.86], // Sky / Cyan-Blue highlight
+        [0.88, 0.62, 0.44], // Skin / Warm mid-high
+        [0.36, 0.64, 0.38], // Foliage / Green midtone
+        [0.18, 0.20, 0.28], // Shadow
+    ];
+    let band_w = rect.width() / 4.0;
+    for (idx, base) in sample_colors.iter().enumerate() {
+        let [r, g, b] = preset.apply_rgb(base[0], base[1], base[2]);
+        let col = Color32::from_rgb(
+            (r * 255.0).round() as u8,
+            (g * 255.0).round() as u8,
+            (b * 255.0).round() as u8,
+        );
+        let x0 = rect.left() + idx as f32 * band_w;
+        let x1 = if idx == 3 { rect.right() } else { x0 + band_w };
+        let sub =
+            egui::Rect::from_min_max(egui::pos2(x0, rect.top()), egui::pos2(x1, rect.bottom()));
+        let rounding = match idx {
+            0 => Rounding {
+                nw: 4.0,
+                sw: 4.0,
+                ne: 0.0,
+                se: 0.0,
+            },
+            3 => Rounding {
+                nw: 0.0,
+                sw: 0.0,
+                ne: 4.0,
+                se: 4.0,
+            },
+            _ => Rounding::ZERO,
+        };
+        painter.rect_filled(sub, rounding, col);
+    }
+    painter.rect_stroke(
+        rect,
+        Rounding::same(4.0),
+        Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 28)),
+    );
+}
+
+fn draw_bc_preset_thumbnail(ui: &mut Ui, rect: egui::Rect, preset: BrightnessContrastPreset) {
+    let painter = ui.painter();
+    let (br, ct, gm) = preset.params();
+    let steps = 5usize;
+    let step_w = rect.width() / steps as f32;
+    let inv_g = (1.0 / gm.max(0.1)) as f32;
+
+    for i in 0..steps {
+        let t = (i as f32 + 0.5) / steps as f32;
+        let mut v = (ct as f32) * (t - 0.5) + 0.5 + (br as f32);
+        v = v.clamp(0.0, 1.0).powf(inv_g).clamp(0.0, 1.0);
+        let u = (v * 255.0).round() as u8;
+        let col = Color32::from_rgb(u, u, (u as u16 * 105 / 100).min(255) as u8);
+        let x0 = rect.left() + i as f32 * step_w;
+        let x1 = if i + 1 == steps {
+            rect.right()
+        } else {
+            x0 + step_w
+        };
+        let sub =
+            egui::Rect::from_min_max(egui::pos2(x0, rect.top()), egui::pos2(x1, rect.bottom()));
+        painter.rect_filled(sub, Rounding::ZERO, col);
+    }
+    painter.rect_stroke(
+        rect,
+        Rounding::same(3.0),
+        Stroke::new(1.0_f32, Color32::from_rgba_unmultiplied(255, 255, 255, 24)),
+    );
+}
+
 fn render_color_card(
     ui: &mut Ui,
     track_id: &str,
     clip: &mut Clip,
     action: &mut Option<InspectorAction>,
 ) {
-    let has_color_changes = clip.brightness.abs() > 0.005
-        || (clip.contrast - 1.0).abs() > 0.005
-        || (clip.saturation - 1.0).abs() > 0.005
-        || clip.lut_preset != LutPreset::None
-        || clip.custom_lut_path.is_some()
-        || clip.color_wheels.is_some();
+    let has_color_changes = clip.has_color_adjustments()
+        || clip.wb_preset != WhiteBalancePreset::Custom
+        || clip.bc_preset != BrightnessContrastPreset::Neutral;
+
+    let cg_drag_id = ui.make_persistent_id(format!("cg_drag_{}", clip.id));
+    let mut orig_cg: Option<ClipColorGradingState> = ui.data_mut(|d| d.get_temp(cg_drag_id));
+
+    let record_cg_start = |ui: &mut Ui, orig: &mut Option<ClipColorGradingState>, clip: &Clip| {
+        if orig.is_none() {
+            let snap = ClipColorGradingState::from_clip(clip);
+            *orig = Some(snap.clone());
+            ui.data_mut(|d| d.insert_temp(cg_drag_id, snap));
+        }
+    };
+
+    let check_cg_stop = |ui: &mut Ui,
+                         orig: &mut Option<ClipColorGradingState>,
+                         clip: &Clip,
+                         action: &mut Option<InspectorAction>| {
+        if let Some(old_state) = orig.take() {
+            let new_state = ClipColorGradingState::from_clip(clip);
+            if old_state != new_state {
+                *action = Some(InspectorAction::SetColorGrading {
+                    track_id: track_id.to_string(),
+                    clip_id: clip.id.clone(),
+                    old_state,
+                    new_state,
+                });
+            }
+            ui.data_mut(|d| d.remove::<ClipColorGradingState>(cg_drag_id));
+        }
+    };
 
     let reset_colors = std::cell::Cell::new(false);
     inspector_card(
         ui,
         "🎨",
-        "Renk, 3D LUT & Chroma Key",
+        "Renk Düzenleme, Presetler & 3D LUT",
         ACCENT_BLUE,
         |ui| {
             if has_color_changes
@@ -1277,7 +1397,9 @@ fn render_color_card(
                         .fill(Color32::from_rgb(0x22, 0x26, 0x34))
                         .rounding(Rounding::same(4.0)),
                     )
-                    .on_hover_text("Tüm renk ve LUT ayarlarını varsayılana döndür")
+                    .on_hover_text(
+                        "Tüm beyaz dengesi, kontrast, renk görünümü ve LUT ayarlarını sıfırla",
+                    )
                     .clicked()
             {
                 reset_colors.set(true);
@@ -1285,143 +1407,621 @@ fn render_color_card(
         },
         |ui| {
             if reset_colors.get() {
-                clip.brightness = 0.0;
-                clip.contrast = 1.0;
-                clip.saturation = 1.0;
-                clip.lut_preset = LutPreset::None;
-                clip.custom_lut_path = None;
+                let old_state = ClipColorGradingState::from_clip(clip);
+                clip.reset_color_grading();
                 clip.color_wheels = None;
-                *action = Some(InspectorAction::ClipModified);
+                let new_state = ClipColorGradingState::from_clip(clip);
+                *action = Some(InspectorAction::SetColorGrading {
+                    track_id: track_id.to_string(),
+                    clip_id: clip.id.clone(),
+                    old_state,
+                    new_state,
+                });
             }
 
-            prop_row(ui, "Sinematik LUT", |ui| {
-                let mut curr_lut = clip.lut_preset;
-                egui::ComboBox::from_id_salt("lut_preset_combo")
-                    .selected_text(curr_lut.label())
-                    .width(ui.available_width().max(110.0))
-                    .show_ui(ui, |ui| {
-                        for preset in LutPreset::ALL {
-                            if ui
-                                .selectable_value(&mut curr_lut, *preset, preset.label())
-                                .clicked()
+            // =================================================================
+            // 1. WHITE BALANCE (BEYAZ DENGESİ)
+            // =================================================================
+            Frame::none()
+                .fill(SUBCARD_BG)
+                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x20, 0x24, 0x30)))
+                .rounding(Rounding::same(6.0))
+                .inner_margin(Margin::symmetric(8.0, 7.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("☀ Beyaz Dengesi (White Balance)")
+                                .size(11.5)
+                                .strong()
+                                .color(Color32::WHITE),
+                        );
+                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                            if (clip.temperature.abs() > 0.05
+                                || clip.tint.abs() > 0.05
+                                || clip.wb_preset != WhiteBalancePreset::Custom)
+                                && ui
+                                    .add(
+                                        Button::new(
+                                            RichText::new("Sıfırla")
+                                                .size(9.5)
+                                                .color(LABEL_COLOR),
+                                        )
+                                        .fill(Color32::from_rgb(0x1a, 0x1e, 0x29))
+                                        .rounding(Rounding::same(3.0)),
+                                    )
+                                    .clicked()
                             {
-                                clip.lut_preset = curr_lut;
-                                *action = Some(InspectorAction::ClipModified);
+                                let old_state = ClipColorGradingState::from_clip(clip);
+                                clip.wb_preset = WhiteBalancePreset::Custom;
+                                clip.temperature = 0.0;
+                                clip.tint = 0.0;
+                                let new_state = ClipColorGradingState::from_clip(clip);
+                                *action = Some(InspectorAction::SetColorGrading {
+                                    track_id: track_id.to_string(),
+                                    clip_id: clip.id.clone(),
+                                    old_state,
+                                    new_state,
+                                });
+                            }
+                            render_badge(ui, clip.wb_preset.short_label(), ACCENT_AMBER);
+                        });
+                    });
+
+                    ui.add_space(4.0);
+
+                    // Auto White Balance Button
+                    let is_auto = clip.wb_preset == WhiteBalancePreset::Auto;
+                    let auto_btn = Button::new(
+                        RichText::new("✨ Otomatik Beyaz Dengesi (Auto WB - Kare Analizi)")
+                            .size(11.0)
+                            .strong()
+                            .color(if is_auto {
+                                Color32::WHITE
+                            } else {
+                                Color32::from_rgb(0xf5, 0xb9, 0x71)
+                            }),
+                    )
+                    .fill(if is_auto {
+                        ACCENT_AMBER
+                    } else {
+                        Color32::from_rgba_unmultiplied(0xe0, 0x7a, 0x38, 34)
+                    })
+                    .stroke(Stroke::new(1.0_f32, ACCENT_AMBER))
+                    .rounding(Rounding::same(5.0))
+                    .min_size(Vec2::new(ui.available_width(), 26.0));
+
+                    if ui
+                        .add(auto_btn)
+                        .on_hover_text(
+                            "Mevcut video karesinin renk dağılımını analiz ederek otomatik sıcaklık ve renk tonu hesaplar",
+                        )
+                        .clicked()
+                    {
+                        *action = Some(InspectorAction::AutoWhiteBalance {
+                            track_id: track_id.to_string(),
+                            clip_id: clip.id.clone(),
+                        });
+                    }
+
+                    ui.add_space(4.0);
+
+                    // WB Presets Grid (7 illumination presets)
+                    let wb_presets = [
+                        WhiteBalancePreset::Daylight,
+                        WhiteBalancePreset::Tungsten,
+                        WhiteBalancePreset::Cloudy,
+                        WhiteBalancePreset::Shade,
+                        WhiteBalancePreset::Fluorescent,
+                        WhiteBalancePreset::Warm,
+                        WhiteBalancePreset::Cool,
+                    ];
+
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                        for preset in wb_presets {
+                            let is_sel = clip.wb_preset == preset;
+                            let sw = preset.swatch_rgb();
+                            let sw_col = Color32::from_rgb(sw[0], sw[1], sw[2]);
+                            let btn = Button::new(
+                                RichText::new(format!("● {}", preset.short_label()))
+                                    .size(10.5)
+                                    .strong()
+                                    .color(if is_sel { Color32::WHITE } else { sw_col }),
+                            )
+                            .fill(if is_sel {
+                                Color32::from_rgb(0x28, 0x38, 0x54)
+                            } else {
+                                Color32::from_rgb(0x17, 0x1a, 0x24)
+                            })
+                            .stroke(Stroke::new(
+                                1.0_f32,
+                                if is_sel {
+                                    ACCENT_BLUE
+                                } else {
+                                    Color32::from_rgb(0x26, 0x2b, 0x3a)
+                                },
+                            ))
+                            .rounding(Rounding::same(4.0));
+
+                            if ui.add(btn).on_hover_text(preset.label()).clicked() {
+                                let old_state = ClipColorGradingState::from_clip(clip);
+                                clip.apply_wb_preset(preset);
+                                let new_state = ClipColorGradingState::from_clip(clip);
+                                *action = Some(InspectorAction::SetColorGrading {
+                                    track_id: track_id.to_string(),
+                                    clip_id: clip.id.clone(),
+                                    old_state,
+                                    new_state,
+                                });
                             }
                         }
                     });
-            });
 
-            prop_row(ui, "Özel .cube LUT", |ui| {
-                if let Some(p) = &clip.custom_lut_path {
-                    let fname = trim_core::paths::normalize_path(p)
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| p.clone());
-                    if ui
-                        .add(
-                            Button::new(RichText::new("✕").size(10.0).color(Color32::WHITE))
-                                .fill(Color32::from_rgb(0x3a, 0x20, 0x28))
-                                .rounding(Rounding::same(4.0)),
-                        )
-                        .on_hover_text("Özel LUT'u Kaldır")
-                        .clicked()
-                    {
-                        clip.custom_lut_path = None;
-                        *action = Some(InspectorAction::ClipModified);
-                    }
-                    ui.label(
-                        RichText::new(format!("📁 {}", fname))
-                            .size(11.0)
-                            .color(Color32::from_rgb(0x58, 0xb0, 0xff)),
-                    );
-                } else if ui
-                    .add(
-                        Button::new(
-                            RichText::new("📁 .cube Dosyası Seç...")
-                                .size(11.0)
-                                .color(Color32::from_rgb(0xc8, 0xd0, 0xe4)),
-                        )
-                        .fill(Color32::from_rgb(0x1f, 0x23, 0x30))
-                        .rounding(Rounding::same(5.0)),
-                    )
-                    .clicked()
-                {
-                    *action = Some(InspectorAction::SelectCustomLut(clip.id.clone()));
-                }
-            });
+                    ui.add_space(4.0);
 
-            prop_row(ui, "Parlaklık", |ui| {
-                if ui
-                    .add(
-                        Slider::new(&mut clip.brightness, -1.0..=1.0)
-                            .show_value(false)
-                            .trailing_fill(true),
-                    )
-                    .changed()
-                {
-                    *action = Some(InspectorAction::ClipModified);
-                }
-                if ui
-                    .add(
-                        DragValue::new(&mut clip.brightness)
-                            .speed(0.02)
-                            .range(-1.0..=1.0)
-                            .fixed_decimals(2),
-                    )
-                    .changed()
-                {
-                    *action = Some(InspectorAction::ClipModified);
-                }
-            });
+                    // Manual Temperature Slider (-100..=100)
+                    prop_row(ui, "Sıcaklık (Temp)", |ui| {
+                        let s_resp = ui.add(
+                            Slider::new(&mut clip.temperature, -100.0..=100.0)
+                                .show_value(false)
+                                .trailing_fill(true),
+                        );
+                        let d_resp = ui.add(
+                            DragValue::new(&mut clip.temperature)
+                                .speed(0.5)
+                                .range(-100.0..=100.0)
+                                .fixed_decimals(1),
+                        );
+                        if s_resp.drag_started() || d_resp.drag_started() {
+                            record_cg_start(ui, &mut orig_cg, clip);
+                        }
+                        if s_resp.changed() || d_resp.changed() {
+                            clip.wb_preset = WhiteBalancePreset::Custom;
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                        if s_resp.drag_stopped()
+                            || d_resp.drag_stopped()
+                            || d_resp.lost_focus()
+                        {
+                            check_cg_stop(ui, &mut orig_cg, clip, action);
+                        }
+                    });
 
-            prop_row(ui, "Kontrast", |ui| {
-                if ui
-                    .add(
-                        Slider::new(&mut clip.contrast, 0.0..=3.0)
-                            .show_value(false)
-                            .trailing_fill(true),
-                    )
-                    .changed()
-                {
-                    *action = Some(InspectorAction::ClipModified);
-                }
-                if ui
-                    .add(
-                        DragValue::new(&mut clip.contrast)
-                            .speed(0.02)
-                            .range(0.0..=3.0)
-                            .fixed_decimals(2),
-                    )
-                    .changed()
-                {
-                    *action = Some(InspectorAction::ClipModified);
-                }
-            });
+                    // Manual Tint Slider (-100..=100)
+                    prop_row(ui, "Renk Tonu (Tint)", |ui| {
+                        let s_resp = ui.add(
+                            Slider::new(&mut clip.tint, -100.0..=100.0)
+                                .show_value(false)
+                                .trailing_fill(true),
+                        );
+                        let d_resp = ui.add(
+                            DragValue::new(&mut clip.tint)
+                                .speed(0.5)
+                                .range(-100.0..=100.0)
+                                .fixed_decimals(1),
+                        );
+                        if s_resp.drag_started() || d_resp.drag_started() {
+                            record_cg_start(ui, &mut orig_cg, clip);
+                        }
+                        if s_resp.changed() || d_resp.changed() {
+                            clip.wb_preset = WhiteBalancePreset::Custom;
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                        if s_resp.drag_stopped()
+                            || d_resp.drag_stopped()
+                            || d_resp.lost_focus()
+                        {
+                            check_cg_stop(ui, &mut orig_cg, clip, action);
+                        }
+                    });
+                });
 
-            prop_row(ui, "Doygunluk", |ui| {
-                if ui
-                    .add(
-                        Slider::new(&mut clip.saturation, 0.0..=3.0)
-                            .show_value(false)
-                            .trailing_fill(true),
-                    )
-                    .changed()
-                {
-                    *action = Some(InspectorAction::ClipModified);
-                }
-                if ui
-                    .add(
-                        DragValue::new(&mut clip.saturation)
-                            .speed(0.02)
-                            .range(0.0..=3.0)
-                            .fixed_decimals(2),
-                    )
-                    .changed()
-                {
-                    *action = Some(InspectorAction::ClipModified);
-                }
-            });
+            ui.add_space(5.0);
+
+            // =================================================================
+            // 2. BRIGHTNESS & CONTRAST PRESETS + TONAL SLIDERS
+            // =================================================================
+            Frame::none()
+                .fill(SUBCARD_BG)
+                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x20, 0x24, 0x30)))
+                .rounding(Rounding::same(6.0))
+                .inner_margin(Margin::symmetric(8.0, 7.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("🌗 Parlaklık & Kontrast Hazır Ayarları")
+                                .size(11.5)
+                                .strong()
+                                .color(Color32::WHITE),
+                        );
+                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                            render_badge(ui, clip.bc_preset.short_label(), ACCENT_TEAL);
+                        });
+                    });
+
+                    ui.add_space(4.0);
+
+                    // 2-column visual preset cards for BrightnessContrastPreset::ALL
+                    let avail_w = ui.available_width();
+                    let col_w = ((avail_w - 6.0) * 0.5).max(95.0);
+                    egui::Grid::new(format!("bc_presets_grid_{}", clip.id))
+                        .num_columns(2)
+                        .spacing([6.0, 5.0])
+                        .show(ui, |ui| {
+                            for (idx, preset) in BrightnessContrastPreset::ALL.iter().enumerate() {
+                                let is_sel = clip.bc_preset == *preset;
+                                let (rect, resp) = ui.allocate_exact_size(
+                                    Vec2::new(col_w, 28.0),
+                                    egui::Sense::click(),
+                                );
+                                let bg = if is_sel {
+                                    Color32::from_rgb(0x1f, 0x33, 0x4d)
+                                } else if resp.hovered() {
+                                    Color32::from_rgb(0x1c, 0x20, 0x2c)
+                                } else {
+                                    Color32::from_rgb(0x15, 0x18, 0x22)
+                                };
+                                let border = if is_sel {
+                                    ACCENT_TEAL
+                                } else if resp.hovered() {
+                                    Color32::from_rgb(0x3a, 0x42, 0x58)
+                                } else {
+                                    Color32::from_rgb(0x24, 0x29, 0x38)
+                                };
+                                ui.painter().rect_filled(rect, Rounding::same(5.0), bg);
+                                ui.painter().rect_stroke(
+                                    rect,
+                                    Rounding::same(5.0),
+                                    Stroke::new(if is_sel { 1.5_f32 } else { 1.0_f32 }, border),
+                                );
+
+                                let thumb_rect = egui::Rect::from_min_size(
+                                    egui::pos2(rect.left() + 5.0, rect.top() + 5.0),
+                                    Vec2::new(28.0, 18.0),
+                                );
+                                draw_bc_preset_thumbnail(ui, thumb_rect, *preset);
+
+                                ui.painter().text(
+                                    egui::pos2(thumb_rect.right() + 6.0, rect.center().y),
+                                    egui::Align2::LEFT_CENTER,
+                                    preset.short_label(),
+                                    egui::FontId::proportional(10.5),
+                                    if is_sel {
+                                        Color32::WHITE
+                                    } else {
+                                        Color32::from_rgb(0xd0, 0xd7, 0xe8)
+                                    },
+                                );
+
+                                if resp.on_hover_text(preset.label()).clicked() {
+                                    let old_state = ClipColorGradingState::from_clip(clip);
+                                    clip.apply_bc_preset(*preset);
+                                    let new_state = ClipColorGradingState::from_clip(clip);
+                                    *action = Some(InspectorAction::SetColorGrading {
+                                        track_id: track_id.to_string(),
+                                        clip_id: clip.id.clone(),
+                                        old_state,
+                                        new_state,
+                                    });
+                                }
+
+                                if idx % 2 == 1 {
+                                    ui.end_row();
+                                }
+                            }
+                        });
+
+                    ui.add_space(5.0);
+
+                    prop_row(ui, "Parlaklık", |ui| {
+                        let s_resp = ui.add(
+                            Slider::new(&mut clip.brightness, -1.0..=1.0)
+                                .show_value(false)
+                                .trailing_fill(true),
+                        );
+                        let d_resp = ui.add(
+                            DragValue::new(&mut clip.brightness)
+                                .speed(0.01)
+                                .range(-1.0..=1.0)
+                                .fixed_decimals(2),
+                        );
+                        if s_resp.drag_started() || d_resp.drag_started() {
+                            record_cg_start(ui, &mut orig_cg, clip);
+                        }
+                        if s_resp.changed() || d_resp.changed() {
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                        if s_resp.drag_stopped() || d_resp.drag_stopped() || d_resp.lost_focus() {
+                            check_cg_stop(ui, &mut orig_cg, clip, action);
+                        }
+                    });
+
+                    prop_row(ui, "Kontrast", |ui| {
+                        let s_resp = ui.add(
+                            Slider::new(&mut clip.contrast, 0.0..=3.0)
+                                .show_value(false)
+                                .trailing_fill(true),
+                        );
+                        let d_resp = ui.add(
+                            DragValue::new(&mut clip.contrast)
+                                .speed(0.02)
+                                .range(0.0..=3.0)
+                                .fixed_decimals(2),
+                        );
+                        if s_resp.drag_started() || d_resp.drag_started() {
+                            record_cg_start(ui, &mut orig_cg, clip);
+                        }
+                        if s_resp.changed() || d_resp.changed() {
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                        if s_resp.drag_stopped() || d_resp.drag_stopped() || d_resp.lost_focus() {
+                            check_cg_stop(ui, &mut orig_cg, clip, action);
+                        }
+                    });
+
+                    prop_row(ui, "Gama (Gamma)", |ui| {
+                        let s_resp = ui.add(
+                            Slider::new(&mut clip.gamma, 0.2..=3.0)
+                                .show_value(false)
+                                .trailing_fill(true),
+                        );
+                        let d_resp = ui.add(
+                            DragValue::new(&mut clip.gamma)
+                                .speed(0.02)
+                                .range(0.2..=3.0)
+                                .fixed_decimals(2),
+                        );
+                        if s_resp.drag_started() || d_resp.drag_started() {
+                            record_cg_start(ui, &mut orig_cg, clip);
+                        }
+                        if s_resp.changed() || d_resp.changed() {
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                        if s_resp.drag_stopped() || d_resp.drag_stopped() || d_resp.lost_focus() {
+                            check_cg_stop(ui, &mut orig_cg, clip, action);
+                        }
+                    });
+
+                    prop_row(ui, "Doygunluk", |ui| {
+                        let s_resp = ui.add(
+                            Slider::new(&mut clip.saturation, 0.0..=3.0)
+                                .show_value(false)
+                                .trailing_fill(true),
+                        );
+                        let d_resp = ui.add(
+                            DragValue::new(&mut clip.saturation)
+                                .speed(0.02)
+                                .range(0.0..=3.0)
+                                .fixed_decimals(2),
+                        );
+                        if s_resp.drag_started() || d_resp.drag_started() {
+                            record_cg_start(ui, &mut orig_cg, clip);
+                        }
+                        if s_resp.changed() || d_resp.changed() {
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                        if s_resp.drag_stopped() || d_resp.drag_stopped() || d_resp.lost_focus() {
+                            check_cg_stop(ui, &mut orig_cg, clip, action);
+                        }
+                    });
+                });
+
+            ui.add_space(5.0);
+
+            // =================================================================
+            // 3. CREATIVE COLOR LOOKS (Cinematic / Film Emulation / Creative)
+            // =================================================================
+            Frame::none()
+                .fill(SUBCARD_BG)
+                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x20, 0x24, 0x30)))
+                .rounding(Rounding::same(6.0))
+                .inner_margin(Margin::symmetric(8.0, 7.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("🎬 Yaratıcı Renk Görünümleri (Color Looks)")
+                                .size(11.5)
+                                .strong()
+                                .color(Color32::WHITE),
+                        );
+                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                            render_badge(ui, clip.lut_preset.short_label(), ACCENT_BLUE);
+                        });
+                    });
+
+                    ui.add_space(4.0);
+
+                    // Category filter tabs stored in egui temp data
+                    let cat_tab_id = ui.make_persistent_id(format!("look_cat_tab_{}", clip.id));
+                    let mut active_tab: u8 =
+                        ui.data_mut(|d| d.get_temp::<u8>(cat_tab_id)).unwrap_or(0);
+
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                        let tabs: [(u8, &str); 4] = [
+                            (0, "Tümü"),
+                            (1, "🎬 Sinematik"),
+                            (2, "🎞 Film"),
+                            (3, "🎨 Yaratıcı"),
+                        ];
+                        for (tab_id, title) in tabs {
+                            let is_active = active_tab == tab_id;
+                            let btn = Button::new(RichText::new(title).size(10.5).strong().color(
+                                if is_active {
+                                    Color32::WHITE
+                                } else {
+                                    LABEL_COLOR
+                                },
+                            ))
+                            .fill(if is_active {
+                                ACCENT_BLUE
+                            } else {
+                                Color32::from_rgb(0x18, 0x1c, 0x26)
+                            })
+                            .rounding(Rounding::same(4.0));
+                            if ui.add(btn).clicked() {
+                                active_tab = tab_id;
+                                ui.data_mut(|d| d.insert_temp(cat_tab_id, active_tab));
+                            }
+                        }
+                    });
+
+                    ui.add_space(5.0);
+
+                    let filtered_looks: Vec<LutPreset> = match active_tab {
+                        1 => {
+                            let mut v = vec![LutPreset::None];
+                            v.extend_from_slice(LutPreset::by_category(LookCategory::Cinematic));
+                            v
+                        }
+                        2 => {
+                            let mut v = vec![LutPreset::None];
+                            v.extend_from_slice(LutPreset::by_category(
+                                LookCategory::FilmEmulation,
+                            ));
+                            v
+                        }
+                        3 => {
+                            let mut v = vec![LutPreset::None];
+                            v.extend_from_slice(LutPreset::by_category(LookCategory::Creative));
+                            v
+                        }
+                        _ => LutPreset::ALL.to_vec(),
+                    };
+
+                    // Visual Preset Thumbnail Grid (2 columns)
+                    let avail_w = ui.available_width();
+                    let col_w = ((avail_w - 6.0) * 0.5).max(95.0);
+                    egui::Grid::new(format!("color_looks_grid_{}_{}", clip.id, active_tab))
+                        .num_columns(2)
+                        .spacing([6.0, 5.0])
+                        .show(ui, |ui| {
+                            for (idx, preset) in filtered_looks.iter().enumerate() {
+                                let is_sel = clip.lut_preset == *preset;
+                                let (rect, resp) = ui.allocate_exact_size(
+                                    Vec2::new(col_w, 34.0),
+                                    egui::Sense::click(),
+                                );
+
+                                let bg = if is_sel {
+                                    Color32::from_rgb(0x1e, 0x2f, 0x4d)
+                                } else if resp.hovered() {
+                                    Color32::from_rgb(0x1b, 0x20, 0x2d)
+                                } else {
+                                    Color32::from_rgb(0x14, 0x17, 0x21)
+                                };
+                                let border = if is_sel {
+                                    ACCENT_BLUE
+                                } else if resp.hovered() {
+                                    Color32::from_rgb(0x3a, 0x44, 0x5c)
+                                } else {
+                                    Color32::from_rgb(0x23, 0x28, 0x36)
+                                };
+
+                                ui.painter().rect_filled(rect, Rounding::same(5.0), bg);
+                                ui.painter().rect_stroke(
+                                    rect,
+                                    Rounding::same(5.0),
+                                    Stroke::new(if is_sel { 1.5_f32 } else { 1.0_f32 }, border),
+                                );
+
+                                let thumb_rect = egui::Rect::from_min_size(
+                                    egui::pos2(rect.left() + 5.0, rect.top() + 5.0),
+                                    Vec2::new(34.0, 24.0),
+                                );
+                                draw_look_preset_thumbnail(ui, thumb_rect, *preset);
+
+                                let cat_txt =
+                                    preset.category().map(|c| c.label()).unwrap_or("Standart");
+                                ui.painter().text(
+                                    egui::pos2(thumb_rect.right() + 6.0, rect.top() + 11.0),
+                                    egui::Align2::LEFT_CENTER,
+                                    preset.short_label(),
+                                    egui::FontId::proportional(10.5),
+                                    if is_sel {
+                                        Color32::WHITE
+                                    } else {
+                                        Color32::from_rgb(0xd8, 0xdf, 0xf0)
+                                    },
+                                );
+                                ui.painter().text(
+                                    egui::pos2(thumb_rect.right() + 6.0, rect.top() + 23.5),
+                                    egui::Align2::LEFT_CENTER,
+                                    cat_txt,
+                                    egui::FontId::proportional(8.8),
+                                    Color32::from_rgb(0x7c, 0x86, 0x9e),
+                                );
+
+                                if resp.on_hover_text(preset.label()).clicked() {
+                                    let old_state = ClipColorGradingState::from_clip(clip);
+                                    clip.lut_preset = *preset;
+                                    let new_state = ClipColorGradingState::from_clip(clip);
+                                    if old_state != new_state {
+                                        *action = Some(InspectorAction::SetColorGrading {
+                                            track_id: track_id.to_string(),
+                                            clip_id: clip.id.clone(),
+                                            old_state,
+                                            new_state,
+                                        });
+                                    }
+                                }
+
+                                if idx % 2 == 1 {
+                                    ui.end_row();
+                                }
+                            }
+                        });
+
+                    ui.add_space(5.0);
+
+                    prop_row(ui, "Özel .cube LUT", |ui| {
+                        if let Some(p) = clip.custom_lut_path.clone() {
+                            let fname = trim_core::paths::normalize_path(&p)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| p.clone());
+                            if ui
+                                .add(
+                                    Button::new(
+                                        RichText::new("✕").size(10.0).color(Color32::WHITE),
+                                    )
+                                    .fill(Color32::from_rgb(0x3a, 0x20, 0x28))
+                                    .rounding(Rounding::same(4.0)),
+                                )
+                                .on_hover_text("Özel LUT'u Kaldır")
+                                .clicked()
+                            {
+                                let old_state = ClipColorGradingState::from_clip(clip);
+                                clip.custom_lut_path = None;
+                                let new_state = ClipColorGradingState::from_clip(clip);
+                                *action = Some(InspectorAction::SetColorGrading {
+                                    track_id: track_id.to_string(),
+                                    clip_id: clip.id.clone(),
+                                    old_state,
+                                    new_state,
+                                });
+                            }
+                            ui.label(
+                                RichText::new(format!("📁 {}", fname))
+                                    .size(11.0)
+                                    .color(Color32::from_rgb(0x58, 0xb0, 0xff)),
+                            );
+                        } else if ui
+                            .add(
+                                Button::new(
+                                    RichText::new("📁 .cube Dosyası Seç...")
+                                        .size(11.0)
+                                        .color(Color32::from_rgb(0xc8, 0xd0, 0xe4)),
+                                )
+                                .fill(Color32::from_rgb(0x1f, 0x23, 0x30))
+                                .rounding(Rounding::same(5.0)),
+                            )
+                            .clicked()
+                        {
+                            *action = Some(InspectorAction::SelectCustomLut(clip.id.clone()));
+                        }
+                    });
+                });
 
             // Subcard: 3-Point Color Wheels
             ui.add_space(4.0);

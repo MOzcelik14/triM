@@ -1,7 +1,10 @@
 //! Complete implementation of all 14 timeline editing commands.
 
 use crate::{Command, CommandError};
-use trim_core::clip::{AudioEqPreset, Clip, ColorLabel, ColorWheelsConfig};
+use trim_core::clip::{
+    AudioEqPreset, BrightnessContrastPreset, Clip, ColorLabel, ColorWheelsConfig, LutPreset,
+    WhiteBalancePreset,
+};
 use trim_core::marker::Marker;
 use trim_core::timeline::TimelineModel;
 use trim_core::track::Track;
@@ -2558,5 +2561,107 @@ impl Command for SetTextOverlayContentCommand {
 
     fn name(&self) -> &str {
         "Metin İçeriğini Değiştir"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 30. SetClipColorGradingCommand
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClipColorGradingState {
+    pub brightness: f64,
+    pub contrast: f64,
+    pub saturation: f64,
+    pub gamma: f64,
+    pub temperature: f64,
+    pub tint: f64,
+    pub wb_preset: WhiteBalancePreset,
+    pub bc_preset: BrightnessContrastPreset,
+    pub lut_preset: LutPreset,
+    pub custom_lut_path: Option<String>,
+    pub color_wheels: Option<ColorWheelsConfig>,
+}
+
+impl ClipColorGradingState {
+    pub fn from_clip(clip: &Clip) -> Self {
+        Self {
+            brightness: clip.brightness,
+            contrast: clip.contrast,
+            saturation: clip.saturation,
+            gamma: clip.gamma,
+            temperature: clip.temperature,
+            tint: clip.tint,
+            wb_preset: clip.wb_preset,
+            bc_preset: clip.bc_preset,
+            lut_preset: clip.lut_preset,
+            custom_lut_path: clip.custom_lut_path.clone(),
+            color_wheels: clip.color_wheels.clone(),
+        }
+    }
+
+    pub fn apply_to_clip(&self, clip: &mut Clip) {
+        clip.brightness = self.brightness;
+        clip.contrast = self.contrast;
+        clip.saturation = self.saturation;
+        clip.gamma = self.gamma;
+        clip.temperature = self.temperature;
+        clip.tint = self.tint;
+        clip.wb_preset = self.wb_preset;
+        clip.bc_preset = self.bc_preset;
+        clip.lut_preset = self.lut_preset;
+        clip.custom_lut_path = self.custom_lut_path.clone();
+        clip.color_wheels = self.color_wheels.clone();
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SetClipColorGradingCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub old_state: ClipColorGradingState,
+    pub new_state: ClipColorGradingState,
+}
+
+impl SetClipColorGradingCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_state: ClipColorGradingState,
+        new_state: ClipColorGradingState,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            old_state,
+            new_state,
+        }
+    }
+}
+
+impl Command for SetClipColorGradingCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        self.new_state.apply_to_clip(clip);
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        self.old_state.apply_to_clip(clip);
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Renk Düzenlemesini Değiştir"
     }
 }

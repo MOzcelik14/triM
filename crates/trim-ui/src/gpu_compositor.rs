@@ -3,7 +3,7 @@
 use eframe::glow::{self, HasContext};
 use std::collections::HashMap;
 use std::sync::Arc;
-use trim_core::clip::{Clip, LutPreset};
+use trim_core::clip::Clip;
 use trim_core::project::Project;
 use trim_media::{calculate_preview_size, parse_cube_lut_file, CompositorLayer, CubeLut3D};
 
@@ -56,8 +56,10 @@ uniform vec3 u_cw_lift;
 uniform vec3 u_cw_gamma;
 uniform vec3 u_cw_gain;
 
+uniform vec3 u_wb_gains;
 uniform float u_contrast;
 uniform float u_brightness;
+uniform float u_gamma;
 uniform float u_saturation;
 uniform int u_lut_preset;
 uniform int u_custom_lut_enabled;
@@ -78,6 +80,12 @@ vec3 sample_3d_lut(vec3 rgb, int n_int) {
     vec3 c0 = texture(u_lut_tex, uv0).rgb;
     vec3 c1 = texture(u_lut_tex, uv1).rgb;
     return mix(c0, c1, b_frac);
+}
+
+vec3 s_curve_vec(vec3 x, float strength) {
+    vec3 cx = clamp(x, 0.0, 1.0);
+    vec3 s = cx * cx * (3.0 - 2.0 * cx);
+    return cx + (s - cx) * strength;
 }
 
 void main() {
@@ -135,24 +143,38 @@ void main() {
         rgb = clamp(rgb, 0.0, 1.0);
     }
 
+    // 1. White balance channel gains
+    rgb = clamp(rgb * u_wb_gains, 0.0, 1.0);
+
+    // 2. Contrast & Brightness
     rgb = clamp(
         u_contrast * (rgb - vec3(128.0 / 255.0)) + vec3(128.0 / 255.0) + vec3(u_brightness),
         0.0,
         1.0
     );
+
+    // 3. Gamma
+    if (abs(u_gamma - 1.0) > 0.001) {
+        float inv_g = 1.0 / max(u_gamma, 0.1);
+        rgb = clamp(pow(max(rgb, vec3(0.0)), vec3(inv_g)), 0.0, 1.0);
+    }
+
+    // 4. Saturation
     if (abs(u_saturation - 1.0) > 0.0001) {
         float luma_s = dot(rgb, vec3(0.299, 0.587, 0.114));
         rgb = clamp(vec3(luma_s) + u_saturation * (rgb - vec3(luma_s)), 0.0, 1.0);
     }
 
+    // 5. Creative Color Looks
+    float luma = dot(rgb, vec3(0.299, 0.587, 0.114));
+    float shadow_w = clamp(1.0 - luma * 2.0, 0.0, 1.0);
+    float hi_w = clamp((luma - 0.5) * 2.0, 0.0, 1.0);
+
     if (u_lut_preset == 1) {
-        float luma = dot(rgb, vec3(0.299, 0.587, 0.114));
         if (luma < 0.5) {
-            float sw = clamp(1.0 - luma * 2.0, 0.0, 1.0);
-            rgb = clamp(rgb * vec3(1.0 - 0.22 * sw, 1.0 + 0.08 * sw, 1.0 + 0.32 * sw), 0.0, 1.0);
+            rgb = clamp(rgb * vec3(1.0 - 0.22 * shadow_w, 1.0 + 0.08 * shadow_w, 1.0 + 0.32 * shadow_w), 0.0, 1.0);
         } else {
-            float hw = clamp((luma - 0.5) * 2.0, 0.0, 1.0);
-            rgb = clamp(rgb * vec3(1.0 + 0.25 * hw, 1.0 + 0.08 * hw, 1.0 - 0.22 * hw), 0.0, 1.0);
+            rgb = clamp(rgb * vec3(1.0 + 0.25 * hi_w, 1.0 + 0.08 * hi_w, 1.0 - 0.22 * hi_w), 0.0, 1.0);
         }
     } else if (u_lut_preset == 2) {
         rgb = clamp(
@@ -161,10 +183,9 @@ void main() {
             1.0
         );
     } else if (u_lut_preset == 3) {
-        float norm = dot(rgb, vec3(0.299, 0.587, 0.114));
-        float curved = (norm < 0.5)
-            ? (2.0 * norm * norm)
-            : (1.0 - 2.0 * (1.0 - norm) * (1.0 - norm));
+        float curved = (luma < 0.5)
+            ? (2.0 * luma * luma)
+            : (1.0 - 2.0 * (1.0 - luma) * (1.0 - luma));
         rgb = vec3(clamp(curved, 0.0, 1.0));
     } else if (u_lut_preset == 4) {
         rgb = clamp(
@@ -174,6 +195,130 @@ void main() {
         );
         float luma_c = dot(rgb, vec3(0.299, 0.587, 0.114));
         rgb = clamp(vec3(luma_c) + 1.25 * (rgb - vec3(luma_c)), 0.0, 1.0);
+    } else if (u_lut_preset == 5) {
+        // Cinematic Warm
+        rgb = s_curve_vec(rgb, 0.35);
+        rgb.r = rgb.r * (1.08 + 0.10 * hi_w) + 0.02 * shadow_w;
+        rgb.g = rgb.g * (1.02 + 0.04 * hi_w) + 0.01 * shadow_w;
+        rgb.b = rgb.b * (0.88 - 0.08 * hi_w);
+        rgb = clamp(rgb, 0.0, 1.0);
+    } else if (u_lut_preset == 6) {
+        // Cinematic Cool
+        rgb = s_curve_vec(rgb, 0.40);
+        rgb.r = rgb.r * (0.90 - 0.06 * shadow_w);
+        rgb.g = rgb.g * (0.98 + 0.04 * shadow_w);
+        rgb.b = rgb.b * (1.12 + 0.12 * shadow_w);
+        float lm = dot(rgb, vec3(0.299, 0.587, 0.114));
+        rgb = clamp(vec3(lm) + 0.90 * (rgb - vec3(lm)), 0.0, 1.0);
+    } else if (u_lut_preset == 7) {
+        // Blockbuster
+        rgb = s_curve_vec(rgb, 0.55);
+        rgb.r = rgb.r * (1.0 - 0.26 * shadow_w + 0.28 * hi_w);
+        rgb.g = rgb.g * (1.0 + 0.05 * shadow_w + 0.06 * hi_w);
+        rgb.b = rgb.b * (1.0 + 0.30 * shadow_w - 0.24 * hi_w);
+        float lm = dot(rgb, vec3(0.299, 0.587, 0.114));
+        rgb = clamp(vec3(lm) + 1.15 * (rgb - vec3(lm)), 0.0, 1.0);
+    } else if (u_lut_preset == 8) {
+        // Filmic Neutral
+        vec3 cr = rgb / (vec3(1.0) + 0.18 * rgb) * 1.18;
+        cr = s_curve_vec(cr, 0.22);
+        float lm = dot(cr, vec3(0.299, 0.587, 0.114));
+        rgb = clamp(vec3(lm) + 0.94 * (cr - vec3(lm)), 0.0, 1.0);
+    } else if (u_lut_preset == 9) {
+        // Kodak 2383
+        vec3 cr = s_curve_vec(rgb, 0.50);
+        cr.r = cr.r * (1.0 - 0.14 * shadow_w + 0.16 * hi_w);
+        cr.g = cr.g * (1.0 + 0.03 * shadow_w + 0.05 * hi_w);
+        cr.b = cr.b * (1.0 + 0.18 * shadow_w - 0.16 * hi_w);
+        rgb = clamp(cr, 0.0, 1.0);
+    } else if (u_lut_preset == 10) {
+        // Kodak Portra
+        vec3 cr = s_curve_vec(rgb, 0.18);
+        cr.r = cr.r * 1.05 + 0.03;
+        cr.g = cr.g * 1.02 + 0.02;
+        cr.b = cr.b * 0.96 + 0.015;
+        float lm = dot(cr, vec3(0.299, 0.587, 0.114));
+        rgb = clamp(vec3(lm) + 0.94 * (cr - vec3(lm)), 0.0, 1.0);
+    } else if (u_lut_preset == 11) {
+        // Fuji Film
+        vec3 cr = s_curve_vec(rgb, 0.32);
+        cr.r = cr.r * (0.98 + 0.05 * hi_w);
+        cr.g = cr.g * (1.04 + 0.06 * shadow_w);
+        cr.b = cr.b * (1.05 + 0.08 * shadow_w);
+        float lm = dot(cr, vec3(0.299, 0.587, 0.114));
+        rgb = clamp(vec3(lm) + 1.08 * (cr - vec3(lm)), 0.0, 1.0);
+    } else if (u_lut_preset == 12) {
+        // Faded Film
+        vec3 cr = rgb * 0.80 + vec3(0.085, 0.080, 0.095);
+        float lm = dot(cr, vec3(0.299, 0.587, 0.114));
+        rgb = clamp(vec3(lm) + 0.78 * (cr - vec3(lm)), 0.0, 1.0);
+    } else if (u_lut_preset == 13) {
+        // Analog Film
+        vec3 cr = s_curve_vec(rgb, 0.25);
+        cr.r = cr.r * 1.04 + 0.035;
+        cr.g = cr.g * 1.01 + 0.025;
+        cr.b = cr.b * 0.91 + 0.040 * shadow_w;
+        float lm = dot(cr, vec3(0.299, 0.587, 0.114));
+        rgb = clamp(vec3(lm) + 0.90 * (cr - vec3(lm)), 0.0, 1.0);
+    } else if (u_lut_preset == 14) {
+        // Sepia
+        float sr = rgb.r * 0.393 + rgb.g * 0.769 + rgb.b * 0.189;
+        float sg = rgb.r * 0.349 + rgb.g * 0.686 + rgb.b * 0.168;
+        float sb = rgb.r * 0.272 + rgb.g * 0.534 + rgb.b * 0.131;
+        rgb = clamp(vec3(sr, sg, sb), 0.0, 1.0);
+    } else if (u_lut_preset == 15) {
+        // Bleach Bypass
+        vec3 desat = vec3(luma) + 0.42 * (rgb - vec3(luma));
+        vec3 overlay = vec3(
+            (luma < 0.5) ? (2.0 * desat.r * luma) : (1.0 - 2.0 * (1.0 - desat.r) * (1.0 - luma)),
+            (luma < 0.5) ? (2.0 * desat.g * luma) : (1.0 - 2.0 * (1.0 - desat.g) * (1.0 - luma)),
+            (luma < 0.5) ? (2.0 * desat.b * luma) : (1.0 - 2.0 * (1.0 - desat.b) * (1.0 - luma))
+        );
+        rgb = clamp(mix(desat, overlay, 0.65), 0.0, 1.0);
+    } else if (u_lut_preset == 16) {
+        // Muted Colors
+        vec3 cr = (rgb - vec3(0.5)) * 0.92 + vec3(0.5);
+        float lm = dot(cr, vec3(0.299, 0.587, 0.114));
+        rgb = clamp(vec3(lm) + 0.55 * (cr - vec3(lm)), 0.0, 1.0);
+    } else if (u_lut_preset == 17) {
+        // Vibrant
+        vec3 cr = s_curve_vec(rgb, 0.22);
+        float lm = dot(cr, vec3(0.299, 0.587, 0.114));
+        float max_c = max(cr.r, max(cr.g, cr.b));
+        float min_c = min(cr.r, min(cr.g, cr.b));
+        float cur_sat = max_c - min_c;
+        float boost = 1.0 + 0.55 * (1.0 - cur_sat);
+        rgb = clamp(vec3(lm) + boost * (cr - vec3(lm)), 0.0, 1.0);
+    } else if (u_lut_preset == 18) {
+        // Pastel
+        vec3 cr = rgb * 0.82 + vec3(0.14, 0.13, 0.15);
+        float lm = dot(cr, vec3(0.299, 0.587, 0.114));
+        rgb = clamp(vec3(lm) + 0.72 * (cr - vec3(lm)), 0.0, 1.0);
+    } else if (u_lut_preset == 19) {
+        // Golden Hour
+        vec3 cr = s_curve_vec(rgb, 0.25);
+        cr.r = cr.r * 1.15 + 0.04;
+        cr.g = cr.g * 1.04 + 0.015;
+        cr.b = cr.b * 0.82;
+        float lm = dot(cr, vec3(0.299, 0.587, 0.114));
+        rgb = clamp(vec3(lm) + 1.12 * (cr - vec3(lm)), 0.0, 1.0);
+    } else if (u_lut_preset == 20) {
+        // Cold Winter
+        vec3 cr = s_curve_vec(rgb, 0.30);
+        cr.r = cr.r * 0.88;
+        cr.g = cr.g * 0.99 + 0.01;
+        cr.b = cr.b * 1.16 + 0.03;
+        float lm = dot(cr, vec3(0.299, 0.587, 0.114));
+        rgb = clamp(vec3(lm) + 0.82 * (cr - vec3(lm)), 0.0, 1.0);
+    } else if (u_lut_preset == 21) {
+        // Night Cinematic
+        vec3 cr = max(rgb * 0.86 - vec3(0.03), vec3(0.0));
+        cr = s_curve_vec(cr, 0.42);
+        cr.r = cr.r * 0.80;
+        cr.g = cr.g * 0.95 + 0.02 * shadow_w;
+        cr.b = cr.b * 1.22 + 0.07 * shadow_w;
+        float lm = dot(cr, vec3(0.299, 0.587, 0.114));
+        rgb = clamp(vec3(lm) + 0.85 * (cr - vec3(lm)), 0.0, 1.0);
     }
 
     if (u_custom_lut_enabled == 1 && u_lut_size >= 2) {
@@ -207,8 +352,12 @@ pub struct LayerUniforms {
     pub cw_lift: [f32; 3],
     pub cw_gamma: [f32; 3],
     pub cw_gain: [f32; 3],
+    pub wb_gains: [f32; 3],
+    pub temperature: f32,
+    pub tint: f32,
     pub contrast: f32,
     pub brightness: f32,
+    pub gamma: f32,
     pub saturation: f32,
     pub lut_preset: i32,
     pub crop: [f32; 4],
@@ -359,13 +508,10 @@ impl LayerUniforms {
             None => (false, [0.0; 3], [1.0; 3], [1.0; 3]),
         };
 
-        let lut_preset = match clip.lut_preset {
-            LutPreset::None => 0,
-            LutPreset::TealOrange => 1,
-            LutPreset::VintageFilm => 2,
-            LutPreset::MonochromeNoir => 3,
-            LutPreset::CyberpunkNeon => 4,
-        };
+        let temperature = clip.temperature as f32;
+        let tint = clip.tint as f32;
+        let wb_gains = trim_core::color::white_balance_gains(temperature, tint);
+        let lut_preset = clip.lut_preset.shader_id();
 
         Some(Self {
             canvas_size: [cw as f32, ch as f32],
@@ -384,8 +530,12 @@ impl LayerUniforms {
             cw_lift,
             cw_gamma,
             cw_gain,
+            wb_gains,
+            temperature,
+            tint,
             contrast: clip.contrast as f32,
             brightness: clip.brightness as f32,
+            gamma: clip.gamma as f32,
             saturation: clip.saturation as f32,
             lut_preset,
             crop: [
@@ -908,11 +1058,17 @@ impl GpuCompositor {
                 if let Some(loc) = gl.get_uniform_location(prog, "u_cw_gain") {
                     gl.uniform_3_f32(Some(&loc), u.cw_gain[0], u.cw_gain[1], u.cw_gain[2]);
                 }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_wb_gains") {
+                    gl.uniform_3_f32(Some(&loc), u.wb_gains[0], u.wb_gains[1], u.wb_gains[2]);
+                }
                 if let Some(loc) = gl.get_uniform_location(prog, "u_contrast") {
                     gl.uniform_1_f32(Some(&loc), u.contrast);
                 }
                 if let Some(loc) = gl.get_uniform_location(prog, "u_brightness") {
                     gl.uniform_1_f32(Some(&loc), u.brightness);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_gamma") {
+                    gl.uniform_1_f32(Some(&loc), u.gamma);
                 }
                 if let Some(loc) = gl.get_uniform_location(prog, "u_saturation") {
                     gl.uniform_1_f32(Some(&loc), u.saturation);
@@ -973,7 +1129,10 @@ impl Drop for GpuCompositor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use trim_core::clip::{ChromaKeyConfig, Clip, ColorWheelsConfig, LutPreset};
+    use trim_core::clip::{
+        BrightnessContrastPreset, ChromaKeyConfig, Clip, ColorWheelsConfig, LutPreset,
+        WhiteBalancePreset,
+    };
 
     #[test]
     fn test_layer_uniforms_affine_transform_and_grading() {
@@ -983,10 +1142,12 @@ mod tests {
         clip.pos_y = -20.0;
         clip.rotation = 90.0;
         clip.opacity = 0.8;
+        clip.apply_wb_preset(WhiteBalancePreset::Warm);
+        clip.apply_bc_preset(BrightnessContrastPreset::CinematicContrast);
         clip.contrast = 1.2;
         clip.brightness = 0.1;
         clip.saturation = 1.3;
-        clip.lut_preset = LutPreset::TealOrange;
+        clip.lut_preset = LutPreset::Kodak2383;
         clip.chromakey = Some(ChromaKeyConfig {
             enabled: true,
             key_color: [0, 255, 0],
@@ -1022,7 +1183,9 @@ mod tests {
         assert!((u.cw_lift[0] - 0.15).abs() < 1e-5);
         assert!((u.cw_gamma[0] - 1.1).abs() < 1e-5);
         assert!((u.cw_gain[0] - 1.15).abs() < 1e-5);
-        assert_eq!(u.lut_preset, 1);
+        assert!(u.wb_gains[0] > 1.0 && u.wb_gains[2] < 1.0);
+        assert!((u.gamma - 0.90).abs() < 1e-4);
+        assert_eq!(u.lut_preset, LutPreset::Kodak2383.shader_id());
     }
 
     #[test]

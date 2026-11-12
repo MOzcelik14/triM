@@ -36,36 +36,9 @@ impl AudioEqPreset {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LutPreset {
-    #[default]
-    None,
-    TealOrange,
-    VintageFilm,
-    MonochromeNoir,
-    CyberpunkNeon,
-}
-
-impl LutPreset {
-    pub const ALL: &'static [Self] = &[
-        Self::None,
-        Self::TealOrange,
-        Self::VintageFilm,
-        Self::MonochromeNoir,
-        Self::CyberpunkNeon,
-    ];
-
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::None => "Yok (Doğal)",
-            Self::TealOrange => "Teal & Orange (Sinematik)",
-            Self::VintageFilm => "Vintage Film (Retro Sıcak)",
-            Self::MonochromeNoir => "Monochrome Noir (Siyah & Beyaz)",
-            Self::CyberpunkNeon => "Cyberpunk Neon (Canlı Mor/Mavi)",
-        }
-    }
-}
+pub use crate::color::{
+    BrightnessContrastPreset, ColorGradeParams, LookCategory, LutPreset, WhiteBalancePreset,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -452,6 +425,16 @@ pub struct Clip {
     pub contrast: f64,
     #[serde(default = "default_one")]
     pub saturation: f64,
+    #[serde(default = "default_one")]
+    pub gamma: f64,
+    #[serde(default)]
+    pub temperature: f64,
+    #[serde(default)]
+    pub tint: f64,
+    #[serde(default)]
+    pub wb_preset: WhiteBalancePreset,
+    #[serde(default)]
+    pub bc_preset: BrightnessContrastPreset,
     #[serde(default)]
     pub lut_preset: LutPreset,
     #[serde(default)]
@@ -526,6 +509,11 @@ impl Default for Clip {
             brightness: 0.0,
             contrast: 1.0,
             saturation: 1.0,
+            gamma: 1.0,
+            temperature: 0.0,
+            tint: 0.0,
+            wb_preset: WhiteBalancePreset::Custom,
+            bc_preset: BrightnessContrastPreset::Neutral,
             lut_preset: LutPreset::None,
             custom_lut_path: None,
             volume: 1.0,
@@ -554,6 +542,59 @@ impl Default for Clip {
 }
 
 impl Clip {
+    pub fn has_color_adjustments(&self) -> bool {
+        self.brightness.abs() > 1e-4
+            || (self.contrast - 1.0).abs() > 1e-4
+            || (self.saturation - 1.0).abs() > 1e-4
+            || (self.gamma - 1.0).abs() > 1e-4
+            || self.temperature.abs() > 1e-4
+            || self.tint.abs() > 1e-4
+            || self.lut_preset != LutPreset::None
+            || self.custom_lut_path.is_some()
+            || self.color_wheels.is_some()
+    }
+
+    pub fn color_grade_params(&self) -> ColorGradeParams {
+        ColorGradeParams {
+            temperature: self.temperature as f32,
+            tint: self.tint as f32,
+            brightness: self.brightness as f32,
+            contrast: self.contrast as f32,
+            gamma: self.gamma as f32,
+            saturation: self.saturation as f32,
+            lut_preset: self.lut_preset,
+        }
+    }
+
+    pub fn apply_wb_preset(&mut self, preset: WhiteBalancePreset) {
+        self.wb_preset = preset;
+        if let Some((temp, tint)) = preset.temperature_tint() {
+            self.temperature = temp;
+            self.tint = tint;
+        }
+    }
+
+    pub fn apply_bc_preset(&mut self, preset: BrightnessContrastPreset) {
+        self.bc_preset = preset;
+        let (b, c, g) = preset.params();
+        self.brightness = b;
+        self.contrast = c;
+        self.gamma = g;
+    }
+
+    pub fn reset_color_grading(&mut self) {
+        self.brightness = 0.0;
+        self.contrast = 1.0;
+        self.saturation = 1.0;
+        self.gamma = 1.0;
+        self.temperature = 0.0;
+        self.tint = 0.0;
+        self.wb_preset = WhiteBalancePreset::Custom;
+        self.bc_preset = BrightnessContrastPreset::Neutral;
+        self.lut_preset = LutPreset::None;
+        self.custom_lut_path = None;
+        self.color_wheels = None;
+    }
     pub fn is_nested_sequence(&self) -> bool {
         self.nested_sequence_id.is_some()
     }
@@ -763,6 +804,9 @@ impl Clip {
             "brightness" => self.brightness,
             "contrast" => self.contrast,
             "saturation" => self.saturation,
+            "gamma" => self.gamma,
+            "temperature" => self.temperature,
+            "tint" => self.tint,
             _ => 0.0,
         };
 
@@ -1031,5 +1075,52 @@ mod tests {
         assert_eq!(legacy.font_family, "Sans-Serif");
         assert!(!legacy.bold);
         assert!(!legacy.italic);
+    }
+
+    #[test]
+    fn test_color_presets_and_legacy_serde_compatibility() {
+        let legacy_json = r#"{"id":"c1","media_id":"m1","timeline_in":0.0,"timeline_out":5.0,"lut_preset":"monochrome_noir"}"#;
+        let legacy_clip: Clip = serde_json::from_str(legacy_json).expect("deserialize legacy clip");
+        assert_eq!(legacy_clip.temperature, 0.0);
+        assert_eq!(legacy_clip.tint, 0.0);
+        assert_eq!(legacy_clip.gamma, 1.0);
+        assert_eq!(legacy_clip.wb_preset, WhiteBalancePreset::Custom);
+        assert_eq!(legacy_clip.bc_preset, BrightnessContrastPreset::Neutral);
+        assert_eq!(legacy_clip.lut_preset, LutPreset::MonochromeNoir);
+        assert!(legacy_clip.has_color_adjustments());
+
+        // Also support "monochrome" alias
+        let alias_json = r#"{"id":"c2","media_id":"m1","timeline_in":0.0,"timeline_out":5.0,"lut_preset":"monochrome"}"#;
+        let alias_clip: Clip =
+            serde_json::from_str(alias_json).expect("deserialize monochrome alias");
+        assert_eq!(alias_clip.lut_preset, LutPreset::Monochrome);
+
+        let mut clip = Clip::default();
+        assert!(!clip.has_color_adjustments());
+
+        clip.apply_wb_preset(WhiteBalancePreset::Tungsten);
+        assert!(clip.has_color_adjustments());
+        assert_eq!(clip.temperature, -45.0);
+        assert_eq!(clip.tint, -4.0);
+
+        clip.apply_bc_preset(BrightnessContrastPreset::CinematicContrast);
+        assert_eq!(clip.brightness, -0.03);
+        assert_eq!(clip.contrast, 1.32);
+        assert_eq!(clip.gamma, 0.90);
+
+        clip.lut_preset = LutPreset::Kodak2383;
+        let json = serde_json::to_string(&clip).unwrap();
+        let roundtrip: Clip = serde_json::from_str(&json).unwrap();
+        assert_eq!(roundtrip.wb_preset, WhiteBalancePreset::Tungsten);
+        assert_eq!(
+            roundtrip.bc_preset,
+            BrightnessContrastPreset::CinematicContrast
+        );
+        assert_eq!(roundtrip.lut_preset, LutPreset::Kodak2383);
+        assert_eq!(roundtrip.temperature, -45.0);
+        assert_eq!(roundtrip.gamma, 0.90);
+
+        clip.reset_color_grading();
+        assert!(!clip.has_color_adjustments());
     }
 }

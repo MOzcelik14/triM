@@ -14,7 +14,7 @@
 //!   summed with `amix`, anchored to timeline time.
 
 use crate::presets::{ExportPreset, HardwareAccel};
-use trim_core::clip::{Clip, LutPreset, MotionTitleStyle};
+use trim_core::clip::{Clip, MotionTitleStyle};
 use trim_core::keyframe::{Interpolation, Keyframe};
 use trim_core::media::{MediaItem, MediaType};
 use trim_core::project::Project;
@@ -181,34 +181,42 @@ impl TimelineExporter {
         }
         f.push("setsar=1".into());
 
-        if clip.brightness != 0.0 || clip.contrast != 1.0 || clip.saturation != 1.0 {
+        if clip.temperature.abs() > 1e-4 || clip.tint.abs() > 1e-4 {
+            let [wbr, wbg, wbb] =
+                trim_core::color::white_balance_gains(clip.temperature as f32, clip.tint as f32);
             f.push(format!(
-                "eq=brightness={:.3}:contrast={:.3}:saturation={:.3}",
-                clip.brightness, clip.contrast, clip.saturation
+                "colorchannelmixer=rr={wbr:.4}:gg={wbg:.4}:bb={wbb:.4}"
             ));
+        }
+
+        let has_gamma = (clip.gamma - 1.0).abs() > 1e-4;
+        if clip.brightness.abs() > 1e-4
+            || (clip.contrast - 1.0).abs() > 1e-4
+            || (clip.saturation - 1.0).abs() > 1e-4
+            || has_gamma
+        {
+            if has_gamma {
+                f.push(format!(
+                    "eq=brightness={:.3}:contrast={:.3}:saturation={:.3}:gamma={:.3}",
+                    clip.brightness, clip.contrast, clip.saturation, clip.gamma
+                ));
+            } else {
+                f.push(format!(
+                    "eq=brightness={:.3}:contrast={:.3}:saturation={:.3}",
+                    clip.brightness, clip.contrast, clip.saturation
+                ));
+            }
         }
 
         if let Some(lut_path) = &clip.custom_lut_path {
             if !lut_path.trim().is_empty() {
                 let sanitized = trim_core::paths::normalize_filtergraph_path(lut_path.trim());
                 f.push(format!("lut3d=file='{sanitized}'"));
+            } else if let Some(preset_filter) = clip.lut_preset.ffmpeg_filter() {
+                f.push(preset_filter.to_string());
             }
-        } else {
-            match clip.lut_preset {
-                LutPreset::None => {}
-                LutPreset::TealOrange => {
-                    f.push("colorbalance=rs=0.15:gs=-0.05:bs=-0.25:rh=-0.2:gh=0.05:bh=0.25,eq=contrast=1.15:saturation=1.2".to_string());
-                }
-                LutPreset::VintageFilm => {
-                    f.push("curves=vintage,eq=contrast=0.95:saturation=0.85".to_string());
-                }
-                LutPreset::MonochromeNoir => {
-                    f.push("hue=s=0,eq=contrast=1.45:brightness=-0.05".to_string());
-                }
-                LutPreset::CyberpunkNeon => {
-                    f.push("colorbalance=rm=0.2:gm=-0.1:bm=0.3:rh=-0.1:gh=-0.05:bh=0.25,eq=contrast=1.25:saturation=1.4".to_string());
-                }
-            }
+        } else if let Some(preset_filter) = clip.lut_preset.ffmpeg_filter() {
+            f.push(preset_filter.to_string());
         }
 
         if let Some(cw) = &clip.color_wheels {
@@ -1543,6 +1551,7 @@ mod tests {
 
     #[test]
     fn test_lut_preset_and_custom_cube_filtergraph() {
+        use trim_core::clip::LutPreset;
         let mut proj = Project::new("LutTest");
         let mut v = MediaItem::new("/tmp/fake_lut.mp4");
         v.media_type = MediaType::Video;
@@ -1867,6 +1876,45 @@ mod tests {
         assert!(
             fg.contains("volume=eval=frame:volume="),
             "Filtergraph must contain volume evaluation expression: {fg}"
+        );
+    }
+
+    #[test]
+    fn test_white_balance_gamma_and_expanded_looks_filtergraph() {
+        use trim_core::clip::{BrightnessContrastPreset, LutPreset, WhiteBalancePreset};
+
+        let mut proj = Project::new("ColorExportTest");
+        let mut v = MediaItem::new("/tmp/fake_color.mp4");
+        v.media_type = MediaType::Video;
+        let vid_id = v.id.clone();
+        proj.add_media(v);
+
+        let mut c1 = Clip::new(&vid_id, 0.0, 5.0);
+        c1.apply_wb_preset(WhiteBalancePreset::Tungsten);
+        c1.apply_bc_preset(BrightnessContrastPreset::CinematicContrast);
+        c1.lut_preset = LutPreset::Kodak2383;
+        proj.timeline.tracks[0].add_clip(c1);
+
+        let preset = ExportPreset::default();
+        let (cmd, _) =
+            TimelineExporter::build_export_pipeline(&proj, &preset, "/tmp/out_color.mp4").unwrap();
+        let fg = cmd
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd[idx + 1])
+            .unwrap();
+
+        assert!(
+            fg.contains("colorchannelmixer=rr="),
+            "should include white balance colorchannelmixer filter: {fg}"
+        );
+        assert!(
+            fg.contains(":gamma=0.900"),
+            "should include gamma in eq filter for CinematicContrast: {fg}"
+        );
+        assert!(
+            fg.contains("colorbalance=rs=-0.12"),
+            "should include Kodak 2383 look filter: {fg}"
         );
     }
 }

@@ -1,6 +1,7 @@
 //! triM. Core models, types, and timecode utilities.
 
 pub mod clip;
+pub mod color;
 pub mod error;
 pub mod keyframe;
 pub mod lru;
@@ -16,6 +17,10 @@ pub mod timeline;
 pub mod track;
 
 pub use clip::{AudioEqPreset, Clip, LutPreset, TextOverlay};
+pub use color::{
+    analyze_auto_white_balance_rgba, apply_color_grade_normalized, white_balance_gains,
+    BrightnessContrastPreset, ColorGradeParams, LookCategory, WhiteBalancePreset,
+};
 pub use error::CoreError;
 pub use keyframe::{interpolate_keyframes, Interpolation, Keyframe};
 pub use lru::LruCache;

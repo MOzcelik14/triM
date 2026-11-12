@@ -3356,6 +3356,62 @@ impl eframe::App for TrimApp {
                                 InspectorAction::SelectCustomLut(clip_id) => {
                                     self.prompt_custom_lut(clip_id);
                                 }
+                                InspectorAction::SetColorGrading {
+                                    track_id,
+                                    clip_id,
+                                    old_state,
+                                    new_state,
+                                } => {
+                                    let cmd = Box::new(SetClipColorGradingCommand::new(
+                                        track_id, clip_id, old_state, new_state,
+                                    ));
+                                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                    self.project.mark_dirty();
+                                    self.last_rendered_monitor_frame = None;
+                                    self.video_engine.last_rendered_frame = None;
+                                }
+                                InspectorAction::AutoWhiteBalance { track_id, clip_id } => {
+                                    let clip_snapshot = self
+                                        .project
+                                        .timeline
+                                        .get_track_by_id(&track_id)
+                                        .and_then(|t| t.get_clip_by_id(&clip_id))
+                                        .cloned();
+                                    if let Some(clip_ref) = clip_snapshot {
+                                        let old_state = ClipColorGradingState::from_clip(&clip_ref);
+                                        if let Some((temp, tint)) = self
+                                            .video_engine
+                                            .analyze_clip_auto_wb(
+                                                &self.project,
+                                                &clip_ref,
+                                                self.current_time,
+                                            )
+                                        {
+                                            let mut new_state = old_state.clone();
+                                            new_state.wb_preset =
+                                                trim_core::clip::WhiteBalancePreset::Auto;
+                                            new_state.temperature = temp;
+                                            new_state.tint = tint;
+                                            let cmd = Box::new(SetClipColorGradingCommand::new(
+                                                track_id, clip_id, old_state, new_state,
+                                            ));
+                                            let _ = self
+                                                .undo_stack
+                                                .push(cmd, &mut self.project.timeline);
+                                            self.project.mark_dirty();
+                                            self.last_rendered_monitor_frame = None;
+                                            self.video_engine.last_rendered_frame = None;
+                                            self.status_message = format!(
+                                                "✨ Otomatik Beyaz Dengesi uygulandı (Sıcaklık: {:+.1}, Ton: {:+.1})",
+                                                temp, tint
+                                            );
+                                        } else {
+                                            self.status_message =
+                                                "⚠ Otomatik Beyaz Dengesi için kare analiz edilemedi."
+                                                    .to_string();
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

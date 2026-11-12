@@ -2,6 +2,21 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [1.5.0] - 2026-11-12
+
+### Added
+- **Advanced Color Preset System**:
+  - **White Balance (`WhiteBalancePreset`)**: Added `Temperature` (`-100..=100`) and `Tint` (`-100..=100`) parameters with presets (`Auto White Balance`, `Daylight 5600K`, `Tungsten 3200K`, `Cloudy`, `Shade`, `Fluorescent`, `Warm`, `Cool`) and post-preset manual slider fine-tuning.
+  - **Real Image-Analysis Auto White Balance (`analyze_auto_white_balance_rgba`)**: Frame-based midtone-weighted Gray-World & chromatic log-ratio illuminant estimation that automatically neutralizes cool, warm, or green/magenta color casts on the active video/image frame.
+  - **Brightness & Contrast Presets (`BrightnessContrastPreset`)**: Added `Neutral`, `Soft Contrast`, `High Contrast`, `Low Contrast`, `Bright`, `Dark / Moody`, `Cinematic Contrast`, and `Flat` presets driving `brightness`, `contrast`, and the new `gamma` (`0.2..=3.0`) curve parameter.
+  - **Expanded Categorized Color Looks (`LutPreset`)**:
+    - **Cinematic**: `Teal & Orange`, `Cinematic Warm`, `Cinematic Cool`, `Blockbuster`, `Filmic Neutral`.
+    - **Film Emulation**: `Kodak 2383`, `Kodak Portra`, `Fuji Film`, `Vintage Film`, `Faded Film`, `Analog Film`.
+    - **Creative**: `Monochrome` (`MonochromeNoir`), `Sepia`, `Bleach Bypass`, `Muted Colors`, `Vibrant`, `Pastel`, `Golden Hour`, `Cold Winter`, `Night Cinematic`, and `Cyberpunk Neon`.
+  - **Redesigned Color Inspector & Live Preset Thumbnails**: Categorized color grading subcards with live-sampled miniature preset thumbnails, custom `.cube` 3D LUT support in both GPU shader and CPU software pipelines, full preview/export parity (`colorchannelmixer`, `eq` with `gamma`, and look filter chains), backward compatibility with existing `.trim` projects, and full Undo/Redo (`SetClipColorGradingCommand`).
+
+---
+
 ## [1.4.0] - 2026-11-12
 
 ### Added

@@ -56,6 +56,17 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.5.0" date="2026-11-12">
+      <description>
+        <p>triM. v1.5.0 - Gelişmiş Renk Preset Sistemi (White Balance, Kontrast Presetleri ve Sinematik / Film / Yaratıcı Renk Görünümleri):</p>
+        <ul>
+          <li>Beyaz Dengesi (White Balance): Sıcaklık (Temperature) ve Renk Tonu (Tint) kontrolleri; Daylight (5600K), Tungsten (3200K), Cloudy, Shade, Fluorescent, Warm, Cool hazır ayarları ve görüntü analizi tabanlı gerçek Otomatik Beyaz Dengesi (Auto WB).</li>
+          <li>Parlaklık, Kontrast ve Gama (Gamma) Hazır Ayarları: Neutral, Soft Contrast, High Contrast, Low Contrast, Bright, Dark / Moody, Cinematic Contrast ve Flat presetleri.</li>
+          <li>Kategorize Edilmiş 20+ Yaratıcı Renk Görünümü: Sinematik (Teal &amp; Orange, Cinematic Warm, Cinematic Cool, Blockbuster, Filmic Neutral), Film Emülasyonu (Kodak 2383, Kodak Portra, Fuji Film, Vintage Film, Faded Film, Analog Film) ve Yaratıcı (Monochrome, Sepia, Bleach Bypass, Muted Colors, Vibrant, Pastel, Golden Hour, Cold Winter, Night Cinematic).</li>
+          <li>Denetçi panelinde canlı önizleme küçük resimleri (Preset Thumbnails), özel .cube 3D LUT desteği, CPU/GPU önizleme ve dışa aktarma tutarlılığı ile tam Geri/İleri Al (Undo/Redo) desteği.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.4.0" date="2026-11-12">
       <description>
         <p>triM. v1.4.0 - Sony Kamera (XAVC S / XAVC HS) Ses Çözümleme, Linux Ses Failover ve Kaynak Monitörü Ses Desteği:</p>

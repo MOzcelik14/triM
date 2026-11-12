@@ -535,6 +535,66 @@ pub struct CubeLut3D {
     pub rgba_strip: Vec<u8>,
 }
 
+impl CubeLut3D {
+    /// Trilinear/slice-interpolated 3D LUT sampling for normalized RGB in `[0.0, 1.0]`.
+    #[inline]
+    pub fn sample(&self, r: f32, g: f32, b: f32) -> [f32; 3] {
+        let n = self.size as usize;
+        if n < 2 || self.rgba_strip.len() < n * n * n * 4 {
+            return [r, g, b];
+        }
+        let max_idx = (n - 1) as f32;
+        let rf = (r.clamp(0.0, 1.0) * max_idx).clamp(0.0, max_idx);
+        let gf = (g.clamp(0.0, 1.0) * max_idx).clamp(0.0, max_idx);
+        let bf = (b.clamp(0.0, 1.0) * max_idx).clamp(0.0, max_idx);
+
+        let r0 = (rf.floor() as usize).min(n - 1);
+        let r1 = (r0 + 1).min(n - 1);
+        let dr = rf - r0 as f32;
+
+        let g0 = (gf.floor() as usize).min(n - 1);
+        let g1 = (g0 + 1).min(n - 1);
+        let dg = gf - g0 as f32;
+
+        let b0 = (bf.floor() as usize).min(n - 1);
+        let b1 = (b0 + 1).min(n - 1);
+        let db = bf - b0 as f32;
+
+        let width = n * n;
+        let fetch = |ri: usize, gi: usize, bi: usize| -> [f32; 3] {
+            let x = bi * n + ri;
+            let y = gi;
+            let idx = (y * width + x) * 4;
+            [
+                self.rgba_strip[idx] as f32 / 255.0,
+                self.rgba_strip[idx + 1] as f32 / 255.0,
+                self.rgba_strip[idx + 2] as f32 / 255.0,
+            ]
+        };
+
+        let c000 = fetch(r0, g0, b0);
+        let c100 = fetch(r1, g0, b0);
+        let c010 = fetch(r0, g1, b0);
+        let c110 = fetch(r1, g1, b0);
+        let c001 = fetch(r0, g0, b1);
+        let c101 = fetch(r1, g0, b1);
+        let c011 = fetch(r0, g1, b1);
+        let c111 = fetch(r1, g1, b1);
+
+        let mut out = [0.0f32; 3];
+        for i in 0..3 {
+            let c00 = c000[i] + (c100[i] - c000[i]) * dr;
+            let c10 = c010[i] + (c110[i] - c010[i]) * dr;
+            let c01 = c001[i] + (c101[i] - c001[i]) * dr;
+            let c11 = c011[i] + (c111[i] - c011[i]) * dr;
+            let c0 = c00 + (c10 - c00) * dg;
+            let c1 = c01 + (c11 - c01) * dg;
+            out[i] = (c0 + (c1 - c0) * db).clamp(0.0, 1.0);
+        }
+        out
+    }
+}
+
 pub fn parse_cube_lut_str(content: &str) -> Option<CubeLut3D> {
     let mut size: Option<u32> = None;
     let mut triplets: Vec<[f32; 3]> = Vec::new();
@@ -668,6 +728,56 @@ impl VideoEngine {
             }
         }
         self.image_cache.get(&p_str).cloned()
+    }
+
+    /// Analyzes the raw source frame of `clip` at `timeline_time` (or theclip's midpoint if outside)
+    /// and returns the estimated Auto White Balance `(temperature, tint)` parameters.
+    pub fn analyze_clip_auto_wb(
+        &mut self,
+        project: &Project,
+        clip: &Clip,
+        timeline_time: f64,
+    ) -> Option<(f64, f64)> {
+        let media_item = project.get_media(&clip.media_id)?;
+        let sample_tl_time =
+            if timeline_time >= clip.timeline_in && timeline_time < clip.timeline_out {
+                timeline_time
+            } else {
+                0.5 * (clip.timeline_in + clip.timeline_out)
+            };
+
+        let raw_img: Arc<RgbaImage> = if media_item.media_type == MediaType::Image {
+            self.get_image(&media_item.file_path)?
+        } else {
+            let eff_path = media_item.resolved_playback_path(self.use_proxies);
+            let src_t = clip.map_timeline_to_source(sample_tl_time);
+            let ts_key = (src_t * 30.0).round() as u64;
+            let key = (eff_path.to_string(), ts_key);
+
+            let cached = self
+                .frame_cache
+                .write()
+                .ok()
+                .and_then(|mut c| c.get(&key).cloned());
+            if let Some(frame) = cached {
+                frame
+            } else if let Some(ref raw) = self.last_raw_source_frame {
+                Arc::clone(raw)
+            } else {
+                let decoded = decode_frame_raw(eff_path, src_t)?;
+                let arc = Arc::new(decoded);
+                if let Ok(mut cache) = self.frame_cache.write() {
+                    cache.insert(key, Arc::clone(&arc));
+                }
+                arc
+            }
+        };
+
+        Some(trim_core::color::analyze_auto_white_balance_rgba(
+            raw_img.as_raw(),
+            raw_img.width(),
+            raw_img.height(),
+        ))
     }
 
     /// Decodes and collects all visible video/image layers at `timeline_time` without CPU pixel compositing.
@@ -878,13 +988,9 @@ impl VideoEngine {
                 && !in_fade_out
                 && clip.transition_in.is_none()
                 && clip.transition_out.is_none()
-                && clip.brightness == 0.0
-                && clip.contrast == 1.0
-                && clip.saturation == 1.0
-                && clip.lut_preset == trim_core::clip::LutPreset::None
-                && clip.custom_lut_path.is_none()
+                && !clip.has_color_adjustments()
+                && !clip.has_crop()
                 && !clip.chromakey.as_ref().is_some_and(|ck| ck.enabled)
-                && clip.color_wheels.is_none()
                 && clip.keyframes.is_empty()
                 && clip.text_overlay.is_none()
                 && clip.scale == 1.0
@@ -1354,14 +1460,7 @@ fn draw_clip_onto_canvas(
         || (clip.transition_out.as_deref() == Some("wipe_right") && out_progress < 1.0);
 
     let has_chromakey = clip.chromakey.as_ref().is_some_and(|ck| ck.enabled);
-    let has_color_wheels = clip.color_wheels.is_some();
-    let has_color_adj = clip.brightness != 0.0
-        || clip.contrast != 1.0
-        || clip.saturation != 1.0
-        || clip.lut_preset != trim_core::clip::LutPreset::None
-        || clip.custom_lut_path.is_some()
-        || has_chromakey
-        || has_color_wheels;
+    let has_color_adj = clip.has_color_adjustments() || has_chromakey;
     let has_special_trans =
         has_dip_white || wipe_left_active || wipe_right_active || slide_x_offset.abs() > 0.1;
 
@@ -1391,6 +1490,13 @@ fn draw_clip_onto_canvas(
         }
         return;
     }
+
+    let color_params = clip.color_grade_params();
+    let custom_lut = clip
+        .custom_lut_path
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .and_then(parse_cube_lut_file);
 
     for y in 0..final_h {
         let cy = final_y + y;
@@ -1480,67 +1586,20 @@ fn draw_clip_onto_canvas(
                 b = b.clamp(0.0, 255.0);
             }
 
-            // Color adjustments
+            // Color adjustments (White Balance + Brightness/Contrast/Gamma + Saturation + Looks + 3D LUT)
             if has_color_adj {
-                let contrast = clip.contrast as f32;
-                let brightness = clip.brightness as f32;
-                let saturation = clip.saturation as f32;
-
-                r = (contrast * (r - 128.0) + 128.0 + (brightness * 255.0)).clamp(0.0, 255.0);
-                g = (contrast * (g - 128.0) + 128.0 + (brightness * 255.0)).clamp(0.0, 255.0);
-                b = (contrast * (b - 128.0) + 128.0 + (brightness * 255.0)).clamp(0.0, 255.0);
-
-                if saturation != 1.0 {
-                    let luma = 0.299 * r + 0.587 * g + 0.114 * b;
-                    r = (luma + saturation * (r - luma)).clamp(0.0, 255.0);
-                    g = (luma + saturation * (g - luma)).clamp(0.0, 255.0);
-                    b = (luma + saturation * (b - luma)).clamp(0.0, 255.0);
+                let [mut nr, mut ng, mut nb] = trim_core::color::apply_color_grade_normalized(
+                    r / 255.0,
+                    g / 255.0,
+                    b / 255.0,
+                    &color_params,
+                );
+                if let Some(ref lut) = custom_lut {
+                    [nr, ng, nb] = lut.sample(nr, ng, nb);
                 }
-
-                match clip.lut_preset {
-                    trim_core::clip::LutPreset::None => {}
-                    trim_core::clip::LutPreset::TealOrange => {
-                        let luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
-                        if luma < 0.5 {
-                            let shadow_w = (1.0 - luma * 2.0).clamp(0.0, 1.0);
-                            r = (r * (1.0 - 0.22 * shadow_w)).clamp(0.0, 255.0);
-                            g = (g * (1.0 + 0.08 * shadow_w)).clamp(0.0, 255.0);
-                            b = (b * (1.0 + 0.32 * shadow_w)).clamp(0.0, 255.0);
-                        } else {
-                            let hi_w = ((luma - 0.5) * 2.0).clamp(0.0, 1.0);
-                            r = (r * (1.0 + 0.25 * hi_w)).clamp(0.0, 255.0);
-                            g = (g * (1.0 + 0.08 * hi_w)).clamp(0.0, 255.0);
-                            b = (b * (1.0 - 0.22 * hi_w)).clamp(0.0, 255.0);
-                        }
-                    }
-                    trim_core::clip::LutPreset::VintageFilm => {
-                        r = (r * 1.06 + 14.0).clamp(0.0, 255.0);
-                        g = (g * 1.02 + 10.0).clamp(0.0, 255.0);
-                        b = (b * 0.90 + 6.0).clamp(0.0, 255.0);
-                    }
-                    trim_core::clip::LutPreset::MonochromeNoir => {
-                        let luma = 0.299 * r + 0.587 * g + 0.114 * b;
-                        let norm = luma / 255.0;
-                        let curved = if norm < 0.5 {
-                            2.0 * norm * norm
-                        } else {
-                            1.0 - 2.0 * (1.0 - norm) * (1.0 - norm)
-                        };
-                        let gray = (curved * 255.0).clamp(0.0, 255.0);
-                        r = gray;
-                        g = gray;
-                        b = gray;
-                    }
-                    trim_core::clip::LutPreset::CyberpunkNeon => {
-                        r = (r * 1.22 + 8.0).clamp(0.0, 255.0);
-                        g = (g * 0.88).clamp(0.0, 255.0);
-                        b = (b * 1.32 + 16.0).clamp(0.0, 255.0);
-                        let luma = 0.299 * r + 0.587 * g + 0.114 * b;
-                        r = (luma + 1.25 * (r - luma)).clamp(0.0, 255.0);
-                        g = (luma + 1.25 * (g - luma)).clamp(0.0, 255.0);
-                        b = (luma + 1.25 * (b - luma)).clamp(0.0, 255.0);
-                    }
-                }
+                r = (nr * 255.0).clamp(0.0, 255.0);
+                g = (ng * 255.0).clamp(0.0, 255.0);
+                b = (nb * 255.0).clamp(0.0, 255.0);
             }
 
             // Dip to white
@@ -2072,5 +2131,68 @@ LUT_3D_SIZE 2
         // Bottom track (V1) comes first, top track (V2) comes second for alpha blending
         assert_eq!(layers[0].clip.media_id, m1_id);
         assert_eq!(layers[1].clip.media_id, m2_id);
+    }
+
+    #[test]
+    fn test_advanced_color_presets_rendering() {
+        use trim_core::clip::{BrightnessContrastPreset, Clip, LutPreset, WhiteBalancePreset};
+
+        let frame = ImageBuffer::from_pixel(8, 8, Rgba([128, 128, 128, 255]));
+
+        // 1. Warm White Balance boosts Red and reduces Blue
+        let mut canvas_wb = ImageBuffer::from_pixel(8, 8, Rgba([0, 0, 0, 255]));
+        let mut clip_wb = Clip::new("m1", 0.0, 5.0);
+        clip_wb.apply_wb_preset(WhiteBalancePreset::Warm);
+        draw_clip_onto_canvas(&mut canvas_wb, &clip_wb, &frame, 1.0);
+        let px_wb = canvas_wb.get_pixel(4, 4);
+        assert!(px_wb[0] > 128, "Warm WB should increase red channel");
+        assert!(px_wb[2] < 128, "Warm WB should decrease blue channel");
+
+        // 2. Dark / Moody BC preset darkens midtones via brightness + gamma
+        let mut canvas_bc = ImageBuffer::from_pixel(8, 8, Rgba([0, 0, 0, 255]));
+        let mut clip_bc = Clip::new("m1", 0.0, 5.0);
+        clip_bc.apply_bc_preset(BrightnessContrastPreset::DarkMoody);
+        draw_clip_onto_canvas(&mut canvas_bc, &clip_bc, &frame, 1.0);
+        let px_bc = canvas_bc.get_pixel(4, 4);
+        assert!(px_bc[0] < 128, "DarkMoody preset should darken midtones");
+
+        // 3. Sepia look produces warm R > G > B ordering
+        let mut canvas_sepia = ImageBuffer::from_pixel(8, 8, Rgba([0, 0, 0, 255]));
+        let mut clip_sepia = Clip::new("m1", 0.0, 5.0);
+        clip_sepia.lut_preset = LutPreset::Sepia;
+        draw_clip_onto_canvas(&mut canvas_sepia, &clip_sepia, &frame, 1.0);
+        let px_sepia = canvas_sepia.get_pixel(4, 4);
+        assert!(px_sepia[0] > px_sepia[1] && px_sepia[1] > px_sepia[2]);
+    }
+
+    #[test]
+    fn test_analyze_clip_auto_wb_on_image_clip() {
+        use tempfile::tempdir;
+        use trim_core::clip::Clip;
+        use trim_core::media::MediaItem;
+        use trim_core::project::Project;
+
+        let dir = tempdir().unwrap();
+        let img_path = dir.path().join("blue_cast.png");
+        // Image with strong blue cast
+        RgbaImage::from_pixel(32, 32, Rgba([90, 125, 185, 255]))
+            .save(&img_path)
+            .unwrap();
+
+        let mut project = Project::default();
+        let mut media = MediaItem::new(&img_path);
+        media.media_type = MediaType::Image;
+        let media_id = media.id.clone();
+        project.add_media(media);
+
+        let clip = Clip::new(&media_id, 0.0, 5.0);
+        let mut engine = VideoEngine::new();
+        let (temp, _tint) = engine
+            .analyze_clip_auto_wb(&project, &clip, 1.0)
+            .expect("Should analyze auto WB for image clip");
+        assert!(
+            temp > 10.0,
+            "Blue-cast image should produce warm positive temperature compensation, got {temp}"
+        );
     }
 }
