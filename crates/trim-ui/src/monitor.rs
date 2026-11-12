@@ -988,8 +988,7 @@ pub fn draw_text_overlays_on_rect(
         if ov.alpha <= 0.001 || ov.text.is_empty() {
             continue;
         }
-        let scaled_font_size =
-            (ov.font_size * (frame_rect.height() / 1080.0)).clamp(10.0, 160.0);
+        let scaled_font_size = (ov.font_size * (frame_rect.height() / 1080.0)).clamp(10.0, 160.0);
         let family = match ov.font_family.as_str() {
             "Monospace" => egui::FontFamily::Monospace,
             _ => egui::FontFamily::Proportional,
@@ -1176,20 +1175,14 @@ pub fn draw_text_overlays_on_rect(
 
                 let unfold = (ov.progress * 3.0).clamp(0.0, 1.0);
                 let ease_w = full_box.width() * unfold;
-                let animated_box = Rect::from_center_size(
-                    full_box.center(),
-                    Vec2::new(ease_w, full_box.height()),
-                );
+                let animated_box =
+                    Rect::from_center_size(full_box.center(), Vec2::new(ease_w, full_box.height()));
 
                 let bg_col = ov
                     .bg_color
                     .unwrap_or(Color32::from_rgba_unmultiplied(20, 24, 34, 230));
                 painter.rect_filled(animated_box, 4.0, bg_col);
-                painter.rect_stroke(
-                    animated_box,
-                    4.0,
-                    Stroke::new(1.5_f32, ov.highlight_color),
-                );
+                painter.rect_stroke(animated_box, 4.0, Stroke::new(1.5_f32, ov.highlight_color));
 
                 if unfold >= 0.7 {
                     let text_alpha = ((unfold - 0.7) / 0.3 * ov.alpha).clamp(0.0, 1.0);
@@ -1228,13 +1221,12 @@ pub fn draw_text_overlays_on_rect(
                 }
                 trim_core::clip::CaptionStyle::WordHighlightYellow
                 | trim_core::clip::CaptionStyle::WordHighlightNeon => {
-                    let hl_col = if ov.caption_style
-                        == trim_core::clip::CaptionStyle::WordHighlightYellow
-                    {
-                        Color32::from_rgb(255, 230, 0)
-                    } else {
-                        Color32::from_rgb(0, 255, 102)
-                    };
+                    let hl_col =
+                        if ov.caption_style == trim_core::clip::CaptionStyle::WordHighlightYellow {
+                            Color32::from_rgb(255, 230, 0)
+                        } else {
+                            Color32::from_rgb(0, 255, 102)
+                        };
 
                     let mut job = egui::text::LayoutJob::default();
                     for (i, word) in words.iter().enumerate() {
