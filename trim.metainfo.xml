@@ -56,6 +56,15 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.6.1" date="2026-11-13">
+      <description>
+        <p>triM. v1.6.1 - Windows FFmpeg Paketleme Düzeltmesi ve Sade Marka Kimliği:</p>
+        <ul>
+          <li>Windows kurulum betiği (install.ps1) ve GitHub Release paketlemesinde Chocolatey shim veya DLL bağımlı FFmpeg ikililerinin kopyalanması kaynaklı "FFmpeg bulunamadı" hatası giderildi; yalnızca bağımsız statik ikililer doğrulanarak paketleniyor.</li>
+          <li>Sürüm kod adı kaldırılarak arayüz, CLI ve dokümantasyon sadeleştirildi (düz triM.).</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.6.0" date="2026-11-12">
       <description>
         <p>triM. v1.6.0 - Profesyonel Renk Analizi (Color Scopes), Maske Sistemi, Ayar Katmanları ve Karışım Modları:</p>

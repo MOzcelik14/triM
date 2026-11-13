@@ -47,4 +47,3 @@ pub use timeline::{AspectRatio, TimelineModel};
 pub use track::{Track, TrackType};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const VERSION_CODENAME: &str = "Karadeniz";

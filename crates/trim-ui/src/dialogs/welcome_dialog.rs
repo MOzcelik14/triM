@@ -208,23 +208,6 @@ impl WelcomeDialog {
                                             .color(Color32::from_rgb(0xf2, 0x9b, 0x5e)),
                                         );
                                     });
-                                ui.add_space(4.0);
-                                Frame::none()
-                                    .fill(Color32::from_rgb(0x1a, 0x33, 0x28))
-                                    .rounding(Rounding::same(6.0))
-                                    .stroke(Stroke::new(
-                                        1.0_f32,
-                                        Color32::from_rgb(0x28, 0x6e, 0x48),
-                                    ))
-                                    .inner_margin(Margin::symmetric(8.0, 3.0))
-                                    .show(ui, |ui| {
-                                        ui.label(
-                                            RichText::new(trim_core::VERSION_CODENAME)
-                                                .size(11.0)
-                                                .strong()
-                                                .color(Color32::from_rgb(0x56, 0xd0, 0x8a)),
-                                        );
-                                    });
                             });
 
                             ui.add_space(2.0);

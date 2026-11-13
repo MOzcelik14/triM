@@ -2,6 +2,18 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [1.6.1] - 2026-11-13
+
+### Fixed
+- **Windows FFmpeg & FFprobe Bundling / Detection (`install.ps1` & CI)**:
+  - Fixed Windows packages and `install.ps1` potentially copying Chocolatey shims or DLL-dependent FFmpeg executables that fail to launch on end-user machines (`FFmpeg bulunamadı` modal).
+  - Enforced standalone static binary validation (`>= 5 MB` and `ffmpeg -version` / `ffprobe -version` execution checks) in both GitHub Actions Windows packaging and `install.ps1`.
+
+### Changed
+- **Branding**: Removed the release codename across the UI, CLI (`--version` / `--help`), window titles, About/Welcome/Splash dialogs, and README badges — now displaying plain `triM.`.
+
+---
+
 ## [1.6.0] - 2026-11-12
 
 ### Added
