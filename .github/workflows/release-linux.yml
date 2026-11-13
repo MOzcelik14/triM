@@ -159,64 +159,91 @@ jobs:
         shell: pwsh
         run: |
           $stageBin = Join-Path $env:TEMP "ffmpeg-bin"
+          if (Test-Path $stageBin) { Remove-Item -Recurse -Force $stageBin }
           New-Item -ItemType Directory -Path $stageBin -Force | Out-Null
 
-          # Strategy 1: Check runner preinstalled binaries
-          $ff = (Get-Command ffmpeg -ErrorAction SilentlyContinue)?.Source
-          $probe = (Get-Command ffprobe -ErrorAction SilentlyContinue)?.Source
-          $play = (Get-Command ffplay -ErrorAction SilentlyContinue)?.Source
-
-          if (-not $ff -and (Test-Path "C:\ProgramData\chocolatey\bin\ffmpeg.exe")) {
-            $ff = "C:\ProgramData\chocolatey\bin\ffmpeg.exe"
-          }
-          if (-not $probe -and (Test-Path "C:\ProgramData\chocolatey\bin\ffprobe.exe")) {
-            $probe = "C:\ProgramData\chocolatey\bin\ffprobe.exe"
-          }
-          if (-not $play -and (Test-Path "C:\ProgramData\chocolatey\bin\ffplay.exe")) {
-            $play = "C:\ProgramData\chocolatey\bin\ffplay.exe"
-          }
-
-          # Strategy 2: Chocolatey installation
-          if (-not $ff -or -not $probe) {
-            Write-Host "Installing FFmpeg via Chocolatey..."
-            choco install ffmpeg -y --no-progress
-            if (Test-Path "C:\ProgramData\chocolatey\bin\ffmpeg.exe") {
-              $ff = "C:\ProgramData\chocolatey\bin\ffmpeg.exe"
+          function Test-StagedFfmpeg {
+            param([string]$FfSrc, [string]$ProbeSrc, [string]$PlaySrc)
+            if (-not $FfSrc -or -not $ProbeSrc) { return $false }
+            if (-not (Test-Path $FfSrc) -or -not (Test-Path $ProbeSrc)) { return $false }
+            if ((Get-Item $FfSrc).Length -lt 5MB -or (Get-Item $ProbeSrc).Length -lt 5MB) {
+              Write-Host "Skipping non-standalone/shim binary: $FfSrc"
+              return $false
             }
-            if (Test-Path "C:\ProgramData\chocolatey\bin\ffprobe.exe") {
-              $probe = "C:\ProgramData\chocolatey\bin\ffprobe.exe"
+            $dstFf = Join-Path $stageBin "ffmpeg.exe"
+            $dstProbe = Join-Path $stageBin "ffprobe.exe"
+            Copy-Item -Path $FfSrc -Destination $dstFf -Force
+            Copy-Item -Path $ProbeSrc -Destination $dstProbe -Force
+            if ($PlaySrc -and (Test-Path $PlaySrc) -and (Get-Item $PlaySrc).Length -ge 5MB) {
+              Copy-Item -Path $PlaySrc -Destination (Join-Path $stageBin "ffplay.exe") -Force
             }
-            if (Test-Path "C:\ProgramData\chocolatey\bin\ffplay.exe") {
-              $play = "C:\ProgramData\chocolatey\bin\ffplay.exe"
+            & $dstFf -version *> $null
+            $okFf = ($LASTEXITCODE -eq 0)
+            & $dstProbe -version *> $null
+            $okProbe = ($LASTEXITCODE -eq 0)
+            if (-not ($okFf -and $okProbe)) {
+              Write-Host "Candidate binaries failed standalone execution test (likely missing DLLs)."
+              Remove-Item -Path "$stageBin\*" -Force -ErrorAction SilentlyContinue
+              return $false
             }
+            return $true
           }
 
-          # Strategy 3: Official static essentials download
-          if (-not $ff -or -not $probe) {
-            Write-Host "Downloading official FFmpeg release essentials..."
+          $ready = $false
+
+          # Strategy 1: Official static essentials download (Gyan.dev)
+          try {
+            Write-Host "Downloading official static FFmpeg release essentials..."
             $ffZip = Join-Path $env:TEMP "ffmpeg-essentials.zip"
             $ffExt = Join-Path $env:TEMP "ffmpeg-essentials-ext"
+            if (Test-Path $ffExt) { Remove-Item -Recurse -Force $ffExt }
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $ffZip -UseBasicParsing
             Expand-Archive -Path $ffZip -DestinationPath $ffExt -Force
             $ff = (Get-ChildItem -Path $ffExt -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1)?.FullName
             $probe = (Get-ChildItem -Path $ffExt -Filter "ffprobe.exe" -Recurse | Select-Object -First 1)?.FullName
             $play = (Get-ChildItem -Path $ffExt -Filter "ffplay.exe" -Recurse | Select-Object -First 1)?.FullName
+            $ready = Test-StagedFfmpeg -FfSrc $ff -ProbeSrc $probe -PlaySrc $play
+          } catch {
+            Write-Host "Gyan.dev download failed: $_"
           }
 
-          Write-Host "Acquired FFmpeg: $ff"
-          Write-Host "Acquired FFprobe: $probe"
+          # Strategy 2: GitHub mirror fallback
+          if (-not $ready) {
+            try {
+              Write-Host "Trying GitHub codexffmpeg mirror..."
+              $ffZip = Join-Path $env:TEMP "ffmpeg-gh.zip"
+              $ffExt = Join-Path $env:TEMP "ffmpeg-gh-ext"
+              if (Test-Path $ffExt) { Remove-Item -Recurse -Force $ffExt }
+              Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile $ffZip -UseBasicParsing
+              Expand-Archive -Path $ffZip -DestinationPath $ffExt -Force
+              $ff = (Get-ChildItem -Path $ffExt -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1)?.FullName
+              $probe = (Get-ChildItem -Path $ffExt -Filter "ffprobe.exe" -Recurse | Select-Object -First 1)?.FullName
+              $play = (Get-ChildItem -Path $ffExt -Filter "ffplay.exe" -Recurse | Select-Object -First 1)?.FullName
+              $ready = Test-StagedFfmpeg -FfSrc $ff -ProbeSrc $probe -PlaySrc $play
+            } catch {
+              Write-Host "GitHub mirror failed: $_"
+            }
+          }
 
-          if (-not $ff -or -not $probe) {
-            Write-Error "FFmpeg/FFprobe binaries could not be acquired for Windows packaging."
+          # Strategy 3: Chocolatey real tools binary (never shims)
+          if (-not $ready) {
+            Write-Host "Falling back to Chocolatey static FFmpeg..."
+            choco install ffmpeg -y --no-progress
+            $chocoTools = "C:\ProgramData\chocolatey\lib\ffmpeg\tools"
+            if (Test-Path $chocoTools) {
+              $ff = (Get-ChildItem -Path $chocoTools -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1)?.FullName
+              $probe = (Get-ChildItem -Path $chocoTools -Filter "ffprobe.exe" -Recurse | Select-Object -First 1)?.FullName
+              $play = (Get-ChildItem -Path $chocoTools -Filter "ffplay.exe" -Recurse | Select-Object -First 1)?.FullName
+              $ready = Test-StagedFfmpeg -FfSrc $ff -ProbeSrc $probe -PlaySrc $play
+            }
+          }
+
+          if (-not $ready) {
+            Write-Error "Standalone FFmpeg/FFprobe binaries could not be acquired for Windows packaging."
             exit 1
           }
-
-          Copy-Item -Path $ff -Destination (Join-Path $stageBin "ffmpeg.exe") -Force
-          Copy-Item -Path $probe -Destination (Join-Path $stageBin "ffprobe.exe") -Force
-          if ($play -and (Test-Path $play)) {
-            Copy-Item -Path $play -Destination (Join-Path $stageBin "ffplay.exe") -Force
-          }
+          Write-Host "Verified standalone FFmpeg & FFprobe in $stageBin"
       - name: Package Windows ZIP
         shell: pwsh
         run: |

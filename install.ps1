@@ -156,6 +156,28 @@ if ($Uninstall) {
 # ------------------------------------------------------------------------------
 # Helper: Ensure FFmpeg & FFprobe are Installed
 # ------------------------------------------------------------------------------
+function Test-WorkingFfmpegPair {
+    param (
+        [string]$FfmpegExe,
+        [string]$FfprobeExe
+    )
+    if (-not (Test-Path $FfmpegExe) -or -not (Test-Path $FfprobeExe)) {
+        return $false
+    }
+    if ((Get-Item $FfmpegExe).Length -lt 5MB -or (Get-Item $FfprobeExe).Length -lt 5MB) {
+        return $false
+    }
+    try {
+        & $FfmpegExe -version *> $null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        & $FfprobeExe -version *> $null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 function Ensure-FFmpeg-Installed {
     param (
         [string]$DestinationDir,
@@ -165,10 +187,13 @@ function Ensure-FFmpeg-Installed {
     $DestFfmpeg = Join-Path $DestinationDir "ffmpeg.exe"
     $DestFfprobe = Join-Path $DestinationDir "ffprobe.exe"
 
-    # 1. Check if already present in destination directory
-    if ((Test-Path $DestFfmpeg) -and (Test-Path $DestFfprobe)) {
+    # 1. Check if already present and working in destination directory
+    if (Test-WorkingFfmpegPair -FfmpegExe $DestFfmpeg -FfprobeExe $DestFfprobe) {
         Log-Ok "FFmpeg ve FFprobe hedef dizinde hazır ($DestinationDir)"
         return
+    } elseif ((Test-Path $DestFfmpeg) -or (Test-Path $DestFfprobe)) {
+        Log-Warn "Hedef dizindeki mevcut FFmpeg ikilisi çalışmıyor (eksik DLL/shim olabilir), yenilenecek..."
+        Remove-Item -Path $DestFfmpeg, $DestFfprobe -Force -ErrorAction SilentlyContinue
     }
 
     # 2. Check if present in extracted source / zip directory
@@ -182,28 +207,33 @@ function Ensure-FFmpeg-Installed {
             if ($SourceFfplay) {
                 Copy-Item -Path $SourceFfplay.FullName -Destination (Join-Path $DestinationDir "ffplay.exe") -Force
             }
-            Log-Ok "FFmpeg ve FFprobe indirilen paketten yerleştirildi ($DestinationDir)"
-            return
+            if (Test-WorkingFfmpegPair -FfmpegExe $DestFfmpeg -FfprobeExe $DestFfprobe) {
+                Log-Ok "FFmpeg ve FFprobe indirilen paketten yerleştirildi ($DestinationDir)"
+                return
+            }
+            Remove-Item -Path $DestFfmpeg, $DestFfprobe -Force -ErrorAction SilentlyContinue
         }
     }
 
-    # 3. Check if available on system PATH
+    # 3. Check if standalone FFmpeg is available on system PATH
     $SysFfmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
     $SysFfprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
     if ($SysFfmpeg -and $SysFfprobe) {
         try {
             Copy-Item -Path $SysFfmpeg.Source -Destination $DestFfmpeg -Force
             Copy-Item -Path $SysFfprobe.Source -Destination $DestFfprobe -Force
-            Log-Ok "Sistemdeki FFmpeg ikilileri triM klasörüne entegre edildi"
-            return
+            if (Test-WorkingFfmpegPair -FfmpegExe $DestFfmpeg -FfprobeExe $DestFfprobe) {
+                Log-Ok "Sistemdeki FFmpeg ikilileri triM klasörüne entegre edildi"
+                return
+            }
+            Remove-Item -Path $DestFfmpeg, $DestFfprobe -Force -ErrorAction SilentlyContinue
         } catch {
-            Log-Ok "Sistem FFmpeg ikilisi kullanılacak: $($SysFfmpeg.Source)"
-            return
+            Remove-Item -Path $DestFfmpeg, $DestFfprobe -Force -ErrorAction SilentlyContinue
         }
     }
 
-    # 4. If missing, automatically download and install official static FFmpeg
-    Log-Info "FFmpeg sistemde bulunamadı. triM. için FFmpeg resmi kararlı sürümü kuruluyor..."
+    # 4. If missing or non-standalone, automatically download and install official static FFmpeg
+    Log-Info "Çalışan taşınabilir FFmpeg bulunamadı. triM. için resmi statik FFmpeg sürümü indiriliyor..."
 
     $Installed = $false
 
@@ -213,13 +243,17 @@ function Ensure-FFmpeg-Installed {
             Log-Info "winget ile Gyan.FFmpeg kuruluyor..."
             $proc = Start-Process -FilePath "winget" -ArgumentList "install --id Gyan.FFmpeg -e --accept-source-agreements --accept-package-agreements --silent" -Wait -PassThru -NoNewWindow
             if ($proc.ExitCode -eq 0) {
-                $SysFfmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
-                $SysFfprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
-                if ($SysFfmpeg -and $SysFfprobe) {
-                    Copy-Item -Path $SysFfmpeg.Source -Destination $DestFfmpeg -Force
-                    Copy-Item -Path $SysFfprobe.Source -Destination $DestFfprobe -Force
-                    Log-Ok "FFmpeg winget ile başarıyla kuruldu ve entegre edildi!"
-                    $Installed = $true
+                $WingetPkg = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages") -Filter "ffmpeg.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                $WingetProbe = Get-ChildItem -Path (Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages") -Filter "ffprobe.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($WingetPkg -and $WingetProbe) {
+                    Copy-Item -Path $WingetPkg.FullName -Destination $DestFfmpeg -Force
+                    Copy-Item -Path $WingetProbe.FullName -Destination $DestFfprobe -Force
+                    if (Test-WorkingFfmpegPair -FfmpegExe $DestFfmpeg -FfprobeExe $DestFfprobe) {
+                        Log-Ok "FFmpeg winget ile başarıyla kuruldu ve entegre edildi!"
+                        $Installed = $true
+                    } else {
+                        Remove-Item -Path $DestFfmpeg, $DestFfprobe -Force -ErrorAction SilentlyContinue
+                    }
                 }
             }
         } catch {
