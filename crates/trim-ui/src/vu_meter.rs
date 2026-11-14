@@ -89,26 +89,57 @@ impl<'a> VuMeterWidget<'a> {
 
 impl<'a> Widget for VuMeterWidget<'a> {
     fn ui(self, ui: &mut Ui) -> Response {
-        let desired_size = Vec2::new(52.0, ui.available_height().max(160.0));
+        let desired_w = ui.available_width().max(70.0);
+        let desired_h = ui.available_height().max(160.0);
+        let desired_size = Vec2::new(desired_w, desired_h);
         let (rect, response) = ui.allocate_exact_size(desired_size, Sense::hover());
 
         let painter = ui.painter_at(rect);
 
-        // Background
-        painter.rect_filled(rect, 4.0, Color32::from_rgb(0x18, 0x18, 0x1d));
+        // Card background & crisp border
+        painter.rect_filled(rect, 5.0, Color32::from_rgb(0x16, 0x17, 0x1d));
         painter.rect_stroke(
             rect,
-            4.0,
-            Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x30)),
+            5.0,
+            Stroke::new(1.0_f32, Color32::from_rgb(0x2c, 0x2e, 0x38)),
         );
 
-        let bar_width = 8.0;
-        let spacing = 4.0;
-        let left_x = rect.left() + 7.0;
+        // Header bar ("MASTER") aligned with timeline ruler height (24px)
+        let header_h = 24.0;
+        let header_rect = Rect::from_min_size(rect.min, Vec2::new(rect.width(), header_h));
+        painter.rect_filled(
+            header_rect,
+            egui::Rounding {
+                nw: 5.0,
+                ne: 5.0,
+                sw: 0.0,
+                se: 0.0,
+            },
+            Color32::from_rgb(0x1d, 0x1f, 0x27),
+        );
+        painter.line_segment(
+            [
+                Pos2::new(rect.left() + 1.0, rect.top() + header_h),
+                Pos2::new(rect.right() - 1.0, rect.top() + header_h),
+            ],
+            Stroke::new(1.0_f32, Color32::from_rgb(0x2c, 0x2e, 0x38)),
+        );
+        painter.text(
+            header_rect.center(),
+            egui::Align2::CENTER_CENTER,
+            "MASTER",
+            egui::FontId::proportional(9.5),
+            Color32::from_rgb(0xa0, 0xa5, 0xb8),
+        );
+
+        let footer_h = 16.0;
+        let bar_width = 11.0;
+        let spacing = 5.0;
+        let left_x = rect.left() + 9.0;
         let right_x = left_x + bar_width + spacing;
-        let top_y = rect.top() + 8.0;
-        let bottom_y = rect.bottom() - 8.0;
-        let bar_height = (bottom_y - top_y).max(10.0);
+        let top_y = rect.top() + header_h + 8.0;
+        let bottom_y = rect.bottom() - footer_h - 4.0;
+        let bar_height = (bottom_y - top_y).max(12.0);
 
         // Draw left and right channels
         draw_bar(
@@ -130,7 +161,24 @@ impl<'a> Widget for VuMeterWidget<'a> {
             self.state.peak_r,
         );
 
-        // Draw dB scale text with comfortable left/right margin
+        // L / R labels under each meter bar
+        let label_y = rect.bottom() - footer_h * 0.5 - 1.0;
+        painter.text(
+            Pos2::new(left_x + bar_width * 0.5, label_y),
+            egui::Align2::CENTER_CENTER,
+            "L",
+            egui::FontId::monospace(9.0),
+            Color32::from_rgb(0x88, 0x8e, 0xa2),
+        );
+        painter.text(
+            Pos2::new(right_x + bar_width * 0.5, label_y),
+            egui::Align2::CENTER_CENTER,
+            "R",
+            egui::FontId::monospace(9.0),
+            Color32::from_rgb(0x88, 0x8e, 0xa2),
+        );
+
+        // Draw dB scale ticks and labels
         let labels = [
             ("0", 0.0),
             ("-6", -6.0),
@@ -138,16 +186,22 @@ impl<'a> Widget for VuMeterWidget<'a> {
             ("-24", -24.0),
             ("-40", -40.0),
         ];
-        let text_x = right_x + bar_width + 6.0;
+        let tick_x0 = right_x + bar_width + 3.0;
+        let tick_x1 = tick_x0 + 4.0;
+        let text_x = tick_x1 + 3.0;
         for (txt, db) in labels {
             let frac = (db - (-60.0)) / 60.0;
             let y = bottom_y - bar_height * frac;
+            painter.line_segment(
+                [Pos2::new(tick_x0, y), Pos2::new(tick_x1, y)],
+                Stroke::new(1.0_f32, Color32::from_rgb(0x4a, 0x4e, 0x5e)),
+            );
             painter.text(
                 Pos2::new(text_x, y),
                 egui::Align2::LEFT_CENTER,
                 txt,
-                egui::FontId::monospace(8.5),
-                Color32::from_rgb(0x82, 0x86, 0x96),
+                egui::FontId::monospace(9.0),
+                Color32::from_rgb(0x90, 0x95, 0xa8),
             );
         }
 

@@ -2346,7 +2346,7 @@ impl eframe::App for TrimApp {
                     }
 
                     // 3. Scrollable Timeline Canvas + Time Ruler
-                    let vu_w = 58.0;
+                    let vu_w = 88.0;
                     let avail_canvas_w = (ui.available_width() - vu_w).max(100.0);
                     ui.allocate_ui(Vec2::new(avail_canvas_w, ui.available_height()), |ui| {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
@@ -2915,13 +2915,26 @@ impl eframe::App for TrimApp {
                             });
                         });
 
-                    // 4. Master VU Meter (Far Right)
-                    ui.allocate_ui(Vec2::new(vu_w, ui.available_height()), |ui| {
-                        ui.horizontal(|ui| {
-                            ui.add_space(3.0);
-                            ui.add(VuMeterWidget::new(&mut self.vu_state));
-                        });
-                    });
+                    // 4. Divider + Master VU Meter (Far Right)
+                    let full_h = ui.available_height();
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(vu_w, full_h),
+                        egui::Layout::left_to_right(egui::Align::Min),
+                        |ui| {
+                            ui.spacing_mut().item_spacing = Vec2::ZERO;
+                            ui.add_space(4.0);
+                            let sep_rect = ui.allocate_space(Vec2::new(1.0, full_h)).1;
+                            ui.painter().rect_filled(
+                                sep_rect,
+                                0.0,
+                                Color32::from_rgb(0x2c, 0x2e, 0x38),
+                            );
+                            ui.add_space(6.0);
+                            ui.allocate_ui(Vec2::new((vu_w - 15.0).max(68.0), full_h), |ui| {
+                                ui.add(VuMeterWidget::new(&mut self.vu_state));
+                            });
+                        },
+                    );
                 });
             });
 

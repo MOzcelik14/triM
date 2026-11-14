@@ -56,6 +56,15 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.6.2" date="2026-11-15">
+      <description>
+        <p>triM. v1.6.2 - Master Ses Düzey Göstergesi Yenilemesi ve Dokümantasyon Güncellemeleri:</p>
+        <ul>
+          <li>Zaman çizelgesinin sağındaki Master ses düzey göstergesi (VU Meter) dikey ayırıcı çizgi, tam yükseklik hizalaması, 24 px MASTER başlık şeridi, dB ölçü çizgileri ve L/R kanal etiketleriyle yenilendi.</li>
+          <li>README ve GitHub Pages dokümantasyonu güncellendi; prisM. Suite bağlantıları ve otomatik sürüm senkronizasyonu eklendi.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.6.1" date="2026-11-13">
       <description>
         <p>triM. v1.6.1 - Windows FFmpeg Paketleme Düzeltmesi ve Sade Marka Kimliği:</p>

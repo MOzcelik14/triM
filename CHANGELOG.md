@@ -2,6 +2,16 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [1.6.2] - 2026-11-15
+
+### Improved
+- **Master VU Meter Layout & Alignment**:
+  - Redesigned the Master VU Meter (`VuMeterWidget`) on the right side of the timeline with a crisp vertical divider, wider `L`/`R` channel bars, dB scale tick marks, channel footer labels, and a `24 px` `MASTER` header aligned flush with the timeline ruler from top to bottom.
+- **Documentation & GitHub Pages**:
+  - Updated `README.md` and `README.tr.md` with a cleaner user-focused presentation, added **prisM. Suite** ecosystem links, and enabled automatic version synchronization on GitHub Pages.
+
+---
+
 ## [1.6.1] - 2026-11-13
 
 ### Fixed
