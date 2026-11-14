@@ -1,6 +1,8 @@
 // triM — Desktop Video Editor Documentation
 // Theme toggle, full bilingual i18n, screenshot gallery filters, copy tool, and shortcuts live search.
 
+let APP_VERSION = "1.6.1";
+
 const I18N = {
   tr: {
     // Navigation
@@ -20,7 +22,7 @@ const I18N = {
     hero_desc: "triM, arayüzü egui ile doğrudan çizilen, medya çözümleme ve kodlama için sistemdeki FFmpeg araçlarını kullanan, 13 MB boyutunda yerel bir masaüstü video düzenleyicisidir. Tarayıcı motoru, Electron veya bulut bağımlılığı içermez.",
     btn_download: "Sürümleri İndir ↘",
     btn_github: "GitHub Deposu ↗",
-    window_title: "triM. v1.3.0 — Sinematik Kurgu Masası",
+    window_title: "triM. v{version} — Sinematik Kurgu Masası",
 
     // Features Section
     sec_features: "Temel Özellikler",
@@ -62,7 +64,7 @@ const I18N = {
     // Gallery Section
     sec_gallery: "Canlı Uygulama Ekranları",
     sec_gallery_heading: "Gerçek Çalışma Alanı Görünümleri",
-    sec_gallery_sub: "Uygulamanın v1.3.0 sürümünden doğrudan alınan ekran görüntüleri. Büyütmek için tıklayın.",
+    sec_gallery_sub: "Uygulamanın v{version} sürümünden doğrudan alınan ekran görüntüleri. Büyütmek için tıklayın.",
     filter_all: "Tümü (8)",
     filter_edit: "Kurgu Masası",
     filter_color_audio: "Renk & Ses",
@@ -208,7 +210,7 @@ const I18N = {
     hero_desc: "triM is a 13 MB native desktop non-linear video editor with its UI rendered immediately via egui, using system FFmpeg for media decoding and encoding. Zero browser engine, zero Electron, zero cloud account lock-in.",
     btn_download: "Download Releases ↘",
     btn_github: "GitHub Repository ↗",
-    window_title: "triM. v1.3.0 — Cinematic Editing Suite",
+    window_title: "triM. v{version} — Cinematic Editing Suite",
 
     // Features Section
     sec_features: "Core Features",
@@ -250,7 +252,7 @@ const I18N = {
     // Gallery Section
     sec_gallery: "Live In-App Screenshots",
     sec_gallery_heading: "Real In-App Views",
-    sec_gallery_sub: "Real screenshots captured directly from triM v1.3.0. Click to enlarge.",
+    sec_gallery_sub: "Real screenshots captured directly from triM. v{version}. Click to enlarge.",
     filter_all: "All (8)",
     filter_edit: "Workspace & Timeline",
     filter_color_audio: "Color & Audio",
@@ -396,6 +398,10 @@ function applyTheme(theme) {
   }
 }
 
+function formatI18nText(text) {
+  return text.replace(/\{version\}/g, APP_VERSION);
+}
+
 function applyLanguage(lang) {
   currentLang = lang;
   document.documentElement.lang = lang;
@@ -407,7 +413,7 @@ function applyLanguage(lang) {
   document.querySelectorAll("[data-i18n]").forEach(el => {
     const key = el.getAttribute("data-i18n");
     if (dict[key]) {
-      el.textContent = dict[key];
+      el.textContent = formatI18nText(dict[key]);
     }
   });
 
@@ -415,7 +421,7 @@ function applyLanguage(lang) {
   document.querySelectorAll("[data-i18n-html]").forEach(el => {
     const key = el.getAttribute("data-i18n-html");
     if (dict[key]) {
-      el.innerHTML = dict[key];
+      el.innerHTML = formatI18nText(dict[key]);
     }
   });
 
@@ -423,7 +429,7 @@ function applyLanguage(lang) {
   document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
     const key = el.getAttribute("data-i18n-placeholder");
     if (dict[key]) {
-      el.placeholder = dict[key];
+      el.placeholder = formatI18nText(dict[key]);
     }
   });
 
@@ -442,10 +448,54 @@ function applyLanguage(lang) {
   }
 }
 
+async function syncLatestVersion() {
+  const cached = sessionStorage.getItem("trim_latest_version");
+  if (cached && /^\d+\.\d+\.\d+$/.test(cached)) {
+    if (cached !== APP_VERSION) {
+      APP_VERSION = cached;
+      applyLanguage(currentLang);
+    }
+    return;
+  }
+
+  try {
+    const localResp = await fetch("./version.json", { cache: "no-store" });
+    if (localResp.ok) {
+      const data = await localResp.json();
+      if (data && typeof data.version === "string" && /^\d+\.\d+\.\d+$/.test(data.version)) {
+        if (data.version !== APP_VERSION) {
+          APP_VERSION = data.version;
+          applyLanguage(currentLang);
+        }
+      }
+    }
+  } catch (_) {}
+
+  try {
+    const ghResp = await fetch("https://api.github.com/repos/MOzcelik14/triM/releases/latest", {
+      headers: { Accept: "application/vnd.github+json" }
+    });
+    if (ghResp.ok) {
+      const rel = await ghResp.json();
+      if (rel && typeof rel.tag_name === "string") {
+        const clean = rel.tag_name.replace(/^v/i, "").trim();
+        if (/^\d+\.\d+\.\d+$/.test(clean)) {
+          sessionStorage.setItem("trim_latest_version", clean);
+          if (clean !== APP_VERSION) {
+            APP_VERSION = clean;
+            applyLanguage(currentLang);
+          }
+        }
+      }
+    }
+  } catch (_) {}
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   // Apply saved theme and language
   applyTheme(currentTheme);
   applyLanguage(currentLang);
+  syncLatestVersion();
 
   // Theme Toggle Listener
   const themeToggle = document.getElementById("theme-toggle");

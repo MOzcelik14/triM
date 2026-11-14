@@ -5,7 +5,10 @@ on:
     branches: ["master"]
     paths:
       - "docs/**"
+      - "Cargo.toml"
       - ".github/workflows/deploy-pages.yml"
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -26,6 +29,39 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Sync version from Cargo.toml
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, re
+
+          cargo = pathlib.Path("Cargo.toml").read_text(encoding="utf-8")
+          m = re.search(r'(?m)^version\s*=\s*"([^"]+)"', cargo)
+          if not m:
+              raise SystemExit("Could not find version in Cargo.toml")
+          ver = m.group(1)
+          print(f"Syncing GitHub Pages version to v{ver}")
+
+          pathlib.Path("docs/version.json").write_text(
+              json.dumps({"version": ver}, indent=2) + "\n", encoding="utf-8"
+          )
+
+          main_js = pathlib.Path("docs/js/main.js")
+          js_text = main_js.read_text(encoding="utf-8")
+          js_text = re.sub(
+              r'let APP_VERSION = "[^"]+";',
+              f'let APP_VERSION = "{ver}";',
+              js_text,
+              count=1,
+          )
+          main_js.write_text(js_text, encoding="utf-8")
+
+          index_html = pathlib.Path("docs/index.html")
+          html_text = index_html.read_text(encoding="utf-8")
+          html_text = re.sub(r'triM\. v\d+\.\d+\.\d+', f'triM. v{ver}', html_text)
+          html_text = re.sub(r'Uygulamanın v\d+\.\d+\.\d+ sürümünden', f'Uygulamanın v{ver} sürümünden', html_text)
+          index_html.write_text(html_text, encoding="utf-8")
+          PY
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
