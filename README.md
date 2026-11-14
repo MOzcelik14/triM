@@ -10,6 +10,7 @@
     <a href="README.tr.md">Türkçe</a> ·
     <a href="https://github.com/MOzcelik14/triM/releases">Download</a> ·
     <a href="https://mozcelik14.github.io/triM">Website</a> ·
+    <a href="https://mozcelik14.github.io/prism-suite">prisM. Suite</a> ·
     <a href="docs/SHORTCUTS.md">Shortcuts</a>
   </p>
 </div>
@@ -20,7 +21,7 @@
 
 ## Built for Creators, Teams, and Everyday Production
 
-**triM.** is a lightweight desktop video editor designed for speed, reliability, and complete creative control—without subscriptions, cloud uploads, or account sign-ins. From quick social media cuts to multi-track client deliverables, triM. opens in seconds and keeps all of your media securely on your own machine.
+**triM.** is a lightweight desktop video editor built as part of the **[prisM. Suite](https://mozcelik14.github.io/prism-suite)** ecosystem, designed for speed, reliability, and complete creative control—without subscriptions, cloud uploads, or account sign-ins. From quick social media cuts to multi-track client deliverables, triM. opens in seconds and keeps all of your media securely on your own machine.
 
 ---
 

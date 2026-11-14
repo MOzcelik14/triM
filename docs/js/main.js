@@ -17,10 +17,11 @@ const I18N = {
     nav_releasing: "Yayın Rehberi",
 
     // Hero
-    hero_tag: "Rust + egui + FFmpeg ile Geliştirilen Masaüstü Video Düzenleyici",
+    hero_tag: "prisM. Suite Ekosisteminin Parçası · Masaüstü Video Düzenleyici",
     hero_title: "Hafif, yerel ve doğrudan.",
-    hero_desc: "triM, arayüzü egui ile doğrudan çizilen, medya çözümleme ve kodlama için sistemdeki FFmpeg araçlarını kullanan, 13 MB boyutunda yerel bir masaüstü video düzenleyicisidir. Tarayıcı motoru, Electron veya bulut bağımlılığı içermez.",
+    hero_desc: "triM., prisM. Suite ekosisteminin bir parçası olarak geliştirilen; arayüzü egui ile doğrudan çizilen, medya çözümleme ve kodlama için FFmpeg kullanan hafif ve yerel bir masaüstü video düzenleyicisidir. Tarayıcı motoru, Electron veya bulut bağımlılığı içermez.",
     btn_download: "Sürümleri İndir ↘",
+    btn_prism_suite: "prisM. Suite ↗",
     btn_github: "GitHub Deposu ↗",
     window_title: "triM. v{version} — Sinematik Kurgu Masası",
 
@@ -120,7 +121,7 @@ const I18N = {
     limits_4_desc: "Önizleme 8-bit sRGB alanında çalışır. 10-bit HDR kaynak medyalar önizleme sırasında 8-bite indirgenir; nihai render FFmpeg motoru üzerinden tam bit derinliğinde dışa aktarılır.",
 
     // Footer
-    footer_license: "triM — GPL-3.0-or-later lisansı altında açık kaynaklıdır. Geliştirici: Murat Özçelik.",
+    footer_license: "triM., prisM. Suite ekosisteminin bir parçasıdır ve GPL-3.0-or-later lisansı altında açık kaynaklıdır. Geliştirici: Murat Özçelik.",
 
     // Shortcuts Page Specific
     sc_label: "Referans Kılavuzu",
@@ -205,10 +206,11 @@ const I18N = {
     nav_releasing: "Releasing",
 
     // Hero
-    hero_tag: "Native Desktop Video Editor Built in Rust + egui + FFmpeg",
+    hero_tag: "Part of the prisM. Suite Ecosystem · Desktop Video Editor",
     hero_title: "Lightweight, native, and direct.",
-    hero_desc: "triM is a 13 MB native desktop non-linear video editor with its UI rendered immediately via egui, using system FFmpeg for media decoding and encoding. Zero browser engine, zero Electron, zero cloud account lock-in.",
+    hero_desc: "triM. is a fast, native desktop video editor built as part of the prisM. Suite ecosystem—rendered directly with egui and powered by FFmpeg. Zero browser engine, zero Electron, zero cloud account lock-in.",
     btn_download: "Download Releases ↘",
+    btn_prism_suite: "prisM. Suite ↗",
     btn_github: "GitHub Repository ↗",
     window_title: "triM. v{version} — Cinematic Editing Suite",
 
@@ -308,7 +310,7 @@ const I18N = {
     limits_4_desc: "UI preview operates in 8-bit sRGB. 10-bit HDR source media is tone-mapped to 8-bit during preview; final rendering occurs at full bit depth via FFmpeg.",
 
     // Footer
-    footer_license: "triM — Open source under GPL-3.0-or-later. Created by Murat Özçelik.",
+    footer_license: "triM. is part of the prisM. Suite ecosystem — Open source under GPL-3.0-or-later. Created by Murat Özçelik.",
 
     // Shortcuts Page Specific
     sc_label: "Reference Guide",

@@ -10,6 +10,7 @@
     <a href="README.md">English</a> ·
     <a href="https://github.com/MOzcelik14/triM/releases">İndir</a> ·
     <a href="https://mozcelik14.github.io/triM">Web Sitesi</a> ·
+    <a href="https://mozcelik14.github.io/prism-suite">prisM. Suite</a> ·
     <a href="docs/SHORTCUTS.md">Kısayollar</a>
   </p>
 </div>
@@ -20,7 +21,7 @@
 
 ## İçerik Üreticileri, Ekipler ve Günlük Prodüksiyon İçin Tasarlandı
 
-**triM.**, abonelik ücreti, bulut yükleme zorunluluğu veya hesap girişi olmadan hız, kararlılık ve tam yaratıcı kontrol sunan modern bir masaüstü video düzenleyicisidir. Kısa sosyal medya videolarından çok kanallı profesyonel teslimatlara kadar her projede saniyeler içinde açılır ve tüm dosyalarınızı yalnızca kendi bilgisayarınızda tutar.
+**triM.**, **[prisM. Suite](https://mozcelik14.github.io/prism-suite)** ekosisteminin bir parçası olarak geliştirilen; abonelik ücreti, bulut yükleme zorunluluğu veya hesap girişi olmadan hız, kararlılık ve tam yaratıcı kontrol sunan modern bir masaüstü video düzenleyicisidir. Kısa sosyal medya videolarından çok kanallı profesyonel teslimatlara kadar her projede saniyeler içinde açılır ve tüm dosyalarınızı yalnızca kendi bilgisayarınızda tutar.
 
 ---
 
