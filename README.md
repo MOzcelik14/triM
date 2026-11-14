@@ -1,45 +1,68 @@
-<h1 align="center">triM.</h1>
-
-<p align="center">
-  Fast, lightweight non-linear video editor for Linux and Windows.
-</p>
-
-<p align="center">
-  <a href="Cargo.toml"><img src="https://img.shields.io/badge/Version-1.6.1-blue.svg" alt="Version 1.6.1" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-green.svg" alt="License: GPL-3.0" /></a>
-  <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-lightgrey.svg" alt="Platform: Linux | Windows" />
-  <a href="https://github.com/MOzcelik14/triM/actions"><img src="https://github.com/MOzcelik14/triM/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-</p>
-
-<p align="center">
-  <a href="README.tr.md">Türkçe</a> · <a href="docs/SHORTCUTS.md">Keyboard Shortcuts</a> · <a href="https://mozcelik14.github.io/triM">Website</a>
-</p>
+<div align="center">
+  <h1>triM.</h1>
+  <p><strong>Fast, private, and studio-ready desktop video editing for Windows and Linux.</strong></p>
+  <p>
+    <a href="https://github.com/MOzcelik14/triM/releases/latest"><img src="https://img.shields.io/badge/Version-1.6.1-2563eb.svg" alt="Version 1.6.1" /></a>
+    <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-475569.svg" alt="Platform: Windows | Linux" />
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-16a34a.svg" alt="License: GPL-3.0" /></a>
+  </p>
+  <p>
+    <a href="README.tr.md">Türkçe</a> ·
+    <a href="https://github.com/MOzcelik14/triM/releases">Download</a> ·
+    <a href="https://mozcelik14.github.io/triM">Website</a> ·
+    <a href="docs/SHORTCUTS.md">Shortcuts</a>
+  </p>
+</div>
 
 ---
 
 ![triM. Workspace](docs/assets/screenshots/workspace.png)
 
-## Overview
+## Built for Creators, Teams, and Everyday Production
 
-**triM.** is a native desktop video editor built for creators who want responsive timeline editing without heavy resource consumption, cloud subscriptions, or account requirements. It launches quickly, works completely offline, and integrates seamlessly into the **prisM. Suite** ecosystem.
+**triM.** is a lightweight desktop video editor designed for speed, reliability, and complete creative control—without subscriptions, cloud uploads, or account sign-ins. From quick social media cuts to multi-track client deliverables, triM. opens in seconds and keeps all of your media securely on your own machine.
 
-## Key Features
+---
 
-- **Multi-Track Timeline**: Organize video and audio tracks with magnetic snapping, clip linking, markers, and precision editing tools (Selection, Razor, Ripple, Slip, and Text).
-- **Smart Assistance**: Automatic scene detection, silence removal (jump-cut), and local speech-to-text subtitle generation.
-- **Color & Compositing**: 3-way color wheels (Lift, Gamma, Gain), `.cube` 3D LUT support, chroma keying, opacity fades, and transform keyframes.
-- **Audio & Recording**: Built-in multi-track audio mixer with 3-band EQ, loudness limiting, direct microphone voiceover, and screen/webcam capture.
-- **Smooth 4K Editing**: Optional 720p proxy mode for fluid scrubbing on high-resolution footage.
-- **Flexible Export**: Export to H.264, HEVC, VP9, AV1, ProRes, and DNxHR with hardware acceleration support, background render queue, EBU R128 loudness normalization, and FCPXML/EDL interchange.
-- **Customizable Workflow**: Bilingual interface (English / Turkish), scalable UI, and familiar shortcut presets (triM. Default, Premiere Pro, DaVinci Resolve).
+## Why Choose triM.?
 
-## Screenshots
+- **Instant & Offline**: Launch in under a second and edit anywhere with zero internet dependency.
+- **No Subscriptions or Watermarks**: Every feature—from 4K export to color grading—is unlocked out of the box.
+- **Familiar Workspace**: Clean, responsive interface in **English** and **Turkish**, with customizable shortcut presets matching Premiere Pro and DaVinci Resolve.
+- **Smooth Performance on Any Hardware**: Automatic proxy workflow keeps high-resolution 4K footage fluid even on modest laptops.
 
-| Color Grading | Audio Mixer |
+---
+
+## Key Capabilities
+
+### Intuitive Multi-Track Editing
+Arrange video, audio, titles, and graphics across unlimited tracks with magnetic snapping, clip linking, markers, and precision tools for cutting, ripple editing, and text overlays.
+
+### Studio-Grade Color, Scopes & Compositing
+- **Color Presets & Looks**: One-click Auto White Balance, brightness/contrast presets, 20+ cinematic and film looks, and custom `.cube` LUTs.
+- **Professional Color Scopes**: Monitor exposure and color accuracy in real time with RGB Parade, Luma Waveform, Vectorscope, Histogram, False Color, and Zebra overlays.
+- **Masks, Blend Modes & Adjustment Layers**: Isolate edits with interactive Rectangle, Ellipse, and Bezier masks, combine layers with 11 blend modes, and apply unified grades across tracks using Adjustment Layers.
+
+### Clean Audio & Built-In Recording
+Balance dialogue, music, and sound effects with a multi-track mixer, 3-band EQ, and loudness control—or record voiceovers, screen captures, and webcam feeds directly onto your timeline.
+
+### Smart Time-Saving Tools
+- **Automatic Scene Detection** to split long recordings into usable clips.
+- **Silence Removal** to tighten talking-head videos in seconds.
+- **Local Speech-to-Text** to generate editable subtitles right on your computer.
+
+### Ready-to-Publish Export
+Deliver crisp MP4, MOV, WebM, ProRes, or vertical (9:16) videos with hardware-accelerated rendering, background export queues, and preset profiles for YouTube, Instagram, TikTok, and broadcast standards.
+
+---
+
+## Inside the Studio
+
+| Color Grading & Scopes | Multi-Track Audio Mixer |
 | :---: | :---: |
 | ![Color Grading](docs/assets/screenshots/color_grading.png) | ![Audio Mixer](docs/assets/screenshots/audio_mixer.png) |
 
-| Export Studio | Vertical (9:16) Canvas |
+| Export Studio | Vertical (9:16) Social Canvas |
 | :---: | :---: |
 | ![Export Studio](docs/assets/screenshots/export_studio.png) | ![Vertical Canvas](docs/assets/screenshots/vertical_9_16.png) |
 
@@ -47,45 +70,51 @@
 
 ## Download & Installation
 
-You can install and keep **triM.** up to date automatically via [prisM. Suite](https://github.com/MOzcelik14/prism-suite), or download packages directly from [GitHub Releases](https://github.com/MOzcelik14/triM/releases).
-
-### Quick Install
-
-**Linux:**
-```bash
-curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash
-```
+Download the latest installer or portable archive from **[GitHub Releases](https://github.com/MOzcelik14/triM/releases)**, or use the one-command installer below:
 
 **Windows (PowerShell):**
 ```powershell
 iwr -useb https://raw.githubusercontent.com/MOzcelik14/triM/master/install.ps1 | iex
 ```
 
-Windows release archives include portable FFmpeg binaries. On Linux, ensure `ffmpeg` and `ffprobe` are installed on your system.
+**Linux (Terminal):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/MOzcelik14/triM/master/install.sh | bash
+```
+
+> **Note:** Windows packages include everything needed to run out of the box. On Linux, the installer automatically checks and configures required media components (`ffmpeg` and `ffprobe`).
+
+---
 
 ## System Requirements
 
-- **OS**: Linux (x86_64) or Windows 10/11 (x86_64)
-- **Graphics**: OpenGL 3.3+ compatible GPU
-- **Dependencies**: `ffmpeg` and `ffprobe` in system `PATH` (bundled on Windows)
+| Component | Minimum Requirement |
+| :--- | :--- |
+| **Operating System** | Windows 10 / 11 (64-bit) or Linux (64-bit) |
+| **Graphics** | Any modern GPU with OpenGL 3.3+ support |
+| **Storage & Privacy** | Runs 100% locally; no account or internet required after installation |
 
-## Essential Shortcuts
+---
 
-| Key | Action |
+## Quick Keyboard Shortcuts
+
+| Shortcut | Action |
 | :--- | :--- |
 | `Space` | Play / Pause |
-| `J` / `K` / `L` | Shuttle backward / Stop / Shuttle forward |
-| `V` / `C` / `B` | Selection / Razor / Ripple tool |
+| `J` / `K` / `L` | Rewind / Stop / Fast-forward |
+| `V` / `C` / `B` | Selection / Cut / Ripple tool |
 | `S` / `Ctrl + K` | Split clip at playhead |
-| `Ctrl + M` | Open Export Studio |
-| `Ctrl + ,` | Open Settings |
-| `F1` | View all shortcuts |
+| `Ctrl + M` | Export video |
+| `F1` | Open full shortcut guide |
 
-See [docs/SHORTCUTS.md](docs/SHORTCUTS.md) for the complete shortcut reference.
+See the complete list in [Keyboard Shortcuts](docs/SHORTCUTS.md).
 
-## Building from Source
+---
 
-Requires Rust 1.80+:
+<details>
+<summary><strong>For Developers: Building from Source</strong></summary>
+
+Building **triM.** from source requires **Rust 1.80+** and system OpenGL/audio development libraries on Linux:
 
 ```bash
 git clone https://github.com/MOzcelik14/triM.git
@@ -93,6 +122,8 @@ cd triM
 cargo build --release -p trim-app
 ```
 
+</details>
+
 ## License
 
-Licensed under the **GNU General Public License v3.0 (GPL-3.0)**. See [LICENSE](LICENSE) for details.
+**triM.** is open-source software released under the **GNU General Public License v3.0 (GPL-3.0)**. See [LICENSE](LICENSE) for full details.
