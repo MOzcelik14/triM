@@ -170,6 +170,16 @@ pub struct TrimApp {
     pub monitor_text_drag_orig_pos: Option<(String, String, (f32, f32))>,
     pub monitor_text_edit_orig_content: Option<(String, String, String, String)>,
     pub scopes_panel: ScopesPanelState,
+    pub split_wipe_enabled: bool,
+    pub split_wipe_pos: f32,
+    pub multicam_mode: bool,
+    pub multicam_active_angle: usize,
+    pub paste_attrs_dialog_open: bool,
+    pub paste_attr_color: bool,
+    pub paste_attr_transform: bool,
+    pub paste_attr_audio: bool,
+    pub paste_attr_speed: bool,
+    pub last_scope_rgba: Option<(Vec<u8>, u32, u32)>,
 }
 
 impl Default for TrimApp {
@@ -267,6 +277,16 @@ impl Default for TrimApp {
             monitor_text_drag_orig_pos: None,
             monitor_text_edit_orig_content: None,
             scopes_panel: ScopesPanelState::default(),
+            split_wipe_enabled: false,
+            split_wipe_pos: 0.5,
+            multicam_mode: false,
+            multicam_active_angle: 0,
+            paste_attrs_dialog_open: false,
+            paste_attr_color: true,
+            paste_attr_transform: true,
+            paste_attr_audio: true,
+            paste_attr_speed: false,
+            last_scope_rgba: None,
         }
     }
 }
@@ -474,6 +494,12 @@ impl TrimApp {
                     let bg_color = txt.bg_color.map(|b| {
                         Color32::from_rgba_unmultiplied(b[0], b[1], b[2], (b[3] as f32 * a) as u8)
                     });
+                    let stroke_color = Color32::from_rgba_unmultiplied(
+                        txt.stroke_color[0],
+                        txt.stroke_color[1],
+                        txt.stroke_color[2],
+                        txt.stroke_color[3],
+                    );
                     active_text_overlays.push(ActiveTextOverlay {
                         text: txt.content.clone(),
                         font_size: txt.font_size,
@@ -482,6 +508,10 @@ impl TrimApp {
                         pos_x: txt.pos_x,
                         pos_y: txt.pos_y,
                         has_shadow: txt.has_shadow,
+                        shadow_distance: txt.shadow_distance,
+                        stroke_width: txt.stroke_width,
+                        stroke_color,
+                        letter_spacing: txt.letter_spacing,
                         alpha: a.clamp(0.0, 1.0),
                         caption_style: txt.caption_style,
                         highlight_color,
@@ -553,6 +583,26 @@ impl TrimApp {
                         })
                 });
 
+        let ref_tex = self
+            .scopes_panel
+            .active_reference_still
+            .and_then(|i| self.scopes_panel.reference_stills.get(i))
+            .and_then(|s| s.tex.as_ref())
+            .or(self.source_state.texture.as_ref());
+
+        let mut v_tracks = self.project.timeline.get_video_tracks();
+        v_tracks.reverse();
+        let multicam_labels: [String; 4] = std::array::from_fn(|idx| {
+            v_tracks
+                .get(idx)
+                .and_then(|tr| {
+                    tr.find_clip_at(self.current_time)
+                        .map(|cl| format!("{} • {}", tr.name, cl.name))
+                        .or_else(|| Some(format!("{} (Boş)", tr.name)))
+                })
+                .unwrap_or_else(|| format!("V{} (Yok)", idx + 1))
+        });
+
         let (_p_resp, p_act) = MonitorWidget::new(
             MonitorMode::Program,
             "Sekans 01",
@@ -577,6 +627,12 @@ impl TrimApp {
         .active_tool(self.current_edit_tool)
         .inline_text_edit(selected_text_content)
         .mask_overlay(active_mask_overlay)
+        .split_wipe(self.split_wipe_enabled, self.split_wipe_pos, ref_tex)
+        .multicam(
+            self.multicam_mode,
+            self.multicam_active_angle,
+            multicam_labels.to_vec(),
+        )
         .show(prog_ui);
 
         if let Some(act) = p_act {
@@ -767,6 +823,43 @@ impl TrimApp {
                         }
                     }
                 }
+                MonitorAction::ToggleSplitWipe => {
+                    self.split_wipe_enabled = !self.split_wipe_enabled;
+                    self.status_message = if self.split_wipe_enabled {
+                        "◧ Bölünmüş Ekran (Before/After Wipe) Açık".to_string()
+                    } else {
+                        "◧ Bölünmüş Ekran (Before/After Wipe) Kapalı".to_string()
+                    };
+                }
+                MonitorAction::SplitWipePosChanged(pos) => {
+                    self.split_wipe_pos = pos.clamp(0.05, 0.95);
+                }
+                MonitorAction::ToggleMulticamView => {
+                    self.multicam_mode = !self.multicam_mode;
+                    self.status_message = if self.multicam_mode {
+                        "⊞ Multicam 2x2 Modu Açık (1–4 tuşlarıyla kamera açısı kesin)".to_string()
+                    } else {
+                        "⊞ Multicam 2x2 Modu Kapalı".to_string()
+                    };
+                }
+                MonitorAction::MulticamAngleSelected(angle) => {
+                    self.handle_multicam_angle_switch(angle);
+                }
+                MonitorAction::HoverPixelSample { x_norm, y_norm } if self.scopes_panel.is_open => {
+                    if let Some((rgba, rw, rh)) = &self.last_scope_rgba {
+                        self.scopes_panel.active_pixel_sample =
+                            trim_core::scopes::sample_pixel_rgba(rgba, *rw, *rh, x_norm, y_norm);
+                    } else if let Some(frame) = &self.last_rendered_monitor_frame {
+                        self.scopes_panel.active_pixel_sample =
+                            trim_core::scopes::sample_pixel_rgba(
+                                frame.as_raw(),
+                                frame.width(),
+                                frame.height(),
+                                x_norm,
+                                y_norm,
+                            );
+                    }
+                }
                 _ => {}
             }
         }
@@ -901,18 +994,37 @@ impl eframe::App for TrimApp {
         let mut do_copy = false;
         let mut do_cut = false;
         let mut do_paste = false;
+        let mut multicam_angle_key: Option<usize> = None;
 
         if !ctx.wants_keyboard_input()
             && !self.welcome_dialog.is_open
             && !self.splash_screen.is_active
         {
             ctx.input(|i| {
+                let is_paste_attrs = (i.modifiers.ctrl || i.modifiers.command)
+                    && i.modifiers.alt
+                    && i.key_pressed(Key::V);
                 let is_copy = i.events.iter().any(|e| matches!(e, egui::Event::Copy))
                     || ((i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::C));
-                let is_paste = i.events.iter().any(|e| matches!(e, egui::Event::Paste(_)))
-                    || ((i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::V));
+                let is_paste = !is_paste_attrs
+                    && (i.events.iter().any(|e| matches!(e, egui::Event::Paste(_)))
+                        || ((i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::V)));
                 let is_cut = i.events.iter().any(|e| matches!(e, egui::Event::Cut))
                     || ((i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::X));
+
+                if is_paste_attrs {
+                    self.paste_attrs_dialog_open = true;
+                } else if self.multicam_mode && !i.modifiers.ctrl && !i.modifiers.alt {
+                    if i.key_pressed(Key::Num1) {
+                        multicam_angle_key = Some(0);
+                    } else if i.key_pressed(Key::Num2) {
+                        multicam_angle_key = Some(1);
+                    } else if i.key_pressed(Key::Num3) {
+                        multicam_angle_key = Some(2);
+                    } else if i.key_pressed(Key::Num4) {
+                        multicam_angle_key = Some(3);
+                    }
+                }
 
                 if i.key_pressed(Key::F11) {
                     self.is_monitor_fullscreen = !self.is_monitor_fullscreen;
@@ -1292,6 +1404,9 @@ impl eframe::App for TrimApp {
             }
             if do_paste {
                 self.paste_clipboard_clips();
+            }
+            if let Some(angle) = multicam_angle_key {
+                self.handle_multicam_angle_switch(angle);
             }
         }
 
@@ -2930,6 +3045,15 @@ impl eframe::App for TrimApp {
                                             self.current_time = 0.0;
                                             self.status_message = "Sekans açıldı".to_string();
                                         }
+                                        CanvasAction::CreateCompoundClip => {
+                                            self.create_compound_clip_from_selected();
+                                        }
+                                        CanvasAction::JoinThroughEdits => {
+                                            self.join_selected_through_edits();
+                                        }
+                                        CanvasAction::OpenPasteAttributesDialog => {
+                                            self.paste_attrs_dialog_open = true;
+                                        }
                                     }
                                 }
                             });
@@ -3593,6 +3717,60 @@ impl eframe::App for TrimApp {
                                         }
                                     }
                                 }
+                                InspectorAction::ShotMatch { track_id, clip_id } => {
+                                    let ref_opt = self
+                                        .scopes_panel
+                                        .active_reference_still
+                                        .and_then(|idx| self.scopes_panel.reference_stills.get(idx))
+                                        .map(|s| (s.rgba.clone(), s.width, s.height));
+                                    let cur_opt = self
+                                        .last_scope_rgba
+                                        .as_ref()
+                                        .map(|(rgba, w, h)| (rgba.clone(), *w, *h))
+                                        .or_else(|| {
+                                            self.last_rendered_monitor_frame.as_ref().map(|f| {
+                                                (f.as_raw().clone(), f.width(), f.height())
+                                            })
+                                        });
+                                    if let Some((src_rgba, sw, sh)) = cur_opt {
+                                        let (ref_rgba, rw, rh) = ref_opt.unwrap_or_else(|| {
+                                            ([128u8, 128, 128, 255].repeat(16 * 16), 16, 16)
+                                        });
+                                        let (b, c, s, temp, tint) =
+                                            trim_core::color::analyze_shot_match_rgba(
+                                                &src_rgba,
+                                                sw,
+                                                sh,
+                                                &ref_rgba,
+                                                rw,
+                                                rh,
+                                            );
+                                        if let Some(tr) =
+                                            self.project.timeline.get_track_by_id_mut(&track_id)
+                                        {
+                                            if let Some(cl) = tr.get_clip_by_id_mut(&clip_id) {
+                                                cl.brightness = (cl.brightness + b).clamp(-1.0, 1.0);
+                                                cl.contrast = c.clamp(0.2, 2.5);
+                                                cl.saturation = s.clamp(0.0, 2.5);
+                                                cl.temperature =
+                                                    (cl.temperature + temp).clamp(-100.0, 100.0);
+                                                cl.tint = (cl.tint + tint).clamp(-100.0, 100.0);
+                                            }
+                                        }
+                                        self.project.mark_dirty();
+                                        self.last_rendered_monitor_frame = None;
+                                        self.video_engine.last_rendered_frame = None;
+                                        self.scopes_panel.mark_dirty();
+                                        self.status_message = format!(
+                                            "🎯 Shot Match uygulandı (Parlaklık: {:+.2}, Kontrast: {:.2}, Sıcaklık: {:+.1})",
+                                            b, c, temp
+                                        );
+                                    } else {
+                                        self.status_message =
+                                            "⚠ Shot Match için aktif önizleme karesi bulunamadı"
+                                                .to_string();
+                                    }
+                                }
                             }
                         }
                     }
@@ -3612,6 +3790,55 @@ impl eframe::App for TrimApp {
                 .show(ctx, |ui| {
                     self.scopes_panel.show(ui);
                 });
+            if let Some(still_idx) = self.scopes_panel.pending_apply_still_idx.take() {
+                if let Some(src_clip) = self
+                    .scopes_panel
+                    .reference_stills
+                    .get(still_idx)
+                    .and_then(|s| s.grade_snapshot.clone())
+                {
+                    if let Some((tr_id, cl_id)) =
+                        self.canvas_state.selected_clip_pairs.first().cloned()
+                    {
+                        if let Some(tr) = self.project.timeline.get_track_by_id_mut(&tr_id) {
+                            if let Some(cl) = tr.get_clip_by_id_mut(&cl_id) {
+                                cl.brightness = src_clip.brightness;
+                                cl.contrast = src_clip.contrast;
+                                cl.saturation = src_clip.saturation;
+                                cl.gamma = src_clip.gamma;
+                                cl.temperature = src_clip.temperature;
+                                cl.tint = src_clip.tint;
+                                cl.vignette = src_clip.vignette;
+                                cl.sharpen = src_clip.sharpen;
+                                cl.blur = src_clip.blur;
+                                cl.film_grain = src_clip.film_grain;
+                                cl.wb_preset = src_clip.wb_preset;
+                                cl.bc_preset = src_clip.bc_preset;
+                                cl.lut_preset = src_clip.lut_preset;
+                                cl.custom_lut_path = src_clip.custom_lut_path;
+                                cl.color_wheels = src_clip.color_wheels;
+                                cl.custom_curves = src_clip.custom_curves;
+                                cl.hsl_curves = src_clip.hsl_curves;
+                                cl.hsl_qualifier = src_clip.hsl_qualifier;
+                                cl.halation = src_clip.halation;
+                                cl.bloom = src_clip.bloom;
+                                cl.chromatic_aberration = src_clip.chromatic_aberration;
+                                self.project.mark_dirty();
+                                self.last_rendered_monitor_frame = None;
+                                self.video_engine.last_rendered_frame = None;
+                                self.scopes_panel.mark_dirty();
+                                self.status_message =
+                                    "🎨 Referans karenin renk derecelendirmesi (Grade) seçili klibe uygulandı"
+                                        .to_string();
+                            }
+                        }
+                    } else {
+                        self.status_message =
+                            "Referans rengini uygulamak için zaman çizgisinde bir klip seçin"
+                                .to_string();
+                    }
+                }
+            }
         }
 
         // -------------------------------------------------------------
@@ -3675,6 +3902,23 @@ impl eframe::App for TrimApp {
                     let _ = std::process::Command::new("open").arg(folder).spawn();
                     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
                     let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
+                }
+                ExportDialogAction::CopyYoutubeChapters => {
+                    let chapters = trim_core::interchange::export_youtube_chapters(
+                        &self.project.timeline.markers,
+                        self.project.timeline.duration(),
+                    );
+                    ctx.output_mut(|o| {
+                        o.copied_text = chapters;
+                    });
+                    self.status_message =
+                        "📑 YouTube Bölüm (Chapter) zaman damgaları panoya kopyalandı!".to_string();
+                }
+                ExportDialogAction::ExportEdl => {
+                    self.export_edl_dialog();
+                }
+                ExportDialogAction::ExportFcpxml => {
+                    self.export_fcpxml_dialog();
                 }
             }
         }
@@ -4015,6 +4259,13 @@ impl eframe::App for TrimApp {
                         self.project.mark_dirty();
                     }
                 }
+                AudioMixerAction::TrackPanChanged(t_id, pan) => {
+                    if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
+                        t.pan = pan.clamp(-1.0, 1.0);
+                        self.audio_mixer.clear_cache();
+                        self.project.mark_dirty();
+                    }
+                }
                 AudioMixerAction::TrackMuteToggled(t_id) => {
                     if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
                         t.muted = !t.muted;
@@ -4028,6 +4279,86 @@ impl eframe::App for TrimApp {
                 AudioMixerAction::MasterVolumeChanged(_vol) => {
                     // Handled inside dialog
                 }
+            }
+        }
+
+        // -------------------------------------------------------------
+        // Paste Attributes Modal (Ctrl+Alt+V)
+        // -------------------------------------------------------------
+        if self.paste_attrs_dialog_open {
+            let mut open = self.paste_attrs_dialog_open;
+            let mut do_apply = false;
+            let mut do_close = false;
+            egui::Window::new("📋 Özellikleri Seçerek Yapıştır (Paste Attributes)")
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+                .fixed_size(Vec2::new(390.0, 220.0))
+                .show(ctx, |ui| {
+                    let src_name = self
+                        .clipboard_clips
+                        .first()
+                        .map(|(_, _, _, c)| c.name.as_str())
+                        .unwrap_or("(Panoda klip yok)");
+                    ui.label(
+                        RichText::new(format!("Kaynak Klip: {}", src_name))
+                            .size(11.5)
+                            .color(Color32::from_rgb(0x94, 0xa3, 0xb8)),
+                    );
+                    ui.add_space(6.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+
+                    ui.checkbox(
+                        &mut self.paste_attr_color,
+                        "🎨 Renk & Grading (Color Wheels, Eğriler, HSL, LUT, Film FX)",
+                    );
+                    ui.checkbox(
+                        &mut self.paste_attr_transform,
+                        "📐 Dönüşüm & Kompozisyon (Konum, Ölçek, Döndürme, Kırpma, Corner Pin)",
+                    );
+                    ui.checkbox(
+                        &mut self.paste_attr_audio,
+                        "🔊 Ses & Fairlight (Ses Seviyesi, Pan, 6-Band EQ, Kompresör, Reverb)",
+                    );
+                    ui.checkbox(
+                        &mut self.paste_attr_speed,
+                        "⏩ Hız & Yön (Speed, Reverse, Pitch Lock)",
+                    );
+
+                    ui.add_space(12.0);
+                    ui.horizontal(|ui| {
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let apply_btn = egui::Button::new(
+                                RichText::new("Seçili Kliplere Uygula")
+                                    .size(11.5)
+                                    .strong()
+                                    .color(Color32::WHITE),
+                            )
+                            .fill(Color32::from_rgb(0x28, 0x5a, 0x9e));
+                            if ui
+                                .add_enabled(!self.clipboard_clips.is_empty(), apply_btn)
+                                .clicked()
+                            {
+                                do_apply = true;
+                            }
+                            if ui.button("İptal").clicked() {
+                                do_close = true;
+                            }
+                        });
+                    });
+                });
+            if do_apply {
+                self.apply_paste_attributes(
+                    self.paste_attr_color,
+                    self.paste_attr_transform,
+                    self.paste_attr_audio,
+                    self.paste_attr_speed,
+                );
+                self.paste_attrs_dialog_open = false;
+            } else if do_close || !open {
+                self.paste_attrs_dialog_open = false;
             }
         }
 

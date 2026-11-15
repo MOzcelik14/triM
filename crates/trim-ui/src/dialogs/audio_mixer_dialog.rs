@@ -24,6 +24,7 @@ impl Default for AudioMixerDialog {
 
 pub enum AudioMixerAction {
     TrackVolumeChanged(String, f64),
+    TrackPanChanged(String, f64),
     TrackMuteToggled(String),
     TrackSoloToggled(String),
     MasterVolumeChanged(f32),
@@ -68,7 +69,7 @@ impl AudioMixerDialog {
         Window::new("Çok Kanallı Ses Mikseri")
             .collapsible(false)
             .resizable(true)
-            .default_size(Vec2::new(560.0, 410.0))
+            .default_size(Vec2::new(560.0, 440.0))
             .min_width(340.0)
             .frame(modal_frame)
             .show(ctx, |ui| {
@@ -112,7 +113,7 @@ impl AudioMixerDialog {
                 ui.separator();
                 ui.add_space(8.0);
 
-                let strip_h = 324.0;
+                let strip_h = 358.0;
                 let fader_h = 156.0;
 
                 ScrollArea::horizontal().show(ui, |ui| {
@@ -287,7 +288,47 @@ impl AudioMixerDialog {
                                             draw_vertical_vu_strip(ui, &[trk_db], fader_h, true);
                                         });
 
-                                        ui.add_space(8.0);
+                                        ui.add_space(6.0);
+
+                                        // Stereo Pan (L / C / R) Slider
+                                        let mut pan = track.pan as f32;
+                                        let pan_lbl = if pan.abs() < 0.03 {
+                                            "Pan: C".to_string()
+                                        } else if pan < 0.0 {
+                                            format!("Pan: {:.0}L", (-pan * 100.0))
+                                        } else {
+                                            format!("Pan: {:.0}R", (pan * 100.0))
+                                        };
+                                        ui.label(
+                                            RichText::new(pan_lbl)
+                                                .monospace()
+                                                .size(9.5)
+                                                .color(Color32::from_rgb(0x9a, 0xa8, 0xc2)),
+                                        );
+                                        ui.scope(|ui| {
+                                            ui.spacing_mut().slider_width = 76.0;
+                                            let pan_resp = ui
+                                                .add(
+                                                    Slider::new(&mut pan, -1.0..=1.0)
+                                                        .show_value(false),
+                                                )
+                                                .on_hover_text(
+                                                    "Stereo Pan (Sol/Sağ) — Çift tıkla: Merkez (C)",
+                                                );
+                                            if pan_resp.double_clicked() {
+                                                actions.push(AudioMixerAction::TrackPanChanged(
+                                                    track.id.clone(),
+                                                    0.0,
+                                                ));
+                                            } else if pan_resp.changed() {
+                                                actions.push(AudioMixerAction::TrackPanChanged(
+                                                    track.id.clone(),
+                                                    pan as f64,
+                                                ));
+                                            }
+                                        });
+
+                                        ui.add_space(4.0);
 
                                         // Gain Percentage + Unity Reset Button
                                         ui.horizontal(|ui| {

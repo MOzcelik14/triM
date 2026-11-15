@@ -2,6 +2,25 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [2.0.0] - 2026-11-15
+
+### Added
+- **Video Scopes & Reference Monitoring**:
+  - **Quad Scope (2x2)**, **CIE 1931 Chromaticity Scope** (with Rec.709 primaries), and live **Program Monitor Pixel Readout + Scope Reticle** (`RGB` / `Luma` / `IRE`).
+  - **Split-Screen Wipe** comparison line on the Program Monitor and **Reference Still Gallery** for grabbing/applying reference frames and grades.
+- **Advanced Color Grading & Film FX**:
+  - **Custom RGB / Luma Spline Curves** (`CustomCurvesConfig`) with interactive control points, CPU/GPU preview, and FFmpeg `curves` export.
+  - **6-Vector HSL Curves** (`HslCurvesConfig`) and **3D HSL Qualifier** (`HslQualifierConfig`) with secondary matte preview (`show_matte`) and invert support.
+  - **Analog Film & Lens FX**: `halation`, `bloom`, and `chromatic_aberration` across CPU preview, OpenGL shaders, and FFmpeg export.
+  - **One-Click Shot Match** (`analyze_shot_match_rgba`) matching clip exposure, contrast, saturation, and white balance to a reference still.
+- **Fairlight-Style Audio Processing**:
+  - **6-Band Parametric EQ** and **Dynamics Processor (Compressor / Limiter / De-Esser)** integrated in real-time audio playback and FFmpeg export.
+  - **Clip & Track Stereo Pan**, **Reverb / Echo**, and **Pitch Lock** for speed-ramped clips.
+- **Editing Workflow, Compositing & Delivery**:
+  - **Create Compound Clip**, **Paste Attributes (`Ctrl+Alt+V`)**, and **Join Through-Edits**.
+  - **4-Corner Perspective Pin**, **Track Matte** (luma matte from track above), and **Rich Typography** (`stroke_width`, `stroke_color`, `letter_spacing`, `shadow_distance`).
+  - **Multicam 2x2 Monitor View** with `1–4` live angle switching, **Media Bin Usage Count Badge**, **YouTube Chapters + Embedded MP4 Chapters**, and **CMX3600 EDL + FCPXML** export.
+
 ## [1.7.0] - 2026-11-15
 
 ### Added

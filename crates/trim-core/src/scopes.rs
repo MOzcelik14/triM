@@ -7,6 +7,21 @@ pub const WAVEFORM_W: usize = 128;
 pub const WAVEFORM_H: usize = 128;
 pub const PARADE_CH_W: usize = 96;
 pub const VECTORSCOPE_SIZE: usize = 128;
+pub const CIE_SIZE: usize = 128;
+
+/// Live pixel readout sampled under the monitor cursor for Scope reticle overlay.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PixelSampleReadout {
+    pub x_norm: f32,
+    pub y_norm: f32,
+    pub rgb: [u8; 3],
+    pub ire: f32,
+    pub cb: f32,
+    pub cr: f32,
+    pub hue_deg: f32,
+    pub sat: f32,
+    pub cie_xy: [f32; 2],
+}
 
 /// Enabled scope views and analyzer configuration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -20,6 +35,12 @@ pub struct ScopeConfig {
     pub zebra_exposure: bool,
     /// Zebra exposure threshold in normalized IRE (0.50 ..= 1.00, default 0.90 = 90 IRE).
     pub zebra_threshold: f32,
+    /// Simultaneous 2x2 Quad Scope layout (Parade, Waveform, Vectorscope, Histogram).
+    #[serde(default)]
+    pub quad_layout: bool,
+    /// CIE 1931 xy Chromaticity diagram scope toggle.
+    #[serde(default)]
+    pub cie_1931: bool,
 }
 
 impl Default for ScopeConfig {
@@ -33,6 +54,8 @@ impl Default for ScopeConfig {
             false_color: false,
             zebra_exposure: false,
             zebra_threshold: 0.90,
+            quad_layout: false,
+            cie_1931: false,
         }
     }
 }
@@ -55,6 +78,10 @@ pub struct ScopeData {
     pub vectorscope_hits: Vec<u16>,
     pub vectorscope_rgb: Vec<[u32; 3]>,
     pub vectorscope_peak: u16,
+    /// `CIE_SIZE * CIE_SIZE` CIE 1931 xy chromaticity hit counts + accumulated RGB tint.
+    pub cie_hits: Vec<u16>,
+    pub cie_rgb: Vec<[u32; 3]>,
+    pub cie_peak: u16,
     /// 256-bin histograms for R, G, B, and Rec.709 Luma.
     pub hist_r: [u32; 256],
     pub hist_g: [u32; 256],
@@ -83,6 +110,9 @@ impl Default for ScopeData {
             vectorscope_hits: vec![0; VECTORSCOPE_SIZE * VECTORSCOPE_SIZE],
             vectorscope_rgb: vec![[0; 3]; VECTORSCOPE_SIZE * VECTORSCOPE_SIZE],
             vectorscope_peak: 1,
+            cie_hits: vec![0; CIE_SIZE * CIE_SIZE],
+            cie_rgb: vec![[0; 3]; CIE_SIZE * CIE_SIZE],
+            cie_peak: 1,
             hist_r: [0; 256],
             hist_g: [0; 256],
             hist_b: [0; 256],
@@ -111,6 +141,86 @@ pub fn rec709_cb_cr(r: u8, g: u8, b: u8) -> (f32, f32) {
     let cb = -0.1146 * rf - 0.3854 * gf + 0.5000 * bf;
     let cr = 0.5000 * rf - 0.4542 * gf - 0.0458 * bf;
     (cb, cr)
+}
+
+/// Converts 8-bit sRGB/Rec.709 `(r, g, b)` to CIE 1931 `(x, y)` chromaticity coordinates.
+/// Returns D65 white point `(0.3127, 0.3290)` when `R = G = B = 0`.
+#[inline]
+pub fn rgb_to_cie1931_xy(r: u8, g: u8, b: u8) -> (f32, f32) {
+    let rf = (r as f32 / 255.0).powf(2.2);
+    let gf = (g as f32 / 255.0).powf(2.2);
+    let bf = (b as f32 / 255.0).powf(2.2);
+    let big_x = 0.4124564 * rf + 0.3575761 * gf + 0.1804375 * bf;
+    let big_y = 0.2126729 * rf + 0.7151522 * gf + 0.072175 * bf;
+    let big_z = 0.0193339 * rf + 0.119192 * gf + 0.9503041 * bf;
+    let sum = big_x + big_y + big_z;
+    if sum <= 1e-6 {
+        (0.3127, 0.3290)
+    } else {
+        (
+            (big_x / sum).clamp(0.0, 0.85),
+            (big_y / sum).clamp(0.0, 0.85),
+        )
+    }
+}
+
+/// Rec.709 / sRGB primary triangle vertices `(x, y)` in CIE 1931 space: `[Red, Green, Blue]`.
+pub const fn rec709_cie1931_primaries() -> [(f32, f32); 3] {
+    [(0.640, 0.330), (0.300, 0.600), (0.150, 0.060)]
+}
+
+/// Samples a single pixel from an RGBA8 frame buffer at normalized coordinates `(x_norm, y_norm)` in `[0.0, 1.0]`.
+pub fn sample_pixel_rgba(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    x_norm: f32,
+    y_norm: f32,
+) -> Option<PixelSampleReadout> {
+    if width == 0 || height == 0 || rgba.len() < (width as usize) * (height as usize) * 4 {
+        return None;
+    }
+    let xn = x_norm.clamp(0.0, 1.0);
+    let yn = y_norm.clamp(0.0, 1.0);
+    let px = ((xn * (width - 1) as f32).round() as usize).min(width as usize - 1);
+    let py = ((yn * (height - 1) as f32).round() as usize).min(height as usize - 1);
+    let idx = (py * width as usize + px) * 4;
+    let r = rgba[idx];
+    let g = rgba[idx + 1];
+    let b = rgba[idx + 2];
+    let ire = rec709_luma_norm(r, g, b) * 100.0;
+    let (cb, cr) = rec709_cb_cr(r, g, b);
+    let (cie_x, cie_y) = rgb_to_cie1931_xy(r, g, b);
+
+    // HSL Hue & Saturation
+    let rf = r as f32 / 255.0;
+    let gf = g as f32 / 255.0;
+    let bf = b as f32 / 255.0;
+    let max_c = rf.max(gf).max(bf);
+    let min_c = rf.min(gf).min(bf);
+    let delta = max_c - min_c;
+    let hue_deg = if delta <= 1e-5 {
+        0.0
+    } else if (max_c - rf).abs() < 1e-5 {
+        60.0 * (((gf - bf) / delta).rem_euclid(6.0))
+    } else if (max_c - gf).abs() < 1e-5 {
+        60.0 * (((bf - rf) / delta) + 2.0)
+    } else {
+        60.0 * (((rf - gf) / delta) + 4.0)
+    };
+    let sat = if max_c <= 1e-5 { 0.0 } else { delta / max_c };
+
+    Some(PixelSampleReadout {
+        x_norm: xn,
+        y_norm: yn,
+        rgb: [r, g, b],
+        ire,
+        cb,
+        cr,
+        hue_deg,
+        sat,
+        cie_xy: [cie_x, cie_y],
+    })
 }
 
 /// Standard 75% Rec.709 color-bar target positions `(label, cb, cr)` for Vectorscope graticule.
@@ -217,6 +327,17 @@ pub fn compute_scopes_rgba(rgba: &[u8], width: u32, height: u32) -> ScopeData {
             data.vectorscope_rgb[iv][1] += g as u32;
             data.vectorscope_rgb[iv][2] += b as u32;
 
+            // CIE 1931 xy Chromaticity (x in [0..0.85], y in [0..0.85], +y up)
+            let (cie_x, cie_y) = rgb_to_cie1931_xy(r, g, b);
+            let cx = (((cie_x / 0.85).clamp(0.0, 1.0)) * (CIE_SIZE - 1) as f32).round() as usize;
+            let cy =
+                (((1.0 - (cie_y / 0.85)).clamp(0.0, 1.0)) * (CIE_SIZE - 1) as f32).round() as usize;
+            let ic = cy.min(CIE_SIZE - 1) * CIE_SIZE + cx.min(CIE_SIZE - 1);
+            data.cie_hits[ic] = data.cie_hits[ic].saturating_add(1);
+            data.cie_rgb[ic][0] += r as u32;
+            data.cie_rgb[ic][1] += g as u32;
+            data.cie_rgb[ic][2] += b as u32;
+
             x += step_x;
         }
         y += step_y;
@@ -247,6 +368,7 @@ pub fn compute_scopes_rgba(rgba: &[u8], width: u32, height: u32) -> ScopeData {
         .max()
         .unwrap_or(1)
         .max(1);
+    data.cie_peak = data.cie_hits.iter().copied().max().unwrap_or(1).max(1);
     data.hist_peak = data
         .hist_r
         .iter()

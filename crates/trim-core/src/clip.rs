@@ -37,8 +37,199 @@ impl AudioEqPreset {
 }
 
 pub use crate::color::{
-    BrightnessContrastPreset, ColorGradeParams, LookCategory, LutPreset, WhiteBalancePreset,
+    BrightnessContrastPreset, ColorGradeParams, CustomCurvesConfig, HslCurvesConfig,
+    HslQualifierConfig, LookCategory, LutPreset, WhiteBalancePreset,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ParametricEqBand {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub freq_hz: f32,
+    #[serde(default)]
+    pub gain_db: f32,
+    #[serde(default = "default_one_f32")]
+    pub q: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParametricEqConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_eq_bands")]
+    pub bands: [ParametricEqBand; 6],
+}
+
+fn default_eq_bands() -> [ParametricEqBand; 6] {
+    [
+        ParametricEqBand {
+            enabled: true,
+            freq_hz: 80.0,
+            gain_db: 0.0,
+            q: 0.71,
+        },
+        ParametricEqBand {
+            enabled: true,
+            freq_hz: 200.0,
+            gain_db: 0.0,
+            q: 1.0,
+        },
+        ParametricEqBand {
+            enabled: true,
+            freq_hz: 650.0,
+            gain_db: 0.0,
+            q: 1.2,
+        },
+        ParametricEqBand {
+            enabled: true,
+            freq_hz: 2000.0,
+            gain_db: 0.0,
+            q: 1.2,
+        },
+        ParametricEqBand {
+            enabled: true,
+            freq_hz: 5500.0,
+            gain_db: 0.0,
+            q: 1.0,
+        },
+        ParametricEqBand {
+            enabled: true,
+            freq_hz: 12000.0,
+            gain_db: 0.0,
+            q: 0.71,
+        },
+    ]
+}
+
+impl Default for ParametricEqConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            bands: default_eq_bands(),
+        }
+    }
+}
+
+impl ParametricEqConfig {
+    pub fn is_flat(&self) -> bool {
+        !self.enabled
+            || self
+                .bands
+                .iter()
+                .all(|b| !b.enabled || b.gain_db.abs() < 0.05)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AudioCompressorConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Threshold in dB (`-48.0..=0.0`, default `-18.0`).
+    #[serde(default = "default_comp_threshold")]
+    pub threshold_db: f32,
+    /// Compression ratio (`1.0..=20.0`, default `3.0`).
+    #[serde(default = "default_comp_ratio")]
+    pub ratio: f32,
+    /// Attack time in ms (`1.0..=200.0`, default `15.0`).
+    #[serde(default = "default_comp_attack")]
+    pub attack_ms: f32,
+    /// Release time in ms (`10.0..=1000.0`, default `150.0`).
+    #[serde(default = "default_comp_release")]
+    pub release_ms: f32,
+    /// Makeup gain in dB (`0.0..=24.0`, default `2.0`).
+    #[serde(default = "default_comp_makeup")]
+    pub makeup_db: f32,
+    /// Brickwall limiter at `-1.0 dBTP`.
+    #[serde(default = "default_true")]
+    pub limiter_enabled: bool,
+    /// De-Esser sibilance reduction (`0.0..=1.0`, default `0.0`).
+    #[serde(default)]
+    pub de_esser: f32,
+}
+
+fn default_comp_threshold() -> f32 {
+    -18.0
+}
+fn default_comp_ratio() -> f32 {
+    3.0
+}
+fn default_comp_attack() -> f32 {
+    15.0
+}
+fn default_comp_release() -> f32 {
+    150.0
+}
+fn default_comp_makeup() -> f32 {
+    2.0
+}
+
+impl Default for AudioCompressorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold_db: default_comp_threshold(),
+            ratio: default_comp_ratio(),
+            attack_ms: default_comp_attack(),
+            release_ms: default_comp_release(),
+            makeup_db: default_comp_makeup(),
+            limiter_enabled: true,
+            de_esser: 0.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CornerPinConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_cp_tl")]
+    pub top_left: [f32; 2],
+    #[serde(default = "default_cp_tr")]
+    pub top_right: [f32; 2],
+    #[serde(default = "default_cp_br")]
+    pub bottom_right: [f32; 2],
+    #[serde(default = "default_cp_bl")]
+    pub bottom_left: [f32; 2],
+}
+
+fn default_cp_tl() -> [f32; 2] {
+    [0.0, 0.0]
+}
+fn default_cp_tr() -> [f32; 2] {
+    [1.0, 0.0]
+}
+fn default_cp_br() -> [f32; 2] {
+    [1.0, 1.0]
+}
+fn default_cp_bl() -> [f32; 2] {
+    [0.0, 1.0]
+}
+
+impl Default for CornerPinConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            top_left: [0.0, 0.0],
+            top_right: [1.0, 0.0],
+            bottom_right: [1.0, 1.0],
+            bottom_left: [0.0, 1.0],
+        }
+    }
+}
+
+impl CornerPinConfig {
+    pub fn is_active(&self) -> bool {
+        self.enabled
+            && ((self.top_left[0] - 0.0).abs() > 1e-3
+                || (self.top_left[1] - 0.0).abs() > 1e-3
+                || (self.top_right[0] - 1.0).abs() > 1e-3
+                || (self.top_right[1] - 0.0).abs() > 1e-3
+                || (self.bottom_right[0] - 1.0).abs() > 1e-3
+                || (self.bottom_right[1] - 1.0).abs() > 1e-3
+                || (self.bottom_left[0] - 0.0).abs() > 1e-3
+                || (self.bottom_left[1] - 1.0).abs() > 1e-3)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -242,7 +433,12 @@ pub struct ColorWheelsConfig {
 }
 
 fn default_zero_vec3() -> [f32; 3] {
-    [0.0, 0.0, 0.0]
+    [0.0, 0.0]
+        .into_iter()
+        .chain([0.0])
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap_or([0.0, 0.0, 0.0])
 }
 fn default_one_vec3() -> [f32; 3] {
     [1.0, 1.0, 1.0]
@@ -251,10 +447,10 @@ fn default_one_vec3() -> [f32; 3] {
 impl Default for ColorWheelsConfig {
     fn default() -> Self {
         Self {
-            lift: default_zero_vec3(),
+            lift: [0.0, 0.0, 0.0],
             gamma: default_one_vec3(),
             gain: default_one_vec3(),
-            luminance: default_zero_vec3(),
+            luminance: [0.0, 0.0, 0.0],
         }
     }
 }
@@ -349,6 +545,14 @@ pub struct TextOverlay {
     pub bold: bool,
     #[serde(default)]
     pub italic: bool,
+    #[serde(default)]
+    pub stroke_width: f32,
+    #[serde(default = "default_black_color")]
+    pub stroke_color: [u8; 4],
+    #[serde(default)]
+    pub letter_spacing: f32,
+    #[serde(default = "default_shadow_dist")]
+    pub shadow_distance: f32,
 }
 
 fn default_font_family() -> String {
@@ -360,6 +564,12 @@ fn default_font_size() -> f32 {
 }
 fn default_white_color() -> [u8; 4] {
     [255, 255, 255, 255]
+}
+fn default_black_color() -> [u8; 4] {
+    [0, 0, 0, 255]
+}
+fn default_shadow_dist() -> f32 {
+    3.0
 }
 fn default_highlight_color() -> [u8; 4] {
     [255, 230, 0, 255] // Yellow pop
@@ -391,6 +601,10 @@ impl Default for TextOverlay {
             font_family: default_font_family(),
             bold: false,
             italic: false,
+            stroke_width: 0.0,
+            stroke_color: default_black_color(),
+            letter_spacing: 0.0,
+            shadow_distance: default_shadow_dist(),
         }
     }
 }
@@ -499,6 +713,34 @@ pub struct Clip {
     pub stabilization_strength: f32,
     #[serde(default)]
     pub voice_denoise: f32,
+    #[serde(default)]
+    pub custom_curves: Option<CustomCurvesConfig>,
+    #[serde(default)]
+    pub hsl_curves: Option<HslCurvesConfig>,
+    #[serde(default)]
+    pub hsl_qualifier: Option<HslQualifierConfig>,
+    #[serde(default)]
+    pub halation: f32,
+    #[serde(default)]
+    pub bloom: f32,
+    #[serde(default)]
+    pub chromatic_aberration: f32,
+    #[serde(default)]
+    pub parametric_eq: Option<ParametricEqConfig>,
+    #[serde(default)]
+    pub compressor: Option<AudioCompressorConfig>,
+    #[serde(default)]
+    pub pan: f64,
+    #[serde(default = "default_true")]
+    pub pitch_lock: bool,
+    #[serde(default)]
+    pub reverb_amount: f32,
+    #[serde(default)]
+    pub echo_amount: f32,
+    #[serde(default)]
+    pub corner_pin: Option<CornerPinConfig>,
+    #[serde(default)]
+    pub track_matte_above: bool,
 }
 
 fn default_speed() -> f64 {
@@ -564,6 +806,20 @@ impl Default for Clip {
             film_grain: 0.0,
             stabilization_strength: 0.0,
             voice_denoise: 0.0,
+            custom_curves: None,
+            hsl_curves: None,
+            hsl_qualifier: None,
+            halation: 0.0,
+            bloom: 0.0,
+            chromatic_aberration: 0.0,
+            parametric_eq: None,
+            compressor: None,
+            pan: 0.0,
+            pitch_lock: true,
+            reverb_amount: 0.0,
+            echo_amount: 0.0,
+            corner_pin: None,
+            track_matte_above: false,
         }
     }
 }
@@ -605,10 +861,19 @@ impl Clip {
             || self.lut_preset != LutPreset::None
             || self.custom_lut_path.is_some()
             || self.color_wheels.is_some()
+            || self
+                .custom_curves
+                .as_ref()
+                .is_some_and(|c| !c.is_identity())
+            || self.hsl_curves.as_ref().is_some_and(|c| !c.is_identity())
+            || self.hsl_qualifier.as_ref().is_some_and(|q| q.enabled)
             || self.blur > 1e-4
             || self.sharpen > 1e-4
             || self.vignette > 1e-4
             || self.film_grain > 1e-4
+            || self.halation > 1e-4
+            || self.bloom > 1e-4
+            || self.chromatic_aberration > 1e-4
     }
 
     pub fn color_grade_params(&self) -> ColorGradeParams {
@@ -651,10 +916,16 @@ impl Clip {
         self.lut_preset = LutPreset::None;
         self.custom_lut_path = None;
         self.color_wheels = None;
+        self.custom_curves = None;
+        self.hsl_curves = None;
+        self.hsl_qualifier = None;
         self.blur = 0.0;
         self.sharpen = 0.0;
         self.vignette = 0.0;
         self.film_grain = 0.0;
+        self.halation = 0.0;
+        self.bloom = 0.0;
+        self.chromatic_aberration = 0.0;
     }
     pub fn is_nested_sequence(&self) -> bool {
         self.nested_sequence_id.is_some()

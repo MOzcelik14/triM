@@ -1081,6 +1081,7 @@ impl VideoEngine {
                 && !clip.has_color_adjustments()
                 && !clip.has_crop()
                 && !clip.chromakey.as_ref().is_some_and(|ck| ck.enabled)
+                && !clip.corner_pin.as_ref().is_some_and(|cp| cp.enabled)
                 && clip.keyframes.is_empty()
                 && clip.text_overlay.is_none()
                 && clip.scale == 1.0
@@ -1705,6 +1706,10 @@ fn draw_clip_onto_canvas(
     let sharpen_amt = clip.sharpen.clamp(0.0, 2.0);
     let vignette_amt = clip.vignette.clamp(0.0, 1.0);
     let grain_amt = clip.film_grain.clamp(0.0, 1.0);
+    let halation_amt = clip.halation.clamp(0.0, 1.0);
+    let bloom_amt = clip.bloom.clamp(0.0, 1.0);
+    let ca_amt = clip.chromatic_aberration.clamp(0.0, 1.0);
+    let active_cp = clip.corner_pin.as_ref().filter(|cp| cp.is_active());
 
     for y in 0..final_h {
         let cy = final_y + y;
@@ -1713,8 +1718,8 @@ fn draw_clip_onto_canvas(
         }
 
         let norm_y = y as f32 / final_h.max(1) as f32;
-        let sy = ((y as f64 / final_h as f64) * fh) as u32;
-        let sy = sy.min(fh_u32 - 1);
+        let sy_base = ((y as f64 / final_h as f64) * fh) as u32;
+        let sy_base = sy_base.min(fh_u32 - 1);
 
         for x in 0..final_w {
             let cx = final_x + x;
@@ -1730,14 +1735,42 @@ fn draw_clip_onto_canvas(
                 continue;
             }
 
-            let sx = ((x as f64 / final_w as f64) * fw) as u32;
-            let sx = sx.min(fw_u32 - 1);
+            let (sx, sy) = if let Some(cp) = active_cp {
+                let Some([u_cp, v_cp]) = invert_bilinear_quad(
+                    [norm_x as f32, norm_y],
+                    cp.top_left,
+                    cp.top_right,
+                    cp.bottom_right,
+                    cp.bottom_left,
+                ) else {
+                    continue;
+                };
+                if !(0.0..=1.0).contains(&u_cp) || !(0.0..=1.0).contains(&v_cp) {
+                    continue;
+                }
+                (
+                    ((u_cp * fw as f32) as u32).min(fw_u32 - 1),
+                    ((v_cp * fh as f32) as u32).min(fh_u32 - 1),
+                )
+            } else {
+                let sx = ((x as f64 / final_w as f64) * fw) as u32;
+                (sx.min(fw_u32 - 1), sy_base)
+            };
 
             let src_px = frame.get_pixel(sx, sy);
             let mut r = src_px[0] as f32;
             let mut g = src_px[1] as f32;
             let mut b = src_px[2] as f32;
             let mut a = (src_px[3] as f32 / 255.0) * eff_opacity as f32;
+
+            if ca_amt > 0.001 {
+                let radial = ((norm_x as f32 - 0.5).abs() + (norm_y - 0.5).abs()).clamp(0.0, 1.0);
+                let ca_px = ((ca_amt * radial * 10.0).round() as i32).clamp(1, 14);
+                let sx_r = (sx as i32 + ca_px).clamp(0, fw_u32 as i32 - 1) as u32;
+                let sx_b = (sx as i32 - ca_px).clamp(0, fw_u32 as i32 - 1) as u32;
+                r = frame.get_pixel(sx_r, sy)[0] as f32;
+                b = frame.get_pixel(sx_b, sy)[2] as f32;
+            }
 
             if glitch_active {
                 let shift_px = (((1.0 - fade_factor) * 12.0 * (norm_y as f64 * 36.0).sin()).round()
@@ -1761,6 +1794,34 @@ fn draw_clip_onto_canvas(
                 r = r * 0.28 + (p1[0] as f32 + p2[0] as f32 + p3[0] as f32 + p4[0] as f32) * 0.18;
                 g = g * 0.28 + (p1[1] as f32 + p2[1] as f32 + p3[1] as f32 + p4[1] as f32) * 0.18;
                 b = b * 0.28 + (p1[2] as f32 + p2[2] as f32 + p3[2] as f32 + p4[2] as f32) * 0.18;
+            }
+
+            if halation_amt > 0.001 || bloom_amt > 0.001 {
+                let rad = 4i32;
+                let s_l = (sx as i32 - rad).clamp(0, fw_u32 as i32 - 1) as u32;
+                let s_r = (sx as i32 + rad).clamp(0, fw_u32 as i32 - 1) as u32;
+                let s_u = (sy as i32 - rad).clamp(0, fh_u32 as i32 - 1) as u32;
+                let s_d = (sy as i32 + rad).clamp(0, fh_u32 as i32 - 1) as u32;
+                let p1 = frame.get_pixel(s_l, sy);
+                let p2 = frame.get_pixel(s_r, sy);
+                let p3 = frame.get_pixel(sx, s_u);
+                let p4 = frame.get_pixel(sx, s_d);
+                let nr = (p1[0] as f32 + p2[0] as f32 + p3[0] as f32 + p4[0] as f32) * 0.25;
+                let ng = (p1[1] as f32 + p2[1] as f32 + p3[1] as f32 + p4[1] as f32) * 0.25;
+                let nb = (p1[2] as f32 + p2[2] as f32 + p3[2] as f32 + p4[2] as f32) * 0.25;
+                let n_luma = (0.2126 * nr + 0.7152 * ng + 0.0722 * nb) / 255.0;
+                if halation_amt > 0.001 && n_luma > 0.65 {
+                    let h_str = ((n_luma - 0.65) / 0.35).clamp(0.0, 1.0) * halation_amt * 110.0;
+                    r = (r + h_str).clamp(0.0, 255.0);
+                    g = (g + h_str * 0.28).clamp(0.0, 255.0);
+                    b = (b + h_str * 0.06).clamp(0.0, 255.0);
+                }
+                if bloom_amt > 0.001 && n_luma > 0.58 {
+                    let b_str = ((n_luma - 0.58) / 0.42).clamp(0.0, 1.0) * bloom_amt * 0.65;
+                    r = (r + nr * b_str).clamp(0.0, 255.0);
+                    g = (g + ng * b_str).clamp(0.0, 255.0);
+                    b = (b + nb * b_str).clamp(0.0, 255.0);
+                }
             }
 
             if sharpen_amt > 0.001 {
@@ -1889,7 +1950,46 @@ fn draw_clip_onto_canvas(
     }
 }
 
-/// Applies clip color wheels, color grade parameters, and optional 3D LUT to an RGB pixel in `[0.0, 255.0]`.
+/// Inverse bilinear interpolation mapping a screen point `p` inside quad `(tl, tr, br, bl)` back to `[u, v]` in `[0..1]`.
+#[inline]
+pub fn invert_bilinear_quad(
+    p: [f32; 2],
+    tl: [f32; 2],
+    tr: [f32; 2],
+    br: [f32; 2],
+    bl: [f32; 2],
+) -> Option<[f32; 2]> {
+    let mut u = 0.5_f32;
+    let mut v = 0.5_f32;
+    for _ in 0..5 {
+        let qx = (1.0 - u) * (1.0 - v) * tl[0]
+            + u * (1.0 - v) * tr[0]
+            + u * v * br[0]
+            + (1.0 - u) * v * bl[0]
+            - p[0];
+        let qy = (1.0 - u) * (1.0 - v) * tl[1]
+            + u * (1.0 - v) * tr[1]
+            + u * v * br[1]
+            + (1.0 - u) * v * bl[1]
+            - p[1];
+        if qx.abs() < 1e-4 && qy.abs() < 1e-4 {
+            break;
+        }
+        let dqx_du = (1.0 - v) * (tr[0] - tl[0]) + v * (br[0] - bl[0]);
+        let dqx_dv = (1.0 - u) * (bl[0] - tl[0]) + u * (br[0] - tr[0]);
+        let dqy_du = (1.0 - v) * (tr[1] - tl[1]) + v * (br[1] - bl[1]);
+        let dqy_dv = (1.0 - u) * (bl[1] - tl[1]) + u * (br[1] - tr[1]);
+        let det = dqx_du * dqy_dv - dqx_dv * dqy_du;
+        if det.abs() < 1e-6 {
+            return None;
+        }
+        u -= (dqy_dv * qx - dqx_dv * qy) / det;
+        v -= (-dqy_du * qx + dqx_du * qy) / det;
+    }
+    Some([u, v])
+}
+
+/// Applies clip color wheels, color grade parameters, curves, HSL qualifier, and optional 3D LUT to an RGB pixel in `[0.0, 255.0]`.
 #[inline]
 fn apply_clip_grading_rgb(
     mut r: f32,
@@ -1938,6 +2038,21 @@ fn apply_clip_grading_rgb(
             b / 255.0,
             color_params,
         );
+        if let Some(curves) = &clip.custom_curves {
+            if !curves.is_identity() {
+                [nr, ng, nb] = curves.apply_rgb(nr, ng, nb);
+            }
+        }
+        if let Some(hsl) = &clip.hsl_curves {
+            if !hsl.is_identity() {
+                [nr, ng, nb] = hsl.apply_rgb(nr, ng, nb);
+            }
+        }
+        if let Some(qual) = &clip.hsl_qualifier {
+            if qual.enabled {
+                [nr, ng, nb] = qual.apply_rgb(nr, ng, nb);
+            }
+        }
         if let Some(lut) = custom_lut {
             [nr, ng, nb] = lut.sample(nr, ng, nb);
         }

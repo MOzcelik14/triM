@@ -103,6 +103,9 @@ pub enum ExportDialogAction {
     AddToQueue(ExportPreset, String, Option<(f64, f64)>),
     CancelExport,
     OpenOutputFolder(String),
+    CopyYoutubeChapters,
+    ExportEdl,
+    ExportFcpxml,
 }
 
 impl ExportDialog {
@@ -752,11 +755,55 @@ impl ExportDialog {
                     // BOTTOM ACTION BAR
                     // =========================================================
                     ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new("Tip: Donanım hızlandırma aktifken render süresi 5 kata kadar hızlanır.")
+                        let btn_yt = Button::new(
+                            RichText::new("📋 YouTube Bölümleri")
                                 .size(10.5)
-                                .color(TEXT_MUTED),
-                        );
+                                .color(Color32::from_rgb(0xe8, 0xd0, 0x90)),
+                        )
+                        .fill(Color32::from_rgb(0x22, 0x20, 0x18))
+                        .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x48, 0x40, 0x24)))
+                        .rounding(Rounding::same(5.0));
+                        if ui
+                            .add(btn_yt)
+                            .on_hover_text(
+                                "Zaman çizgisi işaretçilerini (Markers) YouTube Bölüm Zaman Damgaları olarak panoya kopyala",
+                            )
+                            .clicked()
+                        {
+                            action = Some(ExportDialogAction::CopyYoutubeChapters);
+                        }
+
+                        let btn_edl = Button::new(
+                            RichText::new("🎞 CMX3600 EDL")
+                                .size(10.5)
+                                .color(Color32::from_rgb(0xc8, 0xd4, 0xec)),
+                        )
+                        .fill(Color32::from_rgb(0x1c, 0x22, 0x2e))
+                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                        .rounding(Rounding::same(5.0));
+                        if ui
+                            .add(btn_edl)
+                            .on_hover_text("DaVinci Resolve / Premiere Pro için CMX3600 (.edl) kurgu listesi kaydet")
+                            .clicked()
+                        {
+                            action = Some(ExportDialogAction::ExportEdl);
+                        }
+
+                        let btn_xml = Button::new(
+                            RichText::new("📐 FCPXML")
+                                .size(10.5)
+                                .color(Color32::from_rgb(0xc8, 0xd4, 0xec)),
+                        )
+                        .fill(Color32::from_rgb(0x1c, 0x22, 0x2e))
+                        .stroke(Stroke::new(1.0_f32, CARD_BORDER))
+                        .rounding(Rounding::same(5.0));
+                        if ui
+                            .add(btn_xml)
+                            .on_hover_text("Final Cut Pro / DaVinci Resolve için .fcpxml proje takas dosyası kaydet")
+                            .clicked()
+                        {
+                            action = Some(ExportDialogAction::ExportFcpxml);
+                        }
 
                         ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                             let btn_start = Button::new(

@@ -48,6 +48,14 @@ pub enum MonitorAction {
     TextPositionDragEnded,
     TextEditingCompleted,
     ToggleFullscreen,
+    ToggleSplitWipe,
+    SplitWipePosChanged(f32),
+    ToggleMulticamView,
+    MulticamAngleSelected(usize),
+    HoverPixelSample {
+        x_norm: f32,
+        y_norm: f32,
+    },
     MasksEdited {
         clip_id: String,
         old_masks: Vec<trim_core::Mask>,
@@ -85,6 +93,10 @@ pub struct ActiveTextOverlay {
     pub pos_x: f32,
     pub pos_y: f32,
     pub has_shadow: bool,
+    pub shadow_distance: f32,
+    pub stroke_width: f32,
+    pub stroke_color: Color32,
+    pub letter_spacing: f32,
     pub alpha: f32,
     pub caption_style: trim_core::clip::CaptionStyle,
     pub highlight_color: Color32,
@@ -106,6 +118,10 @@ impl Default for ActiveTextOverlay {
             pos_x: 0.5,
             pos_y: 0.85,
             has_shadow: true,
+            shadow_distance: 2.0,
+            stroke_width: 0.0,
+            stroke_color: Color32::BLACK,
+            letter_spacing: 0.0,
             alpha: 1.0,
             caption_style: trim_core::clip::CaptionStyle::Standard,
             highlight_color: Color32::from_rgb(255, 230, 0),
@@ -131,6 +147,7 @@ pub struct MonitorWidget<'a> {
     pub title: &'a str,
     pub texture: Option<&'a TextureHandle>,
     pub custom_texture_id: Option<egui::TextureId>,
+    pub reference_texture: Option<&'a TextureHandle>,
     pub has_content: bool,
     pub aspect_ratio: f32,
     pub current_time: f64,
@@ -144,6 +161,11 @@ pub struct MonitorWidget<'a> {
     pub media_label: Option<&'a str>,
     pub is_decoding: bool,
     pub safe_zones: bool,
+    pub split_wipe_enabled: bool,
+    pub split_wipe_pos: f32,
+    pub multicam_mode: bool,
+    pub multicam_active_angle: usize,
+    pub multicam_labels: Vec<String>,
     pub current_aspect_ratio: Option<trim_core::AspectRatio>,
     pub text_overlays: Vec<ActiveTextOverlay>,
     pub active_tool: Option<crate::toolbar::EditTool>,
@@ -175,6 +197,7 @@ impl<'a> MonitorWidget<'a> {
             title,
             texture,
             custom_texture_id: None,
+            reference_texture: None,
             has_content,
             aspect_ratio: if aspect_ratio > 0.1 {
                 aspect_ratio
@@ -192,6 +215,11 @@ impl<'a> MonitorWidget<'a> {
             media_label,
             is_decoding,
             safe_zones: false,
+            split_wipe_enabled: false,
+            split_wipe_pos: 0.5,
+            multicam_mode: false,
+            multicam_active_angle: 0,
+            multicam_labels: Vec::new(),
             current_aspect_ratio: None,
             text_overlays: Vec::new(),
             active_tool: None,
@@ -202,6 +230,25 @@ impl<'a> MonitorWidget<'a> {
 
     pub fn custom_texture_id(mut self, id: Option<egui::TextureId>) -> Self {
         self.custom_texture_id = id;
+        self
+    }
+
+    pub fn split_wipe(
+        mut self,
+        enabled: bool,
+        pos: f32,
+        ref_tex: Option<&'a TextureHandle>,
+    ) -> Self {
+        self.split_wipe_enabled = enabled;
+        self.split_wipe_pos = pos.clamp(0.05, 0.95);
+        self.reference_texture = ref_tex;
+        self
+    }
+
+    pub fn multicam(mut self, enabled: bool, active_angle: usize, labels: Vec<String>) -> Self {
+        self.multicam_mode = enabled;
+        self.multicam_active_angle = active_angle;
+        self.multicam_labels = labels;
         self
     }
 
@@ -366,12 +413,150 @@ impl<'a> MonitorWidget<'a> {
             .custom_texture_id
             .or_else(|| self.texture.map(|t| t.id()))
         {
-            painter.image(
-                tex_id,
-                frame_rect,
-                Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
-                Color32::WHITE,
-            );
+            if self.mode == MonitorMode::Program && self.split_wipe_enabled {
+                let split_x = frame_rect.left() + frame_rect.width() * self.split_wipe_pos;
+                let left_rect = Rect::from_min_max(
+                    frame_rect.left_top(),
+                    Pos2::new(split_x, frame_rect.bottom()),
+                );
+                let right_rect = Rect::from_min_max(
+                    Pos2::new(split_x, frame_rect.top()),
+                    frame_rect.right_bottom(),
+                );
+                let left_uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(self.split_wipe_pos, 1.0));
+                let right_uv =
+                    Rect::from_min_max(Pos2::new(self.split_wipe_pos, 0.0), Pos2::new(1.0, 1.0));
+
+                if let Some(ref_tex) = self.reference_texture {
+                    painter.image(ref_tex.id(), left_rect, left_uv, Color32::WHITE);
+                } else {
+                    painter.image(tex_id, left_rect, left_uv, Color32::from_rgb(205, 205, 210));
+                }
+                painter.image(tex_id, right_rect, right_uv, Color32::WHITE);
+
+                // Divider line & draggable handle
+                painter.line_segment(
+                    [
+                        Pos2::new(split_x, frame_rect.top()),
+                        Pos2::new(split_x, frame_rect.bottom()),
+                    ],
+                    Stroke::new(2.0_f32, Color32::from_rgb(0x58, 0xb4, 0xff)),
+                );
+                let handle_center = Pos2::new(split_x, frame_rect.center().y);
+                painter.circle_filled(handle_center, 9.0, Color32::from_rgb(0x18, 0x20, 0x30));
+                painter.circle_stroke(
+                    handle_center,
+                    9.0,
+                    Stroke::new(1.5_f32, Color32::from_rgb(0x58, 0xb4, 0xff)),
+                );
+                painter.text(
+                    Pos2::new(left_rect.left() + 8.0, frame_rect.top() + 14.0),
+                    egui::Align2::LEFT_CENTER,
+                    if self.reference_texture.is_some() {
+                        "REFERANS STILL"
+                    } else {
+                        "KARŞILAŞTIRMA (SOL)"
+                    },
+                    egui::FontId::monospace(9.5),
+                    Color32::from_rgb(220, 230, 245),
+                );
+                painter.text(
+                    Pos2::new(right_rect.right() - 8.0, frame_rect.top() + 14.0),
+                    egui::Align2::RIGHT_CENTER,
+                    "MEVCUT GRADE (SAĞ)",
+                    egui::FontId::monospace(9.5),
+                    Color32::from_rgb(88, 180, 255),
+                );
+
+                if let Some(ptr) = response.interact_pointer_pos() {
+                    if response.dragged() && frame_rect.contains(ptr) {
+                        let new_pos =
+                            ((ptr.x - frame_rect.left()) / frame_rect.width()).clamp(0.05, 0.95);
+                        action = Some(MonitorAction::SplitWipePosChanged(new_pos));
+                    }
+                }
+            } else {
+                painter.image(
+                    tex_id,
+                    frame_rect,
+                    Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+            }
+
+            if self.mode == MonitorMode::Program && self.multicam_mode {
+                let mid = frame_rect.center();
+                let quads = [
+                    Rect::from_min_max(frame_rect.left_top(), mid),
+                    Rect::from_min_max(
+                        Pos2::new(mid.x, frame_rect.top()),
+                        Pos2::new(frame_rect.right(), mid.y),
+                    ),
+                    Rect::from_min_max(
+                        Pos2::new(frame_rect.left(), mid.y),
+                        Pos2::new(mid.x, frame_rect.bottom()),
+                    ),
+                    Rect::from_min_max(mid, frame_rect.right_bottom()),
+                ];
+                for (qi, qrect) in quads.iter().enumerate() {
+                    let is_active = self.multicam_active_angle == qi;
+                    painter.rect_stroke(
+                        *qrect,
+                        0.0,
+                        Stroke::new(
+                            if is_active { 2.5_f32 } else { 1.0_f32 },
+                            if is_active {
+                                Color32::from_rgb(235, 65, 65)
+                            } else {
+                                Color32::from_rgba_unmultiplied(180, 190, 210, 110)
+                            },
+                        ),
+                    );
+                    let default_lbl = format!("KAMERA {} (Tuş {})", qi + 1, qi + 1);
+                    let lbl = self
+                        .multicam_labels
+                        .get(qi)
+                        .map(|s| s.as_str())
+                        .unwrap_or(&default_lbl);
+                    let badge_rect = Rect::from_min_size(
+                        Pos2::new(qrect.left() + 6.0, qrect.top() + 6.0),
+                        Vec2::new(136.0, 20.0),
+                    );
+                    painter.rect_filled(
+                        badge_rect,
+                        3.0,
+                        if is_active {
+                            Color32::from_rgba_unmultiplied(200, 35, 35, 220)
+                        } else {
+                            Color32::from_rgba_unmultiplied(15, 18, 26, 200)
+                        },
+                    );
+                    painter.text(
+                        badge_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        lbl,
+                        egui::FontId::monospace(10.0),
+                        Color32::WHITE,
+                    );
+                    if let Some(click_pos) = response.interact_pointer_pos() {
+                        if response.clicked() && qrect.contains(click_pos) {
+                            action = Some(MonitorAction::MulticamAngleSelected(qi));
+                        }
+                    }
+                }
+            }
+
+            if self.mode == MonitorMode::Program && action.is_none() {
+                if let Some(hover_pos) = response.hover_pos() {
+                    if frame_rect.contains(hover_pos) {
+                        let x_norm = ((hover_pos.x - frame_rect.left()) / frame_rect.width())
+                            .clamp(0.0, 1.0);
+                        let y_norm = ((hover_pos.y - frame_rect.top()) / frame_rect.height())
+                            .clamp(0.0, 1.0);
+                        action = Some(MonitorAction::HoverPixelSample { x_norm, y_norm });
+                    }
+                }
+            }
         } else {
             painter.text(
                 frame_rect.center(),
@@ -967,6 +1152,56 @@ impl<'a> MonitorWidget<'a> {
                             action = Some(MonitorAction::ToggleSafeZones);
                         }
 
+                        let wipe_col = if self.split_wipe_enabled {
+                            Color32::from_rgb(0x58, 0xb4, 0xff)
+                        } else {
+                            Color32::from_rgb(0xa0, 0xa0, 0xb0)
+                        };
+                        let btn_wipe = Button::new(
+                            RichText::new("◧ Wipe")
+                                .size(11.0)
+                                .color(wipe_col)
+                                .strong(),
+                        )
+                        .min_size(Vec2::new(26.0, 24.0))
+                        .fill(if self.split_wipe_enabled {
+                            Color32::from_rgb(0x18, 0x30, 0x48)
+                        } else {
+                            Color32::from_rgb(0x22, 0x22, 0x2a)
+                        });
+                        if ui
+                            .add(btn_wipe)
+                            .on_hover_text("Bölünmüş Ekran (Before/After / Referans Still) Karşılaştırma Perdesi")
+                            .clicked()
+                        {
+                            action = Some(MonitorAction::ToggleSplitWipe);
+                        }
+
+                        let mc_col = if self.multicam_mode {
+                            Color32::from_rgb(0xf8, 0x71, 0x71)
+                        } else {
+                            Color32::from_rgb(0xa0, 0xa0, 0xb0)
+                        };
+                        let btn_mc = Button::new(
+                            RichText::new("⊞ Multicam")
+                                .size(11.0)
+                                .color(mc_col)
+                                .strong(),
+                        )
+                        .min_size(Vec2::new(26.0, 24.0))
+                        .fill(if self.multicam_mode {
+                            Color32::from_rgb(0x3a, 0x1e, 0x24)
+                        } else {
+                            Color32::from_rgb(0x22, 0x22, 0x2a)
+                        });
+                        if ui
+                            .add(btn_mc)
+                            .on_hover_text("2x2 Çoklu Kamera (Multicam) İzleyici ve Canlı Açı Kesimi (1-4 Tuşları)")
+                            .clicked()
+                        {
+                            action = Some(MonitorAction::ToggleMulticamView);
+                        }
+
                         if let Some(curr_ar) = self.current_aspect_ratio {
                             ui.add_space(2.0);
                             egui::ComboBox::from_id_salt("monitor_aspect_combo")
@@ -1377,7 +1612,26 @@ pub fn draw_text_overlays_on_rect(
                 }
                 trim_core::clip::CaptionStyle::BoxBackground
                 | trim_core::clip::CaptionStyle::Standard => {
-                    let galley = painter.layout_no_wrap(ov.text.clone(), font, final_col);
+                    let galley = if ov.letter_spacing.abs() > 0.1 {
+                        let mut job = egui::text::LayoutJob::default();
+                        let scale_ls = ov.letter_spacing * (frame_rect.height() / 1080.0).max(0.35);
+                        let chars: Vec<char> = ov.text.chars().collect();
+                        for (ci, ch) in chars.iter().enumerate() {
+                            let s = ch.to_string();
+                            job.append(
+                                &s,
+                                if ci == 0 { 0.0 } else { scale_ls },
+                                egui::TextFormat {
+                                    font_id: font.clone(),
+                                    color: final_col,
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                        painter.layout_job(job)
+                    } else {
+                        painter.layout_no_wrap(ov.text.clone(), font, final_col)
+                    };
                     let tr = egui::Align2::CENTER_CENTER
                         .anchor_size(Pos2::new(target_x, target_y), galley.size());
 
@@ -1403,12 +1657,36 @@ pub fn draw_text_overlays_on_rect(
                     }
 
                     if ov.has_shadow {
-                        let shadow_offset = Vec2::new(2.0, 2.0);
+                        let sd = (ov.shadow_distance * (frame_rect.height() / 540.0).max(0.5))
+                            .clamp(0.5, 24.0);
+                        let shadow_offset = Vec2::new(sd, sd);
                         painter.galley(
                             tr.min + shadow_offset,
                             galley.clone(),
                             Color32::from_black_alpha((160.0 * ov.alpha) as u8),
                         );
+                    }
+                    if ov.stroke_width > 0.1 {
+                        let sw = (ov.stroke_width * (frame_rect.height() / 540.0).max(0.5))
+                            .clamp(0.8, 12.0);
+                        let sc = Color32::from_rgba_premultiplied(
+                            (ov.stroke_color.r() as f32 * ov.alpha) as u8,
+                            (ov.stroke_color.g() as f32 * ov.alpha) as u8,
+                            (ov.stroke_color.b() as f32 * ov.alpha) as u8,
+                            (255.0 * ov.alpha) as u8,
+                        );
+                        for (dx, dy) in [
+                            (-sw, 0.0),
+                            (sw, 0.0),
+                            (0.0, -sw),
+                            (0.0, sw),
+                            (-sw * 0.7, -sw * 0.7),
+                            (sw * 0.7, -sw * 0.7),
+                            (-sw * 0.7, sw * 0.7),
+                            (sw * 0.7, sw * 0.7),
+                        ] {
+                            painter.galley(tr.min + Vec2::new(dx, dy), galley.clone(), sc);
+                        }
                     }
                     painter.galley(tr.min, galley, final_col);
                     tr

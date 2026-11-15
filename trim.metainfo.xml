@@ -56,6 +56,17 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2.0.0" date="2026-11-15">
+      <description>
+        <p>triM. v2.0.0 - DaVinci Resolve &amp; Premiere Pro Seviyesinde Renk, Fairlight Ses, Multicam ve Profesyonel Teslimat Paketi:</p>
+        <ul>
+          <li>Quad Scope (2x2), CIE 1931 Kromatisite Diyagramı, Canlı Piksel Okuma (Reticle), Split-Screen Wipe ve Referans Kare Galerisi.</li>
+          <li>Özel RGB/Luma Eğrileri, 6-Vektör HSL Eğrileri, 3D HSL Qualifier, Analog Film FX (Halation, Bloom, Chromatic Aberration) ve Tek Tıkla Shot Match.</li>
+          <li>Fairlight 6-Bant Parametrik EQ, Compressor/Limiter/De-Esser, Stereo Pan (Klip &amp; Kanal), Reverb/Echo ve Pitch Lock.</li>
+          <li>Compound Clip, Özellik Yapıştır (Ctrl+Alt+V), Through-Edit Birleştirme, 4-Corner Perspective Pin, Track Matte, Zengin Tipografi, Multicam 2x2 (1-4), Medya Kullanım Rozeti, YouTube/MP4 Bölümleme ve CMX3600 EDL / FCPXML Dışa Aktarma.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.7.0" date="2026-11-15">
       <description>
         <p>triM. v1.7.0 - Filmstrip Önizleme, Hız Eğrileri (Speed Ramping), Cubic Bezier Keyframe, Yeni Görsel/Ses Efektleri ve Akıllı Önbellek:</p>

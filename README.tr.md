@@ -2,7 +2,7 @@
   <h1>triM.</h1>
   <p><strong>Windows ve Linux için hızlı, güvenli ve stüdyo kalitesinde masaüstü video düzenleyici.</strong></p>
   <p>
-    <a href="https://github.com/MOzcelik14/triM/releases/latest"><img src="https://img.shields.io/badge/Sürüm-1.7.0-2563eb.svg" alt="Sürüm 1.7.0" /></a>
+    <a href="https://github.com/MOzcelik14/triM/releases/latest"><img src="https://img.shields.io/badge/Sürüm-2.0.0-2563eb.svg" alt="Sürüm 2.0.0" /></a>
     <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-475569.svg" alt="Platform: Windows | Linux" />
     <a href="LICENSE"><img src="https://img.shields.io/badge/Lisans-GPL--3.0-16a34a.svg" alt="Lisans: GPL-3.0" /></a>
   </p>

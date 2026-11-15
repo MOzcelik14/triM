@@ -581,6 +581,18 @@ pub fn render_media_bin(
         move_act
     };
 
+    // Precompute how many times each media item is used in the active timeline
+    let mut media_usage_counts: HashMap<&str, usize> = HashMap::new();
+    for track in &project.timeline.tracks {
+        for clip in &track.clips {
+            if !clip.media_id.is_empty() {
+                *media_usage_counts
+                    .entry(clip.media_id.as_str())
+                    .or_insert(0) += 1;
+            }
+        }
+    }
+
     // 7. Grid View vs List View
     if *is_grid_view {
         let card_w = *thumb_size;
@@ -921,6 +933,23 @@ pub fn render_media_bin(
                         egui::FontId::monospace(8.5),
                         Color32::WHITE,
                     );
+
+                    // Top-Right timeline usage count badge (Nx)
+                    let use_cnt = media_usage_counts.get(m_id.as_str()).copied().unwrap_or(0);
+                    if use_cnt > 0 {
+                        let u_rect = Rect::from_min_size(
+                            Pos2::new(thumb_rect.right() - 25.0, thumb_rect.top() + 3.0),
+                            Vec2::new(22.0, 13.0),
+                        );
+                        painter.rect_filled(u_rect, 2.0, Color32::from_rgb(0x16, 0x8a, 0x4a));
+                        painter.text(
+                            u_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            format!("{}x", use_cnt),
+                            egui::FontId::monospace(8.5),
+                            Color32::WHITE,
+                        );
+                    }
 
                     // Duration badge overlay at bottom right corner of thumbnail
                     let dur_sec = item.duration;
@@ -1292,6 +1321,23 @@ pub fn render_media_bin(
                     egui::FontId::proportional(11.5),
                     Color32::from_rgb(0xe0, 0xe0, 0xea),
                 );
+
+                // Usage count badge in List view
+                let use_cnt = media_usage_counts.get(m_id.as_str()).copied().unwrap_or(0);
+                if use_cnt > 0 {
+                    let u_rect = Rect::from_center_size(
+                        egui::pos2(rect.right() - 18.0, rect.center().y),
+                        Vec2::new(24.0, 14.0),
+                    );
+                    painter.rect_filled(u_rect, 2.0, Color32::from_rgb(0x16, 0x8a, 0x4a));
+                    painter.text(
+                        u_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        format!("{}x", use_cnt),
+                        egui::FontId::monospace(8.5),
+                        Color32::WHITE,
+                    );
+                }
 
                 // Duration & Specs
                 let dur_str = format!("{:.1}s", item.duration);

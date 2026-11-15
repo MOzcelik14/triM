@@ -235,6 +235,9 @@ pub enum CanvasAction {
     ToggleLinkSelected,
     AlignSelectedByAudio,
     OpenSequence(String),
+    CreateCompoundClip,
+    JoinThroughEdits,
+    OpenPasteAttributesDialog,
 }
 
 pub fn render_timeline_canvas(
@@ -2494,6 +2497,23 @@ pub fn render_timeline_canvas(
                     ui.close_menu();
                 }
 
+                if ui
+                    .button("📦 Bileşik Klip Oluştur (Compound Clip / Nest)")
+                    .clicked()
+                {
+                    action = Some(CanvasAction::CreateCompoundClip);
+                    ui.close_menu();
+                }
+
+                if state.selected_clip_pairs.len() >= 2
+                    && ui
+                        .button("🔗 Bitişik Kesikleri Birleştir (Join Through-Edits)")
+                        .clicked()
+                {
+                    action = Some(CanvasAction::JoinThroughEdits);
+                    ui.close_menu();
+                }
+
                 if ui.button("📋 Kopyala (Ctrl+C)").clicked() {
                     action = Some(CanvasAction::CopySelected);
                     ui.close_menu();
@@ -2501,6 +2521,14 @@ pub fn render_timeline_canvas(
 
                 if ui.button("📋 Yapıştır (Ctrl+V)").clicked() {
                     action = Some(CanvasAction::PasteClipboard);
+                    ui.close_menu();
+                }
+
+                if ui
+                    .button("🎛 Özellikleri Seçerek Yapıştır... (Ctrl+Alt+V)")
+                    .clicked()
+                {
+                    action = Some(CanvasAction::OpenPasteAttributesDialog);
                     ui.close_menu();
                 }
 

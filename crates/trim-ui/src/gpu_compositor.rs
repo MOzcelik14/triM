@@ -74,9 +74,35 @@ uniform float u_blur;
 uniform float u_sharpen;
 uniform float u_vignette;
 uniform float u_film_grain;
+uniform float u_halation;
+uniform float u_bloom;
+uniform float u_chromatic_aberration;
+uniform int u_cp_enabled;
+uniform vec2 u_cp_tl;
+uniform vec2 u_cp_tr;
+uniform vec2 u_cp_br;
+uniform vec2 u_cp_bl;
 uniform float u_glitch_intensity;
 uniform float u_light_leak;
 uniform float u_time_seed;
+
+vec2 invert_bilinear_quad(vec2 p, vec2 p00, vec2 p10, vec2 p11, vec2 p01) {
+    vec2 u = 0.5 * vec2(1.0);
+    for (int iter = 0; iter < 6; iter++) {
+        float a = 1.0 - u.x;
+        float b = 1.0 - u.y;
+        vec2 f = a * b * p00 + u.x * b * p10 + u.x * u.y * p11 + a * u.y * p01 - p;
+        if (dot(f, f) < 1e-7) break;
+        vec2 dfdu = -b * p00 + b * p10 + u.y * p11 - u.y * p01;
+        vec2 dfdv = -a * p00 - u.x * p10 + u.x * p11 + a * p01;
+        float det = dfdu.x * dfdv.y - dfdu.y * dfdv.x;
+        if (abs(det) < 1e-7) return vec2(-1.0);
+        float inv_det = 1.0 / det;
+        u.x -= (dfdv.y * f.x - dfdv.x * f.y) * inv_det;
+        u.y -= (-dfdu.y * f.x + dfdu.x * f.y) * inv_det;
+    }
+    return u;
+}
 
 vec3 sample_3d_lut(vec3 rgb, int n_int) {
     float n = float(n_int);
@@ -141,17 +167,22 @@ void main() {
         rgb = bd.rgb;
         a = u_opacity;
     } else {
-        vec2 canvas_px = v_canvas_uv * u_canvas_size;
-        vec2 rel = canvas_px - u_clip_center;
+        vec2 uv;
+        if (u_cp_enabled == 1) {
+            uv = invert_bilinear_quad(v_canvas_uv, u_cp_tl, u_cp_tr, u_cp_br, u_cp_bl);
+        } else {
+            vec2 canvas_px = v_canvas_uv * u_canvas_size;
+            vec2 rel = canvas_px - u_clip_center;
 
-        float cos_r = cos(-u_rotation_rad);
-        float sin_r = sin(-u_rotation_rad);
-        vec2 rot_rel = vec2(
-            rel.x * cos_r - rel.y * sin_r,
-            rel.x * sin_r + rel.y * cos_r
-        );
+            float cos_r = cos(-u_rotation_rad);
+            float sin_r = sin(-u_rotation_rad);
+            vec2 rot_rel = vec2(
+                rel.x * cos_r - rel.y * sin_r,
+                rel.x * sin_r + rel.y * cos_r
+            );
 
-        vec2 uv = (rot_rel / max(u_clip_size, vec2(1.0))) + vec2(0.5);
+            uv = (rot_rel / max(u_clip_size, vec2(1.0))) + vec2(0.5);
+        }
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
             discard;
         }
@@ -171,6 +202,13 @@ void main() {
         vec4 texel = texture(u_frame_tex, uv);
         rgb = texel.rgb;
         a = texel.a * u_opacity;
+
+        if (u_chromatic_aberration > 0.001) {
+            vec2 ca_vec = (uv - vec2(0.5)) * (u_chromatic_aberration * 0.025);
+            float r_ca = texture(u_frame_tex, clamp(uv + ca_vec, 0.0, 1.0)).r;
+            float b_ca = texture(u_frame_tex, clamp(uv - ca_vec, 0.0, 1.0)).b;
+            rgb = vec3(r_ca, rgb.g, b_ca);
+        }
 
         if (u_glitch_intensity > 0.001) {
             float shift = u_glitch_intensity * 0.028 * sin(uv.y * 42.0 + u_time_seed * 17.0);
@@ -423,6 +461,20 @@ void main() {
         rgb = sample_3d_lut(rgb, u_lut_size);
     }
 
+    if (u_halation > 0.001) {
+        float luma_h = dot(rgb, vec3(0.299, 0.587, 0.114));
+        float hi_mask = clamp((luma_h - 0.55) / 0.45, 0.0, 1.0);
+        float glow = hi_mask * hi_mask * u_halation;
+        rgb = clamp(rgb + vec3(0.28, 0.09, -0.04) * glow, 0.0, 1.0);
+    }
+
+    if (u_bloom > 0.001) {
+        float luma_b = dot(rgb, vec3(0.299, 0.587, 0.114));
+        float hi_mask = clamp((luma_b - 0.45) / 0.55, 0.0, 1.0);
+        float glow = hi_mask * u_bloom * 0.22;
+        rgb = clamp(rgb + vec3(glow), 0.0, 1.0);
+    }
+
     if (u_vignette > 0.001) {
         vec2 vd = (local_uv - vec2(0.5)) * vec2(1.42, 1.42);
         float r2 = dot(vd, vd);
@@ -490,6 +542,14 @@ pub struct LayerUniforms {
     pub sharpen: f32,
     pub vignette: f32,
     pub film_grain: f32,
+    pub halation: f32,
+    pub bloom: f32,
+    pub chromatic_aberration: f32,
+    pub cp_enabled: bool,
+    pub cp_tl: [f32; 2],
+    pub cp_tr: [f32; 2],
+    pub cp_br: [f32; 2],
+    pub cp_bl: [f32; 2],
     pub glitch_intensity: f32,
     pub light_leak: f32,
     pub time_seed: f32,
@@ -702,6 +762,16 @@ impl LayerUniforms {
         let tint = clip.tint as f32;
         let wb_gains = trim_core::color::white_balance_gains(temperature, tint);
         let lut_preset = clip.lut_preset.shader_id();
+        let (cp_enabled, cp_tl, cp_tr, cp_br, cp_bl) = match &clip.corner_pin {
+            Some(cp) if cp.enabled => (
+                true,
+                cp.top_left,
+                cp.top_right,
+                cp.bottom_right,
+                cp.bottom_left,
+            ),
+            _ => (false, [0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]),
+        };
 
         Some(Self {
             canvas_size: [cw as f32, ch as f32],
@@ -731,6 +801,14 @@ impl LayerUniforms {
             sharpen: clip.sharpen.clamp(0.0, 2.0),
             vignette: clip.vignette.clamp(0.0, 1.0),
             film_grain: clip.film_grain.clamp(0.0, 1.0),
+            halation: clip.halation.clamp(0.0, 1.0),
+            bloom: clip.bloom.clamp(0.0, 1.0),
+            chromatic_aberration: clip.chromatic_aberration.clamp(0.0, 1.0),
+            cp_enabled,
+            cp_tl,
+            cp_tr,
+            cp_br,
+            cp_bl,
             glitch_intensity,
             light_leak,
             time_seed: (current_time as f32).fract(),
@@ -1128,10 +1206,44 @@ impl GpuCompositor {
         self.gl.bind_texture(glow::TEXTURE_2D, None);
     }
 
-    unsafe fn upload_layer_frame(&mut self, frame: &image::RgbaImage) {
+    unsafe fn upload_layer_frame(&mut self, frame: &image::RgbaImage, clip: &Clip) {
         let w = frame.width();
         let h = frame.height();
-        let raw = frame.as_raw();
+        let has_curves = clip
+            .custom_curves
+            .as_ref()
+            .is_some_and(|c| !c.is_identity());
+        let has_hsl = clip.hsl_curves.as_ref().is_some_and(|c| !c.is_identity());
+        let has_qual = clip.hsl_qualifier.as_ref().is_some_and(|q| q.enabled);
+
+        let mut modified_buf: Option<Vec<u8>> = None;
+        if has_curves || has_hsl || has_qual {
+            let mut buf = frame.as_raw().clone();
+            for px in buf.as_chunks_mut::<4>().0 {
+                let mut rgb = [
+                    px[0] as f32 / 255.0,
+                    px[1] as f32 / 255.0,
+                    px[2] as f32 / 255.0,
+                ];
+                if let Some(curves) = &clip.custom_curves {
+                    rgb = curves.apply_rgb(rgb[0], rgb[1], rgb[2]);
+                }
+                if let Some(hsl) = &clip.hsl_curves {
+                    rgb = hsl.apply_rgb(rgb[0], rgb[1], rgb[2]);
+                }
+                if let Some(qual) = &clip.hsl_qualifier {
+                    if qual.enabled {
+                        rgb = qual.apply_rgb(rgb[0], rgb[1], rgb[2]);
+                    }
+                }
+                px[0] = (rgb[0] * 255.0).round() as u8;
+                px[1] = (rgb[1] * 255.0).round() as u8;
+                px[2] = (rgb[2] * 255.0).round() as u8;
+            }
+            modified_buf = Some(buf);
+        }
+
+        let raw: &[u8] = modified_buf.as_deref().unwrap_or_else(|| frame.as_raw());
 
         self.gl.active_texture(glow::TEXTURE0);
         self.gl
@@ -1164,6 +1276,62 @@ impl GpuCompositor {
             );
             self.layer_tex_dims = (w, h);
         }
+    }
+
+    unsafe fn upload_track_matte_frame(&mut self, matte_frame: &image::RgbaImage) -> bool {
+        let w = matte_frame.width();
+        let h = matte_frame.height();
+        if w == 0 || h == 0 {
+            return false;
+        }
+        let mut rgba = vec![0u8; (w * h * 4) as usize];
+        for (src, dst) in matte_frame
+            .as_raw()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(rgba.as_chunks_mut::<4>().0.iter_mut())
+        {
+            let luma = (0.299 * src[0] as f32 + 0.587 * src[1] as f32 + 0.114 * src[2] as f32)
+                * (src[3] as f32 / 255.0);
+            let m = luma.round().clamp(0.0, 255.0) as u8;
+            dst[0] = m;
+            dst[1] = 255;
+            dst[2] = 0;
+            dst[3] = 255;
+        }
+        self.gl.active_texture(glow::TEXTURE3);
+        self.gl
+            .bind_texture(glow::TEXTURE_2D, Some(self.mask_texture));
+        self.gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
+        if self.mask_tex_dims != (w, h) {
+            self.gl.tex_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                glow::RGBA8 as i32,
+                w as i32,
+                h as i32,
+                0,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                Some(&rgba),
+            );
+            self.mask_tex_dims = (w, h);
+        } else {
+            self.gl.tex_sub_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                0,
+                0,
+                w as i32,
+                h as i32,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelUnpackData::Slice(&rgba),
+            );
+        }
+        self.gl.active_texture(glow::TEXTURE0);
+        true
     }
 
     unsafe fn prepare_custom_lut(&mut self, lut_path: Option<&str>) -> (bool, i32) {
@@ -1378,7 +1546,12 @@ impl GpuCompositor {
                 self.gl.uniform_1_i32(Some(&loc), 3);
             }
 
-            for layer in layers {
+            let mut skip_next = false;
+            for (idx, layer) in layers.iter().enumerate() {
+                if skip_next {
+                    skip_next = false;
+                    continue;
+                }
                 let Some(u) = LayerUniforms::from_clip(
                     &layer.clip,
                     layer.frame.width(),
@@ -1419,10 +1592,14 @@ impl GpuCompositor {
                 }
 
                 if !u.is_adjustment_layer {
-                    self.upload_layer_frame(&layer.frame);
+                    self.upload_layer_frame(&layer.frame, &layer.clip);
                 }
-                let has_mask =
-                    self.prepare_clip_masks(&layer.clip, current_time, logical_w, logical_h);
+                let has_mask = if layer.clip.track_matte_above && idx + 1 < layers.len() {
+                    skip_next = true;
+                    self.upload_track_matte_frame(&layers[idx + 1].frame)
+                } else {
+                    self.prepare_clip_masks(&layer.clip, current_time, logical_w, logical_h)
+                };
                 let (custom_lut_enabled, lut_size) =
                     self.prepare_custom_lut(layer.clip.custom_lut_path.as_deref());
 
@@ -1524,6 +1701,30 @@ impl GpuCompositor {
                 }
                 if let Some(loc) = gl.get_uniform_location(prog, "u_film_grain") {
                     gl.uniform_1_f32(Some(&loc), u.film_grain);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_halation") {
+                    gl.uniform_1_f32(Some(&loc), u.halation);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_bloom") {
+                    gl.uniform_1_f32(Some(&loc), u.bloom);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_chromatic_aberration") {
+                    gl.uniform_1_f32(Some(&loc), u.chromatic_aberration);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_cp_enabled") {
+                    gl.uniform_1_i32(Some(&loc), i32::from(u.cp_enabled));
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_cp_tl") {
+                    gl.uniform_2_f32(Some(&loc), u.cp_tl[0], u.cp_tl[1]);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_cp_tr") {
+                    gl.uniform_2_f32(Some(&loc), u.cp_tr[0], u.cp_tr[1]);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_cp_br") {
+                    gl.uniform_2_f32(Some(&loc), u.cp_br[0], u.cp_br[1]);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_cp_bl") {
+                    gl.uniform_2_f32(Some(&loc), u.cp_bl[0], u.cp_bl[1]);
                 }
                 if let Some(loc) = gl.get_uniform_location(prog, "u_glitch_intensity") {
                     gl.uniform_1_f32(Some(&loc), u.glitch_intensity);

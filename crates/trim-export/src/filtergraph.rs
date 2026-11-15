@@ -259,6 +259,29 @@ impl TimelineExporter {
             }
         }
 
+        if let Some(curves) = &clip.custom_curves {
+            if let Some(cf) = curves.ffmpeg_filter() {
+                f.push(cf);
+            }
+        }
+        if clip.chromatic_aberration > 1e-4 {
+            let shift = ((clip.chromatic_aberration * 8.0).round() as i32).clamp(1, 16);
+            f.push(format!("rgbashift=rh={shift}:bh=-{shift}"));
+        }
+        if clip.halation > 1e-4 {
+            let rh = (clip.halation * 0.24).clamp(0.02, 0.35);
+            f.push(format!(
+                "colorbalance=rh={rh:.3}:gh={:.3}:bh=-{:.3}",
+                rh * 0.28,
+                rh * 0.14
+            ));
+        }
+        if clip.bloom > 1e-4 {
+            let br = (clip.bloom * 0.08).clamp(0.01, 0.15);
+            let gm = (1.0 + clip.bloom * 0.18).clamp(1.01, 1.35);
+            f.push(format!("eq=brightness={br:.3}:gamma={gm:.3}"));
+        }
+
         if clip.blur > 1e-4 {
             f.push(format!("gblur=sigma={:.2}", (clip.blur * 20.0).max(0.2)));
         }
@@ -352,6 +375,22 @@ impl TimelineExporter {
 
         f.push("format=rgba".into());
 
+        if let Some(cp) = &clip.corner_pin {
+            if cp.is_active() {
+                f.push(format!(
+                    "perspective=x0={:.3}*W:y0={:.3}*H:x1={:.3}*W:y1={:.3}*H:x2={:.3}*W:y2={:.3}*H:x3={:.3}*W:y3={:.3}*H:sense=destination",
+                    cp.top_left[0],
+                    cp.top_left[1],
+                    cp.top_right[0],
+                    cp.top_right[1],
+                    cp.bottom_left[0],
+                    cp.bottom_left[1],
+                    cp.bottom_right[0],
+                    cp.bottom_right[1],
+                ));
+            }
+        }
+
         if let Some(ck) = &clip.chromakey {
             if ck.enabled {
                 f.push(format!(
@@ -386,11 +425,22 @@ impl TimelineExporter {
                 "0x{:02x}{:02x}{:02x}{:02x}",
                 txt.text_color[0], txt.text_color[1], txt.text_color[2], txt.text_color[3]
             );
-            let shadow_part = if txt.has_shadow {
-                ":shadowx=2:shadowy=2:shadowcolor=black@0.7"
+            let mut shadow_part = if txt.has_shadow {
+                let sd = (txt.shadow_distance.round() as i32).clamp(1, 20);
+                format!(":shadowx={sd}:shadowy={sd}:shadowcolor=black@0.7")
             } else {
-                ""
+                String::new()
             };
+            if txt.stroke_width > 0.1 {
+                let bw = (txt.stroke_width.round() as u32).clamp(1, 20);
+                shadow_part.push_str(&format!(
+                    ":borderw={bw}:bordercolor=0x{:02x}{:02x}{:02x}@{:.2}",
+                    txt.stroke_color[0],
+                    txt.stroke_color[1],
+                    txt.stroke_color[2],
+                    txt.stroke_color[3] as f32 / 255.0
+                ));
+            }
             let box_part = if let Some(bg) = txt.bg_color {
                 format!(
                     ":box=1:boxcolor=0x{:02x}{:02x}{:02x}@{:.2}:boxborderw=8",
@@ -784,6 +834,60 @@ impl TimelineExporter {
                 );
             }
             trim_core::clip::AudioEqPreset::Flat => {}
+        }
+
+        if let Some(peq) = &clip.parametric_eq {
+            if !peq.is_flat() {
+                for band in &peq.bands {
+                    if band.enabled && band.gain_db.abs() >= 0.05 {
+                        a.push(format!(
+                            "equalizer=f={:.0}:t=q:w={:.2}:g={:.2}",
+                            band.freq_hz.clamp(20.0, 20000.0),
+                            band.q.clamp(0.2, 10.0),
+                            band.gain_db.clamp(-24.0, 24.0)
+                        ));
+                    }
+                }
+            }
+        }
+
+        if let Some(comp) = &clip.compressor {
+            if comp.enabled {
+                if comp.de_esser > 0.01 {
+                    let g = -(comp.de_esser.clamp(0.0, 1.0) * 9.0);
+                    a.push(format!("equalizer=f=6500:t=q:w=2.0:g={g:.1}"));
+                }
+                let th_lin = 10.0_f32
+                    .powf(comp.threshold_db.clamp(-48.0, 0.0) / 20.0)
+                    .clamp(0.001, 1.0);
+                let mk_lin = 10.0_f32
+                    .powf(comp.makeup_db.clamp(0.0, 24.0) / 20.0)
+                    .clamp(1.0, 16.0);
+                a.push(format!(
+                    "acompressor=threshold={:.4}:ratio={:.2}:attack={:.1}:release={:.1}:makeup={:.2}",
+                    th_lin,
+                    comp.ratio.clamp(1.0, 20.0),
+                    comp.attack_ms.clamp(1.0, 200.0),
+                    comp.release_ms.clamp(10.0, 1000.0),
+                    mk_lin
+                ));
+                if comp.limiter_enabled {
+                    a.push("alimiter=limit=0.891".into());
+                }
+            }
+        }
+
+        if clip.reverb_amount > 0.01 || clip.echo_amount > 0.01 {
+            let d1 = (clip.reverb_amount * 0.35).clamp(0.05, 0.5);
+            let d2 = (clip.echo_amount * 0.45).clamp(0.05, 0.6);
+            a.push(format!("aecho=0.8:0.88:60|140:{d1:.2}|{d2:.2}"));
+        }
+
+        if clip.pan.abs() > 0.01 {
+            let p = clip.pan.clamp(-1.0, 1.0);
+            let l_g = if p > 0.0 { 1.0 - p } else { 1.0 };
+            let r_g = if p < 0.0 { 1.0 + p } else { 1.0 };
+            a.push(format!("pan=stereo|c0={l_g:.3}*c0|c1={r_g:.3}*c1"));
         }
 
         if clip.noise_gate && clip.eq_preset != trim_core::clip::AudioEqPreset::DenoiseGate {
@@ -1814,7 +1918,7 @@ mod tests {
             "filtergraph should contain subtitle box: {fg}"
         );
         assert!(
-            fg.contains("shadowx=2"),
+            fg.contains("shadowx=3"),
             "filtergraph should contain shadow: {fg}"
         );
     }

@@ -198,11 +198,17 @@ impl TrimApp {
                 self.monitor_texture = None;
                 if self.scopes_panel.is_open
                     && (self.scopes_panel.needs_refresh
+                        || self.scopes_panel.request_grab_still
                         || (self.scopes_panel.last_eval_time - self.current_time).abs() > 1e-4)
                 {
                     if let Some((rgba, rw, rh)) = compositor.readback_fbo_rgba() {
                         self.scopes_panel.update_from_rgba(ctx, &rgba, rw, rh);
                         self.scopes_panel.last_eval_time = self.current_time;
+                        if self.scopes_panel.request_grab_still {
+                            self.scopes_panel.request_grab_still = false;
+                            self.capture_reference_still(ctx, &rgba, rw, rh);
+                        }
+                        self.last_scope_rgba = Some((rgba, rw, rh));
                     }
                 }
                 return;
@@ -221,15 +227,19 @@ impl TrimApp {
         if let Some(frame) = frame_opt {
             if self.scopes_panel.is_open
                 && (self.scopes_panel.needs_refresh
+                    || self.scopes_panel.request_grab_still
                     || (self.scopes_panel.last_eval_time - self.current_time).abs() > 1e-4)
             {
-                self.scopes_panel.update_from_rgba(
-                    ctx,
-                    frame.as_raw(),
-                    frame.width(),
-                    frame.height(),
-                );
+                let rw = frame.width();
+                let rh = frame.height();
+                self.scopes_panel
+                    .update_from_rgba(ctx, frame.as_raw(), rw, rh);
                 self.scopes_panel.last_eval_time = self.current_time;
+                if self.scopes_panel.request_grab_still {
+                    self.scopes_panel.request_grab_still = false;
+                    self.capture_reference_still(ctx, frame.as_raw(), rw, rh);
+                }
+                self.last_scope_rgba = Some((frame.as_raw().clone(), rw, rh));
             }
             if let Some(last) = &self.last_rendered_monitor_frame {
                 if std::sync::Arc::ptr_eq(last, &frame) {
@@ -254,6 +264,33 @@ impl TrimApp {
                 self.scopes_panel.clear();
             }
         }
+    }
+
+    pub fn capture_reference_still(&mut self, ctx: &egui::Context, rgba: &[u8], w: u32, h: u32) {
+        if w == 0 || h == 0 || rgba.len() < (w as usize * h as usize * 4) {
+            return;
+        }
+        let active_clip = self
+            .canvas_state
+            .selected_clip_pairs
+            .first()
+            .and_then(|(tr_id, cl_id)| {
+                self.project
+                    .timeline
+                    .get_track_by_id(tr_id)
+                    .and_then(|t| t.get_clip_by_id(cl_id))
+                    .cloned()
+            })
+            .or_else(|| {
+                self.project
+                    .timeline
+                    .get_top_visible_video_clip_at(self.current_time)
+                    .map(|(_, c)| c.clone())
+            });
+        self.scopes_panel.last_frame_rgba = Some((rgba[..(w * h * 4) as usize].to_vec(), w, h));
+        self.scopes_panel
+            .grab_still(ctx, active_clip.as_ref(), self.current_time);
+        self.status_message = "📷 Referans kare galeriye kaydedildi".to_string();
     }
 
     pub fn update_source_monitor_frame(&mut self, ctx: &egui::Context) {

@@ -4,6 +4,7 @@ pub mod clip;
 pub mod color;
 pub mod compositing;
 pub mod error;
+pub mod interchange;
 pub mod keyframe;
 pub mod lru;
 pub mod marker;
@@ -19,13 +20,20 @@ pub mod time;
 pub mod timeline;
 pub mod track;
 
-pub use clip::{AudioEqPreset, Clip, LutPreset, TextOverlay};
+pub use clip::{
+    AudioCompressorConfig, AudioEqPreset, Clip, CornerPinConfig, LutPreset, ParametricEqBand,
+    ParametricEqConfig, TextOverlay,
+};
 pub use color::{
-    analyze_auto_white_balance_rgba, apply_color_grade_normalized, white_balance_gains,
-    BrightnessContrastPreset, ColorGradeParams, LookCategory, WhiteBalancePreset,
+    analyze_auto_white_balance_rgba, analyze_shot_match_rgba, apply_color_grade_normalized,
+    white_balance_gains, BrightnessContrastPreset, ColorGradeParams, CustomCurvesConfig,
+    HslCurvesConfig, HslQualifierConfig, LookCategory, WhiteBalancePreset,
 };
 pub use compositing::{BlendMode, ClipKind};
 pub use error::CoreError;
+pub use interchange::{
+    export_cmx3600_edl, export_fcpxml, export_youtube_chapters, generate_ffmetadata_chapters,
+};
 pub use keyframe::{interpolate_keyframes, Interpolation, Keyframe};
 pub use lru::LruCache;
 pub use marker::Marker;
@@ -35,7 +43,8 @@ pub use preferences::UserPreferences;
 pub use project::{Project, ProjectSettings};
 pub use scopes::{
     compute_false_color_rgba, compute_scopes_rgba, compute_zebra_rgba, false_color_map_ire,
-    rec709_cb_cr, rec709_luma_norm, vectorscope_targets_75, ScopeConfig, ScopeData,
+    rec709_cb_cr, rec709_cie1931_primaries, rec709_luma_norm, rgb_to_cie1931_xy, sample_pixel_rgba,
+    vectorscope_targets_75, PixelSampleReadout, ScopeConfig, ScopeData,
 };
 pub use sequence::{flatten_timeline_sequences, Sequence};
 pub use subtitles::{

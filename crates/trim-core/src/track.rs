@@ -41,6 +41,8 @@ pub struct Track {
     #[serde(default = "default_volume")]
     pub volume: f64,
     #[serde(default)]
+    pub pan: f64,
+    #[serde(default)]
     pub clips: Vec<Clip>,
 }
 
@@ -62,6 +64,7 @@ impl Default for Track {
             locked: false,
             visible: true,
             volume: 1.0,
+            pan: 0.0,
             clips: Vec::new(),
         }
     }

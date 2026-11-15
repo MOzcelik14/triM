@@ -293,6 +293,89 @@ impl AudioMixer {
                 let mut hp_prev_in = [0.0_f32; 2];
                 let mut hp_prev_out = [0.0_f32; 2];
 
+                // Precompute active Biquad peaking EQ coefficients (up to 6 bands)
+                let mut eq_coeffs = [[0.0_f32; 5]; 6];
+                let mut eq_state = [[[0.0_f32; 4]; 2]; 6]; // [band][ch][x1, x2, y1, y2]
+                let mut active_eq_count = 0usize;
+                if let Some(peq) = &clip.parametric_eq {
+                    if !peq.is_flat() {
+                        for band in &peq.bands {
+                            if !band.enabled || band.gain_db.abs() < 0.05 {
+                                continue;
+                            }
+                            let a_amp = 10.0_f32.powf(band.gain_db.clamp(-24.0, 24.0) / 40.0);
+                            let w0 = 2.0 * std::f32::consts::PI * band.freq_hz.clamp(20.0, 20000.0)
+                                / SAMPLE_RATE as f32;
+                            let cos_w0 = w0.cos();
+                            let alpha = w0.sin() / (2.0 * band.q.clamp(0.2, 10.0));
+                            let a0 = (1.0 + alpha / a_amp).max(1e-6);
+                            let b0 = (1.0 + alpha * a_amp) / a0;
+                            let b1 = (-2.0 * cos_w0) / a0;
+                            let b2 = (1.0 - alpha * a_amp) / a0;
+                            let a1 = (-2.0 * cos_w0) / a0;
+                            let a2 = (1.0 - alpha / a_amp) / a0;
+                            eq_coeffs[active_eq_count] = [b0, b1, b2, a1, a2];
+                            active_eq_count += 1;
+                        }
+                    }
+                }
+
+                // Compressor / De-Esser state
+                let active_comp = clip.compressor.as_ref().filter(|c| c.enabled);
+                let mut comp_env = 0.0_f32;
+                let mut deess_prev = [0.0_f32; 2];
+                let (
+                    comp_thresh,
+                    comp_ratio,
+                    comp_atk,
+                    comp_rel,
+                    comp_makeup,
+                    comp_limit,
+                    deess_amt,
+                ) = if let Some(c) = active_comp {
+                    let th = 10.0_f32.powf(c.threshold_db.clamp(-48.0, 0.0) / 20.0);
+                    let rat = c.ratio.clamp(1.0, 20.0);
+                    let atk = (-1.0
+                        / ((c.attack_ms.clamp(1.0, 200.0) * 0.001) * SAMPLE_RATE as f32))
+                        .exp();
+                    let rel = (-1.0
+                        / ((c.release_ms.clamp(10.0, 1000.0) * 0.001) * SAMPLE_RATE as f32))
+                        .exp();
+                    let mk = 10.0_f32.powf(c.makeup_db.clamp(0.0, 24.0) / 20.0);
+                    (
+                        th,
+                        rat,
+                        atk,
+                        rel,
+                        mk,
+                        c.limiter_enabled,
+                        c.de_esser.clamp(0.0, 1.0),
+                    )
+                } else {
+                    (1.0, 1.0, 0.0, 0.0, 1.0, false, 0.0)
+                };
+
+                // Stereo pan gains (clip.pan + track.pan in [-1.0..=1.0])
+                let combined_pan = (clip.pan + track.pan).clamp(-1.0, 1.0) as f32;
+                let (pan_l, pan_r) = if combined_pan < 0.0 {
+                    (1.0_f32, (1.0 + combined_pan).clamp(0.0, 1.0))
+                } else if combined_pan > 0.0 {
+                    ((1.0 - combined_pan).clamp(0.0, 1.0), 1.0_f32)
+                } else {
+                    (1.0_f32, 1.0_f32)
+                };
+
+                // Compact comb/echo delay line for Reverb & Echo preview
+                let rev_amt = clip.reverb_amount.clamp(0.0, 1.0);
+                let echo_amt = clip.echo_amount.clamp(0.0, 1.0);
+                let has_space_fx = rev_amt > 0.01 || echo_amt > 0.01;
+                let mut delay_buf = if has_space_fx {
+                    vec![[0.0_f32; 2]; 4800] // 100ms circular tap buffer
+                } else {
+                    Vec::new()
+                };
+                let mut delay_pos = 0usize;
+
                 for k in 0..chunk_len {
                     let dst_idx = dst_start + k;
                     if dst_idx >= num_samples {
@@ -342,6 +425,70 @@ impl AudioMixer {
                         }
                     }
 
+                    // 6-Band Parametric Biquad EQ
+                    for b_idx in 0..active_eq_count {
+                        let [b0, b1, b2, a1, a2] = eq_coeffs[b_idx];
+                        let st_l = &mut eq_state[b_idx][0];
+                        let yl = b0 * l + b1 * st_l[0] + b2 * st_l[1] - a1 * st_l[2] - a2 * st_l[3];
+                        st_l[1] = st_l[0];
+                        st_l[0] = l;
+                        st_l[3] = st_l[2];
+                        st_l[2] = yl;
+                        l = yl;
+
+                        let st_r = &mut eq_state[b_idx][1];
+                        let yr = b0 * r + b1 * st_r[0] + b2 * st_r[1] - a1 * st_r[2] - a2 * st_r[3];
+                        st_r[1] = st_r[0];
+                        st_r[0] = r;
+                        st_r[3] = st_r[2];
+                        st_r[2] = yr;
+                        r = yr;
+                    }
+
+                    // Dynamic Compressor + De-Esser + Brickwall Limiter
+                    if active_comp.is_some() {
+                        if deess_amt > 0.01 {
+                            let hf_l = l - deess_prev[0];
+                            let hf_r = r - deess_prev[1];
+                            deess_prev = [l, r];
+                            if hf_l.abs().max(hf_r.abs()) > 0.12 {
+                                l -= hf_l * deess_amt * 0.55;
+                                r -= hf_r * deess_amt * 0.55;
+                            }
+                        }
+                        let peak = l.abs().max(r.abs());
+                        comp_env = if peak > comp_env {
+                            comp_atk * comp_env + (1.0 - comp_atk) * peak
+                        } else {
+                            comp_rel * comp_env + (1.0 - comp_rel) * peak
+                        };
+                        let mut c_gain = comp_makeup;
+                        if comp_env > comp_thresh && comp_thresh > 1e-5 {
+                            let over = comp_env / comp_thresh;
+                            let compressed = over.powf((1.0 / comp_ratio) - 1.0);
+                            c_gain *= compressed;
+                        }
+                        l *= c_gain;
+                        r *= c_gain;
+                        if comp_limit {
+                            l = l.clamp(-0.891, 0.891);
+                            r = r.clamp(-0.891, 0.891);
+                        }
+                    }
+
+                    // Reverb / Echo spatial feedback
+                    if has_space_fx && !delay_buf.is_empty() {
+                        let d_len = delay_buf.len();
+                        let tap1 = delay_buf[(delay_pos + d_len - 1600) % d_len];
+                        let tap2 = delay_buf[(delay_pos + d_len - 3700) % d_len];
+                        let wet_l = tap1[0] * rev_amt * 0.35 + tap2[0] * echo_amt * 0.45;
+                        let wet_r = tap1[1] * rev_amt * 0.35 + tap2[1] * echo_amt * 0.45;
+                        delay_buf[delay_pos] = [l + wet_l * 0.35, r + wet_r * 0.35];
+                        delay_pos = (delay_pos + 1) % d_len;
+                        l += wet_l;
+                        r += wet_r;
+                    }
+
                     let gain = if has_dynamic_gain {
                         let cur_t = overlap_start + (k as f64 / SAMPLE_RATE as f64);
                         let dt = (cur_t - clip.timeline_in).max(0.0);
@@ -365,8 +512,8 @@ impl AudioMixer {
                         eff_vol
                     };
 
-                    out[dst_idx][0] += l * gain;
-                    out[dst_idx][1] += r * gain;
+                    out[dst_idx][0] += l * gain * pan_l;
+                    out[dst_idx][1] += r * gain * pan_r;
                 }
             }
         }
