@@ -7,10 +7,12 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use trim_core::media::{MediaItem, MediaType};
 
+pub const FILMSTRIP_TILE_COUNT: usize = 8;
+
 #[derive(Clone)]
 pub struct ThumbnailGenerator {
     pub cache_dir: PathBuf,
-    req_tx: Sender<MediaItem>,
+    req_tx: Sender<(MediaItem, bool)>,
     res_rx: Arc<Mutex<Receiver<(String, PathBuf)>>>,
     in_flight: Arc<Mutex<HashSet<String>>>,
 }
@@ -32,7 +34,7 @@ impl Default for ThumbnailGenerator {
 
 impl ThumbnailGenerator {
     pub fn new(cache_dir: PathBuf) -> Self {
-        let (req_tx, req_rx) = channel::<MediaItem>();
+        let (req_tx, req_rx) = channel::<(MediaItem, bool)>();
         let req_rx = Arc::new(Mutex::new(req_rx));
         let (res_tx, res_rx) = channel::<(String, PathBuf)>();
         let in_flight = Arc::new(Mutex::new(HashSet::<String>::new()));
@@ -48,27 +50,38 @@ impl ThumbnailGenerator {
             if let Err(e) = std::thread::Builder::new()
                 .name(format!("thumbnail-worker-{}", w_idx))
                 .spawn(move || loop {
-                    let item = {
+                    let (item, is_filmstrip) = {
                         let Ok(lock) = rx.lock() else { break };
                         match lock.recv() {
                             Ok(it) => it,
                             Err(_) => break,
                         }
                     };
-                    let target = get_thumbnail_path_static(&cache_dir_clone, &item);
+                    let key = if is_filmstrip {
+                        format!("strip:{}", item.id)
+                    } else {
+                        item.id.clone()
+                    };
+                    let target = if is_filmstrip {
+                        get_filmstrip_path_static(&cache_dir_clone, &item)
+                    } else {
+                        get_thumbnail_path_static(&cache_dir_clone, &item)
+                    };
                     let ok = if target.is_file()
                         && target.metadata().map(|m| m.len() > 0).unwrap_or(false)
                     {
                         true
+                    } else if is_filmstrip {
+                        generate_filmstrip_disk(&cache_dir_clone, &item).is_some()
                     } else {
                         generate_thumbnail_disk(&cache_dir_clone, &item).is_some()
                     };
 
                     if ok {
-                        let _ = res_tx.send((item.id.clone(), target));
+                        let _ = res_tx.send((key.clone(), target));
                     }
                     if let Ok(mut set) = in_flight_worker.lock() {
-                        set.remove(&item.id);
+                        set.remove(&key);
                     }
                 })
             {
@@ -88,31 +101,41 @@ impl ThumbnailGenerator {
         get_thumbnail_path_static(&self.cache_dir, item)
     }
 
+    pub fn get_filmstrip_path(&self, item: &MediaItem) -> PathBuf {
+        get_filmstrip_path_static(&self.cache_dir, item)
+    }
+
     /// Submits a background thumbnail generation request if not already cached or in-flight.
     pub fn request_thumbnail(&self, item: &MediaItem) {
-        let target = self.get_thumbnail_path(item);
-        if target.is_file() && target.metadata().map(|m| m.len() > 0).unwrap_or(false) {
-            if let Ok(mut set) = self.in_flight.lock() {
-                if !set.contains(&item.id) {
-                    let _ = self.req_tx.send(item.clone());
-                    set.insert(item.id.clone());
-                }
-            }
+        self.enqueue_job(item, false);
+    }
+
+    /// Submits a background 8-tile filmstrip generation request for video clips.
+    pub fn request_filmstrip(&self, item: &MediaItem) {
+        if item.media_type != MediaType::Video {
             return;
         }
+        self.enqueue_job(item, true);
+    }
 
+    fn enqueue_job(&self, item: &MediaItem, is_filmstrip: bool) {
+        let key = if is_filmstrip {
+            format!("strip:{}", item.id)
+        } else {
+            item.id.clone()
+        };
         let mut set = match self.in_flight.lock() {
             Ok(s) => s,
             Err(_) => return,
         };
-        if set.contains(&item.id) {
+        if set.contains(&key) {
             return;
         }
-        set.insert(item.id.clone());
-        let _ = self.req_tx.send(item.clone());
+        set.insert(key);
+        let _ = self.req_tx.send((item.clone(), is_filmstrip));
     }
 
-    /// Non-blocking poll for newly generated thumbnails from the background worker.
+    /// Non-blocking poll for newly generated thumbnails/filmstrips from the background worker.
     pub fn poll_thumbnail(&self) -> Option<(String, PathBuf)> {
         self.res_rx.lock().ok()?.try_recv().ok()
     }
@@ -130,6 +153,61 @@ fn get_thumbnail_path_static(cache_dir: &Path, item: &MediaItem) -> PathBuf {
     );
     let hash = format!("{:x}", simple_hash(&key));
     cache_dir.join(format!("{}.jpg", hash))
+}
+
+fn get_filmstrip_path_static(cache_dir: &Path, item: &MediaItem) -> PathBuf {
+    let key = format!(
+        "{}_{}_{}x{}",
+        item.file_path, item.duration, item.width, item.height
+    );
+    let hash = format!("{:x}", simple_hash(&key));
+    cache_dir.join(format!("{}_strip{}.jpg", hash, FILMSTRIP_TILE_COUNT))
+}
+
+fn generate_filmstrip_disk(cache_dir: &Path, item: &MediaItem) -> Option<PathBuf> {
+    if item.media_type != MediaType::Video {
+        return None;
+    }
+    let target = get_filmstrip_path_static(cache_dir, item);
+    if target.is_file() && target.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+        return Some(target);
+    }
+
+    let src = Path::new(&item.file_path);
+    if !src.is_file() {
+        return None;
+    }
+
+    let _ = fs::create_dir_all(cache_dir);
+    let dur = item.duration.max(0.8);
+    let fps_val = ((FILMSTRIP_TILE_COUNT as f64 + 0.4) / dur).clamp(0.02, 30.0);
+    let vf = format!(
+        "fps=fps={:.4},scale=160:90:force_original_aspect_ratio=increase,crop=160:90,tile={}x1",
+        fps_val, FILMSTRIP_TILE_COUNT
+    );
+
+    let mut cmd = crate::ffmpeg::ffmpeg_cmd();
+    cmd.args([
+        "-v",
+        "quiet",
+        "-y",
+        "-i",
+        item.file_path.as_str(),
+        "-vf",
+        &vf,
+        "-frames:v",
+        "1",
+        "-q:v",
+        "4",
+        target.to_str().unwrap_or(""),
+    ]);
+    let mut guard = crate::ffmpeg::ChildGuard::spawn(&mut cmd).ok()?;
+    let status = guard.wait().ok()?;
+    if status.success() && target.is_file() {
+        Some(target)
+    } else {
+        None
+    }
 }
 
 fn generate_thumbnail_disk(cache_dir: &Path, item: &MediaItem) -> Option<PathBuf> {
@@ -220,9 +298,14 @@ mod tests {
 
         let item = MediaItem::new("/nonexistent/video.mp4");
         gen.request_thumbnail(&item);
+        gen.request_filmstrip(&item);
 
         // Polling ready receiver should not hang
         let ready = gen.poll_thumbnail();
         assert!(ready.is_none());
+        assert!(gen
+            .get_filmstrip_path(&item)
+            .to_string_lossy()
+            .ends_with("_strip8.jpg"));
     }
 }

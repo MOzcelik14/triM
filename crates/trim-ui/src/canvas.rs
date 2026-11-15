@@ -233,6 +233,7 @@ pub enum CanvasAction {
         new_volume: f64,
     },
     ToggleLinkSelected,
+    AlignSelectedByAudio,
     OpenSequence(String),
 }
 
@@ -471,7 +472,12 @@ pub fn render_timeline_canvas(
 
             // Video Filmstrip Thumbnails (Video tracks only)
             if track.track_type == TrackType::Video && clip_rect.width() >= 28.0 {
-                if let Some(tex) = textures.get(&clip.media_id) {
+                let strip_tex = textures.get(&format!("strip:{}", clip.media_id));
+                let poster_tex = textures.get(&clip.media_id);
+                if let Some((tex, is_strip)) = strip_tex
+                    .map(|t| (t, true))
+                    .or_else(|| poster_tex.map(|t| (t, false)))
+                {
                     let body_top = clip_rect.top() + 18.0;
                     let body_bottom = clip_rect.bottom() - 2.0;
                     if body_bottom > body_top + 8.0 {
@@ -479,6 +485,12 @@ pub fn render_timeline_canvas(
                         let film_w = (film_h * 1.777_f32).clamp(16.0, 100.0);
                         let total_w = clip_rect.width() - 4.0;
                         let num_frames = ((total_w / film_w).floor() as usize).max(1);
+                        let media_dur = project
+                            .get_media(&clip.media_id)
+                            .map(|m| m.duration)
+                            .unwrap_or_else(|| clip.effective_source_out())
+                            .max(0.1);
+                        let tile_count = trim_media::thumbnail::FILMSTRIP_TILE_COUNT as f32;
 
                         let mut frame_x = clip_rect.left() + 2.0;
                         for i in 0..num_frames {
@@ -493,8 +505,20 @@ pub fn render_timeline_canvas(
                             );
 
                             let uv_max_x = (curr_w / film_w).clamp(0.0, 1.0);
-                            let uv =
-                                Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(uv_max_x, 1.0));
+                            let uv = if is_strip {
+                                let center_px = (frame_x - clip_rect.left()) + curr_w * 0.5;
+                                let tl_time = clip.timeline_in
+                                    + (center_px / state.pixels_per_second.max(1.0)) as f64;
+                                let src_t = clip.map_timeline_to_source(tl_time);
+                                let frac = (src_t / media_dur).clamp(0.0, 0.9999) as f32;
+                                let tile_idx =
+                                    (frac * tile_count).floor().clamp(0.0, tile_count - 1.0);
+                                let u0 = tile_idx / tile_count;
+                                let u1 = (tile_idx + uv_max_x) / tile_count;
+                                Rect::from_min_max(Pos2::new(u0, 0.0), Pos2::new(u1, 1.0))
+                            } else {
+                                Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(uv_max_x, 1.0))
+                            };
 
                             painter.image(
                                 tex.id(),
@@ -2458,6 +2482,15 @@ pub fn render_timeline_canvas(
                     && ui.button("🔗 Klipleri Bağla (Link)  [Ctrl+L]").clicked()
                 {
                     action = Some(CanvasAction::ToggleLinkSelected);
+                    ui.close_menu();
+                }
+
+                if state.selected_clip_pairs.len() >= 2
+                    && ui
+                        .button("🎙️ Ses Dalga Formuna Göre Hizala (Audio Sync)")
+                        .clicked()
+                {
+                    action = Some(CanvasAction::AlignSelectedByAudio);
                     ui.close_menu();
                 }
 

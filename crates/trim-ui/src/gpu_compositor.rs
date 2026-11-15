@@ -70,6 +70,13 @@ uniform float u_saturation;
 uniform int u_lut_preset;
 uniform int u_custom_lut_enabled;
 uniform int u_lut_size;
+uniform float u_blur;
+uniform float u_sharpen;
+uniform float u_vignette;
+uniform float u_film_grain;
+uniform float u_glitch_intensity;
+uniform float u_light_leak;
+uniform float u_time_seed;
 
 vec3 sample_3d_lut(vec3 rgb, int n_int) {
     float n = float(n_int);
@@ -127,6 +134,7 @@ vec3 apply_blend_mode(vec3 base, vec3 top, int mode) {
 void main() {
     vec3 rgb;
     float a;
+    vec2 local_uv = v_canvas_uv;
 
     if (u_is_adjustment_layer == 1) {
         vec4 bd = texture(u_backdrop_tex, v_canvas_uv);
@@ -157,10 +165,51 @@ void main() {
         if (u_wipe_mode == 2 && uv.x < (1.0 - u_fade_factor)) {
             discard;
         }
+        local_uv = uv;
 
+        vec2 texel_step = vec2(1.0) / max(u_clip_size, vec2(1.0));
         vec4 texel = texture(u_frame_tex, uv);
         rgb = texel.rgb;
         a = texel.a * u_opacity;
+
+        if (u_glitch_intensity > 0.001) {
+            float shift = u_glitch_intensity * 0.028 * sin(uv.y * 42.0 + u_time_seed * 17.0);
+            float r_g = texture(u_frame_tex, clamp(uv + vec2(shift, 0.0), 0.0, 1.0)).r;
+            float b_g = texture(u_frame_tex, clamp(uv - vec2(shift, 0.0), 0.0, 1.0)).b;
+            rgb = vec3(r_g, rgb.g, b_g);
+        }
+
+        if (u_blur > 0.01) {
+            vec2 r1 = texel_step * u_blur * 1.4;
+            vec2 r2 = texel_step * u_blur * 2.8;
+            vec3 acc = rgb * 0.24;
+            acc += texture(u_frame_tex, clamp(uv + vec2(r1.x, 0.0), 0.0, 1.0)).rgb * 0.12;
+            acc += texture(u_frame_tex, clamp(uv - vec2(r1.x, 0.0), 0.0, 1.0)).rgb * 0.12;
+            acc += texture(u_frame_tex, clamp(uv + vec2(0.0, r1.y), 0.0, 1.0)).rgb * 0.12;
+            acc += texture(u_frame_tex, clamp(uv - vec2(0.0, r1.y), 0.0, 1.0)).rgb * 0.12;
+            acc += texture(u_frame_tex, clamp(uv + vec2(r2.x, r2.y), 0.0, 1.0)).rgb * 0.07;
+            acc += texture(u_frame_tex, clamp(uv + vec2(-r2.x, r2.y), 0.0, 1.0)).rgb * 0.07;
+            acc += texture(u_frame_tex, clamp(uv + vec2(r2.x, -r2.y), 0.0, 1.0)).rgb * 0.07;
+            acc += texture(u_frame_tex, clamp(uv + vec2(-r2.x, -r2.y), 0.0, 1.0)).rgb * 0.07;
+            rgb = acc;
+        }
+
+        if (u_sharpen > 0.001) {
+            vec3 n_avg = (
+                texture(u_frame_tex, clamp(uv + vec2(texel_step.x, 0.0), 0.0, 1.0)).rgb +
+                texture(u_frame_tex, clamp(uv - vec2(texel_step.x, 0.0), 0.0, 1.0)).rgb +
+                texture(u_frame_tex, clamp(uv + vec2(0.0, texel_step.y), 0.0, 1.0)).rgb +
+                texture(u_frame_tex, clamp(uv - vec2(0.0, texel_step.y), 0.0, 1.0)).rgb
+            ) * 0.25;
+            rgb = clamp(rgb + (rgb - n_avg) * (u_sharpen * 1.8), 0.0, 1.0);
+        }
+
+        if (u_wipe_mode == 3) {
+            float luma_w = dot(rgb, vec3(0.299, 0.587, 0.114));
+            float thresh = 1.0 - u_fade_factor;
+            float luma_alpha = smoothstep(thresh - 0.15, thresh + 0.15, luma_w);
+            a *= clamp(mix(u_fade_factor, luma_alpha, 0.8), 0.0, 1.0);
+        }
 
         if (u_ck_enabled == 1) {
             float dist = distance(rgb, u_ck_color);
@@ -374,8 +423,27 @@ void main() {
         rgb = sample_3d_lut(rgb, u_lut_size);
     }
 
+    if (u_vignette > 0.001) {
+        vec2 vd = (local_uv - vec2(0.5)) * vec2(1.42, 1.42);
+        float r2 = dot(vd, vd);
+        float vig = clamp(1.0 - r2 * u_vignette * 1.15, 0.0, 1.0);
+        rgb *= vig;
+    }
+
+    if (u_film_grain > 0.001) {
+        float n_hash = fract(sin(dot(v_canvas_uv * u_canvas_size + vec2(u_time_seed * 37.0, u_time_seed * 91.0), vec2(12.9898, 78.233))) * 43758.5453);
+        float grain = (n_hash - 0.5) * u_film_grain * 0.22;
+        rgb = clamp(rgb + vec3(grain), 0.0, 1.0);
+    }
+
     if (u_has_mask == 1) {
         rgb = mix(ungraded_rgb, rgb, mask_val.g);
+    }
+
+    if (u_light_leak > 0.001) {
+        float leak_grad = clamp(1.1 - distance(local_uv, vec2(0.2, 0.3)), 0.0, 1.0);
+        vec3 leak_color = vec3(1.0, 0.52, 0.14) * u_light_leak * (0.45 + 0.55 * leak_grad);
+        rgb = clamp(1.0 - (1.0 - rgb) * (1.0 - leak_color), 0.0, 1.0);
     }
 
     if (u_dip_white > 0.0) {
@@ -418,6 +486,13 @@ pub struct LayerUniforms {
     pub brightness: f32,
     pub gamma: f32,
     pub saturation: f32,
+    pub blur: f32,
+    pub sharpen: f32,
+    pub vignette: f32,
+    pub film_grain: f32,
+    pub glitch_intensity: f32,
+    pub light_leak: f32,
+    pub time_seed: f32,
     pub lut_preset: i32,
     pub crop: [f32; 4],
     pub blend_mode: i32,
@@ -463,14 +538,12 @@ impl LayerUniforms {
         };
         let fade_factor = in_progress.min(out_progress);
 
-        let is_wipe_or_slide = clip
-            .transition_in
-            .as_deref()
-            .is_some_and(|t| t.starts_with("wipe") || t.starts_with("slide"))
-            || clip
-                .transition_out
-                .as_deref()
-                .is_some_and(|t| t.starts_with("wipe") || t.starts_with("slide"));
+        let is_wipe_or_slide =
+            clip.transition_in.as_deref().is_some_and(|t| {
+                t.starts_with("wipe") || t.starts_with("slide") || t == "whip_pan"
+            }) || clip.transition_out.as_deref().is_some_and(|t| {
+                t.starts_with("wipe") || t.starts_with("slide") || t == "whip_pan"
+            });
 
         let eff_opacity = if is_wipe_or_slide {
             animated_opacity.clamp(0.0, 1.0)
@@ -486,6 +559,13 @@ impl LayerUniforms {
         let mut eff_scale = scale_fit * animated_scale.max(0.05);
         if clip.transition_in.as_deref() == Some("zoom_in") && in_progress < 1.0 {
             eff_scale *= 0.3 + 0.7 * in_progress;
+        } else if clip.transition_in.as_deref() == Some("zoom_out") && in_progress < 1.0 {
+            eff_scale *= 1.7 - 0.7 * in_progress;
+        }
+        if clip.transition_out.as_deref() == Some("zoom_out") && out_progress < 1.0 {
+            eff_scale *= 0.3 + 0.7 * out_progress;
+        } else if clip.transition_out.as_deref() == Some("zoom_in") && out_progress < 1.0 {
+            eff_scale *= 1.7 - 0.7 * out_progress;
         }
 
         let final_w = (fw * eff_scale).round().max(1.0);
@@ -493,15 +573,31 @@ impl LayerUniforms {
 
         let mut slide_x_offset = 0.0;
         if in_progress < 1.0 {
-            if clip.transition_in.as_deref() == Some("slide_left") {
-                slide_x_offset += (1.0 - in_progress) * cw;
+            if matches!(
+                clip.transition_in.as_deref(),
+                Some("slide_left") | Some("whip_pan")
+            ) {
+                let p = if clip.transition_in.as_deref() == Some("whip_pan") {
+                    (1.0 - in_progress).powi(2)
+                } else {
+                    1.0 - in_progress
+                };
+                slide_x_offset += p * cw;
             } else if clip.transition_in.as_deref() == Some("slide_right") {
                 slide_x_offset -= (1.0 - in_progress) * cw;
             }
         }
         if out_progress < 1.0 {
-            if clip.transition_out.as_deref() == Some("slide_left") {
-                slide_x_offset -= (1.0 - out_progress) * cw;
+            if matches!(
+                clip.transition_out.as_deref(),
+                Some("slide_left") | Some("whip_pan")
+            ) {
+                let p = if clip.transition_out.as_deref() == Some("whip_pan") {
+                    (1.0 - out_progress).powi(2)
+                } else {
+                    1.0 - out_progress
+                };
+                slide_x_offset -= p * cw;
             } else if clip.transition_out.as_deref() == Some("slide_right") {
                 slide_x_offset += (1.0 - out_progress) * cw;
             }
@@ -525,12 +621,45 @@ impl LayerUniforms {
             || (clip.transition_out.as_deref() == Some("wipe_left") && out_progress < 1.0);
         let wipe_right = (clip.transition_in.as_deref() == Some("wipe_right") && in_progress < 1.0)
             || (clip.transition_out.as_deref() == Some("wipe_right") && out_progress < 1.0);
+        let luma_wipe = (clip.transition_in.as_deref() == Some("luma_wipe") && in_progress < 1.0)
+            || (clip.transition_out.as_deref() == Some("luma_wipe") && out_progress < 1.0);
         let wipe_mode = if wipe_left {
             1
         } else if wipe_right {
             2
+        } else if luma_wipe {
+            3
         } else {
             0
+        };
+
+        let mut extra_blur = 0.0_f32;
+        if (clip.transition_in.as_deref() == Some("blur_dissolve") && in_progress < 1.0)
+            || (clip.transition_out.as_deref() == Some("blur_dissolve") && out_progress < 1.0)
+        {
+            extra_blur += ((1.0 - fade_factor) as f32) * 14.0;
+        }
+        if (clip.transition_in.as_deref() == Some("whip_pan") && in_progress < 1.0)
+            || (clip.transition_out.as_deref() == Some("whip_pan") && out_progress < 1.0)
+        {
+            extra_blur += ((1.0 - fade_factor) as f32) * 18.0;
+        }
+
+        let glitch_active = (clip.transition_in.as_deref() == Some("glitch") && in_progress < 1.0)
+            || (clip.transition_out.as_deref() == Some("glitch") && out_progress < 1.0);
+        let glitch_intensity = if glitch_active {
+            (1.0 - fade_factor) as f32
+        } else {
+            0.0
+        };
+
+        let light_leak_active = (clip.transition_in.as_deref() == Some("light_leak")
+            && in_progress < 1.0)
+            || (clip.transition_out.as_deref() == Some("light_leak") && out_progress < 1.0);
+        let light_leak = if light_leak_active {
+            (1.0 - fade_factor) as f32
+        } else {
+            0.0
         };
 
         let (ck_enabled, ck_color, ck_similarity, ck_smoothness) = match &clip.chromakey {
@@ -598,6 +727,13 @@ impl LayerUniforms {
             brightness: clip.brightness as f32,
             gamma: clip.gamma as f32,
             saturation: clip.saturation as f32,
+            blur: (clip.blur.clamp(0.0, 20.0) + extra_blur).clamp(0.0, 25.0),
+            sharpen: clip.sharpen.clamp(0.0, 2.0),
+            vignette: clip.vignette.clamp(0.0, 1.0),
+            film_grain: clip.film_grain.clamp(0.0, 1.0),
+            glitch_intensity,
+            light_leak,
+            time_seed: (current_time as f32).fract(),
             lut_preset,
             crop: [
                 clip.crop_left.clamp(0.0, 1.0),
@@ -1376,6 +1512,27 @@ impl GpuCompositor {
                 }
                 if let Some(loc) = gl.get_uniform_location(prog, "u_lut_size") {
                     gl.uniform_1_i32(Some(&loc), lut_size);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_blur") {
+                    gl.uniform_1_f32(Some(&loc), u.blur);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_sharpen") {
+                    gl.uniform_1_f32(Some(&loc), u.sharpen);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_vignette") {
+                    gl.uniform_1_f32(Some(&loc), u.vignette);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_film_grain") {
+                    gl.uniform_1_f32(Some(&loc), u.film_grain);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_glitch_intensity") {
+                    gl.uniform_1_f32(Some(&loc), u.glitch_intensity);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_light_leak") {
+                    gl.uniform_1_f32(Some(&loc), u.light_leak);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_time_seed") {
+                    gl.uniform_1_f32(Some(&loc), u.time_seed);
                 }
 
                 gl.draw_arrays(glow::TRIANGLE_STRIP, 0, 4);

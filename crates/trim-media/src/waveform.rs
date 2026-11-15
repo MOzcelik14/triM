@@ -311,6 +311,58 @@ fn md5_hash(s: &str) -> u128 {
     ((h1.finish() as u128) << 64) | (h2.finish() as u128)
 }
 
+/// Computes the time offset (in seconds) to add to `ref_clip.timeline_in` so that `target_peaks`
+/// aligns with `ref_peaks` using normalized envelope cross-correlation.
+pub fn compute_audio_sync_offset(
+    ref_peaks: &[[f32; 2]],
+    target_peaks: &[[f32; 2]],
+    points_per_second: u32,
+) -> Option<f64> {
+    if ref_peaks.len() < 4 || target_peaks.len() < 4 || points_per_second == 0 {
+        return None;
+    }
+
+    let to_env = |peaks: &[[f32; 2]]| -> Vec<f32> {
+        let raw: Vec<f32> = peaks.iter().map(|p| (p[1] - p[0]).abs() * 0.5).collect();
+        let mean = raw.iter().sum::<f32>() / (raw.len() as f32);
+        raw.into_iter().map(|v| (v - mean).max(0.0)).collect()
+    };
+
+    let a = to_env(ref_peaks);
+    let b = to_env(target_peaks);
+
+    let energy_a: f32 = a.iter().map(|v| v * v).sum();
+    let energy_b: f32 = b.iter().map(|v| v * v).sum();
+    let denom = (energy_a * energy_b).sqrt();
+    if denom < 1e-6 {
+        return None;
+    }
+
+    let max_lag = (a.len().max(b.len()) as isize).min((points_per_second as isize) * 30);
+    let mut best_lag: isize = 0;
+    let mut best_score: f32 = f32::MIN;
+
+    for lag in -max_lag..=max_lag {
+        let i_start = 0isize.max(lag) as usize;
+        let i_end = (a.len() as isize).min(b.len() as isize + lag) as usize;
+        if i_end <= i_start || (i_end - i_start) < 4 {
+            continue;
+        }
+        let mut dot = 0.0_f32;
+        for (i, &va) in a.iter().enumerate().take(i_end).skip(i_start) {
+            let j = (i as isize - lag) as usize;
+            dot += va * b[j];
+        }
+        let score = dot / denom;
+        if score > best_score {
+            best_score = score;
+            best_lag = lag;
+        }
+    }
+
+    Some(best_lag as f64 / (points_per_second as f64))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,5 +392,22 @@ mod tests {
             let p = format!("/nonexistent/file_{}.wav", i);
             assert!(gen.get_waveform(&p).is_none());
         }
+    }
+
+    #[test]
+    fn test_compute_audio_sync_offset_impulse() {
+        let pps = 100u32;
+        let mut ref_wf = vec![[-0.01_f32, 0.01_f32]; 200];
+        let mut tgt_wf = vec![[-0.01_f32, 0.01_f32]; 200];
+
+        // Impulse at 0.80s (idx 80) in reference, and at 0.30s (idx 30) in target
+        ref_wf[80] = [-0.9, 0.9];
+        ref_wf[81] = [-0.7, 0.7];
+        tgt_wf[30] = [-0.9, 0.9];
+        tgt_wf[31] = [-0.7, 0.7];
+
+        // Target needs to start +0.50s after reference start so idx 30 lands on idx 80
+        let offset = compute_audio_sync_offset(&ref_wf, &tgt_wf, pps).unwrap();
+        assert!((offset - 0.50).abs() < 1e-3);
     }
 }

@@ -2580,6 +2580,10 @@ pub struct ClipColorGradingState {
     pub lut_preset: LutPreset,
     pub custom_lut_path: Option<String>,
     pub color_wheels: Option<ColorWheelsConfig>,
+    pub blur: f32,
+    pub sharpen: f32,
+    pub vignette: f32,
+    pub film_grain: f32,
 }
 
 impl ClipColorGradingState {
@@ -2596,6 +2600,10 @@ impl ClipColorGradingState {
             lut_preset: clip.lut_preset,
             custom_lut_path: clip.custom_lut_path.clone(),
             color_wheels: clip.color_wheels.clone(),
+            blur: clip.blur,
+            sharpen: clip.sharpen,
+            vignette: clip.vignette,
+            film_grain: clip.film_grain,
         }
     }
 
@@ -2611,6 +2619,10 @@ impl ClipColorGradingState {
         clip.lut_preset = self.lut_preset;
         clip.custom_lut_path = self.custom_lut_path.clone();
         clip.color_wheels = self.color_wheels.clone();
+        clip.blur = self.blur;
+        clip.sharpen = self.sharpen;
+        clip.vignette = self.vignette;
+        clip.film_grain = self.film_grain;
     }
 }
 

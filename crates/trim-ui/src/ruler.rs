@@ -20,6 +20,7 @@ pub fn render_time_ruler(
     markers: &[Marker],
     in_point: Option<f64>,
     out_point: Option<f64>,
+    cache_status: Option<&dyn Fn(f64) -> (bool, bool)>,
 ) -> (Response, Option<RulerAction>) {
     let avail_width = ui.available_width().max(600.0);
     let total_width = (total_duration as f32 + 30.0).max(60.0) * pixels_per_second;
@@ -34,6 +35,35 @@ pub fn render_time_ruler(
 
     // Ruler background
     painter.rect_filled(rect, 0.0, Color32::from_rgb(0x18, 0x18, 0x1c));
+
+    // Smart Render Cache Bar along the top 2.5px of the ruler
+    if let Some(check_cache) = cache_status {
+        let vis_x0 = (rect.left() + scroll_x).max(rect.left());
+        let vis_x1 = (vis_x0 + avail_width).min(rect.right());
+        let step_px = 8.0_f32;
+        let mut x = vis_x0;
+        while x < vis_x1 {
+            let next_x = (x + step_px).min(vis_x1);
+            let sample_t = (((x + next_x) * 0.5 - rect.left()) / pixels_per_second.max(1.0)) as f64;
+            let (has_video, is_cached) = check_cache(sample_t.max(0.0));
+            if has_video {
+                let bar_col = if is_cached {
+                    Color32::from_rgba_unmultiplied(0x2e, 0xd5, 0x73, 210)
+                } else {
+                    Color32::from_rgba_unmultiplied(0xff, 0x9f, 0x43, 155)
+                };
+                painter.rect_filled(
+                    egui::Rect::from_min_max(
+                        Pos2::new(x, rect.top()),
+                        Pos2::new(next_x, rect.top() + 2.5),
+                    ),
+                    0.0,
+                    bar_col,
+                );
+            }
+            x = next_x;
+        }
+    }
 
     // In/Out range highlight & bracket markers
     if in_point.is_some() || out_point.is_some() {

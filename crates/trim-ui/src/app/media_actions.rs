@@ -375,10 +375,16 @@ impl TrimApp {
             }
         }
 
-        // 2. Queue missing thumbnails to background worker (zero UI blocking)
+        // 2. Queue missing thumbnails & 8-tile filmstrips to background worker (zero UI blocking)
         for (m_id, item) in &self.project.media_pool {
             if !self.media_bin_textures.contains_key(m_id) {
                 self.thumbnail_gen.request_thumbnail(item);
+            }
+            if item.media_type == MediaType::Video {
+                let strip_key = format!("strip:{}", m_id);
+                if !self.media_bin_textures.contains_key(&strip_key) {
+                    self.thumbnail_gen.request_filmstrip(item);
+                }
             }
         }
     }

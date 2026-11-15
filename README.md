@@ -2,7 +2,7 @@
   <h1>triM.</h1>
   <p><strong>Fast, private, and studio-ready desktop video editing for Windows and Linux.</strong></p>
   <p>
-    <a href="https://github.com/MOzcelik14/triM/releases/latest"><img src="https://img.shields.io/badge/Version-1.6.2-2563eb.svg" alt="Version 1.6.2" /></a>
+    <a href="https://github.com/MOzcelik14/triM/releases/latest"><img src="https://img.shields.io/badge/Version-1.7.0-2563eb.svg" alt="Version 1.7.0" /></a>
     <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-475569.svg" alt="Platform: Windows | Linux" />
     <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-16a34a.svg" alt="License: GPL-3.0" /></a>
   </p>

@@ -84,8 +84,23 @@ fn keyframe_expr(keyframes: &[Keyframe], var: &str, map: impl Fn(f64) -> f64) ->
             match k0.interpolation {
                 Interpolation::Hold => format!("{:.6}", v0),
                 Interpolation::Linear => format!("({:.6}+({:.6})*{u})", v0, v1 - v0),
+                Interpolation::EaseIn => format!("({:.6}+({:.6})*({u}*{u}))", v0, v1 - v0),
+                Interpolation::EaseOut => {
+                    format!("({:.6}+({:.6})*(1-(1-{u})*(1-{u})))", v0, v1 - v0)
+                }
                 Interpolation::EaseInOut => {
                     format!("({:.6}+({:.6})*(3*{u}*{u}-2*{u}*{u}*{u}))", v0, v1 - v0)
+                }
+                Interpolation::CubicBezier => {
+                    let y1 = k0.bezier_handles[1] as f64;
+                    let y2 = k0.bezier_handles[3] as f64;
+                    format!(
+                        "({:.6}+({:.6})*(3*(1-{u})*(1-{u})*{u}*{:.4}+3*(1-{u})*{u}*{u}*{:.4}+{u}*{u}*{u}))",
+                        v0,
+                        v1 - v0,
+                        y1,
+                        y2
+                    )
                 }
             }
         };
@@ -109,13 +124,47 @@ fn animated_kfs<'a>(clip: &'a Clip, prop: &str) -> Option<&'a [Keyframe]> {
 /// Source window `[start, start + src_dur)` that a clip reads from.
 fn source_window(clip: &Clip) -> (f64, f64) {
     let dur = clip.duration();
-    let src_dur = dur * clip.speed.max(0.0001);
+    let src_dur = if let Some(kfs) = clip.keyframes.get("speed").filter(|k| !k.is_empty()) {
+        trim_core::keyframe::integrate_keyframes(kfs, dur, clip.speed).max(0.04)
+    } else {
+        dur * clip.speed.max(0.0001)
+    };
     let start = if clip.reverse {
         (clip.effective_source_out() - src_dur).max(0.0)
     } else {
         clip.source_in.max(0.0)
     };
     (start, src_dur)
+}
+
+/// Builds a piecewise-linear `setpts` expression mapping source time `T` to timeline local time
+/// when a clip uses Speed Ramping (`speed` keyframes).
+fn build_speed_ramp_setpts(clip: &Clip) -> Option<String> {
+    let kfs = clip.keyframes.get("speed").filter(|k| !k.is_empty())?;
+    let dur = clip.duration();
+    if dur <= 0.04 {
+        return None;
+    }
+    let segments = 8usize;
+    let mut s_pts = Vec::with_capacity(segments + 1);
+    let mut t_pts = Vec::with_capacity(segments + 1);
+    for i in 0..=segments {
+        let t = (i as f64 / segments as f64) * dur;
+        let s = trim_core::keyframe::integrate_keyframes(kfs, t, clip.speed);
+        t_pts.push(t);
+        s_pts.push(s);
+    }
+    let mut expr = format!("{:.6}", dur);
+    for i in (0..segments).rev() {
+        let s0 = s_pts[i];
+        let s1 = s_pts[i + 1];
+        let t0 = t_pts[i];
+        let t1 = t_pts[i + 1];
+        let ds = (s1 - s0).max(1e-5);
+        let seg = format!("({:.6}+(T-{:.6})*{:.6})", t0, s0, (t1 - t0) / ds);
+        expr = format!("if(lt(T,{:.6}),{seg},{expr})", s1);
+    }
+    Some(format!("setpts='({expr})/TB'"))
 }
 
 impl TimelineExporter {
@@ -209,6 +258,28 @@ impl TimelineExporter {
                 ));
             }
         }
+
+        if clip.blur > 1e-4 {
+            f.push(format!("gblur=sigma={:.2}", (clip.blur * 20.0).max(0.2)));
+        }
+        if clip.sharpen > 1e-4 {
+            f.push(format!(
+                "unsharp=5:5:{:.2}:5:5:0.0",
+                (clip.sharpen * 2.5).clamp(0.1, 3.0)
+            ));
+        }
+        if clip.vignette > 1e-4 {
+            f.push(format!(
+                "vignette=angle={:.3}",
+                (clip.vignette * 0.785).clamp(0.05, 1.2)
+            ));
+        }
+        if clip.film_grain > 1e-4 {
+            f.push(format!(
+                "noise=alls={:.0}:allf=t+u",
+                (clip.film_grain * 35.0).clamp(1.0, 45.0)
+            ));
+        }
         f
     }
 
@@ -247,8 +318,15 @@ impl TimelineExporter {
         if !is_image && clip.reverse {
             f.push("reverse".into());
         }
-        if !is_image && (clip.speed - 1.0).abs() > 0.001 {
-            f.push(format!("setpts=(PTS-STARTPTS)/{:.6}", clip.speed));
+        if !is_image {
+            if let Some(ramp_expr) = build_speed_ramp_setpts(clip) {
+                f.push("setpts=PTS-STARTPTS".into());
+                f.push(ramp_expr);
+            } else if (clip.speed - 1.0).abs() > 0.001 {
+                f.push(format!("setpts=(PTS-STARTPTS)/{:.6}", clip.speed));
+            } else {
+                f.push("setpts=PTS-STARTPTS".into());
+            }
         } else {
             f.push("setpts=PTS-STARTPTS".into());
         }
@@ -532,6 +610,11 @@ impl TimelineExporter {
         // Fades and Transitions: regular fades dissolve to whatever is underneath.
         // Dip-to-white / dip-to-black fades the pixels to white/black.
         // Wipe and slide transitions perform directional revealing.
+        if !is_image && clip.stabilization_strength > 1e-4 {
+            let rx = ((clip.stabilization_strength * 48.0).round() as u32).clamp(16, 64) & !1;
+            f.push(format!("deshake=rx={rx}:ry={rx}:edge=mirror"));
+        }
+
         let eff_fade_in = if clip.transition_in.is_some() && clip.fade_in <= 0.0 {
             0.5f64.min(dur * 0.5)
         } else {
@@ -542,8 +625,22 @@ impl TimelineExporter {
             match clip.transition_in.as_deref() {
                 Some("dip_white") => f.push(format!("fade=t=in:st=0:d={:.4}:color=white", d)),
                 Some("dip_black") => f.push(format!("fade=t=in:st=0:d={:.4}:color=black", d)),
+                Some("light_leak") => f.push(format!("fade=t=in:st=0:d={:.4}:color=0xffb347", d)),
+                Some("blur_dissolve") => {
+                    f.push(format!("gblur=sigma=10:enable='lt(t,{:.4})'", d));
+                    f.push(format!("fade=t=in:st=0:d={:.4}:alpha=1", d));
+                }
+                Some("whip_pan") => {
+                    f.push(format!("gblur=sigma=14:steps=1:enable='lt(t,{:.4})'", d));
+                    f.push(format!("fade=t=in:st=0:d={:.4}:alpha=1", d));
+                }
+                Some("glitch") => {
+                    f.push(format!("rgbashift=rh=12:bh=-12:enable='lt(t,{:.4})'", d));
+                    f.push(format!("fade=t=in:st=0:d={:.4}:alpha=1", d));
+                }
                 Some("wipe_left") => f.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte(X/W,min(1,T/{:.4})),alpha(X,Y),0)'", d)),
                 Some("wipe_right") => f.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(gte(X/W,max(0,1-T/{:.4})),alpha(X,Y),0)'", d)),
+                Some("luma_wipe") => f.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte((X+Y)/(W+H),min(1,T/{:.4})),alpha(X,Y),0)'", d)),
                 _ => f.push(format!("fade=t=in:st=0:d={:.4}:alpha=1", d)),
             }
         }
@@ -558,8 +655,22 @@ impl TimelineExporter {
             match clip.transition_out.as_deref() {
                 Some("dip_white") => f.push(format!("fade=t=out:st={:.4}:d={:.4}:color=white", st, d)),
                 Some("dip_black") => f.push(format!("fade=t=out:st={:.4}:d={:.4}:color=black", st, d)),
+                Some("light_leak") => f.push(format!("fade=t=out:st={:.4}:d={:.4}:color=0xffb347", st, d)),
+                Some("blur_dissolve") => {
+                    f.push(format!("gblur=sigma=10:enable='gt(t,{:.4})'", st));
+                    f.push(format!("fade=t=out:st={:.4}:d={:.4}:alpha=1", st, d));
+                }
+                Some("whip_pan") => {
+                    f.push(format!("gblur=sigma=14:steps=1:enable='gt(t,{:.4})'", st));
+                    f.push(format!("fade=t=out:st={:.4}:d={:.4}:alpha=1", st, d));
+                }
+                Some("glitch") => {
+                    f.push(format!("rgbashift=rh=12:bh=-12:enable='gt(t,{:.4})'", st));
+                    f.push(format!("fade=t=out:st={:.4}:d={:.4}:alpha=1", st, d));
+                }
                 Some("wipe_left") => f.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte(X/W,max(0,1-(T-{:.4})/{:.4})),alpha(X,Y),0)'", st, d)),
                 Some("wipe_right") => f.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(gte(X/W,min(1,(T-{:.4})/{:.4})),alpha(X,Y),0)'", st, d)),
+                Some("luma_wipe") => f.push(format!("geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte((X+Y)/(W+H),max(0,1-(T-{:.4})/{:.4})),alpha(X,Y),0)'", st, d)),
                 _ => f.push(format!("fade=t=out:st={:.4}:d={:.4}:alpha=1", st, d)),
             }
         }
@@ -590,7 +701,9 @@ impl TimelineExporter {
         };
         if eff_in > 0.0 {
             let d = eff_in.min(clip.duration());
-            if clip.transition_in.as_deref() == Some("slide_left") {
+            if clip.transition_in.as_deref() == Some("slide_left")
+                || clip.transition_in.as_deref() == Some("whip_pan")
+            {
                 slide_x.push_str(&format!("+if(lt({local},{d:.4}),(1-{local}/{d:.4})*W,0)"));
             } else if clip.transition_in.as_deref() == Some("slide_right") {
                 slide_x.push_str(&format!("-if(lt({local},{d:.4}),(1-{local}/{d:.4})*W,0)"));
@@ -605,7 +718,9 @@ impl TimelineExporter {
             let dur = clip.duration();
             let d = eff_out.min(dur);
             let st = (dur - d).max(0.0);
-            if clip.transition_out.as_deref() == Some("slide_left") {
+            if clip.transition_out.as_deref() == Some("slide_left")
+                || clip.transition_out.as_deref() == Some("whip_pan")
+            {
                 slide_x.push_str(&format!(
                     "-if(gt({local},{st:.4}),(({local}-{st:.4})/{d:.4})*W,0)"
                 ));
@@ -673,6 +788,11 @@ impl TimelineExporter {
 
         if clip.noise_gate && clip.eq_preset != trim_core::clip::AudioEqPreset::DenoiseGate {
             a.push("agate=threshold=0.03:ratio=2:range=0.05".into());
+        }
+
+        if clip.voice_denoise > 0.01 {
+            let nr_db = (clip.voice_denoise.clamp(0.0, 1.0) * 32.0).clamp(4.0, 32.0);
+            a.push(format!("afftdn=nr={nr_db:.1}:nf=-42"));
         }
 
         if clip.fade_in > 0.0 {
@@ -1132,6 +1252,8 @@ impl TimelineExporter {
             HardwareAccel::Auto => {
                 if available.has_nvidia_nvenc() {
                     HardwareAccel::Nvenc
+                } else if available.has_videotoolbox() {
+                    HardwareAccel::VideoToolbox
                 } else if available.has_intel_qsv() {
                     HardwareAccel::Qsv
                 } else if available.has_vaapi() {
@@ -1162,6 +1284,15 @@ impl TimelineExporter {
                     "-cq:v".into(),
                     preset.crf.to_string(),
                 ]
+            }
+            HardwareAccel::VideoToolbox if available.has_videotoolbox() => {
+                let codec = if is_hevc && available.hevc_videotoolbox {
+                    "hevc_videotoolbox"
+                } else {
+                    "h264_videotoolbox"
+                };
+                let qv = (100u32.saturating_sub(preset.crf.min(50) * 2)).clamp(35, 90);
+                vec!["-c:v".into(), codec.into(), "-q:v".into(), qv.to_string()]
             }
             HardwareAccel::Qsv if available.has_intel_qsv() => {
                 let codec = if is_hevc && available.hevc_qsv {

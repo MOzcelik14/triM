@@ -717,6 +717,88 @@ impl VideoEngine {
         }
     }
 
+    /// Returns `(has_active_video, is_cached)` for a given `timeline_time` without mutating LRU order.
+    pub fn is_timeline_time_cached(&self, project: &Project, timeline_time: f64) -> (bool, bool) {
+        let Ok(cache) = self.frame_cache.read() else {
+            return (false, false);
+        };
+        let mut has_video = false;
+        let mut all_ready = true;
+        for track in &project.timeline.tracks {
+            if track.track_type != trim_core::track::TrackType::Video || track.muted {
+                continue;
+            }
+            for clip in &track.clips {
+                if timeline_time < clip.timeline_in || timeline_time >= clip.timeline_out {
+                    continue;
+                }
+                if clip.is_adjustment_layer() {
+                    continue;
+                }
+                has_video = true;
+                let Some(media) = project.get_media(&clip.media_id) else {
+                    continue;
+                };
+                if media.media_type == MediaType::Image {
+                    continue;
+                }
+                let eff_path = media.resolved_playback_path(self.use_proxies).to_string();
+                let src_t = clip.map_timeline_to_source(timeline_time);
+                let ts_key = (src_t * 30.0).round() as u64;
+                let hit = cache.peek(&(eff_path.clone(), ts_key)).is_some()
+                    || cache
+                        .peek(&(eff_path.clone(), ts_key.saturating_sub(1)))
+                        .is_some()
+                    || cache.peek(&(eff_path, ts_key + 1)).is_some();
+                if !hit {
+                    all_ready = false;
+                }
+            }
+        }
+        (has_video, has_video && all_ready)
+    }
+
+    /// Queues an asynchronous background decode for the first uncached video clip at `timeline_time`
+    /// when idle (not currently seeking or streaming). Returns `true` if a background decode was queued.
+    pub fn prewarm_frame_at_time(&mut self, project: &Project, timeline_time: f64) -> bool {
+        if self.is_decoding_seek || self.streamer.is_active() {
+            return false;
+        }
+        for track in &project.timeline.tracks {
+            if track.track_type != trim_core::track::TrackType::Video || track.muted {
+                continue;
+            }
+            for clip in &track.clips {
+                if timeline_time < clip.timeline_in || timeline_time >= clip.timeline_out {
+                    continue;
+                }
+                if clip.is_adjustment_layer() {
+                    continue;
+                }
+                let Some(media) = project.get_media(&clip.media_id) else {
+                    continue;
+                };
+                if media.media_type != MediaType::Video {
+                    continue;
+                }
+                let eff_path = media.resolved_playback_path(self.use_proxies).to_string();
+                let src_t = clip.map_timeline_to_source(timeline_time);
+                let ts_key = (src_t * 30.0).round() as u64;
+                let already_cached = self
+                    .frame_cache
+                    .read()
+                    .ok()
+                    .is_some_and(|c| c.peek(&(eff_path.clone(), ts_key)).is_some());
+                if !already_cached {
+                    let _ = self.async_decoder.request_seek(&eff_path, src_t);
+                    self.is_decoding_seek = true;
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     pub fn get_image<P: AsRef<Path>>(&mut self, path: P) -> Option<Arc<RgbaImage>> {
         let p_str = path.as_ref().to_string_lossy().to_string();
         if !self.image_cache.contains_key(&p_str) {
@@ -1492,9 +1574,16 @@ fn draw_clip_onto_canvas(
     let scale_fit = (cw / fw).min(ch / fh);
     let mut eff_scale = scale_fit * animated_scale.max(0.05);
 
-    // Zoom-in transition
+    // Zoom-in / Zoom-out transitions
     if clip.transition_in.as_deref() == Some("zoom_in") && in_progress < 1.0 {
         eff_scale *= 0.3 + 0.7 * in_progress;
+    } else if clip.transition_in.as_deref() == Some("zoom_out") && in_progress < 1.0 {
+        eff_scale *= 1.7 - 0.7 * in_progress;
+    }
+    if clip.transition_out.as_deref() == Some("zoom_out") && out_progress < 1.0 {
+        eff_scale *= 0.3 + 0.7 * out_progress;
+    } else if clip.transition_out.as_deref() == Some("zoom_in") && out_progress < 1.0 {
+        eff_scale *= 1.7 - 0.7 * out_progress;
     }
 
     let final_w = (fw * eff_scale).round() as i64;
@@ -1502,15 +1591,31 @@ fn draw_clip_onto_canvas(
 
     let mut slide_x_offset = 0.0;
     if in_progress < 1.0 {
-        if clip.transition_in.as_deref() == Some("slide_left") {
-            slide_x_offset += (1.0 - in_progress) * cw;
+        if matches!(
+            clip.transition_in.as_deref(),
+            Some("slide_left") | Some("whip_pan")
+        ) {
+            let p = if clip.transition_in.as_deref() == Some("whip_pan") {
+                (1.0 - in_progress).powi(2)
+            } else {
+                1.0 - in_progress
+            };
+            slide_x_offset += p * cw;
         } else if clip.transition_in.as_deref() == Some("slide_right") {
             slide_x_offset -= (1.0 - in_progress) * cw;
         }
     }
     if out_progress < 1.0 {
-        if clip.transition_out.as_deref() == Some("slide_left") {
-            slide_x_offset -= (1.0 - out_progress) * cw;
+        if matches!(
+            clip.transition_out.as_deref(),
+            Some("slide_left") | Some("whip_pan")
+        ) {
+            let p = if clip.transition_out.as_deref() == Some("whip_pan") {
+                (1.0 - out_progress).powi(2)
+            } else {
+                1.0 - out_progress
+            };
+            slide_x_offset -= p * cw;
         } else if clip.transition_out.as_deref() == Some("slide_right") {
             slide_x_offset += (1.0 - out_progress) * cw;
         }
@@ -1533,13 +1638,39 @@ fn draw_clip_onto_canvas(
     let wipe_right_active = (clip.transition_in.as_deref() == Some("wipe_right")
         && in_progress < 1.0)
         || (clip.transition_out.as_deref() == Some("wipe_right") && out_progress < 1.0);
+    let luma_wipe_active = (clip.transition_in.as_deref() == Some("luma_wipe")
+        && in_progress < 1.0)
+        || (clip.transition_out.as_deref() == Some("luma_wipe") && out_progress < 1.0);
+    let glitch_active = (clip.transition_in.as_deref() == Some("glitch") && in_progress < 1.0)
+        || (clip.transition_out.as_deref() == Some("glitch") && out_progress < 1.0);
+    let light_leak_active = (clip.transition_in.as_deref() == Some("light_leak")
+        && in_progress < 1.0)
+        || (clip.transition_out.as_deref() == Some("light_leak") && out_progress < 1.0);
+    let blur_dissolve_active = (clip.transition_in.as_deref() == Some("blur_dissolve")
+        && in_progress < 1.0)
+        || (clip.transition_out.as_deref() == Some("blur_dissolve") && out_progress < 1.0);
+    let whip_pan_active = (clip.transition_in.as_deref() == Some("whip_pan") && in_progress < 1.0)
+        || (clip.transition_out.as_deref() == Some("whip_pan") && out_progress < 1.0);
+
+    let eff_blur = clip.blur.clamp(0.0, 20.0)
+        + if blur_dissolve_active || whip_pan_active {
+            ((1.0 - fade_factor) as f32) * 10.0
+        } else {
+            0.0
+        };
 
     let has_chromakey = clip.chromakey.as_ref().is_some_and(|ck| ck.enabled);
     let has_color_adj = clip.has_color_adjustments() || has_chromakey;
     let has_clip_grading = clip.has_color_adjustments();
     let has_blend_or_mask = clip.blend_mode != trim_core::BlendMode::Normal || has_masks;
-    let has_special_trans =
-        has_dip_white || wipe_left_active || wipe_right_active || slide_x_offset.abs() > 0.1;
+    let has_special_trans = has_dip_white
+        || wipe_left_active
+        || wipe_right_active
+        || luma_wipe_active
+        || glitch_active
+        || light_leak_active
+        || eff_blur > 0.01
+        || slide_x_offset.abs() > 0.1;
 
     let is_fullscreen_fit = final_w == cw as i64
         && final_h == ch as i64
@@ -1568,14 +1699,22 @@ fn draw_clip_onto_canvas(
         return;
     }
 
+    let fw_u32 = frame.width().max(1);
+    let fh_u32 = frame.height().max(1);
+    let blur_step = (eff_blur.round() as i32).clamp(0, 12);
+    let sharpen_amt = clip.sharpen.clamp(0.0, 2.0);
+    let vignette_amt = clip.vignette.clamp(0.0, 1.0);
+    let grain_amt = clip.film_grain.clamp(0.0, 1.0);
+
     for y in 0..final_h {
         let cy = final_y + y;
         if cy < 0 || cy >= ch as i64 {
             continue;
         }
 
+        let norm_y = y as f32 / final_h.max(1) as f32;
         let sy = ((y as f64 / final_h as f64) * fh) as u32;
-        let sy = sy.min(frame.height() - 1);
+        let sy = sy.min(fh_u32 - 1);
 
         for x in 0..final_w {
             let cx = final_x + x;
@@ -1583,27 +1722,70 @@ fn draw_clip_onto_canvas(
                 continue;
             }
 
-            if wipe_left_active {
-                let norm_x = x as f64 / final_w.max(1) as f64;
-                if norm_x > fade_factor {
-                    continue;
-                }
+            let norm_x = x as f64 / final_w.max(1) as f64;
+            if wipe_left_active && norm_x > fade_factor {
+                continue;
             }
-            if wipe_right_active {
-                let norm_x = x as f64 / final_w.max(1) as f64;
-                if norm_x < (1.0 - fade_factor) {
-                    continue;
-                }
+            if wipe_right_active && norm_x < (1.0 - fade_factor) {
+                continue;
             }
 
             let sx = ((x as f64 / final_w as f64) * fw) as u32;
-            let sx = sx.min(frame.width() - 1);
+            let sx = sx.min(fw_u32 - 1);
 
             let src_px = frame.get_pixel(sx, sy);
             let mut r = src_px[0] as f32;
             let mut g = src_px[1] as f32;
             let mut b = src_px[2] as f32;
             let mut a = (src_px[3] as f32 / 255.0) * eff_opacity as f32;
+
+            if glitch_active {
+                let shift_px = (((1.0 - fade_factor) * 12.0 * (norm_y as f64 * 36.0).sin()).round()
+                    as i32)
+                    .clamp(-16, 16);
+                let sx_r = (sx as i32 + shift_px).clamp(0, fw_u32 as i32 - 1) as u32;
+                let sx_b = (sx as i32 - shift_px).clamp(0, fw_u32 as i32 - 1) as u32;
+                r = frame.get_pixel(sx_r, sy)[0] as f32;
+                b = frame.get_pixel(sx_b, sy)[2] as f32;
+            }
+
+            if blur_step > 0 {
+                let s_l = (sx as i32 - blur_step).clamp(0, fw_u32 as i32 - 1) as u32;
+                let s_r = (sx as i32 + blur_step).clamp(0, fw_u32 as i32 - 1) as u32;
+                let s_u = (sy as i32 - blur_step).clamp(0, fh_u32 as i32 - 1) as u32;
+                let s_d = (sy as i32 + blur_step).clamp(0, fh_u32 as i32 - 1) as u32;
+                let p1 = frame.get_pixel(s_l, sy);
+                let p2 = frame.get_pixel(s_r, sy);
+                let p3 = frame.get_pixel(sx, s_u);
+                let p4 = frame.get_pixel(sx, s_d);
+                r = r * 0.28 + (p1[0] as f32 + p2[0] as f32 + p3[0] as f32 + p4[0] as f32) * 0.18;
+                g = g * 0.28 + (p1[1] as f32 + p2[1] as f32 + p3[1] as f32 + p4[1] as f32) * 0.18;
+                b = b * 0.28 + (p1[2] as f32 + p2[2] as f32 + p3[2] as f32 + p4[2] as f32) * 0.18;
+            }
+
+            if sharpen_amt > 0.001 {
+                let s_l = sx.saturating_sub(1);
+                let s_r = (sx + 1).min(fw_u32 - 1);
+                let s_u = sy.saturating_sub(1);
+                let s_d = (sy + 1).min(fh_u32 - 1);
+                let p1 = frame.get_pixel(s_l, sy);
+                let p2 = frame.get_pixel(s_r, sy);
+                let p3 = frame.get_pixel(sx, s_u);
+                let p4 = frame.get_pixel(sx, s_d);
+                let avg_r = (p1[0] as f32 + p2[0] as f32 + p3[0] as f32 + p4[0] as f32) * 0.25;
+                let avg_g = (p1[1] as f32 + p2[1] as f32 + p3[1] as f32 + p4[1] as f32) * 0.25;
+                let avg_b = (p1[2] as f32 + p2[2] as f32 + p3[2] as f32 + p4[2] as f32) * 0.25;
+                r = (r + (r - avg_r) * sharpen_amt * 1.5).clamp(0.0, 255.0);
+                g = (g + (g - avg_g) * sharpen_amt * 1.5).clamp(0.0, 255.0);
+                b = (b + (b - avg_b) * sharpen_amt * 1.5).clamp(0.0, 255.0);
+            }
+
+            if luma_wipe_active {
+                let luma_n = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
+                let thresh = (1.0 - fade_factor) as f32;
+                let luma_a = ((luma_n - (thresh - 0.15)) / 0.30).clamp(0.0, 1.0);
+                a *= (fade_factor as f32 * 0.2 + luma_a * 0.8).clamp(0.0, 1.0);
+            }
 
             if let Some(ck) = &clip.chromakey {
                 if ck.enabled {
@@ -1638,7 +1820,7 @@ fn draw_clip_onto_canvas(
                 continue;
             }
 
-            let [gr, gg, gb] = apply_clip_grading_rgb(
+            let [mut gr, mut gg, mut gb] = apply_clip_grading_rgb(
                 r,
                 g,
                 b,
@@ -1647,9 +1829,38 @@ fn draw_clip_onto_canvas(
                 &color_params,
                 custom_lut.as_ref(),
             );
+
+            if vignette_amt > 0.001 {
+                let dx = (norm_x as f32 - 0.5) * 1.42;
+                let dy = (norm_y - 0.5) * 1.42;
+                let vig = (1.0 - (dx * dx + dy * dy) * vignette_amt * 1.15).clamp(0.0, 1.0);
+                gr *= vig;
+                gg *= vig;
+                gb *= vig;
+            }
+
+            if grain_amt > 0.001 {
+                let hash_v =
+                    (((cx as f32 * 12.9898 + cy as f32 * 78.233 + clip_time as f32 * 37.0).sin()
+                        * 43_758.547)
+                        .fract()
+                        - 0.5)
+                        * grain_amt
+                        * 48.0;
+                gr = (gr + hash_v).clamp(0.0, 255.0);
+                gg = (gg + hash_v).clamp(0.0, 255.0);
+                gb = (gb + hash_v).clamp(0.0, 255.0);
+            }
+
             r += (gr - r) * color_mask;
             g += (gg - g) * color_mask;
             b += (gb - b) * color_mask;
+
+            if light_leak_active {
+                let leak_amt = (1.0 - fade_factor) as f32;
+                r = (r + (255.0 - r) * leak_amt * 0.75).clamp(0.0, 255.0);
+                g = (g + (135.0 - g).max(0.0) * leak_amt * 0.45).clamp(0.0, 255.0);
+            }
 
             // Dip to white
             if dip_white_amt > 0.0 {
@@ -1762,6 +1973,146 @@ pub fn generate_title_image(
         ImageBuffer::from_pixel(width, height, Rgba(bg_color_rgba));
     img.save(&out_file).ok()?;
     Some(out_file)
+}
+
+/// Tracks a normalized bounding region `(center_x, center_y, scale_x, scale_y)` across a video clip
+/// using block-matching SAD (Sum of Absolute Differences) on downscaled luma frames.
+/// Returns a list of `(clip_relative_time, norm_center_x, norm_center_y)` samples suitable for mask keyframes.
+#[allow(clippy::too_many_arguments)]
+pub fn track_region_motion(
+    video_path: &str,
+    source_in: f64,
+    duration: f64,
+    speed: f64,
+    init_cx: f32,
+    init_cy: f32,
+    scale_x: f32,
+    scale_y: f32,
+) -> Result<Vec<(f64, f64, f64)>, String> {
+    let norm_path = trim_core::paths::normalize_path(video_path);
+    if !norm_path.exists() {
+        return Err("Kaynak video dosyası bulunamadı.".to_string());
+    }
+
+    let step_sec = (duration / 20.0).clamp(0.15, 0.5);
+    let sample_count = ((duration / step_sec).ceil() as usize).clamp(2, 32);
+    let mut decoder = VideoFrameDecoder::new();
+
+    let mut samples = Vec::with_capacity(sample_count + 1);
+    let mut cur_cx = init_cx.clamp(-0.45, 0.45);
+    let mut cur_cy = init_cy.clamp(-0.45, 0.45);
+
+    let mut prev_luma: Option<(Vec<u8>, u32, u32)> = None;
+
+    for idx in 0..=sample_count {
+        let clip_t = (idx as f64 * step_sec).min(duration);
+        let src_t = (source_in + clip_t * speed.max(0.05)).max(0.0);
+        let Some(frame) = decoder.decode_frame(video_path, src_t) else {
+            continue;
+        };
+        let w = frame.width().max(1);
+        let h = frame.height().max(1);
+        let raw = frame.as_raw();
+        let mut luma = Vec::with_capacity((w * h) as usize);
+        for px in raw.as_chunks::<4>().0 {
+            let y = ((px[0] as u32 * 77 + px[1] as u32 * 150 + px[2] as u32 * 29) >> 8) as u8;
+            luma.push(y);
+        }
+
+        if let Some((ref ref_luma, rw, rh)) = prev_luma {
+            if rw == w && rh == h {
+                let patch_rx = ((scale_x.clamp(0.08, 0.5) * w as f32 * 0.35) as i32).clamp(6, 36);
+                let patch_ry = ((scale_y.clamp(0.08, 0.5) * h as f32 * 0.35) as i32).clamp(6, 36);
+                let prev_px = ((cur_cx + 0.5) * w as f32).round() as i32;
+                let prev_py = ((cur_cy + 0.5) * h as f32).round() as i32;
+                let search_r = 24i32;
+
+                let mut best_dx = 0i32;
+                let mut best_dy = 0i32;
+                let mut best_sad = u64::MAX;
+
+                for dy in (-search_r..=search_r).step_by(2) {
+                    for dx in (-search_r..=search_r).step_by(2) {
+                        let mut sad = 0u64;
+                        let mut count = 0u64;
+                        for py in (-patch_ry..=patch_ry).step_by(2) {
+                            let r_y = prev_py + py;
+                            let c_y = r_y + dy;
+                            if r_y < 0 || r_y >= h as i32 || c_y < 0 || c_y >= h as i32 {
+                                continue;
+                            }
+                            for px in (-patch_rx..=patch_rx).step_by(2) {
+                                let r_x = prev_px + px;
+                                let c_x = r_x + dx;
+                                if r_x < 0 || r_x >= w as i32 || c_x < 0 || c_x >= w as i32 {
+                                    continue;
+                                }
+                                let rv = ref_luma[(r_y as u32 * w + r_x as u32) as usize] as i32;
+                                let cv = luma[(c_y as u32 * w + c_x as u32) as usize] as i32;
+                                sad += (rv - cv).unsigned_abs() as u64;
+                                count += 1;
+                            }
+                        }
+                        if count > 8 {
+                            let norm_sad = (sad * 1024) / count;
+                            if norm_sad < best_sad {
+                                best_sad = norm_sad;
+                                best_dx = dx;
+                                best_dy = dy;
+                            }
+                        }
+                    }
+                }
+
+                // 1-pixel refinement around best_dx, best_dy
+                let coarse_dx = best_dx;
+                let coarse_dy = best_dy;
+                for dy in (coarse_dy - 1)..=(coarse_dy + 1) {
+                    for dx in (coarse_dx - 1)..=(coarse_dx + 1) {
+                        let mut sad = 0u64;
+                        let mut count = 0u64;
+                        for py in (-patch_ry..=patch_ry).step_by(2) {
+                            let r_y = prev_py + py;
+                            let c_y = r_y + dy;
+                            if r_y < 0 || r_y >= h as i32 || c_y < 0 || c_y >= h as i32 {
+                                continue;
+                            }
+                            for px in (-patch_rx..=patch_rx).step_by(2) {
+                                let r_x = prev_px + px;
+                                let c_x = r_x + dx;
+                                if r_x < 0 || r_x >= w as i32 || c_x < 0 || c_x >= w as i32 {
+                                    continue;
+                                }
+                                let rv = ref_luma[(r_y as u32 * w + r_x as u32) as usize] as i32;
+                                let cv = luma[(c_y as u32 * w + c_x as u32) as usize] as i32;
+                                sad += (rv - cv).unsigned_abs() as u64;
+                                count += 1;
+                            }
+                        }
+                        if count > 8 {
+                            let norm_sad = (sad * 1024) / count;
+                            if norm_sad < best_sad {
+                                best_sad = norm_sad;
+                                best_dx = dx;
+                                best_dy = dy;
+                            }
+                        }
+                    }
+                }
+
+                cur_cx = (cur_cx + best_dx as f32 / w as f32).clamp(-0.48, 0.48);
+                cur_cy = (cur_cy + best_dy as f32 / h as f32).clamp(-0.48, 0.48);
+            }
+        }
+
+        samples.push((clip_t, cur_cx as f64, cur_cy as f64));
+        prev_luma = Some((luma, w, h));
+    }
+
+    if samples.is_empty() {
+        return Err("Hareket takibi için kare çözümlenemedi.".to_string());
+    }
+    Ok(samples)
 }
 
 #[cfg(test)]

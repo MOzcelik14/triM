@@ -11,6 +11,7 @@ pub enum HardwareAccel {
     Qsv,
     Amf,
     Vaapi,
+    VideoToolbox,
 }
 
 impl HardwareAccel {
@@ -22,6 +23,7 @@ impl HardwareAccel {
             Self::Qsv => "Intel QuickSync (QSV GPU)",
             Self::Amf => "AMD AMF (Radeon GPU)",
             Self::Vaapi => "Linux VAAPI (Donanım GPU)",
+            Self::VideoToolbox => "Apple VideoToolbox (macOS GPU)",
         }
     }
 
@@ -33,6 +35,7 @@ impl HardwareAccel {
             Self::Qsv => "QSV",
             Self::Amf => "AMF",
             Self::Vaapi => "VAAPI",
+            Self::VideoToolbox => "VideoToolbox",
         }
     }
 }

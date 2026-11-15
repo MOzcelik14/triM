@@ -1032,10 +1032,27 @@ pub fn draw_text_overlays_on_rect(
 
         let words: Vec<&str> = ov.text.split_whitespace().collect();
         let is_multi_word = words.len() > 1;
-        let active_idx = if is_multi_word {
-            ((ov.progress * words.len() as f32).floor() as usize).min(words.len() - 1)
+        let (active_idx, word_local_prog) = if is_multi_word {
+            let weights: Vec<f32> = words
+                .iter()
+                .map(|w| (w.chars().count().max(2) as f32).powf(0.75))
+                .collect();
+            let total_w: f32 = weights.iter().sum::<f32>().max(1.0);
+            let target_w = ov.progress.clamp(0.0, 0.9999) * total_w;
+            let mut acc = 0.0_f32;
+            let mut found_idx = words.len() - 1;
+            let mut local_p = 0.0_f32;
+            for (wi, &w_len) in weights.iter().enumerate() {
+                if target_w <= acc + w_len || wi + 1 == weights.len() {
+                    found_idx = wi;
+                    local_p = ((target_w - acc) / w_len.max(0.001)).clamp(0.0, 1.0);
+                    break;
+                }
+                acc += w_len;
+            }
+            (found_idx, local_p)
         } else {
-            0
+            (0, ov.progress.clamp(0.0, 1.0))
         };
 
         let mut final_col = ov.text_color;
@@ -1231,10 +1248,44 @@ pub fn draw_text_overlays_on_rect(
             }
             trim_core::clip::MotionTitleStyle::None => match ov.caption_style {
                 trim_core::clip::CaptionStyle::PopUpBouncy => {
-                    let bounce = 1.0 + 0.18 * (1.0 - (ov.progress * 2.0 - 1.0).abs()).max(0.0);
-                    let pop_font = egui::FontId::proportional(scaled_font_size * bounce);
-                    let galley =
-                        painter.layout_no_wrap(ov.text.clone(), pop_font, ov.highlight_color);
+                    let word_spring = (1.0 - (word_local_prog * 2.0 - 1.0).abs()).max(0.0);
+                    let mut job = egui::text::LayoutJob::default();
+                    for (i, word) in words.iter().enumerate() {
+                        let is_act = i == active_idx;
+                        let col = if is_act {
+                            ov.highlight_color
+                        } else {
+                            final_col
+                        };
+                        let f = if is_act {
+                            egui::FontId::proportional(
+                                scaled_font_size * (1.14 + 0.14 * word_spring),
+                            )
+                        } else {
+                            font.clone()
+                        };
+                        job.append(
+                            word,
+                            0.0,
+                            egui::TextFormat {
+                                font_id: f,
+                                color: col,
+                                ..Default::default()
+                            },
+                        );
+                        if i + 1 < words.len() {
+                            job.append(
+                                " ",
+                                0.0,
+                                egui::TextFormat {
+                                    font_id: font.clone(),
+                                    color: final_col,
+                                    ..Default::default()
+                                },
+                            );
+                        }
+                    }
+                    let galley = painter.layout_job(job);
                     let tr = egui::Align2::CENTER_CENTER
                         .anchor_size(Pos2::new(target_x, target_y), galley.size());
 
@@ -1254,18 +1305,29 @@ pub fn draw_text_overlays_on_rect(
                 }
                 trim_core::clip::CaptionStyle::WordHighlightYellow
                 | trim_core::clip::CaptionStyle::WordHighlightNeon => {
-                    let hl_col =
-                        if ov.caption_style == trim_core::clip::CaptionStyle::WordHighlightYellow {
-                            Color32::from_rgb(255, 230, 0)
-                        } else {
-                            Color32::from_rgb(0, 255, 102)
-                        };
+                    let (hl_col, pill_bg) = if ov.caption_style
+                        == trim_core::clip::CaptionStyle::WordHighlightYellow
+                    {
+                        (
+                            Color32::from_rgb(255, 230, 0),
+                            Color32::from_rgba_unmultiplied(45, 38, 0, (175.0 * ov.alpha) as u8),
+                        )
+                    } else {
+                        (
+                            Color32::from_rgb(0, 255, 102),
+                            Color32::from_rgba_unmultiplied(0, 48, 22, (175.0 * ov.alpha) as u8),
+                        )
+                    };
+                    let word_spring = (1.0 - (word_local_prog * 2.0 - 1.0).abs()).max(0.0);
 
                     let mut job = egui::text::LayoutJob::default();
                     for (i, word) in words.iter().enumerate() {
-                        let col = if i == active_idx { hl_col } else { final_col };
-                        let f = if i == active_idx {
-                            egui::FontId::proportional(scaled_font_size * 1.08)
+                        let is_act = i == active_idx;
+                        let col = if is_act { hl_col } else { final_col };
+                        let f = if is_act {
+                            egui::FontId::proportional(
+                                scaled_font_size * (1.10 + 0.08 * word_spring),
+                            )
                         } else {
                             font.clone()
                         };
@@ -1275,6 +1337,11 @@ pub fn draw_text_overlays_on_rect(
                             egui::TextFormat {
                                 font_id: f,
                                 color: col,
+                                background: if is_act {
+                                    pill_bg
+                                } else {
+                                    Color32::TRANSPARENT
+                                },
                                 ..Default::default()
                             },
                         );

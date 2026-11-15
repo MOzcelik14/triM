@@ -56,6 +56,17 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="1.7.0" date="2026-11-15">
+      <description>
+        <p>triM. v1.7.0 - Filmstrip Önizleme, Hız Eğrileri (Speed Ramping), Cubic Bezier Keyframe, Yeni Görsel/Ses Efektleri ve Akıllı Önbellek:</p>
+        <ul>
+          <li>Klip üzeri 8 karelik Filmstrip önizleme şeridi, Cubic Bezier keyframe eğri editörü, Speed Ramping (Değişken Hız Eğrileri) ve ses dalga formuna göre otomatik klip senkronizasyonu (Audio Sync).</li>
+          <li>Doğrudan Bulanıklık (Blur), Keskinlik (Sharpen), Vinyet ve Film Greni efektleri; 6 yeni geçiş efekti (Blur Dissolve, Luma Wipe, Whip Pan, Zoom Out, Glitch, Light Leak), video stabilizasyonu ve maske hareket takibi (Motion Tracking).</li>
+          <li>Kelime bazlı dinamik Karaoke/Reels altyazı vurgusu, ses gürültü azaltma (Voice Denoise) ve konuşmada otomatik müzik kısma (Auto-Ducking).</li>
+          <li>Zaman cetvelinde Akıllı Önbellek Çubuğu (Smart Render Cache) ve Apple VideoToolbox dahil çalışma zamanı donanım kodlayıcı tespiti.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.6.2" date="2026-11-15">
       <description>
         <p>triM. v1.6.2 - Master Ses Düzey Göstergesi Yenilemesi ve Dokümantasyon Güncellemeleri:</p>

@@ -487,6 +487,18 @@ pub struct Clip {
     pub clip_kind: crate::compositing::ClipKind,
     #[serde(default)]
     pub masks: Vec<crate::mask::Mask>,
+    #[serde(default)]
+    pub blur: f32,
+    #[serde(default)]
+    pub sharpen: f32,
+    #[serde(default)]
+    pub vignette: f32,
+    #[serde(default)]
+    pub film_grain: f32,
+    #[serde(default)]
+    pub stabilization_strength: f32,
+    #[serde(default)]
+    pub voice_denoise: f32,
 }
 
 fn default_speed() -> f64 {
@@ -546,6 +558,12 @@ impl Default for Clip {
             blend_mode: crate::compositing::BlendMode::default(),
             clip_kind: crate::compositing::ClipKind::default(),
             masks: Vec::new(),
+            blur: 0.0,
+            sharpen: 0.0,
+            vignette: 0.0,
+            film_grain: 0.0,
+            stabilization_strength: 0.0,
+            voice_denoise: 0.0,
         }
     }
 }
@@ -587,6 +605,10 @@ impl Clip {
             || self.lut_preset != LutPreset::None
             || self.custom_lut_path.is_some()
             || self.color_wheels.is_some()
+            || self.blur > 1e-4
+            || self.sharpen > 1e-4
+            || self.vignette > 1e-4
+            || self.film_grain > 1e-4
     }
 
     pub fn color_grade_params(&self) -> ColorGradeParams {
@@ -629,6 +651,10 @@ impl Clip {
         self.lut_preset = LutPreset::None;
         self.custom_lut_path = None;
         self.color_wheels = None;
+        self.blur = 0.0;
+        self.sharpen = 0.0;
+        self.vignette = 0.0;
+        self.film_grain = 0.0;
     }
     pub fn is_nested_sequence(&self) -> bool {
         self.nested_sequence_id.is_some()
@@ -745,20 +771,87 @@ impl Clip {
         (self.timeline_out - self.timeline_in).max(0.0)
     }
 
+    pub fn has_speed_ramp(&self) -> bool {
+        self.keyframes.get("speed").is_some_and(|k| !k.is_empty())
+    }
+
     pub fn effective_source_out(&self) -> f64 {
         match self.source_out {
             Some(so) => so,
-            None => self.source_in + self.duration() * self.speed,
+            None => {
+                if let Some(kfs) = self.keyframes.get("speed").filter(|k| !k.is_empty()) {
+                    self.source_in
+                        + crate::keyframe::integrate_keyframes(kfs, self.duration(), self.speed)
+                } else {
+                    self.source_in + self.duration() * self.speed
+                }
+            }
         }
     }
 
     pub fn map_timeline_to_source(&self, timeline_time: f64) -> f64 {
-        let offset = timeline_time - self.timeline_in;
+        let offset = (timeline_time - self.timeline_in).max(0.0);
+        let src_delta = if let Some(kfs) = self.keyframes.get("speed").filter(|k| !k.is_empty()) {
+            crate::keyframe::integrate_keyframes(kfs, offset, self.speed)
+        } else {
+            offset * self.speed
+        };
         if !self.reverse {
-            self.source_in + offset * self.speed
+            self.source_in + src_delta
         } else {
             let src_out = self.effective_source_out();
-            src_out - offset * self.speed
+            (src_out - src_delta).max(0.0)
+        }
+    }
+
+    pub fn apply_speed_ramp_preset(&mut self, preset: &str) {
+        let dur = self.duration().max(0.2);
+        match preset {
+            "none" => {
+                self.keyframes.remove("speed");
+            }
+            "bullet_time" => {
+                // Fast -> Slow-Mo in middle -> Fast
+                self.keyframes.insert(
+                    "speed".to_string(),
+                    vec![
+                        Keyframe::new(0.0, 1.8, Interpolation::EaseInOut),
+                        Keyframe::new(dur * 0.35, 0.35, Interpolation::EaseInOut),
+                        Keyframe::new(dur * 0.65, 0.35, Interpolation::EaseInOut),
+                        Keyframe::new(dur, 1.8, Interpolation::EaseInOut),
+                    ],
+                );
+            }
+            "action_burst" => {
+                // Normal -> Fast burst in middle -> Normal
+                self.keyframes.insert(
+                    "speed".to_string(),
+                    vec![
+                        Keyframe::new(0.0, 0.8, Interpolation::EaseInOut),
+                        Keyframe::new(dur * 0.5, 2.5, Interpolation::EaseInOut),
+                        Keyframe::new(dur, 0.8, Interpolation::EaseInOut),
+                    ],
+                );
+            }
+            "ramp_up" => {
+                self.keyframes.insert(
+                    "speed".to_string(),
+                    vec![
+                        Keyframe::new(0.0, 0.5, Interpolation::EaseIn),
+                        Keyframe::new(dur, 2.5, Interpolation::EaseOut),
+                    ],
+                );
+            }
+            "ramp_down" => {
+                self.keyframes.insert(
+                    "speed".to_string(),
+                    vec![
+                        Keyframe::new(0.0, 2.5, Interpolation::EaseOut),
+                        Keyframe::new(dur, 0.4, Interpolation::EaseIn),
+                    ],
+                );
+            }
+            _ => {}
         }
     }
 
@@ -766,11 +859,17 @@ impl Clip {
         ("dip_black", "Siyaha Geçiş (Dip to Black)"),
         ("dip_white", "Beyaza Geçiş (Dip to White)"),
         ("cross_dissolve", "Çapraz Erime (Cross Dissolve)"),
+        ("blur_dissolve", "Bulanık Erime (Blur Dissolve)"),
         ("wipe_left", "Sola Süpürme (Wipe Left)"),
         ("wipe_right", "Sağa Süpürme (Wipe Right)"),
+        ("luma_wipe", "Parlaklık Süpürme (Luma Wipe)"),
         ("slide_left", "Sola Kayma (Slide Left)"),
         ("slide_right", "Sağa Kayma (Slide Right)"),
+        ("whip_pan", "Hızlı Savrulma (Whip Pan)"),
         ("zoom_in", "Yakınlaşma (Zoom In)"),
+        ("zoom_out", "Uzaklaşma (Zoom Out)"),
+        ("glitch", "Dijital Bozulma (Glitch)"),
+        ("light_leak", "Işık Sızıntısı (Light Leak)"),
     ];
 
     pub fn transition_label(trans: Option<&str>) -> &'static str {
@@ -836,6 +935,7 @@ impl Clip {
             "opacity" => self.opacity,
             "rotation" => self.rotation,
             "volume" => self.volume,
+            "speed" => self.speed,
             "brightness" => self.brightness,
             "contrast" => self.contrast,
             "saturation" => self.saturation,

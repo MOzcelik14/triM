@@ -2372,7 +2372,24 @@ impl eframe::App for TrimApp {
                                         &markers,
                                         self.project.timeline.in_point,
                                         self.project.timeline.out_point,
+                                        Some(&|t| {
+                                            self.video_engine
+                                                .is_timeline_time_cached(&self.project, t)
+                                        }),
                                     );
+                                    if !self.is_playing && !self.video_engine.is_decoding_seek {
+                                        let step_t = (1.0 / self.project.timeline.fps.max(24.0))
+                                            .clamp(0.03, 0.1);
+                                        for k in 1..=6 {
+                                            let probe_t = self.current_time + k as f64 * step_t;
+                                            if self
+                                                .video_engine
+                                                .prewarm_frame_at_time(&self.project, probe_t)
+                                            {
+                                                break;
+                                            }
+                                        }
+                                    }
 
                                     if let Some(act) = ruler_act {
                                         match act {
@@ -2901,6 +2918,9 @@ impl eframe::App for TrimApp {
                                         }
                                         CanvasAction::ToggleLinkSelected => {
                                             self.toggle_link_selected_clips();
+                                        }
+                                        CanvasAction::AlignSelectedByAudio => {
+                                            self.align_selected_clips_by_audio();
                                         }
                                         CanvasAction::OpenSequence(seq_id) => {
                                             self.project.switch_sequence(&seq_id);
@@ -3459,6 +3479,16 @@ impl eframe::App for TrimApp {
                                 }
                                 InspectorAction::TriggerSilenceDetect => {
                                     self.open_silence_cut_dialog_for_selected();
+                                }
+                                InspectorAction::TrackMaskMotion {
+                                    track_id,
+                                    clip_id,
+                                    mask_index,
+                                } => {
+                                    self.track_mask_motion_for_clip(&track_id, &clip_id, mask_index);
+                                }
+                                InspectorAction::AutoDuckAudio { track_id, clip_id } => {
+                                    self.auto_duck_audio_clip(&track_id, &clip_id);
                                 }
                                 InspectorAction::TriggerTranscribe => {
                                     self.open_transcribe_dialog_for_selected();

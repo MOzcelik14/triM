@@ -560,6 +560,13 @@ impl ExportDialog {
                                                             "AMD AMF (GPU)",
                                                         );
                                                     }
+                                                    if detected_enc.has_videotoolbox() {
+                                                        ui.selectable_value(
+                                                            &mut self.hw_accel,
+                                                            HardwareAccel::VideoToolbox,
+                                                            "Apple VideoToolbox (GPU)",
+                                                        );
+                                                    }
                                                     ui.selectable_value(
                                                         &mut self.hw_accel,
                                                         HardwareAccel::Cpu,
@@ -569,6 +576,8 @@ impl ExportDialog {
 
                                             let (badge_text, badge_col) = if detected_enc.has_nvidia_nvenc() {
                                                 ("⚡ NVENC Donanım Aktif", Color32::from_rgb(0x3d, 0xdc, 0x84))
+                                            } else if detected_enc.has_videotoolbox() {
+                                                ("⚡ VideoToolbox Aktif", Color32::from_rgb(0x38, 0xa0, 0xf0))
                                             } else if detected_enc.has_intel_qsv() {
                                                 ("⚡ QuickSync Aktif", Color32::from_rgb(0x38, 0xa0, 0xf0))
                                             } else if detected_enc.has_vaapi() {

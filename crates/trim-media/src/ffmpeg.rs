@@ -275,6 +275,8 @@ pub struct AvailableEncoders {
     pub hevc_vaapi: bool,
     pub h264_amf: bool,
     pub hevc_amf: bool,
+    pub h264_videotoolbox: bool,
+    pub hevc_videotoolbox: bool,
 }
 
 impl AvailableEncoders {
@@ -294,8 +296,16 @@ impl AvailableEncoders {
         self.h264_amf || self.hevc_amf
     }
 
+    pub fn has_videotoolbox(&self) -> bool {
+        self.h264_videotoolbox || self.hevc_videotoolbox
+    }
+
     pub fn any_hardware(&self) -> bool {
-        self.has_nvidia_nvenc() || self.has_intel_qsv() || self.has_vaapi() || self.has_amd_amf()
+        self.has_nvidia_nvenc()
+            || self.has_intel_qsv()
+            || self.has_vaapi()
+            || self.has_amd_amf()
+            || self.has_videotoolbox()
     }
 }
 
@@ -347,6 +357,11 @@ pub fn detect_available_encoders() -> AvailableEncoders {
             if text.contains("h264_amf") && is_encoder_functional("h264_amf") {
                 encoders.h264_amf = true;
                 encoders.hevc_amf = text.contains("hevc_amf") && is_encoder_functional("hevc_amf");
+            }
+            if text.contains("h264_videotoolbox") && is_encoder_functional("h264_videotoolbox") {
+                encoders.h264_videotoolbox = true;
+                encoders.hevc_videotoolbox = text.contains("hevc_videotoolbox")
+                    && is_encoder_functional("hevc_videotoolbox");
             }
         }
         encoders

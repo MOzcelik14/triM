@@ -2,6 +2,27 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [1.7.0] - 2026-11-15
+
+### Added
+- **Timeline & Editing Experience**:
+  - **Filmstrip Thumbnails**: Asynchronous 8-frame horizontal sprite strips (`{hash}_strip8.jpg`) rendered time-mapped across video clips on the timeline.
+  - **Advanced Keyframe Curves**: Added `EaseIn`, `EaseOut`, and `CubicBezier` (`bezier_handles`) interpolation modes with an interactive draggable Cubic Bezier curve editor popup in the Inspector.
+  - **Speed Ramping (Time Remapping)**: Analytical speed-curve integration (`integrate_keyframes`), 6 built-in speed ramp presets, live speed curve graph in the Inspector, and piecewise-linear FFmpeg `setpts` export.
+  - **Audio Waveform Auto-Sync**: One-click multi-clip alignment (`🎙️ Ses Dalga Formuna Göre Hizala`) using onset envelope cross-correlation (`compute_audio_sync_offset`) with full Undo/Redo support.
+- **Visual Effects, Transitions & Motion**:
+  - **Direct Visual Effect Sliders**: Added **Blur**, **Sharpen**, **Vignette**, and **Film Grain** sliders to the Color & Effects card with full parity across OpenGL shaders, CPU fallback preview, and FFmpeg export.
+  - **Expanded Transition Library**: Added `blur_dissolve`, `luma_wipe`, `whip_pan`, `zoom_out`, `glitch`, and `light_leak` transitions.
+  - **Video Stabilization & Mask Motion Tracking**: Added `deshake` video stabilization control and automated SAD block-matching mask motion tracking (`🎯 Takip`) generating `pos_x` / `pos_y` keyframes.
+- **Audio & Subtitle Workflow**:
+  - **Karaoke / Reels Word-Level Captions**: Character-weighted speech timing, per-word spring bounce, and rounded pill highlights for `WordHighlightYellow`, `WordHighlightNeon`, and `PopUpBouncy` caption styles.
+  - **Voice Denoise & Auto-Ducking**: Real-time rumble filter + spectral noise gate (`afftdn` on export) and one-click dialogue **Auto-Ducking** (`🔉 Konuşmada Müziği Kıs`) generating smooth volume ducking keyframes.
+- **Performance & Hardware Compatibility**:
+  - **Timeline Smart Render Cache Bar**: Top-of-ruler emerald/amber cache indicator bar with idle background frame prewarming around the playhead.
+  - **Hardware Encoder Probing**: Added runtime **Apple VideoToolbox** (`h264_videotoolbox` / `hevc_videotoolbox`) detection alongside NVENC, QSV, AMF, and VAAPI.
+
+---
+
 ## [1.6.2] - 2026-11-15
 
 ### Improved

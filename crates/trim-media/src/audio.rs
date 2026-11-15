@@ -274,11 +274,24 @@ impl AudioMixer {
                 let eff_vol = (clip.volume as f32) * track_vol;
                 let has_vol_kfs = clip.keyframes.get("volume").is_some_and(|k| !k.is_empty());
                 let has_dynamic_gain = clip.fade_in > 0.0 || clip.fade_out > 0.0 || has_vol_kfs;
+                let denoise_strength = if clip.voice_denoise > 0.01 {
+                    clip.voice_denoise.clamp(0.0, 1.0)
+                } else if clip.noise_gate
+                    || clip.eq_preset == trim_core::clip::AudioEqPreset::DenoiseGate
+                {
+                    0.35
+                } else {
+                    0.0
+                };
                 let step = if src_len >= 2 && chunk_len >= 2 {
                     (src_len - 1) as f64 / (chunk_len - 1) as f64
                 } else {
                     0.0
                 };
+
+                let mut env_level = 0.0_f32;
+                let mut hp_prev_in = [0.0_f32; 2];
+                let mut hp_prev_out = [0.0_f32; 2];
 
                 for k in 0..chunk_len {
                     let dst_idx = dst_start + k;
@@ -286,7 +299,7 @@ impl AudioMixer {
                         break;
                     }
 
-                    let (l, r) = if src_len >= 2 && chunk_len >= 2 {
+                    let (mut l, mut r) = if src_len >= 2 && chunk_len >= 2 {
                         let rel = (k as f64 * step).min((src_len - 1) as f64);
                         let eff_rel = if clip.reverse {
                             (src_len - 1) as f64 - rel
@@ -305,6 +318,29 @@ impl AudioMixer {
                         let s = pcm[c_min];
                         (s[0] as f32 * inv_i16, s[1] as f32 * inv_i16)
                     };
+
+                    if denoise_strength > 0.001 {
+                        // First-order 90Hz high-pass filter to remove low-frequency rumble
+                        let alpha_hp = 0.988_f32;
+                        let yl = alpha_hp * (hp_prev_out[0] + l - hp_prev_in[0]);
+                        let yr = alpha_hp * (hp_prev_out[1] + r - hp_prev_in[1]);
+                        hp_prev_in = [l, r];
+                        hp_prev_out = [yl, yr];
+                        l = l + (yl - l) * denoise_strength;
+                        r = r + (yr - r) * denoise_strength;
+
+                        // Smooth downward expander / spectral noise gate
+                        let peak = l.abs().max(r.abs());
+                        let coeff = if peak > env_level { 0.08 } else { 0.002 };
+                        env_level += coeff * (peak - env_level);
+                        let thresh = 0.008 + 0.032 * denoise_strength;
+                        if env_level < thresh {
+                            let ratio = (env_level / thresh.max(1e-5)).clamp(0.0, 1.0);
+                            let atten = ratio.powf(1.0 + 1.8 * denoise_strength);
+                            l *= atten;
+                            r *= atten;
+                        }
+                    }
 
                     let gain = if has_dynamic_gain {
                         let cur_t = overlap_start + (k as f64 / SAMPLE_RATE as f64);
