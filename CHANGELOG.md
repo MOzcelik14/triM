@@ -2,6 +2,14 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [2.0.2] - 2026-11-16
+
+### Added
+- **Expanded Popular Font Catalog & System Font Loading**:
+  - Added 31 widely-used font families (`POPULAR_FONT_FAMILIES` in `trim-core`: `Arial`, `Helvetica`, `Times New Roman`, `Georgia`, `Verdana`, `Tahoma`, `Trebuchet MS`, `Courier New`, `Impact`, `Montserrat`, `Bebas Neue`, `Oswald`, `Anton`, `Poppins`, `Roboto`, `Open Sans`, `Lato`, `Inter`, `Raleway`, `Playfair Display`, `Cinzel`, `Lobster`, `Pacifico`, `DejaVu Sans/Serif`, `Liberation Sans`, `Noto Sans`, `Ubuntu`, plus generic `Sans-Serif`/`Serif`/`Monospace`).
+  - Added OS font directory discovery and registration in `theme.rs` + `monitor.rs` so locally installed `.ttf`/`.otf` fonts render directly in the Program Monitor preview with safe fallback.
+  - Updated FFmpeg `drawtext` export in `filtergraph.rs` to pass any sanitized `font_family` name directly instead of restricting to 5 hardcoded names.
+
 ## [2.0.1] - 2026-11-16
 
 ### Fixed

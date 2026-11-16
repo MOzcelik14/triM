@@ -3512,8 +3512,7 @@ fn render_titler_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
                     egui::ComboBox::from_id_salt("inspector_font_family")
                         .selected_text(&txt.font_family)
                         .show_ui(ui, |ui| {
-                            for font in ["Sans-Serif", "Serif", "Monospace", "Impact", "Montserrat"]
-                            {
+                            for &font in trim_core::clip::POPULAR_FONT_FAMILIES {
                                 if ui
                                     .selectable_value(&mut txt.font_family, font.to_string(), font)
                                     .changed()

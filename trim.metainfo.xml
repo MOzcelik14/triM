@@ -56,6 +56,15 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2.0.2" date="2026-11-16">
+      <description>
+        <p>triM. v2.0.2 - Genişletilmiş Popüler Font Desteği:</p>
+        <ul>
+          <li>Metin/Başlık aracına 31 popüler font ailesi (Arial, Times New Roman, Georgia, Verdana, Bebas Neue, Oswald, Anton, Poppins, Roboto, Open Sans, Lato, Inter, Playfair Display, Lobster, Pacifico vb.) eklendi.</li>
+          <li>Windows ve Linux sistem font klasörlerinden yüklü fontları otomatik okuyup önizlemede ve FFmpeg dışa aktarımında doğrudan kullanma desteği eklendi.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.1" date="2026-11-16">
       <description>
         <p>triM. v2.0.1 - Kararlılık, Performans ve FFmpeg Export Düzeltmeleri:</p>

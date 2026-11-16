@@ -205,9 +205,7 @@ impl TitleDialog {
                         egui::ComboBox::from_id_salt("title_font_family")
                             .selected_text(&self.font_family)
                             .show_ui(ui, |ui| {
-                                for font in
-                                    ["Sans-Serif", "Serif", "Monospace", "Impact", "Montserrat"]
-                                {
+                                for &font in trim_core::clip::POPULAR_FONT_FAMILIES {
                                     ui.selectable_value(
                                         &mut self.font_family,
                                         font.to_string(),

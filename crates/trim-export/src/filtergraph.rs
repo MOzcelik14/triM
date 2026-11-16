@@ -466,12 +466,15 @@ impl TimelineExporter {
                 (false, false) => "",
             };
             let font_part = if txt.font_family != "Sans-Serif" || !font_style.is_empty() {
-                let fam = match txt.font_family.as_str() {
-                    "Serif" => "Serif",
-                    "Monospace" => "Monospace",
-                    "Impact" => "Impact",
-                    "Montserrat" => "Montserrat",
-                    _ => "Sans-Serif",
+                let sanitized_fam: String = txt
+                    .font_family
+                    .chars()
+                    .filter(|c| !matches!(c, '\'' | ':' | '\\' | '\n' | '\r'))
+                    .collect();
+                let fam = if sanitized_fam.trim().is_empty() {
+                    "Sans-Serif"
+                } else {
+                    sanitized_fam.trim()
                 };
                 format!(":font='{fam}'{font_style}")
             } else {

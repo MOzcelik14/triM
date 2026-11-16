@@ -67,10 +67,7 @@ pub enum MonitorAction {
 /// Approximate on-screen bounding box of a text overlay (used for Selection tool hit-testing).
 fn overlay_hit_rect(painter: &egui::Painter, frame_rect: Rect, ov: &ActiveTextOverlay) -> Rect {
     let scaled_font_size = (ov.font_size * (frame_rect.height() / 1080.0)).clamp(10.0, 160.0);
-    let family = match ov.font_family.as_str() {
-        "Monospace" => egui::FontFamily::Monospace,
-        _ => egui::FontFamily::Proportional,
-    };
+    let family = crate::theme::resolve_egui_font_family(&ov.font_family);
     let galley = painter.layout_no_wrap(
         ov.text.clone(),
         egui::FontId::new(scaled_font_size, family),
@@ -1257,10 +1254,7 @@ pub fn draw_text_overlays_on_rect(
             continue;
         }
         let scaled_font_size = (ov.font_size * (frame_rect.height() / 1080.0)).clamp(10.0, 160.0);
-        let family = match ov.font_family.as_str() {
-            "Monospace" => egui::FontFamily::Monospace,
-            _ => egui::FontFamily::Proportional,
-        };
+        let family = crate::theme::resolve_egui_font_family(&ov.font_family);
         let font = egui::FontId::new(scaled_font_size, family);
         let target_x = frame_rect.left() + frame_rect.width() * ov.pos_x.clamp(0.0, 1.0);
         let target_y = frame_rect.top() + frame_rect.height() * ov.pos_y.clamp(0.0, 1.0);

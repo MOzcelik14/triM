@@ -555,6 +555,41 @@ pub struct TextOverlay {
     pub shadow_distance: f32,
 }
 
+/// Curated list of widely used video-editing, web, and system font families.
+pub const POPULAR_FONT_FAMILIES: &[&str] = &[
+    "Sans-Serif",
+    "Serif",
+    "Monospace",
+    "Arial",
+    "Helvetica",
+    "Times New Roman",
+    "Georgia",
+    "Verdana",
+    "Tahoma",
+    "Trebuchet MS",
+    "Courier New",
+    "Impact",
+    "Montserrat",
+    "Bebas Neue",
+    "Oswald",
+    "Anton",
+    "Poppins",
+    "Roboto",
+    "Open Sans",
+    "Lato",
+    "Inter",
+    "Raleway",
+    "Playfair Display",
+    "Cinzel",
+    "Lobster",
+    "Pacifico",
+    "DejaVu Sans",
+    "DejaVu Serif",
+    "Liberation Sans",
+    "Noto Sans",
+    "Ubuntu",
+];
+
 fn default_font_family() -> String {
     "Sans-Serif".to_string()
 }
