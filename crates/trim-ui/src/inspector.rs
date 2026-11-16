@@ -47,8 +47,8 @@ pub enum InspectorAction {
     SetColorGrading {
         track_id: String,
         clip_id: String,
-        old_state: ClipColorGradingState,
-        new_state: ClipColorGradingState,
+        old_state: Box<ClipColorGradingState>,
+        new_state: Box<ClipColorGradingState>,
     },
     SetTransform {
         track_id: String,
@@ -1528,8 +1528,8 @@ fn render_color_card(
                 *action = Some(InspectorAction::SetColorGrading {
                     track_id: track_id.to_string(),
                     clip_id: clip.id.clone(),
-                    old_state,
-                    new_state,
+                    old_state: Box::new(old_state),
+                    new_state: Box::new(new_state),
                 });
             }
             ui.data_mut(|d| d.remove::<ClipColorGradingState>(cg_drag_id));
@@ -1601,8 +1601,8 @@ fn render_color_card(
                 *action = Some(InspectorAction::SetColorGrading {
                     track_id: track_id.to_string(),
                     clip_id: clip.id.clone(),
-                    old_state,
-                    new_state,
+                    old_state: Box::new(old_state),
+                    new_state: Box::new(new_state),
                 });
             }
 
@@ -1646,8 +1646,8 @@ fn render_color_card(
                                 *action = Some(InspectorAction::SetColorGrading {
                                     track_id: track_id.to_string(),
                                     clip_id: clip.id.clone(),
-                                    old_state,
-                                    new_state,
+                                    old_state: Box::new(old_state),
+                                    new_state: Box::new(new_state),
                                 });
                             }
                             render_badge(ui, clip.wb_preset.short_label(), ACCENT_AMBER);
@@ -1737,8 +1737,8 @@ fn render_color_card(
                                 *action = Some(InspectorAction::SetColorGrading {
                                     track_id: track_id.to_string(),
                                     clip_id: clip.id.clone(),
-                                    old_state,
-                                    new_state,
+                                    old_state: Box::new(old_state),
+                                    new_state: Box::new(new_state),
                                 });
                             }
                         }
@@ -1887,8 +1887,8 @@ fn render_color_card(
                                     *action = Some(InspectorAction::SetColorGrading {
                                         track_id: track_id.to_string(),
                                         clip_id: clip.id.clone(),
-                                        old_state,
-                                        new_state,
+                                        old_state: Box::new(old_state),
+                                        new_state: Box::new(new_state),
                                     });
                                 }
 
@@ -2249,8 +2249,8 @@ fn render_color_card(
                                         *action = Some(InspectorAction::SetColorGrading {
                                             track_id: track_id.to_string(),
                                             clip_id: clip.id.clone(),
-                                            old_state,
-                                            new_state,
+                                            old_state: Box::new(old_state),
+                                            new_state: Box::new(new_state),
                                         });
                                     }
                                 }
@@ -2286,8 +2286,8 @@ fn render_color_card(
                                 *action = Some(InspectorAction::SetColorGrading {
                                     track_id: track_id.to_string(),
                                     clip_id: clip.id.clone(),
-                                    old_state,
-                                    new_state,
+                                    old_state: Box::new(old_state),
+                                    new_state: Box::new(new_state),
                                 });
                             }
                             ui.label(

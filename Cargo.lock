@@ -3063,7 +3063,7 @@ dependencies = [
 
 [[package]]
 name = "trim-app"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "eframe",
  "egui",
@@ -3082,7 +3082,7 @@ dependencies = [
 
 [[package]]
 name = "trim-commands"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "log",
  "tempfile",
@@ -3093,7 +3093,7 @@ dependencies = [
 
 [[package]]
 name = "trim-core"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "log",
  "serde",
@@ -3105,13 +3105,11 @@ dependencies = [
 
 [[package]]
 name = "trim-export"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "log",
  "serde",
- "serde_json",
  "tempfile",
- "thiserror 1.0.69",
  "trim-core",
  "trim-media",
  "uuid",
@@ -3119,7 +3117,7 @@ dependencies = [
 
 [[package]]
 name = "trim-media"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "image",
  "log",
@@ -3133,7 +3131,7 @@ dependencies = [
 
 [[package]]
 name = "trim-project"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "log",
  "serde",
@@ -3145,19 +3143,16 @@ dependencies = [
 
 [[package]]
 name = "trim-timeline"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
- "log",
  "tempfile",
- "thiserror 1.0.69",
  "trim-commands",
  "trim-core",
- "uuid",
 ]
 
 [[package]]
 name = "trim-ui"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "eframe",
  "egui",

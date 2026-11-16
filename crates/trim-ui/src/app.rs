@@ -1324,29 +1324,9 @@ impl eframe::App for TrimApp {
                 } else if (i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(Key::Z))
                     || (i.modifiers.ctrl && i.key_pressed(Key::Y))
                 {
-                    let _ = self.undo_stack.redo(&mut self.project.timeline);
-                    self.canvas_state
-                        .selected_clip_pairs
-                        .retain(|(tr_id, cl_id)| {
-                            self.project
-                                .timeline
-                                .get_track_by_id(tr_id)
-                                .and_then(|t| t.get_clip_by_id(cl_id))
-                                .is_some()
-                        });
-                    self.project.mark_dirty();
+                    self.perform_redo();
                 } else if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(Key::Z) {
-                    let _ = self.undo_stack.undo(&mut self.project.timeline);
-                    self.canvas_state
-                        .selected_clip_pairs
-                        .retain(|(tr_id, cl_id)| {
-                            self.project
-                                .timeline
-                                .get_track_by_id(tr_id)
-                                .and_then(|t| t.get_clip_by_id(cl_id))
-                                .is_some()
-                        });
-                    self.project.mark_dirty();
+                    self.perform_undo();
                 } else if i.key_pressed(Key::F1) {
                     self.shortcuts_dialog.toggle();
                 } else if i.modifiers.ctrl && i.key_pressed(Key::S) {
@@ -1531,17 +1511,7 @@ impl eframe::App for TrimApp {
                         .add_enabled(can_undo, Button::new(lang.t("menu_undo")))
                         .clicked()
                     {
-                        let _ = self.undo_stack.undo(&mut self.project.timeline);
-                        self.canvas_state
-                            .selected_clip_pairs
-                            .retain(|(tr_id, cl_id)| {
-                                self.project
-                                    .timeline
-                                    .get_track_by_id(tr_id)
-                                    .and_then(|t| t.get_clip_by_id(cl_id))
-                                    .is_some()
-                            });
-                        self.project.mark_dirty();
+                        self.perform_undo();
                         ui.close_menu();
                     }
                     let can_redo = self.undo_stack.can_redo();
@@ -1549,17 +1519,7 @@ impl eframe::App for TrimApp {
                         .add_enabled(can_redo, Button::new(lang.t("menu_redo")))
                         .clicked()
                     {
-                        let _ = self.undo_stack.redo(&mut self.project.timeline);
-                        self.canvas_state
-                            .selected_clip_pairs
-                            .retain(|(tr_id, cl_id)| {
-                                self.project
-                                    .timeline
-                                    .get_track_by_id(tr_id)
-                                    .and_then(|t| t.get_clip_by_id(cl_id))
-                                    .is_some()
-                            });
-                        self.project.mark_dirty();
+                        self.perform_redo();
                         ui.close_menu();
                     }
                     ui.separator();
@@ -3417,6 +3377,7 @@ impl eframe::App for TrimApp {
                                     } else {
                                         self.project.media_pool.remove(&m_id);
                                         self.media_bin_textures.remove(&m_id);
+                                        self.media_bin_textures.remove(&format!("strip:{m_id}"));
                                         if self.source_state.media_id.as_deref() == Some(&m_id) {
                                             self.source_state.media_id = None;
                                         }
@@ -3633,7 +3594,7 @@ impl eframe::App for TrimApp {
                                     new_state,
                                 } => {
                                     let cmd = Box::new(SetClipColorGradingCommand::new(
-                                        track_id, clip_id, old_state, new_state,
+                                        track_id, clip_id, *old_state, *new_state,
                                     ));
                                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                     self.project.mark_dirty();

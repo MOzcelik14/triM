@@ -63,6 +63,8 @@ pub struct TimelineCanvasState {
     pub pending_scroll_y: Option<f32>,
     pub drag_kf_index: Option<usize>,
     pub drag_orig_keyframes: Vec<trim_core::keyframe::Keyframe>,
+    /// Cached `(file_path, exists, checked_at)` per `media_id` to avoid per-frame `stat()` syscalls.
+    pub media_exists_cache: std::collections::HashMap<String, (String, bool, std::time::Instant)>,
 }
 
 impl Default for TimelineCanvasState {
@@ -96,11 +98,25 @@ impl Default for TimelineCanvasState {
             pending_scroll_y: None,
             drag_kf_index: None,
             drag_orig_keyframes: Vec::new(),
+            media_exists_cache: std::collections::HashMap::new(),
         }
     }
 }
 
 impl TimelineCanvasState {
+    pub fn is_media_online(&mut self, media_id: &str, file_path: &str) -> bool {
+        let now = std::time::Instant::now();
+        if let Some((cached_path, exists, checked_at)) = self.media_exists_cache.get(media_id) {
+            if cached_path == file_path && now.duration_since(*checked_at).as_secs() < 3 {
+                return *exists;
+            }
+        }
+        let exists = std::path::Path::new(file_path).exists();
+        self.media_exists_cache
+            .insert(media_id.to_string(), (file_path.to_string(), exists, now));
+        exists
+    }
+
     pub fn get_track_height(&self, track_id: &str) -> f32 {
         self.track_heights
             .get(track_id)
@@ -383,10 +399,16 @@ pub fn render_timeline_canvas(
         }
 
         // Draw clips on this track
+        let view_clip_rect = ui.clip_rect();
         for clip in &track.clips {
             let cx = rect.left() + (clip.timeline_in as f32 * state.pixels_per_second);
             let cw = (clip.duration() as f32 * state.pixels_per_second).max(4.0);
             let clip_rect = Rect::from_min_size(Pos2::new(cx, ty), Vec2::new(cw, track_h));
+            if clip_rect.right() < view_clip_rect.left() - 32.0
+                || clip_rect.left() > view_clip_rect.right() + 32.0
+            {
+                continue;
+            }
 
             let is_sel = selected_ids.contains(&clip.id);
 
@@ -437,7 +459,7 @@ pub fn render_timeline_canvas(
             };
 
             let is_offline = match project.get_media(&clip.media_id) {
-                Some(m) => !std::path::Path::new(&m.file_path).exists(),
+                Some(m) => !state.is_media_online(&m.id, &m.file_path),
                 None => clip.text_overlay.is_none() && !clip.is_adjustment_layer(),
             };
 

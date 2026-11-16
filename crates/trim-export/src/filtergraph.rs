@@ -960,9 +960,16 @@ impl TimelineExporter {
 
                     c.timeline_in = eff_in;
                     c.timeline_out = eff_out;
-                    c.source_in += front_cut * c.speed;
                     let new_dur = (eff_out - eff_in).max(0.001);
-                    c.source_out = Some(c.source_in + new_dur * c.speed);
+                    if !c.reverse {
+                        c.source_in += front_cut * c.speed;
+                        c.source_out = Some(c.source_in + new_dur * c.speed);
+                    } else {
+                        let orig_sout = c.effective_source_out();
+                        let new_sout = (orig_sout - front_cut * c.speed).max(c.source_in);
+                        c.source_out = Some(new_sout);
+                        c.source_in = (new_sout - new_dur * c.speed).max(0.0);
+                    }
 
                     if front_cut > 0.0 {
                         c.fade_in = (c.fade_in - front_cut).max(0.0);
@@ -1275,7 +1282,17 @@ impl TimelineExporter {
             }
         }
 
-        filters.push(format!("[{last_video}]format=yuv420p[outv]"));
+        let codec_args = Self::resolve_video_codec_args(preset);
+        let uses_vaapi = codec_args.iter().any(|a| a.contains("vaapi"));
+        let is_prores = preset.video_codec.contains("prores");
+
+        if uses_vaapi {
+            filters.push(format!("[{last_video}]format=nv12,hwupload[outv]"));
+        } else if is_prores {
+            filters.push(format!("[{last_video}]format=yuv422p10le[outv]"));
+        } else {
+            filters.push(format!("[{last_video}]format=yuv420p[outv]"));
+        }
 
         let mut mix = format!("[{base_a}:a]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[abed];[abed]");
         for l in &audio_labels {
@@ -1304,6 +1321,9 @@ impl TimelineExporter {
             "error".into(),
             "-nostdin".into(),
         ];
+        if uses_vaapi {
+            cmd.extend(["-vaapi_device".into(), "/dev/dri/renderD128".into()]);
+        }
         cmd.extend(inputs.args);
         cmd.extend([
             "-filter_complex".into(),
@@ -1313,17 +1333,20 @@ impl TimelineExporter {
             "-map".into(),
             "[outa]".into(),
         ]);
-        cmd.extend(Self::resolve_video_codec_args(preset));
+        cmd.extend(codec_args);
         cmd.extend([
             "-c:a".into(),
             preset.audio_codec.clone(),
             "-b:a".into(),
             preset.audio_bitrate.clone(),
-            "-pix_fmt".into(),
-            "yuv420p".into(),
-            "-r".into(),
-            format!("{}", out_fps),
         ]);
+        if !uses_vaapi {
+            cmd.extend([
+                "-pix_fmt".into(),
+                if is_prores { "yuv422p10le" } else { "yuv420p" }.into(),
+            ]);
+        }
+        cmd.extend(["-r".into(), format!("{}", out_fps)]);
 
         cmd.extend(vec![
             "-t".into(),

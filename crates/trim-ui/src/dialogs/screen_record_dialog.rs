@@ -193,11 +193,12 @@ impl ScreenRecordDialog {
             });
         });
 
-        if is_rec {
-            ctx.request_repaint();
+        if !open {
+            self.close();
+        } else if is_rec {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
 
-        self.is_open = open;
         action
     }
 }

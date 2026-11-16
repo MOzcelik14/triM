@@ -137,7 +137,12 @@ impl TrimApp {
                 let cur = self.clock_start_time + elapsed;
                 let dur = self.project.timeline.duration();
 
-                if dur > 0.0 && (cur >= dur || cur < 0.0) {
+                if dur <= 0.0 {
+                    self.current_time = 0.0;
+                    self.pause();
+                    return;
+                }
+                if cur >= dur || cur < 0.0 {
                     self.current_time = cur.clamp(0.0, dur);
                     self.pause();
                 } else {
@@ -452,12 +457,15 @@ impl TrimApp {
 
                 let monitor_bounds = Rect::from_min_max(
                     avail_rect.min,
-                    Pos2::new(avail_rect.max.x, avail_rect.max.y - 56.0),
+                    Pos2::new(
+                        avail_rect.max.x.max(avail_rect.min.x + 1.0),
+                        (avail_rect.max.y - 56.0).max(avail_rect.min.y + 1.0),
+                    ),
                 );
 
                 let video_rect = {
-                    let w = monitor_bounds.width();
-                    let h = monitor_bounds.height();
+                    let w = monitor_bounds.width().max(1.0);
+                    let h = monitor_bounds.height().max(1.0);
                     let (vw, vh) = if w / h > ar { (h * ar, h) } else { (w, w / ar) };
                     Rect::from_center_size(monitor_bounds.center(), Vec2::new(vw, vh))
                 };
@@ -620,5 +628,43 @@ impl TrimApp {
                     });
                 });
             });
+    }
+
+    /// Undoes the last timeline command and invalidates playback caches.
+    pub fn perform_undo(&mut self) {
+        if let Ok(true) = self.undo_stack.undo(&mut self.project.timeline) {
+            self.canvas_state
+                .selected_clip_pairs
+                .retain(|(tr_id, cl_id)| {
+                    self.project
+                        .timeline
+                        .get_track_by_id(tr_id)
+                        .and_then(|t| t.get_clip_by_id(cl_id))
+                        .is_some()
+                });
+            self.video_engine.clear_cache();
+            self.audio_mixer.clear_cache();
+            self.last_rendered_monitor_frame = None;
+            self.project.mark_dirty();
+        }
+    }
+
+    /// Redoes the last undone timeline command and invalidates playback caches.
+    pub fn perform_redo(&mut self) {
+        if let Ok(true) = self.undo_stack.redo(&mut self.project.timeline) {
+            self.canvas_state
+                .selected_clip_pairs
+                .retain(|(tr_id, cl_id)| {
+                    self.project
+                        .timeline
+                        .get_track_by_id(tr_id)
+                        .and_then(|t| t.get_clip_by_id(cl_id))
+                        .is_some()
+                });
+            self.video_engine.clear_cache();
+            self.audio_mixer.clear_cache();
+            self.last_rendered_monitor_frame = None;
+            self.project.mark_dirty();
+        }
     }
 }

@@ -105,7 +105,8 @@ pub fn generate_edl(project: &Project) -> String {
             } else if let Some(m) = media_opt {
                 m.name.clone()
             } else {
-                format!("CLIP_{}", &clip.id[..clip.id.len().min(8)])
+                let short_id: String = clip.id.chars().take(8).collect();
+                format!("CLIP_{short_id}")
             };
 
             let src_in = clip.source_in;

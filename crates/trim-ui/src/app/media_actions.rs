@@ -43,7 +43,9 @@ impl TrimApp {
             }
             self.status_message = format!(
                 "⚡ Proxy zaten mevcut: {}",
-                out.file_name().unwrap().to_string_lossy()
+                out.file_name()
+                    .map(|n| n.to_string_lossy())
+                    .unwrap_or_default()
             );
             return;
         }

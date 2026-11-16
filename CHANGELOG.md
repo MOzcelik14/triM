@@ -2,6 +2,20 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [2.0.1] - 2026-11-16
+
+### Fixed
+- **Stability & Undo/Redo**:
+  - Prevented infinite playback clock advance on empty timelines (`dur <= 0.0`).
+  - Added centralized playback cache invalidation (`video_engine`, `audio_mixer`, monitor frame) on Undo/Redo, bounded `UndoStack` to 200 entries, and preserved commands if `undo()`/`execute()` fails.
+  - Included `halation`, `bloom`, `chromatic_aberration`, `custom_curves`, `hsl_curves`, and `hsl_qualifier` in `SetClipColorGradingCommand`.
+- **Timeline Editing & Crash Protection**:
+  - Fixed `Clip::trim_in`/`trim_out` for keyframes, speed ramps, and reversed clips; partitioned mask keyframes and supported N-way `linked_group_id` in `SplitClipCommand`, `BatchSplitClipCommand`, and `RippleDeleteCommand`.
+  - Guarded parametric EQ against >6 enabled bands, removed non-UTF-8 `unwrap()` panics in media/EDL paths, guarded fullscreen zero-height division, and stopped active screen recording when closing the dialog via `X`.
+- **Performance & FFmpeg Export**:
+  - Added horizontal viewport culling and 3s TTL-cached offline media checks in `canvas.rs`; fixed mask keyframe hashing in `GpuCompositor` and filmstrip texture cleanup on media deletion.
+  - Fixed `ProRes 422` (`yuv422p10le`), `VAAPI` (`format=nv12,hwupload` + `-vaapi_device`), `reverse` range slicing, `ExportRunner` cancel race, stderr size cap, and `-filter_complex_script` fallback for large filtergraphs.
+
 ## [2.0.0] - 2026-11-15
 
 ### Added

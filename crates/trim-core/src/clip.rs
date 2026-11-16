@@ -1169,14 +1169,39 @@ impl Clip {
     pub fn trim_in(&mut self, new_in: f64) {
         let clamped_in = new_in.clamp(0.0, self.timeline_out - 0.04);
         let dt = clamped_in - self.timeline_in;
+        if dt.abs() < 1e-9 {
+            return;
+        }
+        let new_source_edge = self.map_timeline_to_source(clamped_in);
         self.timeline_in = clamped_in;
-        self.source_in = (self.source_in + dt * self.speed).max(0.0);
+        if !self.reverse {
+            self.source_in = new_source_edge.max(0.0);
+        } else {
+            self.source_out = Some(new_source_edge.max(self.source_in));
+        }
+        for list in self.keyframes.values_mut() {
+            for kf in list.iter_mut() {
+                kf.time -= dt;
+            }
+        }
+        for mask in &mut self.masks {
+            for list in mask.keyframes.values_mut() {
+                for kf in list.iter_mut() {
+                    kf.time -= dt;
+                }
+            }
+        }
     }
 
     pub fn trim_out(&mut self, new_out: f64) {
         let clamped_out = new_out.max(self.timeline_in + 0.04);
+        let new_source_edge = self.map_timeline_to_source(clamped_out);
         self.timeline_out = clamped_out;
-        self.source_out = Some(self.source_in + self.duration() * self.speed);
+        if !self.reverse {
+            self.source_out = Some(new_source_edge.max(self.source_in));
+        } else {
+            self.source_in = new_source_edge.max(0.0);
+        }
     }
 
     /// Changes the playback speed of this clip and proportionally stretches or

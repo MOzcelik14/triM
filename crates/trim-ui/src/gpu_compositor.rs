@@ -1432,6 +1432,13 @@ impl GpuCompositor {
                 v.out_tangent[1].to_bits().hash(&mut hasher);
             }
             m.keyframes.len().hash(&mut hasher);
+            for (prop, kfs) in &m.keyframes {
+                prop.hash(&mut hasher);
+                for kf in kfs {
+                    kf.time.to_bits().hash(&mut hasher);
+                    kf.value.to_bits().hash(&mut hasher);
+                }
+            }
         }
         let key_hash = hasher.finish();
 

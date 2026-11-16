@@ -300,6 +300,9 @@ impl AudioMixer {
                 if let Some(peq) = &clip.parametric_eq {
                     if !peq.is_flat() {
                         for band in &peq.bands {
+                            if active_eq_count >= eq_coeffs.len() {
+                                break;
+                            }
                             if !band.enabled || band.gain_db.abs() < 0.05 {
                                 continue;
                             }

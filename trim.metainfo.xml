@@ -56,6 +56,17 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2.0.1" date="2026-11-16">
+      <description>
+        <p>triM. v2.0.1 - Kararlılık, Performans ve FFmpeg Export Düzeltmeleri:</p>
+        <ul>
+          <li>Boş zaman çizelgesinde sonsuz oynatma düzeltmesi, Undo/Redo sonrası önbellek temizliği ve v2.0.0 renk efektlerinin geri alma desteği.</li>
+          <li>Ters/hız rampalı kliplerde kırpma (trim), maske keyframe bölme, N-yollu bağlı klip bölme/silme ve panik korumaları.</li>
+          <li>Zaman çizelgesi yatay görünüm kırpma (culling) ve önbellekli offline medya kontrolü ile yüksek UI akıcılığı.</li>
+          <li>ProRes 422, VAAPI donanım kodlama, ters klip aralık dışa aktarma ve iptal güvenliği düzeltmeleri.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.0" date="2026-11-15">
       <description>
         <p>triM. v2.0.0 - DaVinci Resolve &amp; Premiere Pro Seviyesinde Renk, Fairlight Ses, Multicam ve Profesyonel Teslimat Paketi:</p>

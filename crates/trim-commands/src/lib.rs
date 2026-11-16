@@ -25,6 +25,9 @@ pub trait Command: std::fmt::Debug + Send + Sync {
     fn name(&self) -> &str;
 }
 
+/// Maximum number of undo steps retained in memory.
+pub const MAX_UNDO_HISTORY: usize = 200;
+
 /// Stack of reversible commands.
 #[derive(Default, Debug)]
 pub struct UndoStack {
@@ -44,13 +47,20 @@ impl UndoStack {
     ) -> Result<(), CommandError> {
         command.execute(timeline)?;
         self.undo_stack.push(command);
+        if self.undo_stack.len() > MAX_UNDO_HISTORY {
+            let overflow = self.undo_stack.len() - MAX_UNDO_HISTORY;
+            self.undo_stack.drain(0..overflow);
+        }
         self.redo_stack.clear();
         Ok(())
     }
 
     pub fn undo(&mut self, timeline: &mut TimelineModel) -> Result<bool, CommandError> {
         if let Some(mut command) = self.undo_stack.pop() {
-            command.undo(timeline)?;
+            if let Err(err) = command.undo(timeline) {
+                self.undo_stack.push(command);
+                return Err(err);
+            }
             self.redo_stack.push(command);
             Ok(true)
         } else {
@@ -60,7 +70,10 @@ impl UndoStack {
 
     pub fn redo(&mut self, timeline: &mut TimelineModel) -> Result<bool, CommandError> {
         if let Some(mut command) = self.redo_stack.pop() {
-            command.execute(timeline)?;
+            if let Err(err) = command.execute(timeline) {
+                self.redo_stack.push(command);
+                return Err(err);
+            }
             self.undo_stack.push(command);
             Ok(true)
         } else {

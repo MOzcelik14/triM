@@ -63,7 +63,7 @@ impl TrimApp {
         let mut item = if let Ok(it) = FFprobeAnalyzer::analyze(&out_png) {
             it
         } else {
-            let mut it = trim_core::media::MediaItem::new(out_png.to_str().unwrap());
+            let mut it = trim_core::media::MediaItem::new(&out_png);
             it.media_type = trim_core::media::MediaType::Image;
             it
         };
