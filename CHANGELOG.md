@@ -2,6 +2,26 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [2.1.0] - 2026-11-17
+
+### Added
+- **Audio Scrubbing & JKL Shuttle Audio Preview**: Real-time 30ms audio scrubbing on playhead drag and forward/reverse resampled audio playback across JKL shuttle speeds (`2x`, `4x`, `8x`, `-1x`).
+- **Multi-Track Video Playback (`PlaybackStreamer` Pool)**: Per-clip `extra_streamers` and `clip_last_frames` in `VideoEngine` with unified `resolve_layer_source_frame`, eliminating cross-track frame bleed in PiP and multi-layer playback.
+- **Export Parity & Regression Tests**: Added `rotation` (static + keyframed `rotate`), `speed`-keyframe average `atempo` sync, and `pitch_lock == false` (`asetrate`) support in `filtergraph.rs`, plus new tests for `ripple_trim_head/tail` and export parity.
+- **Shortcut Consistency**: Bound `Ctrl+R` to the Clip Speed/Duration dialog and fixed DaVinci Resolve `A` tool status feedback.
+
+### Changed & Fixed
+- **Performance & Concurrency**:
+  - Added mtime-aware 16-entry LRU cache (`CUBE_LUT_CACHE`) for `.cube` 3D LUT files.
+  - Eliminated 601x `Vec` allocations/sorts in `keyframe::interpolate_keyframes` / `integrate_keyframes` for sorted keyframes.
+  - Added persistent per-clip `ClipDspState` (EQ, compressor, de-esser, reverb/echo delay buffer) across audio chunks.
+  - Replaced unbounded `AudioMixer::preload_audio_async` threads with a bounded 2-worker pool and separated lock acquisition order.
+  - Moved Whisper transcription, Smart Scene Cut, and Silence Detection off the UI thread onto `BackgroundTaskMsg` workers (with single-step `MacroCommand` undo for Whisper).
+  - Avoided redundant mask GPU uploads in `GpuCompositor` via `uploaded_mask_key` and bounded `mask_cache` to 32 entries.
+- **Portability & Platform**:
+  - Included `proxy_path` and `custom_lut_path` in `bundle_project`, sanitized bundled `.trim` filenames, and switched `AutosaveManager` to deterministic FNV-1a hashing.
+  - Fixed `fcpxml` percent-encoding and Windows drive-letter `file://` decoding, OS-specific FFmpeg missing alerts (Linux vs Windows), and Turkish `Videolar` XDG export path fallback.
+
 ## [2.0.2] - 2026-11-16
 
 ### Added

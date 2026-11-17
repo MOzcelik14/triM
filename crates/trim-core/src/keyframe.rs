@@ -174,27 +174,20 @@ impl Keyframe {
     }
 }
 
-/// Evaluates interpolated value from a list of keyframes at relative time `t`.
-pub fn interpolate_keyframes(keyframes: &[Keyframe], time: f64, default_value: f64) -> f64 {
-    if keyframes.is_empty() {
+fn interpolate_sorted(sorted: &[Keyframe], time: f64, default_value: f64) -> f64 {
+    if sorted.is_empty() {
         return default_value;
     }
-    if keyframes.len() == 1 {
-        return keyframes[0].value;
+    if sorted.len() == 1 {
+        return sorted[0].value;
     }
-
-    let mut sorted = keyframes.to_vec();
-    sorted.sort_by(|a, b| {
-        a.time
-            .partial_cmp(&b.time)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
     if time <= sorted[0].time {
         return sorted[0].value;
     }
-    if time >= sorted.last().unwrap().time {
-        return sorted.last().unwrap().value;
+    if let Some(last) = sorted.last() {
+        if time >= last.time {
+            return last.value;
+        }
     }
 
     for i in 0..sorted.len() - 1 {
@@ -214,7 +207,28 @@ pub fn interpolate_keyframes(keyframes: &[Keyframe], time: f64, default_value: f
         }
     }
 
-    sorted.last().unwrap().value
+    sorted.last().map(|k| k.value).unwrap_or(default_value)
+}
+
+/// Evaluates interpolated value from a list of keyframes at relative time `t`.
+pub fn interpolate_keyframes(keyframes: &[Keyframe], time: f64, default_value: f64) -> f64 {
+    if keyframes.is_empty() {
+        return default_value;
+    }
+    if keyframes.len() == 1 {
+        return keyframes[0].value;
+    }
+    if keyframes.windows(2).all(|w| w[0].time <= w[1].time) {
+        return interpolate_sorted(keyframes, time, default_value);
+    }
+
+    let mut sorted = keyframes.to_vec();
+    sorted.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    interpolate_sorted(&sorted, time, default_value)
 }
 
 /// Integrates a keyframe curve from `0.0` to `t_end` (used for Speed Ramping / Time Remapping).
@@ -229,14 +243,28 @@ pub fn integrate_keyframes(keyframes: &[Keyframe], t_end: f64, default_value: f6
         return keyframes[0].value.max(0.05) * t_end;
     }
 
+    let owned_sorted;
+    let sorted: &[Keyframe] = if keyframes.windows(2).all(|w| w[0].time <= w[1].time) {
+        keyframes
+    } else {
+        let mut s = keyframes.to_vec();
+        s.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        owned_sorted = s;
+        &owned_sorted
+    };
+
     // Composite Simpson's / trapezoidal integration with adaptive subdivisions
     let steps = ((t_end * 60.0).ceil() as usize).clamp(16, 600);
     let dt = t_end / steps as f64;
     let mut area = 0.0;
-    let mut prev_v = interpolate_keyframes(keyframes, 0.0, default_value).max(0.05);
+    let mut prev_v = interpolate_sorted(sorted, 0.0, default_value).max(0.05);
     for step in 1..=steps {
         let curr_t = step as f64 * dt;
-        let curr_v = interpolate_keyframes(keyframes, curr_t, default_value).max(0.05);
+        let curr_v = interpolate_sorted(sorted, curr_t, default_value).max(0.05);
         area += 0.5 * (prev_v + curr_v) * dt;
         prev_v = curr_v;
     }

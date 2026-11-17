@@ -239,4 +239,22 @@ mod tests {
         assert!(res2);
         assert_eq!(tl.tracks[0].clips.len(), 2);
     }
+
+    #[test]
+    fn test_ripple_trim_head_and_tail() {
+        let mut tl = TimelineModel::default();
+        let mut stack = UndoStack::new();
+        tl.tracks[0].add_clip(Clip::new("m1", 0.0, 10.0));
+        tl.tracks[0].add_clip(Clip::new("m2", 10.0, 15.0));
+
+        // Ripple trim tail of m1 to 7.0 -> m2 should shift left by 3.0s to [7.0, 12.0]
+        assert!(ripple_trim_tail(&mut tl, &mut stack, None, None, 7.0));
+        assert!((tl.tracks[0].clips[0].timeline_out - 7.0).abs() < 1e-6);
+        assert!((tl.tracks[0].clips[1].timeline_in - 7.0).abs() < 1e-6);
+
+        // Ripple trim head of m1 at 2.0 -> m1 becomes [0.0, 5.0], m2 shifts to [5.0, 10.0]
+        assert!(ripple_trim_head(&mut tl, &mut stack, None, None, 2.0));
+        assert!((tl.tracks[0].clips[0].duration() - 5.0).abs() < 1e-6);
+        assert!((tl.tracks[0].clips[1].timeline_in - 5.0).abs() < 1e-6);
+    }
 }

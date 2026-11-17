@@ -661,19 +661,46 @@ pub fn parse_cube_lut_str(content: &str) -> Option<CubeLut3D> {
     })
 }
 
-pub fn parse_cube_lut_file<P: AsRef<Path>>(path: P) -> Option<CubeLut3D> {
+static CUBE_LUT_CACHE: std::sync::OnceLock<Mutex<LruCache<String, Option<Arc<CubeLut3D>>>>> =
+    std::sync::OnceLock::new();
+
+pub fn parse_cube_lut_file<P: AsRef<Path>>(path: P) -> Option<Arc<CubeLut3D>> {
     let norm = trim_core::paths::normalize_path(path);
-    let content = std::fs::read_to_string(norm).ok()?;
-    parse_cube_lut_str(&content)
+    let mtime_key = std::fs::metadata(&norm)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let cache_key = format!("{}#{}", norm.to_string_lossy(), mtime_key);
+
+    let cache = CUBE_LUT_CACHE.get_or_init(|| Mutex::new(LruCache::with_capacity(16)));
+    if let Ok(mut guard) = cache.lock() {
+        if let Some(cached) = guard.get(&cache_key) {
+            return cached.clone();
+        }
+    }
+
+    let parsed = std::fs::read_to_string(&norm)
+        .ok()
+        .and_then(|content| parse_cube_lut_str(&content))
+        .map(Arc::new);
+
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(cache_key, parsed.clone());
+    }
+    parsed
 }
 
 /// High-level video playback and composite rendering engine.
 pub struct VideoEngine {
     pub streamer: PlaybackStreamer,
+    pub extra_streamers: HashMap<String, PlaybackStreamer>,
     pub async_decoder: AsyncFrameDecoder,
     pub frame_cache: FrameCacheMap,
     pub image_cache: HashMap<String, Arc<RgbaImage>>,
     pub last_raw_source_frame: Option<Arc<RgbaImage>>,
+    pub clip_last_frames: HashMap<String, Arc<RgbaImage>>,
     pub last_rendered_frame: Option<Arc<RgbaImage>>,
     pub is_decoding_seek: bool,
     pub use_proxies: bool,
@@ -689,10 +716,12 @@ impl VideoEngine {
     pub fn new() -> Self {
         Self {
             streamer: PlaybackStreamer::new(),
+            extra_streamers: HashMap::new(),
             async_decoder: AsyncFrameDecoder::new(),
             frame_cache: Arc::new(RwLock::new(LruCache::with_capacity(300))),
             image_cache: HashMap::new(),
             last_raw_source_frame: None,
+            clip_last_frames: HashMap::new(),
             last_rendered_frame: None,
             is_decoding_seek: false,
             use_proxies: false,
@@ -701,13 +730,132 @@ impl VideoEngine {
 
     pub fn clear_cache(&mut self) {
         self.streamer.stop();
+        for mut s in self.extra_streamers.drain().map(|(_, s)| s) {
+            s.stop();
+        }
         if let Ok(mut fc) = self.frame_cache.write() {
             fc.clear();
         }
         self.image_cache.clear();
         self.last_raw_source_frame = None;
+        self.clip_last_frames.clear();
         self.last_rendered_frame = None;
         self.is_decoding_seek = false;
+    }
+
+    fn resolve_layer_source_frame(
+        &mut self,
+        clip: &trim_core::clip::Clip,
+        eff_path: &str,
+        src_t: f64,
+        is_playing: bool,
+        stream_fps: f64,
+        use_primary_streamer: bool,
+    ) -> Option<Arc<RgbaImage>> {
+        let ts_key = (src_t * 30.0).round() as u64;
+        let key = (eff_path.to_string(), ts_key);
+
+        let streamer_frame = if is_playing {
+            let target_streamer = if use_primary_streamer {
+                &mut self.streamer
+            } else {
+                self.extra_streamers.entry(clip.id.clone()).or_default()
+            };
+            if target_streamer.active_clip_id() == Some(&clip.id) {
+                if target_streamer.should_restart(src_t, clip.reverse) {
+                    target_streamer.start(
+                        &clip.id,
+                        eff_path,
+                        src_t,
+                        stream_fps,
+                        clip.reverse,
+                        clip.source_in,
+                    );
+                }
+                target_streamer.get_frame_for_time(src_t)
+            } else if use_primary_streamer && target_streamer.is_active() {
+                // Primary streamer busy with another clip; use dedicated per-clip streamer
+                let extra = self.extra_streamers.entry(clip.id.clone()).or_default();
+                if extra.active_clip_id() != Some(&clip.id)
+                    || extra.should_restart(src_t, clip.reverse)
+                {
+                    extra.start(
+                        &clip.id,
+                        eff_path,
+                        src_t,
+                        stream_fps,
+                        clip.reverse,
+                        clip.source_in,
+                    );
+                }
+                extra.get_frame_for_time(src_t)
+            } else {
+                target_streamer.start(
+                    &clip.id,
+                    eff_path,
+                    src_t,
+                    stream_fps,
+                    clip.reverse,
+                    clip.source_in,
+                );
+                target_streamer.get_frame_for_time(src_t)
+            }
+        } else {
+            if self.streamer.is_active() {
+                self.streamer.stop();
+            }
+            for s in self.extra_streamers.values_mut() {
+                if s.is_active() {
+                    s.stop();
+                }
+            }
+            None
+        };
+
+        if let Some(sf) = streamer_frame {
+            if self.clip_last_frames.len() > 16 {
+                self.clip_last_frames.clear();
+            }
+            self.clip_last_frames.insert(clip.id.clone(), sf.clone());
+            self.last_raw_source_frame = Some(sf.clone());
+            return Some(sf);
+        }
+
+        let cached = self
+            .frame_cache
+            .write()
+            .ok()
+            .and_then(|mut c| c.get(&key).cloned());
+        if let Some(c) = cached {
+            self.clip_last_frames.insert(clip.id.clone(), c.clone());
+            self.last_raw_source_frame = Some(c.clone());
+            self.is_decoding_seek = false;
+            return Some(c);
+        }
+
+        if let Some(prev) = self.clip_last_frames.get(&clip.id).cloned() {
+            if !self.is_decoding_seek {
+                self.async_decoder.request_seek(eff_path, src_t);
+                self.is_decoding_seek = true;
+            }
+            return Some(prev);
+        }
+
+        if let Some(frame) = decode_frame_raw(eff_path, src_t) {
+            let arc = Arc::new(frame);
+            if let Ok(mut cache) = self.frame_cache.write() {
+                cache.insert(key, arc.clone());
+            }
+            if self.clip_last_frames.len() > 16 {
+                self.clip_last_frames.clear();
+            }
+            self.clip_last_frames.insert(clip.id.clone(), arc.clone());
+            self.last_raw_source_frame = Some(arc.clone());
+            self.is_decoding_seek = false;
+            Some(arc)
+        } else {
+            None
+        }
     }
 
     /// Dynamically sets the maximum number of frames held in the LRU frame cache.
@@ -901,12 +1049,22 @@ impl VideoEngine {
         }
 
         let mut layers = Vec::with_capacity(visible_clips.len());
+        let active_ids: std::collections::HashSet<&str> =
+            visible_clips.iter().map(|(_, c)| c.id.as_str()).collect();
+        self.extra_streamers.retain(|id, s| {
+            if active_ids.contains(id.as_str()) {
+                true
+            } else {
+                s.stop();
+                false
+            }
+        });
 
-        for (_track, clip) in visible_clips {
+        for (layer_idx, (_track, clip)) in visible_clips.iter().enumerate() {
             if clip.is_adjustment_layer() {
                 let sentinel = Arc::new(ImageBuffer::from_pixel(1, 1, Rgba([0, 0, 0, 0])));
                 layers.push(CompositorLayer {
-                    clip: clip.clone(),
+                    clip: (*clip).clone(),
                     frame: sentinel,
                 });
                 continue;
@@ -934,83 +1092,24 @@ impl VideoEngine {
                     }
                 }
                 _ => {
-                    let eff_path = media_item.resolved_playback_path(self.use_proxies);
+                    let eff_path = media_item
+                        .resolved_playback_path(self.use_proxies)
+                        .to_string();
                     let src_t = clip.map_timeline_to_source(timeline_time);
-                    let ts_key = (src_t * 30.0).round() as u64;
-                    let key = (eff_path.to_string(), ts_key);
-
-                    let streamer_frame = if is_playing {
-                        if self.streamer.active_clip_id() == Some(&clip.id) {
-                            if self.streamer.should_restart(src_t, clip.reverse) {
-                                self.streamer.start(
-                                    &clip.id,
-                                    eff_path,
-                                    src_t,
-                                    project.timeline.fps,
-                                    clip.reverse,
-                                    clip.source_in,
-                                );
-                            }
-                            self.streamer.get_frame_for_time(src_t)
-                        } else if !self.streamer.is_active() {
-                            self.streamer.start(
-                                &clip.id,
-                                eff_path,
-                                src_t,
-                                project.timeline.fps,
-                                clip.reverse,
-                                clip.source_in,
-                            );
-                            self.streamer.get_frame_for_time(src_t)
-                        } else {
-                            None
-                        }
-                    } else {
-                        if self.streamer.is_active() {
-                            self.streamer.stop();
-                        }
-                        None
-                    };
-
-                    if let Some(sf) = streamer_frame {
-                        self.last_raw_source_frame = Some(sf.clone());
-                        Some(sf)
-                    } else {
-                        let cached = self
-                            .frame_cache
-                            .write()
-                            .ok()
-                            .and_then(|mut c| c.get(&key).cloned());
-                        if let Some(c) = cached {
-                            self.last_raw_source_frame = Some(c.clone());
-                            self.is_decoding_seek = false;
-                            Some(c)
-                        } else if self.last_raw_source_frame.is_none() {
-                            if let Some(frame) = decode_frame_raw(eff_path, src_t) {
-                                let arc = Arc::new(frame);
-                                if let Ok(mut cache) = self.frame_cache.write() {
-                                    cache.insert(key, arc.clone());
-                                }
-                                self.last_raw_source_frame = Some(arc.clone());
-                                self.is_decoding_seek = false;
-                                Some(arc)
-                            } else {
-                                None
-                            }
-                        } else {
-                            if !self.is_decoding_seek {
-                                self.async_decoder.request_seek(eff_path, src_t);
-                                self.is_decoding_seek = true;
-                            }
-                            self.last_raw_source_frame.clone()
-                        }
-                    }
+                    self.resolve_layer_source_frame(
+                        clip,
+                        &eff_path,
+                        src_t,
+                        is_playing,
+                        project.timeline.fps,
+                        layer_idx == 0,
+                    )
                 }
             };
 
             if let Some(frame) = frame_img {
                 layers.push(CompositorLayer {
-                    clip: clip.clone(),
+                    clip: (*clip).clone(),
                     frame,
                 });
             }
@@ -1257,8 +1356,18 @@ impl VideoEngine {
 
         // Layered Composite Path: Multiple clips, transitions, opacity, fades, keyframes
         let mut canvas = ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
+        let active_ids: std::collections::HashSet<&str> =
+            visible_clips.iter().map(|(_, c)| c.id.as_str()).collect();
+        self.extra_streamers.retain(|id, s| {
+            if active_ids.contains(id.as_str()) {
+                true
+            } else {
+                s.stop();
+                false
+            }
+        });
 
-        for (_track, clip) in visible_clips {
+        for (layer_idx, (_track, clip)) in visible_clips.iter().enumerate() {
             let media_item = match project.get_media(&clip.media_id) {
                 Some(m) => m,
                 None => continue,
@@ -1278,73 +1387,18 @@ impl VideoEngine {
                     }
                 }
                 _ => {
-                    let eff_path = media_item.resolved_playback_path(self.use_proxies);
+                    let eff_path = media_item
+                        .resolved_playback_path(self.use_proxies)
+                        .to_string();
                     let src_t = clip.map_timeline_to_source(timeline_time);
-                    let ts_key = (src_t * 30.0).round() as u64;
-                    let key = (eff_path.to_string(), ts_key);
-
-                    let streamer_frame = if is_playing {
-                        if self.streamer.active_clip_id() == Some(&clip.id) {
-                            if self.streamer.should_restart(src_t, clip.reverse) {
-                                self.streamer.start(
-                                    &clip.id,
-                                    eff_path,
-                                    src_t,
-                                    project.timeline.fps,
-                                    clip.reverse,
-                                    clip.source_in,
-                                );
-                            }
-                            self.streamer.get_frame_for_time(src_t)
-                        } else if !self.streamer.is_active() {
-                            self.streamer.start(
-                                &clip.id,
-                                eff_path,
-                                src_t,
-                                project.timeline.fps,
-                                clip.reverse,
-                                clip.source_in,
-                            );
-                            self.streamer.get_frame_for_time(src_t)
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-
-                    if let Some(sf) = streamer_frame {
-                        self.last_raw_source_frame = Some(sf.clone());
-                        Some(sf)
-                    } else {
-                        let cached = self
-                            .frame_cache
-                            .write()
-                            .ok()
-                            .and_then(|mut c| c.get(&key).cloned());
-                        if let Some(c) = cached {
-                            self.last_raw_source_frame = Some(c.clone());
-                            Some(c)
-                        } else if self.last_raw_source_frame.is_none() {
-                            if let Some(frame) = decode_frame_raw(eff_path, src_t) {
-                                let arc = Arc::new(frame);
-                                if let Ok(mut cache) = self.frame_cache.write() {
-                                    cache.insert(key, arc.clone());
-                                }
-                                self.last_raw_source_frame = Some(arc.clone());
-                                self.is_decoding_seek = false;
-                                Some(arc)
-                            } else {
-                                None
-                            }
-                        } else {
-                            if !self.is_decoding_seek {
-                                self.async_decoder.request_seek(eff_path, src_t);
-                                self.is_decoding_seek = true;
-                            }
-                            self.last_raw_source_frame.clone()
-                        }
-                    }
+                    self.resolve_layer_source_frame(
+                        clip,
+                        &eff_path,
+                        src_t,
+                        is_playing,
+                        project.timeline.fps,
+                        layer_idx == 0,
+                    )
                 }
             };
 
@@ -1542,7 +1596,7 @@ fn draw_clip_onto_canvas(
                     clip,
                     has_color_adj,
                     &color_params,
-                    custom_lut.as_ref(),
+                    custom_lut.as_deref(),
                 );
                 let mr = dr + (gr - dr) * color_mask;
                 let mg = dg + (gg - dg) * color_mask;
@@ -1888,7 +1942,7 @@ fn draw_clip_onto_canvas(
                 clip,
                 has_clip_grading,
                 &color_params,
-                custom_lut.as_ref(),
+                custom_lut.as_deref(),
             );
 
             if vignette_amt > 0.001 {

@@ -16,10 +16,23 @@ pub const MAX_PCM_CACHE_BYTES: usize = 512 * 1024 * 1024; // 512 MB hard cap
 pub type PcmAudioBuffer = Option<Arc<Vec<[i16; 2]>>>;
 pub type PcmCache = Arc<RwLock<LruCache<String, PcmAudioBuffer>>>;
 
+#[derive(Clone, Default)]
+struct ClipDspState {
+    env_level: f32,
+    hp_prev_in: [f32; 2],
+    hp_prev_out: [f32; 2],
+    eq_state: [[[f32; 4]; 2]; 6],
+    comp_env: f32,
+    deess_prev: [f32; 2],
+    delay_buf: Vec<[f32; 2]>,
+    delay_pos: usize,
+}
+
 #[derive(Clone)]
 pub struct AudioMixer {
     pcm_cache: PcmCache,
     in_flight: Arc<(Mutex<HashSet<String>>, Condvar)>,
+    clip_dsp_states: Arc<Mutex<std::collections::HashMap<String, ClipDspState>>>,
     pub limiter: LookaheadLimiter,
     last_mixed_end_time: Option<f64>,
     mix_scratch: Vec<[f32; 2]>,
@@ -47,6 +60,7 @@ impl AudioMixer {
         Self {
             pcm_cache: Arc::new(RwLock::new(LruCache::with_byte_limit(MAX_PCM_CACHE_BYTES))),
             in_flight: Arc::new((Mutex::new(HashSet::new()), Condvar::new())),
+            clip_dsp_states: Arc::new(Mutex::new(std::collections::HashMap::new())),
             limiter,
             last_mixed_end_time: None,
             // Pre-allocate 1 second (48,000 stereo frames) to avoid hot-path allocations during playback ticks
@@ -59,6 +73,9 @@ impl AudioMixer {
     pub fn reset_limiter(&mut self) {
         self.limiter.reset();
         self.last_mixed_end_time = None;
+        if let Ok(mut states) = self.clip_dsp_states.lock() {
+            states.clear();
+        }
     }
 
     /// Dynamically sets the maximum memory limit in bytes for the PCM audio buffer cache.
@@ -81,42 +98,81 @@ impl AudioMixer {
         }
     }
 
-    /// Asynchronously preloads audio PCM in a background thread upon media import.
+    /// Asynchronously preloads audio PCM via a bounded 2-worker background pool upon media import.
     pub fn preload_audio_async<P: AsRef<Path>>(&self, file_path: P) {
+        type PreloadJob = (
+            std::path::PathBuf,
+            PcmCache,
+            Arc<(Mutex<HashSet<String>>, Condvar)>,
+        );
+        static PRELOAD_TX: std::sync::OnceLock<std::sync::mpsc::Sender<PreloadJob>> =
+            std::sync::OnceLock::new();
+
+        let tx = PRELOAD_TX.get_or_init(|| {
+            let (tx, rx) = std::sync::mpsc::channel::<PreloadJob>();
+            let rx = Arc::new(Mutex::new(rx));
+            for _ in 0..2 {
+                let rx_clone = Arc::clone(&rx);
+                std::thread::spawn(move || loop {
+                    let job = {
+                        let Ok(guard) = rx_clone.lock() else { break };
+                        guard.recv()
+                    };
+                    let Ok((path, cache_clone, in_flight_clone)) = job else {
+                        break;
+                    };
+                    let path_str = path.to_string_lossy().to_string();
+                    let already_cached = cache_clone
+                        .read()
+                        .ok()
+                        .and_then(|c| c.peek(&path_str).and_then(|v| v.as_ref()).cloned())
+                        .is_some();
+                    if !already_cached {
+                        let should_decode = {
+                            let (lock, _) = &*in_flight_clone;
+                            if let Ok(mut set) = lock.lock() {
+                                if set.contains(&path_str) {
+                                    false
+                                } else {
+                                    set.insert(path_str.clone());
+                                    true
+                                }
+                            } else {
+                                false
+                            }
+                        };
+                        if should_decode {
+                            let pcm = decode_audio_to_pcm(&path).map(Arc::new);
+                            if let Some(ref arc_pcm) = pcm {
+                                let size_bytes = arc_pcm.len() * 4;
+                                if let Ok(mut c) = cache_clone.write() {
+                                    c.insert_with_size(
+                                        path_str.clone(),
+                                        Some(arc_pcm.clone()),
+                                        size_bytes,
+                                    );
+                                }
+                            }
+                            let (lock, cvar) = &*in_flight_clone;
+                            if let Ok(mut set) = lock.lock() {
+                                set.remove(&path_str);
+                                cvar.notify_all();
+                            }
+                        }
+                    }
+                });
+            }
+            tx
+        });
+
         let path = file_path.as_ref().to_path_buf();
         let path_str = path.to_string_lossy().to_string();
-        let cache_clone = self.pcm_cache.clone();
-        let in_flight_clone = self.in_flight.clone();
-
-        std::thread::spawn(move || {
-            if let Ok(c) = cache_clone.read() {
-                if c.peek(&path_str).and_then(|v| v.as_ref()).is_some() {
-                    return;
-                }
+        if let Ok(c) = self.pcm_cache.read() {
+            if c.peek(&path_str).and_then(|v| v.as_ref()).is_some() {
+                return;
             }
-            {
-                let (lock, _) = &*in_flight_clone;
-                let Ok(mut set) = lock.lock() else { return };
-                if set.contains(&path_str) {
-                    return;
-                }
-                set.insert(path_str.clone());
-            }
-
-            let pcm = decode_audio_to_pcm(&path).map(Arc::new);
-            if let Some(ref arc_pcm) = pcm {
-                let size_bytes = arc_pcm.len() * 4;
-                if let Ok(mut c) = cache_clone.write() {
-                    c.insert_with_size(path_str.clone(), Some(arc_pcm.clone()), size_bytes);
-                }
-            }
-
-            let (lock, cvar) = &*in_flight_clone;
-            if let Ok(mut set) = lock.lock() {
-                set.remove(&path_str);
-                cvar.notify_all();
-            }
-        });
+        }
+        let _ = tx.send((path, self.pcm_cache.clone(), self.in_flight.clone()));
     }
 
     /// Loads and caches 48kHz 16-bit stereo PCM for given media file.
@@ -137,11 +193,16 @@ impl AudioMixer {
                 while set.contains(&path_str) {
                     set = cvar.wait(set).unwrap_or_else(|e| e.into_inner());
                 }
-                if let Ok(mut c) = self.pcm_cache.write() {
-                    if let Some(Some(arc_pcm)) = c.get(&path_str) {
-                        return Some(arc_pcm.clone());
-                    }
-                }
+            }
+        }
+        if let Ok(mut c) = self.pcm_cache.write() {
+            if let Some(Some(arc_pcm)) = c.get(&path_str) {
+                return Some(arc_pcm.clone());
+            }
+        }
+        {
+            let (lock, _) = &*self.in_flight;
+            if let Ok(mut set) = lock.lock() {
                 set.insert(path_str.clone());
             }
         }
@@ -289,13 +350,20 @@ impl AudioMixer {
                     0.0
                 };
 
-                let mut env_level = 0.0_f32;
-                let mut hp_prev_in = [0.0_f32; 2];
-                let mut hp_prev_out = [0.0_f32; 2];
+                let mut dsp_state = self
+                    .clip_dsp_states
+                    .lock()
+                    .ok()
+                    .and_then(|mut map| map.remove(&clip.id))
+                    .unwrap_or_default();
+
+                let mut env_level = dsp_state.env_level;
+                let mut hp_prev_in = dsp_state.hp_prev_in;
+                let mut hp_prev_out = dsp_state.hp_prev_out;
 
                 // Precompute active Biquad peaking EQ coefficients (up to 6 bands)
                 let mut eq_coeffs = [[0.0_f32; 5]; 6];
-                let mut eq_state = [[[0.0_f32; 4]; 2]; 6]; // [band][ch][x1, x2, y1, y2]
+                let mut eq_state = dsp_state.eq_state; // [band][ch][x1, x2, y1, y2]
                 let mut active_eq_count = 0usize;
                 if let Some(peq) = &clip.parametric_eq {
                     if !peq.is_flat() {
@@ -325,8 +393,8 @@ impl AudioMixer {
 
                 // Compressor / De-Esser state
                 let active_comp = clip.compressor.as_ref().filter(|c| c.enabled);
-                let mut comp_env = 0.0_f32;
-                let mut deess_prev = [0.0_f32; 2];
+                let mut comp_env = dsp_state.comp_env;
+                let mut deess_prev = dsp_state.deess_prev;
                 let (
                     comp_thresh,
                     comp_ratio,
@@ -373,11 +441,19 @@ impl AudioMixer {
                 let echo_amt = clip.echo_amount.clamp(0.0, 1.0);
                 let has_space_fx = rev_amt > 0.01 || echo_amt > 0.01;
                 let mut delay_buf = if has_space_fx {
-                    vec![[0.0_f32; 2]; 4800] // 100ms circular tap buffer
+                    if dsp_state.delay_buf.len() == 4800 {
+                        std::mem::take(&mut dsp_state.delay_buf)
+                    } else {
+                        vec![[0.0_f32; 2]; 4800] // 100ms circular tap buffer
+                    }
                 } else {
                     Vec::new()
                 };
-                let mut delay_pos = 0usize;
+                let mut delay_pos = if has_space_fx && !delay_buf.is_empty() {
+                    dsp_state.delay_pos % delay_buf.len()
+                } else {
+                    0
+                };
 
                 for k in 0..chunk_len {
                     let dst_idx = dst_start + k;
@@ -517,6 +593,25 @@ impl AudioMixer {
 
                     out[dst_idx][0] += l * gain * pan_l;
                     out[dst_idx][1] += r * gain * pan_r;
+                }
+
+                if let Ok(mut map) = self.clip_dsp_states.lock() {
+                    if map.len() > 64 {
+                        map.clear();
+                    }
+                    map.insert(
+                        clip.id.clone(),
+                        ClipDspState {
+                            env_level,
+                            hp_prev_in,
+                            hp_prev_out,
+                            eq_state,
+                            comp_env,
+                            deess_prev,
+                            delay_buf,
+                            delay_pos,
+                        },
+                    );
                 }
             }
         }

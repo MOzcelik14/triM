@@ -180,6 +180,25 @@ pub struct TrimApp {
     pub paste_attr_audio: bool,
     pub paste_attr_speed: bool,
     pub last_scope_rgba: Option<(Vec<u8>, u32, u32)>,
+    pub bg_task_tx: std::sync::mpsc::Sender<BackgroundTaskMsg>,
+    pub bg_task_rx: std::sync::mpsc::Receiver<BackgroundTaskMsg>,
+}
+
+pub enum BackgroundTaskMsg {
+    SceneDetectDone {
+        track_id: String,
+        clip_id: String,
+        result: Result<Vec<f64>, String>,
+    },
+    SilenceDetectDone {
+        source_in: f64,
+        source_out: f64,
+        padding: f64,
+        result: Result<Vec<(f64, f64)>, String>,
+    },
+    TranscribeDone {
+        result: Result<Vec<trim_core::subtitles::SubtitleEntry>, String>,
+    },
 }
 
 impl Default for TrimApp {
@@ -202,6 +221,7 @@ impl Default for TrimApp {
             .or_else(|| a_tracks.first().copied())
             .map(|t| t.id.clone())
             .unwrap_or_else(|| "a1".to_string());
+        let (bg_task_tx, bg_task_rx) = std::sync::mpsc::channel();
 
         Self {
             project,
@@ -287,6 +307,8 @@ impl Default for TrimApp {
             paste_attr_audio: true,
             paste_attr_speed: false,
             last_scope_rgba: None,
+            bg_task_tx,
+            bg_task_rx,
         }
     }
 }
@@ -984,6 +1006,114 @@ impl eframe::App for TrimApp {
             }
         }
 
+        // Poll asynchronous background tasks (scene cut, silence detect, Whisper transcription)
+        let bg_msgs: Vec<BackgroundTaskMsg> = self.bg_task_rx.try_iter().collect();
+        for msg in bg_msgs {
+            ctx.request_repaint();
+            match msg {
+                BackgroundTaskMsg::SceneDetectDone {
+                    track_id,
+                    clip_id,
+                    result,
+                } => match result {
+                    Ok(source_cuts) => {
+                        if source_cuts.is_empty() {
+                            self.status_message =
+                                "Klipte belirgin sahne geçişi algılanmadı (Eşik: 0.40)".to_string();
+                        } else if let Some(clip) = self
+                            .project
+                            .timeline
+                            .get_track_by_id(&track_id)
+                            .and_then(|t| t.get_clip_by_id(&clip_id))
+                            .cloned()
+                        {
+                            let timeline_cuts: Vec<f64> = source_cuts
+                                .iter()
+                                .map(|&s| clip.timeline_in + (s - clip.source_in) / clip.speed)
+                                .filter(|&t| {
+                                    t > clip.timeline_in + 0.05 && t < clip.timeline_out - 0.05
+                                })
+                                .collect();
+                            let count = timeline_cuts.len();
+                            if count == 0 {
+                                self.status_message =
+                                    "Klip sınırları içinde yeni sahne kesimi bulunamadı"
+                                        .to_string();
+                            } else {
+                                let cmd = Box::new(trim_commands::BatchSplitClipCommand::new(
+                                    &track_id,
+                                    &clip_id,
+                                    timeline_cuts,
+                                ));
+                                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                self.project.mark_dirty();
+                                self.status_message = format!(
+                                    "Akıllı Kesim Tamamlandı: {} yeni sahne algılandı ve bölündü",
+                                    count
+                                );
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        self.status_message = format!("Sahne algılama başarısız: {}", e);
+                    }
+                },
+                BackgroundTaskMsg::SilenceDetectDone {
+                    source_in,
+                    source_out,
+                    padding,
+                    result,
+                } => match result {
+                    Ok(silences) => {
+                        let speech = trim_media::calculate_speech_intervals(
+                            source_in, source_out, &silences, padding,
+                        );
+                        self.silence_dialog.set_analysis_results(silences, speech);
+                    }
+                    Err(e) => {
+                        self.silence_dialog.status_text = format!("Hata: {}", e);
+                        self.silence_dialog.is_analyzing = false;
+                    }
+                },
+                BackgroundTaskMsg::TranscribeDone { result } => match result {
+                    Ok(entries) => {
+                        let count = entries.len();
+                        let subtitle_clips =
+                            trim_core::subtitles::subtitle_entries_to_clips(&entries, 42.0);
+                        let target_tr = self
+                            .project
+                            .timeline
+                            .get_video_tracks()
+                            .first()
+                            .map(|t| t.id.clone())
+                            .unwrap_or_else(|| self.project.timeline.add_new_video_track());
+                        let cmds: Vec<Box<dyn trim_commands::Command>> = subtitle_clips
+                            .into_iter()
+                            .map(|c| {
+                                Box::new(AddClipCommand::new(&target_tr, c))
+                                    as Box<dyn trim_commands::Command>
+                            })
+                            .collect();
+                        if !cmds.is_empty() {
+                            let macro_cmd = Box::new(trim_commands::MacroCommand::new(
+                                "Otomatik Deşifre Altyazıları",
+                                cmds,
+                            ));
+                            let _ = self.undo_stack.push(macro_cmd, &mut self.project.timeline);
+                            self.project.mark_dirty();
+                        }
+                        self.transcribe_dialog.close();
+                        self.status_message =
+                            format!("{} adet altyazı başarıyla oluşturuldu ve eklendi", count);
+                    }
+                    Err(e) => {
+                        self.transcribe_dialog.is_transcribing = false;
+                        self.transcribe_dialog.status_message = e;
+                    }
+                },
+            }
+        }
+
         if self.active_voiceover.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
@@ -1124,11 +1254,12 @@ impl eframe::App for TrimApp {
                 } else if i.key_pressed(Key::A) && !i.modifiers.ctrl {
                     if self.shortcut_profile == ShortcutProfile::DaVinciResolve {
                         self.current_edit_tool = EditTool::Select;
+                        self.status_message = "Seçim Aracı (A) etkin".to_string();
                     } else {
                         self.current_edit_tool = EditTool::TrackSelect;
+                        self.status_message = "İz Seçme Aracı (A) etkin".to_string();
                     }
                     self.canvas_state.active_tool = self.current_edit_tool;
-                    self.status_message = "İz Seçme Aracı (A) etkin".to_string();
                 } else if i.key_pressed(Key::B) && !i.modifiers.ctrl {
                     if self.shortcut_profile == ShortcutProfile::DaVinciResolve {
                         self.current_edit_tool = EditTool::Razor;
@@ -1366,6 +1497,28 @@ impl eframe::App for TrimApp {
                     self.export_dialog.open(&self.project);
                 } else if i.modifiers.ctrl && i.key_pressed(Key::T) {
                     self.title_dialog.open();
+                } else if (i.modifiers.ctrl || i.modifiers.command) && i.key_pressed(Key::R) {
+                    if let Some((tr_id, cl_id)) =
+                        self.canvas_state.selected_clip_pairs.first().cloned()
+                    {
+                        if let Some(cl) = self
+                            .project
+                            .timeline
+                            .get_track_by_id(&tr_id)
+                            .and_then(|t| t.get_clip_by_id(&cl_id))
+                        {
+                            self.speed_dialog.open(
+                                tr_id,
+                                cl_id,
+                                cl.speed,
+                                cl.reverse,
+                                cl.duration(),
+                            );
+                        }
+                    } else {
+                        self.status_message =
+                            "Hız değiştirmek için önce bir klip seçin".to_string();
+                    }
                 }
             });
 
@@ -4476,64 +4629,31 @@ impl eframe::App for TrimApp {
                 } => {
                     let whisper_bin_opt = self.transcribe_dialog.whisper_bin.clone();
                     if let Some(whisper_bin) = whisper_bin_opt {
-                        let temp_wav = std::env::temp_dir().join(format!(
-                            "trim_whisper_{}.wav",
-                            std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .map(|d| d.as_secs())
-                                .unwrap_or(0)
-                        ));
-                        let media_p = PathBuf::from(&media_path);
-                        match trim_media::extract_audio_for_whisper(&media_p, &temp_wav) {
-                            Ok(()) => {
-                                match trim_media::run_whisper_transcription(
-                                    &whisper_bin,
-                                    &temp_wav,
-                                    &model_name,
-                                    Some(&language),
-                                ) {
-                                    Ok(entries) => {
-                                        let count = entries.len();
-                                        let subtitle_clips =
-                                            trim_core::subtitles::subtitle_entries_to_clips(
-                                                &entries, 42.0,
-                                            );
-                                        let target_tr = self
-                                            .project
-                                            .timeline
-                                            .get_video_tracks()
-                                            .first()
-                                            .map(|t| t.id.clone())
-                                            .unwrap_or_else(|| {
-                                                self.project.timeline.add_new_video_track()
-                                            });
-                                        for c in subtitle_clips {
-                                            let cmd = Box::new(AddClipCommand::new(&target_tr, c));
-                                            let _ = self
-                                                .undo_stack
-                                                .push(cmd, &mut self.project.timeline);
-                                        }
-                                        self.transcribe_dialog.close();
-                                        self.status_message = format!(
-                                            "{} adet altyazı başarıyla oluşturuldu ve eklendi",
-                                            count
-                                        );
-                                        self.project.mark_dirty();
+                        self.transcribe_dialog.is_transcribing = true;
+                        self.transcribe_dialog.status_message =
+                            "Ses ayıklanıyor ve deşifre ediliyor (arka planda)...".to_string();
+                        let tx = self.bg_task_tx.clone();
+                        std::thread::spawn(move || {
+                            let temp_wav = std::env::temp_dir()
+                                .join(format!("trim_whisper_{}.wav", uuid::Uuid::new_v4()));
+                            let media_p = PathBuf::from(&media_path);
+                            let res =
+                                match trim_media::extract_audio_for_whisper(&media_p, &temp_wav) {
+                                    Ok(()) => {
+                                        let r = trim_media::run_whisper_transcription(
+                                            &whisper_bin,
+                                            &temp_wav,
+                                            &model_name,
+                                            Some(&language),
+                                        )
+                                        .map_err(|e| format!("Deşifre hatası: {}", e));
+                                        let _ = std::fs::remove_file(&temp_wav);
+                                        r
                                     }
-                                    Err(e) => {
-                                        self.transcribe_dialog.is_transcribing = false;
-                                        self.transcribe_dialog.status_message =
-                                            format!("Deşifre hatası: {}", e);
-                                    }
-                                }
-                                let _ = std::fs::remove_file(temp_wav);
-                            }
-                            Err(e) => {
-                                self.transcribe_dialog.is_transcribing = false;
-                                self.transcribe_dialog.status_message =
-                                    format!("Ses ayıklama hatası: {}", e);
-                            }
-                        }
+                                    Err(e) => Err(format!("Ses ayıklama hatası: {}", e)),
+                                };
+                            let _ = tx.send(BackgroundTaskMsg::TranscribeDone { result: res });
+                        });
                     } else {
                         self.transcribe_dialog.is_transcribing = false;
                         self.transcribe_dialog.status_message = "Whisper çalıştırılabilir dosyası bulunamadı. Lütfen whisper-cli veya openai-whisper kurun.".to_string();
@@ -4955,9 +5075,21 @@ impl eframe::App for TrimApp {
                     });
 
                     ui.add_space(10.0);
-                    let info_text = match self.lang() {
-                        Language::Turkish => "triM. video çözümleme, oynatma, dalga formu çıkarma ve dışa aktarma için FFmpeg ve FFprobe motoruna ihtiyaç duyar.\n\nNasıl çözebilirsiniz:\n1. Windows installer ile kurun (install.ps1 otomatik FFmpeg kurar)\n2. PowerShell'de şunu çalıştırın: winget install Gyan.FFmpeg\n3. Ya da ffmpeg.exe ve ffprobe.exe dosyalarını trim.exe yanına kopyalayın.",
-                        Language::English => "triM. requires FFmpeg and FFprobe binaries for video decoding, preview playback, waveform extraction, and exporting.\n\nHow to resolve:\n1. Run install.ps1 (automatically bundles and configures FFmpeg)\n2. Run in PowerShell: winget install Gyan.FFmpeg\n3. Or place ffmpeg.exe & ffprobe.exe next to trim.exe.",
+                    let info_text = {
+                        #[cfg(target_os = "windows")]
+                        {
+                            match self.lang() {
+                                Language::Turkish => "triM. video çözümleme, oynatma, dalga formu çıkarma ve dışa aktarma için FFmpeg ve FFprobe motoruna ihtiyaç duyar.\n\nNasıl çözebilirsiniz:\n1. Windows installer ile kurun (install.ps1 otomatik FFmpeg kurar)\n2. PowerShell'de şunu çalıştırın: winget install Gyan.FFmpeg\n3. Ya da ffmpeg.exe ve ffprobe.exe dosyalarını trim.exe yanına kopyalayın.",
+                                Language::English => "triM. requires FFmpeg and FFprobe binaries for video decoding, preview playback, waveform extraction, and exporting.\n\nHow to resolve:\n1. Run install.ps1 (automatically bundles and configures FFmpeg)\n2. Run in PowerShell: winget install Gyan.FFmpeg\n3. Or place ffmpeg.exe & ffprobe.exe next to trim.exe.",
+                            }
+                        }
+                        #[cfg(not(target_os = "windows"))]
+                        {
+                            match self.lang() {
+                                Language::Turkish => "triM. video çözümleme, oynatma, dalga formu çıkarma ve dışa aktarma için FFmpeg ve FFprobe motoruna ihtiyaç duyar.\n\nNasıl çözebilirsiniz:\n1. Paket yöneticisinden kurun: sudo apt install ffmpeg (veya pacman -S ffmpeg / dnf install ffmpeg)\n2. Ya da install.sh betiğini çalıştırın\n3. Ya da ffmpeg ve ffprobe ikili dosyalarını PATH'e veya trim ikilisinin yanına ekleyin.",
+                                Language::English => "triM. requires FFmpeg and FFprobe binaries for video decoding, preview playback, waveform extraction, and exporting.\n\nHow to resolve:\n1. Install via package manager: sudo apt install ffmpeg (or pacman -S ffmpeg / dnf install ffmpeg)\n2. Or run install.sh\n3. Or place ffmpeg & ffprobe binaries in PATH or next to the trim executable.",
+                            }
+                        }
                     };
                     ui.label(
                         egui::RichText::new(info_text)
@@ -4983,8 +5115,8 @@ impl eframe::App for TrimApp {
                                 };
                             } else {
                                 self.status_message = match self.lang() {
-                                    Language::Turkish => "FFmpeg hala tespit edilemedi. Lütfen dosyaları trim.exe yanına kopyalayın.".to_string(),
-                                    Language::English => "FFmpeg still not detected. Please copy files next to trim.exe.".to_string(),
+                                    Language::Turkish => "FFmpeg hala tespit edilemedi. Lütfen FFmpeg'i kurun veya PATH'e ekleyin.".to_string(),
+                                    Language::English => "FFmpeg still not detected. Please install FFmpeg or add it to PATH.".to_string(),
                                 };
                             }
                         }

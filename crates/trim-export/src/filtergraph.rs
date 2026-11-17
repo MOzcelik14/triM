@@ -375,6 +375,21 @@ impl TimelineExporter {
 
         f.push("format=rgba".into());
 
+        if let Some(kfs) = animated_kfs(clip, "rotation") {
+            let expr = keyframe_expr(kfs, "t", |deg| deg.to_radians());
+            f.push(format!(
+                "rotate='{expr}':ow='rotw(iw)':oh='roth(ih)':c=none"
+            ));
+        } else {
+            let rot_deg = clip.get_property_at_time("rotation", 0.0);
+            if rot_deg.abs() > 0.01 {
+                f.push(format!(
+                    "rotate={:.6}:ow='rotw(iw)':oh='roth(ih)':c=none",
+                    rot_deg.to_radians()
+                ));
+            }
+        }
+
         if let Some(cp) = &clip.corner_pin {
             if cp.is_active() {
                 f.push(format!(
@@ -799,8 +814,25 @@ impl TimelineExporter {
             a.push("areverse".into());
         }
         a.push("asetpts=PTS-STARTPTS".into());
-        if (clip.speed - 1.0).abs() > 0.001 {
-            a.extend(Self::get_atempo_filters(clip.speed));
+        let eff_audio_speed = if let Some(kfs) = animated_kfs(clip, "speed") {
+            if dur > 1e-4 {
+                (trim_core::keyframe::integrate_keyframes(kfs, dur, clip.speed) / dur)
+                    .clamp(0.1, 10.0)
+            } else {
+                clip.speed
+            }
+        } else {
+            clip.speed
+        };
+        if (eff_audio_speed - 1.0).abs() > 0.001 {
+            if clip.pitch_lock {
+                a.extend(Self::get_atempo_filters(eff_audio_speed));
+            } else {
+                a.push(format!(
+                    "asetrate={:.2},aresample=48000",
+                    48000.0 * eff_audio_speed
+                ));
+            }
         }
         // Force exact clip length so timing never drifts.
         a.push(format!("atrim=duration={:.6}", dur));
@@ -2419,6 +2451,71 @@ mod tests {
         assert!(
             fg.contains("eq=brightness=0.150"),
             "Missing AdjLayer color filter: {fg}"
+        );
+    }
+
+    #[test]
+    fn test_rotation_prores_and_audio_speed_ramp_export() {
+        let mut proj = Project::new("ParityTest");
+        let mut m = MediaItem::new("/tmp/fake_parity.mp4");
+        m.media_type = MediaType::Video;
+        m.duration = 10.0;
+        m.audio_codec = "aac".to_string();
+        let m_id = m.id.clone();
+        proj.add_media(m);
+
+        let mut clip = Clip::new(&m_id, 0.0, 4.0);
+        clip.rotation = 45.0;
+        clip.add_keyframe(
+            "speed",
+            0.0,
+            1.0,
+            trim_core::keyframe::Interpolation::Linear,
+        );
+        clip.add_keyframe(
+            "speed",
+            4.0,
+            2.0,
+            trim_core::keyframe::Interpolation::Linear,
+        );
+        proj.timeline.tracks[0].add_clip(clip.clone());
+
+        let mut a_clip = Clip::new(&m_id, 0.0, 4.0);
+        a_clip.add_keyframe(
+            "speed",
+            0.0,
+            1.0,
+            trim_core::keyframe::Interpolation::Linear,
+        );
+        a_clip.add_keyframe(
+            "speed",
+            4.0,
+            2.0,
+            trim_core::keyframe::Interpolation::Linear,
+        );
+        let audio_tr_id = proj.timeline.get_audio_tracks()[0].id.clone();
+        proj.timeline
+            .get_track_by_id_mut(&audio_tr_id)
+            .unwrap()
+            .add_clip(a_clip);
+
+        let prores_preset = ExportPreset {
+            video_codec: "prores_ks".to_string(),
+            ..Default::default()
+        };
+        let (cmd, _) =
+            TimelineExporter::build_export_pipeline(&proj, &prores_preset, "/tmp/out.mov").unwrap();
+
+        assert!(cmd.contains(&"yuv422p10le".to_string()));
+        let fg = cmd
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd[idx + 1])
+            .unwrap();
+        assert!(fg.contains("rotate="), "Missing rotate filter: {fg}");
+        assert!(
+            fg.contains("atempo=1.5000"),
+            "Missing average speed-ramp atempo on audio: {fg}"
         );
     }
 }

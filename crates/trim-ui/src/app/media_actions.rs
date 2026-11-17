@@ -424,45 +424,16 @@ impl TrimApp {
         let source_in = clip.source_in;
         let source_out = clip.effective_source_out();
 
-        self.status_message = "Sahneler taranıyor...".to_string();
-
-        match trim_media::detect_scene_changes(&media_path, source_in, source_out, 0.40) {
-            Ok(source_cuts) => {
-                if source_cuts.is_empty() {
-                    self.status_message =
-                        "Klipte belirgin sahne geçişi algılanmadı (Eşik: 0.40)".to_string();
-                    return;
-                }
-
-                let timeline_cuts: Vec<f64> = source_cuts
-                    .iter()
-                    .map(|&s| clip.timeline_in + (s - clip.source_in) / clip.speed)
-                    .filter(|&t| t > clip.timeline_in + 0.05 && t < clip.timeline_out - 0.05)
-                    .collect();
-
-                let count = timeline_cuts.len();
-                if count == 0 {
-                    self.status_message =
-                        "Klip sınırları içinde yeni sahne kesimi bulunamadı".to_string();
-                    return;
-                }
-
-                let cmd = Box::new(trim_commands::BatchSplitClipCommand::new(
-                    &tr_id,
-                    &cl_id,
-                    timeline_cuts,
-                ));
-                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                self.project.mark_dirty();
-                self.status_message = format!(
-                    "Akıllı Kesim Tamamlandı: {} yeni sahne algılandı ve bölündü",
-                    count
-                );
-            }
-            Err(e) => {
-                self.status_message = format!("Sahne algılama başarısız: {}", e);
-            }
-        }
+        self.status_message = "Sahneler arka planda taranıyor...".to_string();
+        let tx = self.bg_task_tx.clone();
+        std::thread::spawn(move || {
+            let result = trim_media::detect_scene_changes(&media_path, source_in, source_out, 0.40);
+            let _ = tx.send(crate::app::BackgroundTaskMsg::SceneDetectDone {
+                track_id: tr_id,
+                clip_id: cl_id,
+                result,
+            });
+        });
     }
 
     pub fn open_silence_cut_dialog_for_selected(&mut self) {
@@ -528,25 +499,22 @@ impl TrimApp {
         let source_in = clip.source_in;
         let source_out = clip.effective_source_out();
         let padding = self.silence_dialog.padding;
-
-        match trim_media::detect_silence_regions(
-            &media_path,
-            source_in,
-            source_out,
-            noise_db,
-            min_dur,
-        ) {
-            Ok(silences) => {
-                let speech = trim_media::calculate_speech_intervals(
-                    source_in, source_out, &silences, padding,
-                );
-                self.silence_dialog.set_analysis_results(silences, speech);
-            }
-            Err(e) => {
-                self.silence_dialog.status_text = format!("Hata: {}", e);
-                self.silence_dialog.is_analyzing = false;
-            }
-        }
+        let tx = self.bg_task_tx.clone();
+        std::thread::spawn(move || {
+            let result = trim_media::detect_silence_regions(
+                &media_path,
+                source_in,
+                source_out,
+                noise_db,
+                min_dur,
+            );
+            let _ = tx.send(crate::app::BackgroundTaskMsg::SilenceDetectDone {
+                source_in,
+                source_out,
+                padding,
+                result,
+            });
+        });
     }
 
     pub fn open_transcribe_dialog_for_selected(&mut self) {

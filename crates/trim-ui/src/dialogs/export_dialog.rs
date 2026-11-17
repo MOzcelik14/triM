@@ -51,6 +51,11 @@ impl Default for ExportDialog {
                 .join("cikti.mp4")
                 .to_string_lossy()
                 .to_string()
+        } else if home.join("Videolar").is_dir() {
+            home.join("Videolar")
+                .join("cikti.mp4")
+                .to_string_lossy()
+                .to_string()
         } else if home.join("Masaüstü").is_dir() {
             home.join("Masaüstü")
                 .join("cikti.mp4")

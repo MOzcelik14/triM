@@ -120,58 +120,144 @@ pub fn bundle_project<P: AsRef<Path>>(
         std::collections::HashMap::new();
     let mut used_dest_names: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    for (id, item) in &mut bundled_project.media_pool {
-        let src_path = Path::new(&item.file_path);
-        if src_path.exists() {
-            let canon_path = fs::canonicalize(src_path).unwrap_or_else(|_| src_path.to_path_buf());
+    fn bundle_copy_file(
+        src_path: &Path,
+        fallback_stem: &str,
+        media_dir: &Path,
+        copied_sources: &mut std::collections::HashMap<PathBuf, String>,
+        used_dest_names: &mut std::collections::HashSet<String>,
+        count: &mut usize,
+        total_bytes: &mut u64,
+    ) -> std::io::Result<Option<String>> {
+        if !src_path.exists() {
+            return Ok(None);
+        }
+        let canon_path = fs::canonicalize(src_path).unwrap_or_else(|_| src_path.to_path_buf());
+        if let Some(existing_rel) = copied_sources.get(&canon_path) {
+            return Ok(Some(existing_rel.clone()));
+        }
 
-            // If the same physical file was already copied for another media item, reuse it
-            if let Some(existing_rel) = copied_sources.get(&canon_path) {
-                item.file_path = existing_rel.clone();
-                continue;
-            }
+        let orig_name = src_path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| fallback_stem.to_string());
 
-            let orig_name = src_path
-                .file_name()
+        let chosen_name = if !used_dest_names.contains(&orig_name) {
+            orig_name
+        } else {
+            let stem = src_path
+                .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| format!("media_{}", id));
+                .unwrap_or_else(|| fallback_stem.to_string());
+            let ext = src_path
+                .extension()
+                .map(|s| format!(".{}", s.to_string_lossy()))
+                .unwrap_or_default();
 
-            // Disambiguate destination filename if a different file already took this name
-            let chosen_name = if !used_dest_names.contains(&orig_name) {
-                orig_name
-            } else {
-                let stem = src_path
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_else(|| format!("media_{}", id));
-                let ext = src_path
-                    .extension()
-                    .map(|s| format!(".{}", s.to_string_lossy()))
-                    .unwrap_or_default();
-
-                let mut counter = 2usize;
-                loop {
-                    let candidate = format!("{}_{}{}", stem, counter, ext);
-                    if !used_dest_names.contains(&candidate) {
-                        break candidate;
-                    }
-                    counter += 1;
+            let mut counter = 2usize;
+            loop {
+                let candidate = format!("{}_{}{}", stem, counter, ext);
+                if !used_dest_names.contains(&candidate) {
+                    break candidate;
                 }
-            };
+                counter += 1;
+            }
+        };
 
-            let dest_file = media_dir.join(&chosen_name);
-            let bytes = fs::copy(src_path, &dest_file)?;
-            total_bytes += bytes;
-            count += 1;
+        let dest_file = media_dir.join(&chosen_name);
+        let bytes = fs::copy(src_path, &dest_file)?;
+        *total_bytes += bytes;
+        *count += 1;
 
-            let rel_path = format!("media/{}", chosen_name);
-            used_dest_names.insert(chosen_name);
-            copied_sources.insert(canon_path, rel_path.clone());
-            item.file_path = rel_path;
+        let rel_path = format!("media/{}", chosen_name);
+        used_dest_names.insert(chosen_name);
+        copied_sources.insert(canon_path, rel_path.clone());
+        Ok(Some(rel_path))
+    }
+
+    for (id, item) in &mut bundled_project.media_pool {
+        if let Some(rel) = bundle_copy_file(
+            Path::new(&item.file_path),
+            &format!("media_{id}"),
+            &media_dir,
+            &mut copied_sources,
+            &mut used_dest_names,
+            &mut count,
+            &mut total_bytes,
+        )? {
+            item.file_path = rel;
+        }
+        if let Some(proxy_str) = item.proxy_path.clone() {
+            if let Some(rel) = bundle_copy_file(
+                Path::new(&proxy_str),
+                &format!("proxy_{id}"),
+                &media_dir,
+                &mut copied_sources,
+                &mut used_dest_names,
+                &mut count,
+                &mut total_bytes,
+            )? {
+                item.proxy_path = Some(rel);
+            }
         }
     }
 
-    let proj_file = dest_dir.join(format!("{}.trim", project.settings.name));
+    for tr in &mut bundled_project.timeline.tracks {
+        for clip in &mut tr.clips {
+            if let Some(lut_str) = clip.custom_lut_path.clone() {
+                if let Some(rel) = bundle_copy_file(
+                    Path::new(&lut_str),
+                    &format!("lut_{}", clip.id),
+                    &media_dir,
+                    &mut copied_sources,
+                    &mut used_dest_names,
+                    &mut count,
+                    &mut total_bytes,
+                )? {
+                    clip.custom_lut_path = Some(rel);
+                }
+            }
+        }
+    }
+    for seq in &mut bundled_project.sequences {
+        for tr in &mut seq.timeline.tracks {
+            for clip in &mut tr.clips {
+                if let Some(lut_str) = clip.custom_lut_path.clone() {
+                    if let Some(rel) = bundle_copy_file(
+                        Path::new(&lut_str),
+                        &format!("lut_{}", clip.id),
+                        &media_dir,
+                        &mut copied_sources,
+                        &mut used_dest_names,
+                        &mut count,
+                        &mut total_bytes,
+                    )? {
+                        clip.custom_lut_path = Some(rel);
+                    }
+                }
+            }
+        }
+    }
+
+    let safe_proj_name: String = project
+        .settings
+        .name
+        .chars()
+        .map(|c| {
+            if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let safe_proj_name = safe_proj_name.trim().trim_matches('.');
+    let file_stem = if safe_proj_name.is_empty() {
+        "project"
+    } else {
+        safe_proj_name
+    };
+    let proj_file = dest_dir.join(format!("{file_stem}.trim"));
     bundled_project.file_path = Some(proj_file.to_string_lossy().to_string());
     bundled_project.is_dirty = false;
     let json = bundled_project.to_json()?;
@@ -201,11 +287,14 @@ impl Default for AutosaveManager {
     }
 }
 
+/// Deterministic 64-bit FNV-1a hash so recovery filenames remain stable across Rust compiler versions.
 fn hash_path(path_str: &str) -> String {
-    use std::hash::{DefaultHasher, Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    path_str.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in path_str.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{:016x}", hash)
 }
 
 impl AutosaveManager {

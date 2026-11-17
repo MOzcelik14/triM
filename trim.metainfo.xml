@@ -56,6 +56,17 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2.1.0" date="2026-11-17">
+      <description>
+        <p>triM. v2.1.0 - Sesli Scrubbing, Çok Katmanlı Video Akışı, Arka Plan İş Yöneticisi ve Performans Güncellemesi:</p>
+        <ul>
+          <li>Oynatma kafası sürüklemede sesli scrubbing ve JKL shuttle (2x/4x/8x/-1x) ses önizlemesi eklendi.</li>
+          <li>Çoklu video katmanlarında (PiP) klip başına PlaybackStreamer desteği, kalıcı ses DSP durumu (ClipDspState) ve .cube LUT LRU önbelleği eklendi.</li>
+          <li>Whisper deşifre, Akıllı Sahne Kesimi ve Sessizlik Algılama arka plan iş parçacıklarına taşındı; AudioMixer preload 2 iş parçacığıyla sınırlandı.</li>
+          <li>FFmpeg dışa aktarımına rotation, speed keyframe ses senkronu ve pitch_lock desteği eklendi; bundle_project proxy/LUT paketleme ve Linux/Windows platform düzeltmeleri yapıldı.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.0.2" date="2026-11-16">
       <description>
         <p>triM. v2.0.2 - Genişletilmiş Popüler Font Desteği:</p>

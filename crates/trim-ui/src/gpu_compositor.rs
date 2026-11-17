@@ -849,6 +849,7 @@ pub struct GpuCompositor {
     mask_texture: glow::Texture,
     mask_tex_dims: (u32, u32),
     mask_cache: HashMap<String, (u64, Vec<u8>, u32, u32)>,
+    uploaded_mask_key: Option<(String, u64, u32, u32)>,
 }
 
 impl GpuCompositor {
@@ -1127,6 +1128,7 @@ impl GpuCompositor {
                 mask_texture,
                 mask_tex_dims: (320, 180),
                 mask_cache: HashMap::new(),
+                uploaded_mask_key: None,
             })
         }
     }
@@ -1352,7 +1354,7 @@ impl GpuCompositor {
         }
 
         if !self.lut_cache.contains_key(path.as_ref()) {
-            let parsed = parse_cube_lut_file(&norm_buf);
+            let parsed = parse_cube_lut_file(&norm_buf).map(|a| (*a).clone());
             self.lut_cache.insert(path.to_string(), parsed);
         }
 
@@ -1449,8 +1451,20 @@ impl GpuCompositor {
         if needs_raster {
             let rgba =
                 trim_core::mask::rasterize_masks_rgba(&clip.masks, mask_w, mask_h, clip_time);
+            if self.mask_cache.len() >= 32 {
+                self.mask_cache.clear();
+            }
             self.mask_cache
                 .insert(clip.id.clone(), (key_hash, rgba, mask_w, mask_h));
+        }
+
+        let desired_key = (clip.id.clone(), key_hash, mask_w, mask_h);
+        if self.uploaded_mask_key.as_ref() == Some(&desired_key) {
+            self.gl.active_texture(glow::TEXTURE3);
+            self.gl
+                .bind_texture(glow::TEXTURE_2D, Some(self.mask_texture));
+            self.gl.active_texture(glow::TEXTURE0);
+            return true;
         }
 
         if let Some((_, rgba, w, h)) = self.mask_cache.get(&clip.id) {
@@ -1484,6 +1498,7 @@ impl GpuCompositor {
                     glow::PixelUnpackData::Slice(rgba),
                 );
             }
+            self.uploaded_mask_key = Some(desired_key);
             self.gl.active_texture(glow::TEXTURE0);
             true
         } else {

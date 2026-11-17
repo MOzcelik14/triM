@@ -19,10 +19,20 @@ fn escape_xml(s: &str) -> String {
 
 fn to_file_url(path: &str) -> String {
     let clean = path.replace('\\', "/");
-    if clean.starts_with('/') {
-        format!("file://localhost{}", clean)
+    let mut encoded = String::with_capacity(clean.len() + 16);
+    for ch in clean.chars() {
+        match ch {
+            ' ' => encoded.push_str("%20"),
+            '%' => encoded.push_str("%25"),
+            '#' => encoded.push_str("%23"),
+            '?' => encoded.push_str("%3F"),
+            _ => encoded.push(ch),
+        }
+    }
+    if encoded.starts_with('/') {
+        format!("file://localhost{encoded}")
     } else {
-        format!("file://localhost/{}", clean)
+        format!("file://localhost/{encoded}")
     }
 }
 
@@ -307,7 +317,13 @@ pub fn decode_file_url(url: &str) -> String {
         }
         bytes.push(b);
     }
-    String::from_utf8_lossy(&bytes).to_string()
+    let decoded = String::from_utf8_lossy(&bytes).to_string();
+    let b = decoded.as_bytes();
+    if b.len() >= 3 && b[0] == b'/' && b[1].is_ascii_alphabetic() && b[2] == b':' {
+        decoded[1..].to_string()
+    } else {
+        decoded
+    }
 }
 
 /// Parses FCPX time format (e.g., "5s", "100/25s", "1200/24000s") into seconds.
