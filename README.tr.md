@@ -128,3 +128,9 @@ cargo build --release -p trim-app
 ## Lisans
 
 **triM.**, **GNU General Public License v3.0 (GPL-3.0)** kapsamında yayınlanan açık kaynaklı bir yazılımdır. Ayrıntılar için [LICENSE](LICENSE) dosyasına göz atabilirsiniz.
+
+---
+
+## Topluluk & Destek
+
+**triM.** ve açık kaynaklı video kurgu araçlarını seviyorsanız, [@lakhermony](https://github.com/lakhermony) tarafından geliştirilen Electron + React + WebGL2 + FFmpeg tabanlı **Cinema Darkroom Video Editor** projesi **[NoirCut Studio](https://github.com/lakhermony/NoirCut)**'ya da mutlaka göz atın ve repoya yıldız (⭐) vererek destek olun!

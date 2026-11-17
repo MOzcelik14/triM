@@ -128,3 +128,9 @@ cargo build --release -p trim-app
 ## License
 
 **triM.** is open-source software released under the **GNU General Public License v3.0 (GPL-3.0)**. See [LICENSE](LICENSE) for full details.
+
+---
+
+## Community & Friends
+
+If you enjoy **triM.** and open-source video editing tools, also check out and support **[NoirCut Studio](https://github.com/lakhermony/NoirCut)** — an Electron + React + WebGL2 + FFmpeg Cinema Darkroom Video Editor built by [@lakhermony](https://github.com/lakhermony). Give the repo a star! ⭐
