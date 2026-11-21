@@ -22,7 +22,7 @@ All notable changes to **triM.** are documented in this file.
 - **Project Version Migration & Nightly CI**: Added `CURRENT_PROJECT_VERSION` migration (`v0` `.cutline` -> `v1`, rejecting unsupported future versions) and a nightly `schedule` trigger in `.github/workflows/ci.yml`.
 
 ### Product Differentiation (Stage 4)
-- **Preview = Export Parity Test (`crates/trim-export/tests/parity_test.rs`)**: Added end-to-end color parity test comparing `trim_core::apply_color_grade_normalized` CPU reference against FFmpeg `lut3d` export output (`mean |ΔRGB| <= 8.0 / 255`; GL shader parity remains unverified in headless CI without a GL context).
+- **Preview = Export Parity Test (`crates/trim-export/tests/parity_test.rs`)**: Added end-to-end color parity test comparing `Clip::evaluate_color_pipeline_rgb` CPU reference against FFmpeg `lut3d` export output (`mean |ΔRGB| <= 8.0 / 255`; GL shader parity remains unverified in headless CI without a GL context).
 - **Look / Preset Library (`trim-core::looks`)**: Added `.trimlook` JSON format (`LookPresetFile`), 12 built-in looks (`builtin_looks()`), and `$XDG_DATA_HOME/trim/looks/` persistence helpers (`data_dir()`).
 - **Title Templates (`TitleTemplate`)**: Added 5 title template mappings (`LowerThird`, `OpeningTitle`, `ChapterCard`, `RollingCredits`, `TickerBanner`) onto `TextOverlay` + `MotionTitleStyle`.
 - **Versioned Autosave Snapshots (`trim-project`)**: Added `AutosaveSnapshotEntry`, `AutosaveManager::save_versioned_snapshot`, and `AutosaveManager::list_snapshots` with TR/EN `i18n.rs` strings.

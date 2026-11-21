@@ -1,6 +1,4 @@
-use trim_core::{
-    apply_color_grade_normalized, Clip, ColorGradeParams, LutPreset, MediaItem, MediaType, Project,
-};
+use trim_core::{Clip, LutPreset, MediaItem, MediaType, Project};
 use trim_export::{ExportPreset, HardwareAccel, LoudnessNorm, TimelineExporter};
 use trim_media::ffmpeg::{ffmpeg_cmd, is_ffmpeg_available};
 
@@ -23,7 +21,7 @@ fn test_preview_export_color_parity_within_measured_threshold() {
             "-f",
             "lavfi",
             "-i",
-            "rgbtestsrc=size=64x64:rate=25:duration=0.2",
+            "nullsrc=s=64x64:r=25:d=0.2,format=rgb24,geq=r='X*4':g='Y*4':b='(X+Y)*2'",
             "-frames:v",
             "1",
         ])
@@ -59,24 +57,16 @@ fn test_preview_export_color_parity_within_measured_threshold() {
     clip.contrast = 1.15;
     clip.saturation = 1.18;
     clip.gamma = 1.05;
+    clip.highlight_rolloff = 0.2;
     clip.lut_preset = LutPreset::TealOrange;
 
     // (a) CPU preview reference output
-    let params = ColorGradeParams {
-        brightness: clip.brightness as f32,
-        contrast: clip.contrast as f32,
-        saturation: clip.saturation as f32,
-        gamma: clip.gamma as f32,
-        lut_preset: clip.lut_preset,
-        ..Default::default()
-    };
     let mut cpu_ref = Vec::with_capacity(64 * 64);
     for px in src_dec.stdout.as_chunks::<3>().0 {
-        let [r, g, b] = apply_color_grade_normalized(
+        let [r, g, b] = clip.evaluate_color_pipeline_rgb(
             px[0] as f32 / 255.0,
             px[1] as f32 / 255.0,
             px[2] as f32 / 255.0,
-            &params,
         );
         cpu_ref.push([
             (r * 255.0).round().clamp(0.0, 255.0) as f64,
