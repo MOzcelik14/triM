@@ -15,6 +15,12 @@ All notable changes to **triM.** are documented in this file.
 - **Hardware Decode Evaluation**: Benchmarked VAAPI (unsupported on test host) and CUDA (`4.63s` vs CPU `0.46s` for 2s 4K H.264); retained CPU decode per measured evidence.
 - **Audio-Clock Master & Off-UI-Thread Mixing (`AudioPlaybackWorker`)**: Moved `AudioMixer::render_audio_interval` out of `TrimApp::update_playback_tick` into a dedicated background `AudioPlaybackWorker` thread with sink-latency-compensated `compute_audio_clock_time` as the master playhead clock (wall-clock fallback when silent/no backend).
 
+### Maintainability & Security (P2)
+- **Large `trim-ui` Module Split**: Split `app.rs` (`5460 -> 1196`), `inspector.rs` (`5066 -> 944`), `monitor.rs` (`2476 -> 1476`), and `gpu_compositor.rs` (`2188 -> 1267`) into focused submodules with zero public API or behavioral changes (`canvas.rs` retained at `2816` lines as a single cohesive `render_timeline_canvas` loop).
+- **Serializable Keymap & Conflict Resolver (`trim-core::keymap`)**: Added `KeymapConfig`, `KeyBinding`, `ShortcutAction`, `find_conflicts()`, `$XDG_CONFIG_HOME/trim/keybindings.json` persistence, and 4 presets (`TrimDefault`, `PremierePro`, `DaVinciResolve`, `FinalCutPro`) with JSON roundtrip & conflict tests.
+- **Filtergraph Adversarial & Golden Tests**: Added real FFmpeg `-filter_complex ... -f null -` adversarial drawtext escaping test (quotes, colons, brackets, backslashes, newlines, Turkish UTF-8) and golden filtergraph snapshot test in `trim-export`.
+- **Project Version Migration & Nightly CI**: Added `CURRENT_PROJECT_VERSION` migration (`v0` `.cutline` -> `v1`, rejecting unsupported future versions) and a nightly `schedule` trigger in `.github/workflows/ci.yml`.
+
 ## [2.2.1] - 2026-11-21
 
 ### Changed & Fixed
