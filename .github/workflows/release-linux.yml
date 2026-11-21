@@ -302,7 +302,7 @@ jobs:
           retention-days: 30
 
   macos:
-    name: macOS build · arm64 tar.gz
+    name: macOS build · arm64 dmg + tar.gz
     needs: rust-tests
     runs-on: macos-latest
     steps:
@@ -315,7 +315,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
       - name: Build macOS binary
         run: cargo build --locked --release -p trim-app
-      - name: Package macOS tar.gz
+      - name: Package macOS dmg and tar.gz
         run: |
           set -euo pipefail
           RAW_VER="${{ github.ref_name }}"
@@ -325,6 +325,7 @@ jobs:
             VER="${RAW_VER#v}"
           fi
           mkdir -p dist
+
           STAGE="$(mktemp -d)"
           PKG="${STAGE}/triM-${VER}-macos-arm64"
           mkdir -p "${PKG}"
@@ -333,10 +334,39 @@ jobs:
           cp README.md LICENSE "${PKG}/"
           tar -C "${STAGE}" -czf "dist/triM-${VER}-macos-arm64.tar.gz" "triM-${VER}-macos-arm64"
           rm -rf "${STAGE}"
+
+          DMG_STAGE="$(mktemp -d)"
+          APP_DIR="${DMG_STAGE}/triM..app"
+          mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
+          cp target/release/trim "${APP_DIR}/Contents/MacOS/trim"
+          chmod +x "${APP_DIR}/Contents/MacOS/trim"
+          cp -r resources "${APP_DIR}/Contents/Resources/resources"
+
+          cat > "${APP_DIR}/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>trim</string>
+            <key>CFBundleIdentifier</key><string>com.mozcelik14.trim</string>
+            <key>CFBundleName</key><string>triM.</string>
+            <key>CFBundleVersion</key><string>${VER}</string>
+            <key>CFBundleShortVersionString</key><string>${VER}</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+
+          ln -s /Applications "${DMG_STAGE}/Applications"
+          hdiutil create -volname "triM. ${VER}" -srcfolder "${DMG_STAGE}" -ov -format UDZO "dist/triM-${VER}-macos-arm64.dmg"
+          rm -rf "${DMG_STAGE}"
       - uses: actions/upload-artifact@v4
         with:
           name: trim-macos-package
-          path: dist/*.tar.gz
+          path: |
+            dist/*.dmg
+            dist/*.tar.gz
           if-no-files-found: error
           retention-days: 30
 
@@ -360,9 +390,10 @@ jobs:
           test "$(find dist -maxdepth 1 -name '*.deb' | wc -l)" -eq 1
           test "$(find dist -maxdepth 1 -name '*.rpm' | wc -l)" -eq 1
           test "$(find dist -maxdepth 1 -name '*.AppImage' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -name '*.dmg' | wc -l)" -eq 1
           test "$(find dist -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 2
           test "$(find dist -maxdepth 1 -name '*.zip' | wc -l)" -eq 1
-          (cd dist && sha256sum -- *.deb *.rpm *.AppImage *.tar.gz *.zip > SHA256SUMS.txt)
+          (cd dist && sha256sum -- *.deb *.rpm *.AppImage *.dmg *.tar.gz *.zip > SHA256SUMS.txt)
           cat dist/SHA256SUMS.txt
       - name: Create or update release with all packages
         uses: softprops/action-gh-release@v2
@@ -371,6 +402,7 @@ jobs:
             dist/*.deb
             dist/*.rpm
             dist/*.AppImage
+            dist/*.dmg
             dist/*.tar.gz
             dist/*.zip
             dist/SHA256SUMS.txt
