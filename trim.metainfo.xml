@@ -56,6 +56,16 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2.2.1" date="2026-11-21">
+      <description>
+        <p>triM. v2.2.1 - Efekt &amp; Denetçi Hizalama, Vektörel İkonografi ve Kayan Haber Bandı (Ticker) Düzeltmesi:</p>
+        <ul>
+          <li>Efektler ve Klip Denetçisi (Inspector) panelindeki tüm başlıklar, kaydırma çubukları (slider), anahtar kare butonları ve hızlı seçim ızgaraları tam hizalı ve eşit genişlikli hale getirildi.</li>
+          <li>Uygulama genelinde emojiler kaldırılarak yerlerine keskin tipografik/geometrik vektör ikonları eklendi.</li>
+          <li>Haber Bandı (News Ticker) başlık stilinde kayan yazının sol rozet (BİLGİ) yazısının üstüne binmesi sorunu kırpma (clip rect) ve dinamik rozet genişliği ile düzeltildi.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.2.0" date="2026-11-21">
       <description>
         <p>triM. v2.2.0 - 3D .cube LUT Pişirme, Kamera Log Profilleri, Analog Film Laboratuvarı, Akan Sinema Jeneriği, Prosedürel SFX Sentezleyici ve 5 Stüdyo Teması:</p>

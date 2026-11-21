@@ -21,16 +21,16 @@ pub enum PreferencesCategory {
 impl PreferencesCategory {
     pub fn label(&self, lang: Language) -> &'static str {
         match (self, lang) {
-            (Self::General, Language::Turkish) => "🌐 Genel & Dil",
-            (Self::General, Language::English) => "🌐 General & Language",
-            (Self::Editing, Language::Turkish) => "⏱️ Kurgu & Zaman Çizgisi",
-            (Self::Editing, Language::English) => "⏱️ Editing & Timeline",
-            (Self::Performance, Language::Turkish) => "⚡ Performans & GPU",
-            (Self::Performance, Language::English) => "⚡ Performance & GPU",
-            (Self::Audio, Language::Turkish) => "🔊 Ses & Monitör",
-            (Self::Audio, Language::English) => "🔊 Audio & Monitoring",
-            (Self::Autosave, Language::Turkish) => "💾 Otomatik Kayıt & Önbellek",
-            (Self::Autosave, Language::English) => "💾 Autosave & Cache",
+            (Self::General, Language::Turkish) => "◈ Genel & Dil",
+            (Self::General, Language::English) => "◈ General & Language",
+            (Self::Editing, Language::Turkish) => "≡ Kurgu & Zaman Çizgisi",
+            (Self::Editing, Language::English) => "≡ Editing & Timeline",
+            (Self::Performance, Language::Turkish) => "▸ Performans & GPU",
+            (Self::Performance, Language::English) => "▸ Performance & GPU",
+            (Self::Audio, Language::Turkish) => "♪ Ses & Monitör",
+            (Self::Audio, Language::English) => "♪ Audio & Monitoring",
+            (Self::Autosave, Language::Turkish) => "■ Otomatik Kayıt & Önbellek",
+            (Self::Autosave, Language::English) => "■ Autosave & Cache",
         }
     }
 }
@@ -594,9 +594,9 @@ impl PreferencesDialog {
                             format!("{} (Önerilen)", auto_desc),
                         );
                         let nvenc_lbl = if detected.has_nvidia_nvenc() {
-                            "NVIDIA NVENC (Destekleniyor ✅)"
+                            "NVIDIA NVENC (Destekleniyor ✓)"
                         } else {
-                            "NVIDIA NVENC (Algılanmadı ❌)"
+                            "NVIDIA NVENC (Algılanmadı ✕)"
                         };
                         ui.selectable_value(
                             &mut self.draft.preferred_hw_accel,
@@ -604,9 +604,9 @@ impl PreferencesDialog {
                             nvenc_lbl,
                         );
                         let qsv_lbl = if detected.has_intel_qsv() {
-                            "Intel QuickSync QSV (Destekleniyor ✅)"
+                            "Intel QuickSync QSV (Destekleniyor ✓)"
                         } else {
-                            "Intel QuickSync QSV (Algılanmadı ❌)"
+                            "Intel QuickSync QSV (Algılanmadı ✕)"
                         };
                         ui.selectable_value(
                             &mut self.draft.preferred_hw_accel,
@@ -614,9 +614,9 @@ impl PreferencesDialog {
                             qsv_lbl,
                         );
                         let vaapi_lbl = if detected.has_vaapi() {
-                            "Linux VA-API (Destekleniyor ✅)"
+                            "Linux VA-API (Destekleniyor ✓)"
                         } else {
-                            "Linux VA-API (Algılanmadı ❌)"
+                            "Linux VA-API (Algılanmadı ✕)"
                         };
                         ui.selectable_value(
                             &mut self.draft.preferred_hw_accel,
@@ -624,9 +624,9 @@ impl PreferencesDialog {
                             vaapi_lbl,
                         );
                         let amf_lbl = if detected.has_amd_amf() {
-                            "AMD AMF (Destekleniyor ✅)"
+                            "AMD AMF (Destekleniyor ✓)"
                         } else {
-                            "AMD AMF (Algılanmadı ❌)"
+                            "AMD AMF (Algılanmadı ✕)"
                         };
                         ui.selectable_value(
                             &mut self.draft.preferred_hw_accel,
@@ -636,7 +636,7 @@ impl PreferencesDialog {
                         ui.selectable_value(
                             &mut self.draft.preferred_hw_accel,
                             "cpu".to_string(),
-                            "Saf CPU - libx264/libx265 (Her Zaman Kullanılabilir ✅)",
+                            "Saf CPU - libx264/libx265 (Her Zaman Kullanılabilir ✓)",
                         );
                     });
                 ui.end_row();
@@ -668,9 +668,9 @@ impl PreferencesDialog {
                         ui.spacing_mut().item_spacing = Vec2::new(14.0, 8.0);
                         let render_badge = |ui: &mut egui::Ui, name: &str, active: bool| {
                             let (icon, color) = if active {
-                                ("✅", Color32::from_rgb(0x60, 0xd0, 0x80))
+                                ("✓", Color32::from_rgb(0x60, 0xd0, 0x80))
                             } else {
-                                ("❌", Color32::from_rgb(0xa0, 0x80, 0x80))
+                                ("✕", Color32::from_rgb(0xa0, 0x80, 0x80))
                             };
                             ui.label(
                                 RichText::new(format!("{} {}", icon, name))
@@ -930,8 +930,8 @@ impl PreferencesDialog {
         ui.add_space(8.0);
 
         let clear_label = match lang {
-            Language::Turkish => "🗑️ Küçük Resim ve Dalgaboyu Önbelleğini Temizle",
-            Language::English => "🗑️ Clear Thumbnail & Waveform Disk Cache",
+            Language::Turkish => "✕ Küçük Resim ve Dalgaboyu Önbelleğini Temizle",
+            Language::English => "✕ Clear Thumbnail & Waveform Disk Cache",
         };
         let clear_btn = Button::new(
             RichText::new(clear_label)

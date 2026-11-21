@@ -724,7 +724,7 @@ impl<'a> MonitorWidget<'a> {
                 painter.text(
                     banner_rect.center(),
                     egui::Align2::CENTER_CENTER,
-                    "🎯 WB Damlalığı: Nötr beyaz/gri bir noktaya tıklayın (İptal: Sağ Tık)",
+                    "⌖ WB Damlalığı: Nötr beyaz/gri bir noktaya tıklayın (İptal: Sağ Tık)",
                     egui::FontId::proportional(10.5),
                     Color32::WHITE,
                 );
@@ -1636,8 +1636,6 @@ pub fn draw_text_overlays_on_rect(
             trim_core::clip::MotionTitleStyle::Ticker => {
                 let galley = painter.layout_no_wrap(ov.text.clone(), font.clone(), final_col);
                 let text_w = galley.size().x;
-                let scroll_distance = frame_rect.width() + text_w;
-                let cur_x = frame_rect.right() - (ov.progress * scroll_distance);
 
                 let bar_h = (scaled_font_size * 1.6).max(28.0);
                 let bar_rect = Rect::from_min_max(
@@ -1650,24 +1648,42 @@ pub fn draw_text_overlays_on_rect(
                     .unwrap_or(Color32::from_rgba_unmultiplied(12, 14, 20, 230));
                 painter.rect_filled(bar_rect, 0.0, banner_bg);
 
-                let badge_w = 70.0 * (frame_rect.height() / 1080.0).max(0.6);
+                let badge_label = ov
+                    .subtitle_text
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("BİLGİ");
+                let badge_font = egui::FontId::proportional((scaled_font_size * 0.72).max(10.0));
+                let badge_galley =
+                    painter.layout_no_wrap(badge_label.to_string(), badge_font, Color32::WHITE);
+                let min_badge_w = 72.0 * (frame_rect.height() / 1080.0).max(0.65);
+                let badge_w = (badge_galley.size().x + 22.0).max(min_badge_w);
                 let badge_rect = Rect::from_min_max(
                     bar_rect.min,
                     Pos2::new(bar_rect.left() + badge_w, bar_rect.bottom()),
                 );
-                painter.rect_filled(badge_rect, 0.0, Color32::from_rgb(220, 38, 38));
-                painter.text(
-                    badge_rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    "BİLGİ",
-                    egui::FontId::proportional(scaled_font_size * 0.75),
-                    Color32::WHITE,
-                );
 
+                let ticker_clip_rect = Rect::from_min_max(
+                    Pos2::new(
+                        (badge_rect.right() + 8.0).min(bar_rect.right()),
+                        bar_rect.top(),
+                    ),
+                    bar_rect.max,
+                );
+                let scroll_distance = ticker_clip_rect.width() + text_w;
+                let cur_x = ticker_clip_rect.right() - (ov.progress * scroll_distance);
                 let text_pos = Pos2::new(cur_x, target_y - galley.size().y * 0.5);
                 painter
-                    .with_clip_rect(bar_rect)
+                    .with_clip_rect(ticker_clip_rect)
                     .galley(text_pos, galley, final_col);
+
+                painter.rect_filled(badge_rect, 0.0, Color32::from_rgb(220, 38, 38));
+                painter.galley(
+                    badge_rect.center() - badge_galley.size() * 0.5,
+                    badge_galley,
+                    Color32::WHITE,
+                );
                 bar_rect
             }
             trim_core::clip::MotionTitleStyle::BoxReveal => {

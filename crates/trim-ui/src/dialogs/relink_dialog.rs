@@ -118,13 +118,13 @@ impl RelinkDialog {
                 ui.horizontal(|ui| {
                     if ui
                         .button(
-                            RichText::new("📁 Klasör Seçerek Otomatik Yeniden Bağla...").strong(),
+                            RichText::new("↗ Klasör Seçerek Otomatik Yeniden Bağla...").strong(),
                         )
                         .clicked()
                     {
                         action = Some(RelinkDialogAction::PickFolder);
                     }
-                    if ui.button("🔄 Yenile").clicked() {
+                    if ui.button("↺ Yenile").clicked() {
                         action = Some(RelinkDialogAction::Refresh);
                     }
                 });

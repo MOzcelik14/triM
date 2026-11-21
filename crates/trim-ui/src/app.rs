@@ -1976,15 +1976,15 @@ impl eframe::App for TrimApp {
                         ui.close_menu();
                     }
                     let update_lbl = match lang {
-                        Language::Turkish => "🔄 Güncellemeleri Kontrol Et (GitHub Releases)",
-                        Language::English => "🔄 Check for Updates (GitHub Releases)",
+                        Language::Turkish => "↺ Güncellemeleri Kontrol Et (GitHub Releases)",
+                        Language::English => "↺ Check for Updates (GitHub Releases)",
                     };
                     if ui.button(update_lbl).clicked() {
                         ctx.open_url(egui::OpenUrl::new_tab(
                             "https://github.com/MOzcelik14/triM/releases/latest",
                         ));
                         self.status_message = format!(
-                            "🔄 Yüklü sürüm: v{} — GitHub Releases sayfası tarayıcıda açıldı.",
+                            "↺ Yüklü sürüm: v{} — GitHub Releases sayfası tarayıcıda açıldı.",
                             env!("CARGO_PKG_VERSION")
                         );
                         ui.close_menu();
@@ -2157,11 +2157,11 @@ impl eframe::App for TrimApp {
                         }
 
                         resp.context_menu(|ui| {
-                            if ui.button("📋 Sekansı Çoğalt (Duplicate)").clicked() {
+                            if ui.button("+ Sekansı Çoğalt (Duplicate)").clicked() {
                                 seq_to_duplicate = Some(seq.id.clone());
                                 ui.close_menu();
                             }
-                            if self.project.sequences.len() > 1 && ui.button("✖ Bu Sekansı Kapat").clicked() {
+                            if self.project.sequences.len() > 1 && ui.button("✕ Bu Sekansı Kapat").clicked() {
                                 seq_to_remove = Some(seq.id.clone());
                                 ui.close_menu();
                             }
@@ -2170,8 +2170,9 @@ impl eframe::App for TrimApp {
 
                     // Button to add new sequence
                     let add_seq_btn = Button::new(
-                        RichText::new("➕")
-                            .size(11.0)
+                        RichText::new("+")
+                            .size(12.0)
+                            .strong()
                             .color(Color32::from_rgb(0xa0, 0xa8, 0xc0)),
                     )
                     .fill(Color32::from_rgb(0x18, 0x1a, 0x22))
@@ -2291,9 +2292,9 @@ impl eframe::App for TrimApp {
                     ui.add_space(6.0);
                     let proxy_btn = Button::new(
                         RichText::new(if self.use_proxies {
-                            "⚡ Proxy: Açık"
+                            "◈ Proxy: Açık"
                         } else {
-                            "⚡ Proxy: Kapalı"
+                            "◈ Proxy: Kapalı"
                         })
                         .size(11.0)
                         .color(if self.use_proxies {
@@ -2317,7 +2318,7 @@ impl eframe::App for TrimApp {
 
                     ui.add_space(4.0);
                     let rec_btn = Button::new(
-                        RichText::new("📹 Ekran Kaydet")
+                        RichText::new("● Ekran Kaydet")
                             .size(11.0)
                             .color(Color32::from_rgb(0xe0, 0x80, 0x40)),
                     )
@@ -2333,7 +2334,7 @@ impl eframe::App for TrimApp {
                     if let Some(ref vo) = self.active_voiceover {
                         let vo_dur = vo.recorder.elapsed_seconds();
                         let vo_rec_btn = Button::new(
-                            RichText::new(format!("🔴 SES KAYDI: {:.1}s [⏹ Durdur]", vo_dur))
+                            RichText::new(format!("● SES KAYDI: {:.1}s [⏹ Durdur]", vo_dur))
                                 .size(11.0)
                                 .strong()
                                 .color(Color32::WHITE),
@@ -2432,7 +2433,7 @@ impl eframe::App for TrimApp {
                             corner_ui.horizontal_centered(|cui| {
                                 cui.add_space(8.0);
                                 cui.label(
-                                    RichText::new("🎛 KANALLAR")
+                                    RichText::new("≡ KANALLAR")
                                         .size(10.5)
                                         .strong()
                                         .color(Color32::from_rgb(0x94, 0x98, 0xa8)),
@@ -2448,17 +2449,17 @@ impl eframe::App for TrimApp {
                                                 .color(Color32::from_rgb(0x81, 0x8c, 0xf8))
                                                 .strong(),
                                             |menu_ui| {
-                                                if menu_ui.button("📹 Video Kanalı Ekle").clicked()
+                                                if menu_ui.button("▸ Video Kanalı Ekle").clicked()
                                                 {
                                                     add_video_requested = true;
                                                     menu_ui.close_menu();
                                                 }
-                                                if menu_ui.button("🎵 Ses Kanalı Ekle").clicked()
+                                                if menu_ui.button("♪ Ses Kanalı Ekle").clicked()
                                                 {
                                                     add_audio_requested = true;
                                                     menu_ui.close_menu();
                                                 }
-                                                if menu_ui.button("✨ Ayar Katmanı Ekle").clicked()
+                                                if menu_ui.button("◈ Ayar Katmanı Ekle").clicked()
                                                 {
                                                     add_adjustment_layer_requested = true;
                                                     menu_ui.close_menu();
@@ -4500,7 +4501,7 @@ impl eframe::App for TrimApp {
             let mut open = self.paste_attrs_dialog_open;
             let mut do_apply = false;
             let mut do_close = false;
-            egui::Window::new("📋 Özellikleri Seçerek Yapıştır (Paste Attributes)")
+            egui::Window::new("≡ Özellikleri Seçerek Yapıştır (Paste Attributes)")
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(false)
@@ -4523,19 +4524,19 @@ impl eframe::App for TrimApp {
 
                     ui.checkbox(
                         &mut self.paste_attr_color,
-                        "🎨 Renk & Grading (Color Wheels, Eğriler, HSL, LUT, Film FX)",
+                        "■ Renk & Grading (Color Wheels, Eğriler, HSL, LUT, Film FX)",
                     );
                     ui.checkbox(
                         &mut self.paste_attr_transform,
-                        "📐 Dönüşüm & Kompozisyon (Konum, Ölçek, Döndürme, Kırpma, Corner Pin)",
+                        "⊞ Dönüşüm & Kompozisyon (Konum, Ölçek, Döndürme, Kırpma, Corner Pin)",
                     );
                     ui.checkbox(
                         &mut self.paste_attr_audio,
-                        "🔊 Ses & Fairlight (Ses Seviyesi, Pan, 6-Band EQ, Kompresör, Reverb)",
+                        "♪ Ses & Fairlight (Ses Seviyesi, Pan, 6-Band EQ, Kompresör, Reverb)",
                     );
                     ui.checkbox(
                         &mut self.paste_attr_speed,
-                        "⏩ Hız & Yön (Speed, Reverse, Pitch Lock)",
+                        "▸ Hız & Yön (Speed, Reverse, Pitch Lock)",
                     );
 
                     ui.add_space(12.0);
@@ -4956,7 +4957,7 @@ impl eframe::App for TrimApp {
                         // Bottom Action Buttons
                         ui.horizontal(|ui| {
                             let web_btn = Button::new(
-                                RichText::new("🌐 Web Sitesi")
+                                RichText::new("↗ Web Sitesi")
                                     .size(11.5)
                                     .strong()
                                     .color(Color32::from_rgb(0xd8, 0xdc, 0xec)),
@@ -4982,7 +4983,7 @@ impl eframe::App for TrimApp {
                             ui.add_space(4.0);
 
                             let gh_btn = Button::new(
-                                RichText::new("🐙 GitHub")
+                                RichText::new("↗ GitHub")
                                     .size(11.5)
                                     .strong()
                                     .color(Color32::from_rgb(0xd8, 0xdc, 0xec)),
@@ -5008,7 +5009,7 @@ impl eframe::App for TrimApp {
                             ui.add_space(4.0);
 
                             let upd_btn = Button::new(
-                                RichText::new("🔄 Güncellemeler")
+                                RichText::new("↺ Güncellemeler")
                                     .size(11.5)
                                     .strong()
                                     .color(Color32::from_rgb(0x60, 0xd0, 0x98)),
@@ -5059,8 +5060,8 @@ impl eframe::App for TrimApp {
             let mut commit_dialog = false;
 
             let (title, confirm_text) = match &state.mode {
-                BinDialogMode::Create => ("📁 Yeni Medya Klasörü (Bin)", "Oluştur"),
-                BinDialogMode::Rename(_) => ("📁 Klasörü Yeniden Adlandır", "Kaydet"),
+                BinDialogMode::Create => ("⊞ Yeni Medya Klasörü (Bin)", "Oluştur"),
+                BinDialogMode::Rename(_) => ("⊞ Klasörü Yeniden Adlandır", "Kaydet"),
             };
 
             let modal_frame = egui::Frame::none()
@@ -5170,8 +5171,8 @@ impl eframe::App for TrimApp {
         if self.ffmpeg_missing_alert && !self.splash_screen.is_active {
             let mut is_open = self.ffmpeg_missing_alert;
             let title = match self.lang() {
-                Language::Turkish => "⚠️ triM. — FFmpeg Medya Motoru Bulunamadı",
-                Language::English => "⚠️ triM. — FFmpeg Media Engine Not Found",
+                Language::Turkish => "⚠ triM. — FFmpeg Medya Motoru Bulunamadı",
+                Language::English => "⚠ triM. — FFmpeg Media Engine Not Found",
             };
             egui::Window::new(title)
                 .id(egui::Id::new("ffmpeg_missing_modal"))
@@ -5184,7 +5185,7 @@ impl eframe::App for TrimApp {
                     ui.vertical_centered(|ui| {
                         ui.add_space(8.0);
                         ui.label(
-                            egui::RichText::new("⚠️")
+                            egui::RichText::new("⚠")
                                 .size(32.0)
                                 .color(egui::Color32::from_rgb(240, 180, 50)),
                         );
@@ -5229,8 +5230,8 @@ impl eframe::App for TrimApp {
 
                     ui.horizontal(|ui| {
                         let retry_lbl = match self.lang() {
-                            Language::Turkish => "🔄 Tekrar Kontrol Et",
-                            Language::English => "🔄 Check Again",
+                            Language::Turkish => "↺ Tekrar Kontrol Et",
+                            Language::English => "↺ Check Again",
                         };
                         if ui.button(retry_lbl).clicked() {
                             if trim_media::is_ffmpeg_available() && trim_media::is_ffprobe_available() {

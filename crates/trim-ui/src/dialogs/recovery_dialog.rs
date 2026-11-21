@@ -98,7 +98,7 @@ impl RecoveryDialog {
                         .inner_margin(Margin::symmetric(8.0, 4.0))
                         .show(ui, |ui| {
                             ui.label(
-                                RichText::new("⚡ OTOMATİK KURTARMA")
+                                RichText::new("◈ OTOMATİK KURTARMA")
                                     .size(10.5)
                                     .strong()
                                     .color(Color32::from_rgb(0xf5, 0x9e, 0x42)),
@@ -132,7 +132,7 @@ impl RecoveryDialog {
                         .show(ui, |ui| {
                             ui.set_min_width(ui.available_width());
                             ui.label(
-                                RichText::new(format!("🎞  {}", summary))
+                                RichText::new(format!("≡  {}", summary))
                                     .size(11.5)
                                     .strong()
                                     .color(Color32::from_rgb(0xe2, 0xe8, 0xf0)),

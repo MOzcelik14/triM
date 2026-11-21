@@ -74,7 +74,7 @@ impl CloseConfirmDialog {
                 ui.add_space(4.0);
 
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("⚠️").size(24.0).color(Color32::from_rgb(0xe0, 0x7a, 0x38)));
+                    ui.label(RichText::new("⚠").size(24.0).color(Color32::from_rgb(0xe0, 0x7a, 0x38)));
                     ui.vertical(|ui| {
                         ui.label(
                             RichText::new(format!("\"{}\" projesinde kaydedilmemiş değişiklikler var.", self.project_name))
@@ -93,7 +93,7 @@ impl CloseConfirmDialog {
                 ui.add_space(14.0);
 
                 ui.horizontal(|ui| {
-                    let save_btn = Button::new(RichText::new("💾 Kaydet").color(Color32::WHITE).strong())
+                    let save_btn = Button::new(RichText::new("✓ Kaydet").color(Color32::WHITE).strong())
                         .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
 
                     if ui.add(save_btn).clicked() {

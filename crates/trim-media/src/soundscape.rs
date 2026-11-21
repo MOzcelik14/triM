@@ -24,12 +24,12 @@ impl SoundscapePreset {
 
     pub fn label(&self) -> &'static str {
         match self {
-            Self::TensionRiser => "📈 Gerilim Riser (Cinematic Tension Riser - 6s)",
-            Self::SubBassDrop => "💥 Sub Bass Drop / Impact (3.5s)",
-            Self::FilmProjector35mm => "🎞 35mm Film Projektörü & Makara (8s)",
-            Self::NightRain => "🌧 Gece Yağmuru & Rüzgar Ambiyansı (10s)",
-            Self::CinematicWhoosh => "💨 Sinematik Whoosh / Geçiş (2s)",
-            Self::TypewriterFoley => "⌨️ Daktilo & Projektör Jenerik Foley",
+            Self::TensionRiser => "∿ Gerilim Riser (Cinematic Tension Riser)",
+            Self::SubBassDrop => "◈ Sub Bass Drop / Impact",
+            Self::FilmProjector35mm => "▸ 35mm Film Projektörü & Makara",
+            Self::NightRain => "≡ Gece Yağmuru & Rüzgar Ambiyansı",
+            Self::CinematicWhoosh => "→ Sinematik Whoosh / Geçiş",
+            Self::TypewriterFoley => "♪ Daktilo & Projektör Jenerik Foley",
         }
     }
 

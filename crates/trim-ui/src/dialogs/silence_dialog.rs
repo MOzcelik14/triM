@@ -108,7 +108,7 @@ impl SilenceDialog {
             return None;
         }
 
-        Window::new("⚡ Sessizlikleri Otomatik Kes (Jump-Cut)")
+        Window::new("✂ Sessizlikleri Otomatik Kes (Jump-Cut)")
             .collapsible(false)
             .resizable(false)
             .default_width(420.0)
@@ -116,7 +116,7 @@ impl SilenceDialog {
             .show(ctx, |ui| {
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("⚡").size(24.0).color(Color32::from_rgb(0xe0, 0x7a, 0x38)));
+                    ui.label(RichText::new("✂").size(24.0).color(Color32::from_rgb(0xe0, 0x7a, 0x38)));
                     ui.vertical(|ui| {
                         ui.label(RichText::new(format!("Klip: {}", self.clip_name)).strong().color(Color32::WHITE));
                         ui.label(RichText::new("Konuşma aralarındaki esleri ve nefesleri otomatik kaldırarak akıcı video üretir.").size(12.0).color(Color32::from_rgb(0xa0, 0xa0, 0xb0)));
@@ -171,7 +171,7 @@ impl SilenceDialog {
 
                 ui.horizontal(|ui| {
                     // Step 1: Analyze button
-                    let analyze_btn = Button::new(RichText::new("🔍 Analiz Et").strong());
+                    let analyze_btn = Button::new(RichText::new("⌖ Analiz Et").strong());
                     if ui.add_enabled(!self.is_analyzing, analyze_btn).clicked() {
                         self.is_analyzing = true;
                         self.status_text = "Ses dalgaları taranıyor...".to_string();
@@ -185,7 +185,7 @@ impl SilenceDialog {
 
                     // Step 2: Apply cut button
                     let can_apply = self.speech_intervals.as_ref().map(|s| !s.is_empty()).unwrap_or(false) && !self.is_analyzing;
-                    let apply_btn = Button::new(RichText::new("✂️ Kes ve Boşlukları Kapat").color(Color32::WHITE).strong())
+                    let apply_btn = Button::new(RichText::new("✂ Kes ve Boşlukları Kapat").color(Color32::WHITE).strong())
                         .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
 
                     if ui.add_enabled(can_apply, apply_btn).clicked() {

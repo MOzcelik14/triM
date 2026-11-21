@@ -195,7 +195,7 @@ impl ExportDialog {
             .show(ctx, |ui| {
                 // Header Bar
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("🎬").size(18.0));
+                    ui.label(RichText::new("▸").size(16.0).color(ACCENT_AMBER));
                     ui.add_space(2.0);
                     ui.label(
                         RichText::new("Videoyu Dışa Aktar")
@@ -308,7 +308,7 @@ impl ExportDialog {
 
                                                     let resp = card_frame.show(ui, |ui| {
                                                         ui.horizontal(|ui| {
-                                                            ui.label(RichText::new(icon).size(15.0));
+                                                            ui.label(RichText::new(icon).size(14.0));
                                                             ui.vertical(|ui| {
                                                                 ui.label(
                                                                     RichText::new(short_name)
@@ -388,7 +388,7 @@ impl ExportDialog {
                                     .inner_margin(Margin::symmetric(12.0, 10.0))
                                     .show(ui, |ui| {
                                         ui.horizontal(|ui| {
-                                            ui.label(RichText::new("🎞").size(12.0).color(ACCENT_AMBER));
+                                            ui.label(RichText::new("▸").size(12.0).color(ACCENT_AMBER));
                                             ui.label(
                                                 RichText::new("Video Parametreleri")
                                                     .size(11.5)
@@ -583,15 +583,15 @@ impl ExportDialog {
                                                 });
 
                                             let (badge_text, badge_col) = if detected_enc.has_nvidia_nvenc() {
-                                                ("⚡ NVENC Donanım Aktif", Color32::from_rgb(0x3d, 0xdc, 0x84))
+                                                ("● NVENC Donanım Aktif", Color32::from_rgb(0x3d, 0xdc, 0x84))
                                             } else if detected_enc.has_videotoolbox() {
-                                                ("⚡ VideoToolbox Aktif", Color32::from_rgb(0x38, 0xa0, 0xf0))
+                                                ("● VideoToolbox Aktif", Color32::from_rgb(0x38, 0xa0, 0xf0))
                                             } else if detected_enc.has_intel_qsv() {
-                                                ("⚡ QuickSync Aktif", Color32::from_rgb(0x38, 0xa0, 0xf0))
+                                                ("● QuickSync Aktif", Color32::from_rgb(0x38, 0xa0, 0xf0))
                                             } else if detected_enc.has_vaapi() {
-                                                ("⚡ VAAPI Aktif", Color32::from_rgb(0x3d, 0xdc, 0x84))
+                                                ("● VAAPI Aktif", Color32::from_rgb(0x3d, 0xdc, 0x84))
                                             } else if detected_enc.has_amd_amf() {
-                                                ("⚡ AMD AMF Aktif", Color32::from_rgb(0xe0, 0x50, 0x50))
+                                                ("● AMD AMF Aktif", Color32::from_rgb(0xe0, 0x50, 0x50))
                                             } else {
                                                 ("CPU Yazılım", Color32::from_rgb(0x8a, 0x92, 0xa6))
                                             };
@@ -609,7 +609,7 @@ impl ExportDialog {
                                     .inner_margin(Margin::symmetric(12.0, 9.0))
                                     .show(ui, |ui| {
                                         ui.horizontal(|ui| {
-                                            ui.label(RichText::new("🔊").size(12.0).color(ACCENT_TEAL));
+                                            ui.label(RichText::new("♪").size(12.0).color(ACCENT_TEAL));
                                             ui.label(
                                                 RichText::new("Ses & Normalizasyon")
                                                     .size(11.5)
@@ -657,7 +657,7 @@ impl ExportDialog {
                                     .inner_margin(Margin::symmetric(12.0, 9.0))
                                     .show(ui, |ui| {
                                         ui.horizontal(|ui| {
-                                            ui.label(RichText::new("📁").size(12.0).color(ACCENT_BLUE));
+                                            ui.label(RichText::new("⊞").size(12.0).color(ACCENT_BLUE));
                                             ui.label(
                                                 RichText::new("Çıktı Dosyası")
                                                     .size(11.5)
@@ -711,7 +711,7 @@ impl ExportDialog {
                                                 .add_enabled(
                                                     browse_enabled,
                                                     Button::new(
-                                                        RichText::new("📁 Gözat...")
+                                                        RichText::new("↗ Gözat...")
                                                             .size(11.0)
                                                             .color(Color32::WHITE),
                                                     )
@@ -761,7 +761,7 @@ impl ExportDialog {
                     // =========================================================
                     ui.horizontal(|ui| {
                         let btn_yt = Button::new(
-                            RichText::new("📋 YouTube Bölümleri")
+                            RichText::new("≡ YouTube Bölümleri")
                                 .size(10.5)
                                 .color(Color32::from_rgb(0xe8, 0xd0, 0x90)),
                         )
@@ -779,7 +779,7 @@ impl ExportDialog {
                         }
 
                         let btn_edl = Button::new(
-                            RichText::new("🎞 CMX3600 EDL")
+                            RichText::new("≡ CMX3600 EDL")
                                 .size(10.5)
                                 .color(Color32::from_rgb(0xc8, 0xd4, 0xec)),
                         )
@@ -795,7 +795,7 @@ impl ExportDialog {
                         }
 
                         let btn_xml = Button::new(
-                            RichText::new("📐 FCPXML")
+                            RichText::new("⊞ FCPXML")
                                 .size(10.5)
                                 .color(Color32::from_rgb(0xc8, 0xd4, 0xec)),
                         )
@@ -812,7 +812,7 @@ impl ExportDialog {
 
                         ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                             let btn_start = Button::new(
-                                RichText::new("🎬  Dışa Aktarmayı Başlat")
+                                RichText::new("▶  Dışa Aktarmayı Başlat")
                                     .color(Color32::WHITE)
                                     .size(12.5)
                                     .strong(),
@@ -851,7 +851,7 @@ impl ExportDialog {
                             ui.add_space(6.0);
 
                             let btn_queue = Button::new(
-                                RichText::new("📥 Kuyruğa Ekle")
+                                RichText::new("+ Kuyruğa Ekle")
                                     .size(11.5)
                                     .color(Color32::from_rgb(0xe0, 0xe6, 0xf8))
                                     .strong(),
@@ -918,7 +918,11 @@ impl ExportDialog {
                                 let is_done = self.progress >= 99.9;
 
                                 if is_done {
-                                    ui.label(RichText::new("🎉").size(34.0));
+                                    ui.label(
+                                        RichText::new("✓")
+                                            .size(34.0)
+                                            .color(Color32::from_rgb(0x3d, 0xdc, 0x84)),
+                                    );
                                     ui.add_space(4.0);
                                     ui.label(
                                         RichText::new("Dışa Aktarma Başarıyla Tamamlandı!")
@@ -927,7 +931,7 @@ impl ExportDialog {
                                             .color(Color32::from_rgb(0x3d, 0xdc, 0x84)),
                                     );
                                 } else {
-                                    ui.label(RichText::new("⚡").size(28.0).color(ACCENT_AMBER));
+                                    ui.label(RichText::new("◈").size(28.0).color(ACCENT_AMBER));
                                     ui.add_space(4.0);
                                     ui.label(
                                         RichText::new("Video Dışa Aktarılıyor...")
@@ -981,7 +985,7 @@ impl ExportDialog {
                                 if is_done {
                                     ui.horizontal(|ui| {
                                         let btn_folder = Button::new(
-                                            RichText::new("📁  Dosyayı Klasörde Göster")
+                                            RichText::new("↗  Dosyayı Klasörde Göster")
                                                 .size(12.0)
                                                 .color(Color32::WHITE)
                                                 .strong(),
@@ -1040,21 +1044,21 @@ impl ExportDialog {
 
 fn get_preset_metadata(name: &str) -> (&'static str, &'static str, &'static str) {
     if name.contains("YouTube") {
-        ("🖥", "1080p", "YouTube 1080p")
+        ("⊞", "1080p", "YouTube 1080p")
     } else if name.contains("720p") {
-        ("⚡", "Hızlı", "Hızlı Web 720p")
+        ("▸", "Hızlı", "Hızlı Web 720p")
     } else if name.contains("Kaynak") {
-        ("🎞", "Kaynak", "Kaynak ile Eşleşen")
+        ("≡", "Kaynak", "Kaynak ile Eşleşen")
     } else if name.contains("4K") {
-        ("🎬", "4K UHD", "4K UHD Sinematik")
+        ("◈", "4K UHD", "4K UHD Sinematik")
     } else if name.contains("TikTok") || name.contains("Reels") {
-        ("📱", "9:16", "Shorts / Reels")
+        ("◧", "9:16", "Shorts / Reels")
     } else if name.contains("HEVC") || name.contains("H.265") {
-        ("📦", "H.265", "HEVC / H.265")
+        ("■", "H.265", "HEVC / H.265")
     } else if name.contains("ProRes") {
-        ("💎", "Master", "Apple ProRes 422")
+        ("★", "Master", "Apple ProRes 422")
     } else {
-        ("🎬", "Özel", "Özel Profil")
+        ("▸", "Özel", "Özel Profil")
     }
 }
 

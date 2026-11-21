@@ -255,10 +255,10 @@ impl CaptionStyle {
     pub fn label(&self) -> &'static str {
         match self {
             Self::Standard => "Klasik Standart Altyazı",
-            Self::PopUpBouncy => "💥 Pop-Up / Zıplayan Kelime (TikTok / Reels)",
-            Self::WordHighlightYellow => "⚡ Sarı Vurgulu Kelime (YouTube Shorts)",
-            Self::WordHighlightNeon => "🟢 Neon Yeşil Vurgu (Dinamik)",
-            Self::BoxBackground => "📦 Arka Plan Kutulu (Modern NLE)",
+            Self::PopUpBouncy => "◈ Pop-Up / Zıplayan Kelime (TikTok / Reels)",
+            Self::WordHighlightYellow => "▸ Sarı Vurgulu Kelime (YouTube Shorts)",
+            Self::WordHighlightNeon => "● Neon Yeşil Vurgu (Dinamik)",
+            Self::BoxBackground => "■ Arka Plan Kutulu (Modern NLE)",
         }
     }
 }
@@ -292,13 +292,13 @@ impl MotionTitleStyle {
     pub fn label(&self) -> &'static str {
         match self {
             Self::None => "Statik Metin",
-            Self::Typewriter => "⌨️ Daktilo (Harf Harf)",
-            Self::LowerThird => "👤 Alt Bant (Lower Third)",
-            Self::CinematicZoom => "🎬 Sinematik Büyüme (Fade & Zoom)",
-            Self::Ticker => "📰 Kayan Yazı (Haber Şeridi)",
-            Self::BoxReveal => "📦 Kutulu Açılış (Box Reveal)",
-            Self::RollingCredits => "🎞 Sinema Akan Jenerik (Rolling Credits)",
-            Self::ChapterCard => "🎭 Perde / Bölüm Kartı (Chapter Card)",
+            Self::Typewriter => "▸ Daktilo (Harf Harf)",
+            Self::LowerThird => "◧ Alt Bant (Lower Third)",
+            Self::CinematicZoom => "◈ Sinematik Büyüme (Fade & Zoom)",
+            Self::Ticker => "≡ Kayan Yazı (Haber Şeridi)",
+            Self::BoxReveal => "■ Kutulu Açılış (Box Reveal)",
+            Self::RollingCredits => "↑ Sinema Akan Jenerik (Rolling Credits)",
+            Self::ChapterCard => "⊞ Perde / Bölüm Kartı (Chapter Card)",
         }
     }
 }
@@ -385,11 +385,11 @@ impl PanZoomPreset {
     pub fn label(&self) -> &'static str {
         match self {
             Self::None => "Yok (Sabit)",
-            Self::ZoomIn => "🔍 Yavaşça Yaklaş (Zoom In)",
-            Self::ZoomOut => "🔍 Yavaşça Uzaklaş (Zoom Out)",
-            Self::PanLeft => "⬅️ Sola Kay (Pan Left)",
-            Self::PanRight => "➡️ Sağa Kay (Pan Right)",
-            Self::DramaticZoom => "⚡ Hızlı Dramatik Yaklaş",
+            Self::ZoomIn => "↗ Yavaşça Yaklaş (Zoom In)",
+            Self::ZoomOut => "↙ Yavaşça Uzaklaş (Zoom Out)",
+            Self::PanLeft => "← Sola Kay (Pan Left)",
+            Self::PanRight => "→ Sağa Kay (Pan Right)",
+            Self::DramaticZoom => "◈ Hızlı Dramatik Yaklaş",
         }
     }
 }

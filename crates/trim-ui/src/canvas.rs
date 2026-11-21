@@ -936,11 +936,11 @@ pub fn render_timeline_canvas(
                 (None, None) => "",
             };
             let title_prefix = if clip.is_adjustment_layer() {
-                "✨ "
+                "◈ "
             } else if clip.is_nested_sequence() {
-                "🎞️ "
+                "≡ "
             } else if clip.text_overlay.is_some() {
-                "🅃 "
+                "T "
             } else {
                 ""
             };
@@ -2467,7 +2467,7 @@ pub fn render_timeline_canvas(
                 ui.separator();
 
                 // Color labels submenu
-                ui.menu_button("🎨 Renk Etiketi (Color Label)", |ui| {
+                ui.menu_button("■ Renk Etiketi (Color Label)", |ui| {
                     ui.set_min_width(200.0);
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                     ui.spacing_mut().button_padding = Vec2::new(8.0, 4.0);
@@ -2497,14 +2497,14 @@ pub fn render_timeline_canvas(
                     .is_some();
                 if is_linked {
                     if ui
-                        .button("🔗 Klip Bağını Kaldır (Unlink)  [Ctrl+L]")
+                        .button("↔ Klip Bağını Kaldır (Unlink)  [Ctrl+L]")
                         .clicked()
                     {
                         action = Some(CanvasAction::ToggleLinkSelected);
                         ui.close_menu();
                     }
                 } else if state.selected_clip_pairs.len() > 1
-                    && ui.button("🔗 Klipleri Bağla (Link)  [Ctrl+L]").clicked()
+                    && ui.button("↔ Klipleri Bağla (Link)  [Ctrl+L]").clicked()
                 {
                     action = Some(CanvasAction::ToggleLinkSelected);
                     ui.close_menu();
@@ -2512,7 +2512,7 @@ pub fn render_timeline_canvas(
 
                 if state.selected_clip_pairs.len() >= 2
                     && ui
-                        .button("🎙️ Ses Dalga Formuna Göre Hizala (Audio Sync)")
+                        .button("∿ Ses Dalga Formuna Göre Hizala (Audio Sync)")
                         .clicked()
                 {
                     action = Some(CanvasAction::AlignSelectedByAudio);
@@ -2520,7 +2520,7 @@ pub fn render_timeline_canvas(
                 }
 
                 if ui
-                    .button("📦 Bileşik Klip Oluştur (Compound Clip / Nest)")
+                    .button("⊞ Bileşik Klip Oluştur (Compound Clip / Nest)")
                     .clicked()
                 {
                     action = Some(CanvasAction::CreateCompoundClip);
@@ -2529,25 +2529,25 @@ pub fn render_timeline_canvas(
 
                 if state.selected_clip_pairs.len() >= 2
                     && ui
-                        .button("🔗 Bitişik Kesikleri Birleştir (Join Through-Edits)")
+                        .button("↔ Bitişik Kesikleri Birleştir (Join Through-Edits)")
                         .clicked()
                 {
                     action = Some(CanvasAction::JoinThroughEdits);
                     ui.close_menu();
                 }
 
-                if ui.button("📋 Kopyala (Ctrl+C)").clicked() {
+                if ui.button("+ Kopyala (Ctrl+C)").clicked() {
                     action = Some(CanvasAction::CopySelected);
                     ui.close_menu();
                 }
 
-                if ui.button("📋 Yapıştır (Ctrl+V)").clicked() {
+                if ui.button("+ Yapıştır (Ctrl+V)").clicked() {
                     action = Some(CanvasAction::PasteClipboard);
                     ui.close_menu();
                 }
 
                 if ui
-                    .button("🎛 Özellikleri Seçerek Yapıştır... (Ctrl+Alt+V)")
+                    .button("≡ Özellikleri Seçerek Yapıştır... (Ctrl+Alt+V)")
                     .clicked()
                 {
                     action = Some(CanvasAction::OpenPasteAttributesDialog);

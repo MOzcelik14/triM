@@ -76,7 +76,7 @@ impl AudioMixerDialog {
                 // Header Bar
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new("🎛 Ses Kanalları & Master Bus")
+                        RichText::new("≡ Ses Kanalları & Master Bus")
                             .size(13.0)
                             .strong()
                             .color(Color32::from_rgb(0x3d, 0xdc, 0x84)),

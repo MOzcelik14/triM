@@ -47,7 +47,7 @@ impl RenderQueueDialog {
         let mut action = None;
         let mut open = self.is_open;
 
-        Window::new("📋 Dışa Aktarma Kuyruğu (Render Queue)")
+        Window::new("≡ Dışa Aktarma Kuyruğu (Render Queue)")
             .open(&mut open)
             .collapsible(false)
             .resizable(true)
@@ -64,7 +64,7 @@ impl RenderQueueDialog {
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new(format!(
-                            "Toplam {} İş:  ⚪ {} Sırada  🔵 {} İşleniyor  🟢 {} Bitti  🔴 {} Hata",
+                            "Toplam {} İş:  ○ {} Sırada  ● {} İşleniyor  ✓ {} Bitti  ✕ {} Hata",
                             queue.jobs.len(),
                             queued_cnt,
                             in_prog_cnt,
@@ -106,7 +106,7 @@ impl RenderQueueDialog {
 
                         if comp_cnt > 0 || failed_cnt > 0 {
                             let btn_clear = Button::new(
-                                RichText::new("🧹 Bitenleri Temizle")
+                                RichText::new("✕ Bitenleri Temizle")
                                     .size(11.5)
                                     .color(Color32::from_rgb(0xc0, 0xc6, 0xd8)),
                             )
@@ -127,7 +127,7 @@ impl RenderQueueDialog {
                     ui.vertical_centered(|ui| {
                         ui.add_space(60.0);
                         ui.label(
-                            RichText::new("📥 Dışa Aktarma Kuyruğu Boş")
+                            RichText::new("≡ Dışa Aktarma Kuyruğu Boş")
                                 .size(16.0)
                                 .color(TEXT_MUTED)
                                 .strong(),
@@ -141,7 +141,7 @@ impl RenderQueueDialog {
                             .color(Color32::from_rgb(0x70, 0x76, 0x8c)),
                         );
                         ui.add_space(20.0);
-                        if ui.button("➕ Yeni Dışa Aktarma Başlat").clicked() {
+                        if ui.button("+ Yeni Dışa Aktarma Başlat").clicked() {
                             action = Some(RenderQueueDialogAction::NewExportJob);
                         }
                         ui.add_space(40.0);
@@ -169,7 +169,7 @@ impl RenderQueueDialog {
                                     match &job.status {
                                         RenderJobStatus::Queued => {
                                             ui.label(
-                                                RichText::new("⚪ Sırada")
+                                                RichText::new("○ Sırada")
                                                     .size(11.0)
                                                     .color(Color32::from_rgb(0xb0, 0xb8, 0xcc))
                                                     .strong(),
@@ -177,7 +177,7 @@ impl RenderQueueDialog {
                                         }
                                         RenderJobStatus::InProgress { progress, .. } => {
                                             ui.label(
-                                                RichText::new(format!("🔵 %{:.0} İşleniyor", progress))
+                                                RichText::new(format!("● %{:.0} İşleniyor", progress))
                                                     .size(11.0)
                                                     .color(ACCENT_BLUE)
                                                     .strong(),
@@ -185,7 +185,7 @@ impl RenderQueueDialog {
                                         }
                                         RenderJobStatus::Completed { .. } => {
                                             ui.label(
-                                                RichText::new("🟢 Tamamlandı")
+                                                RichText::new("✓ Tamamlandı")
                                                     .size(11.0)
                                                     .color(ACCENT_GREEN)
                                                     .strong(),
@@ -193,7 +193,7 @@ impl RenderQueueDialog {
                                         }
                                         RenderJobStatus::Failed { .. } => {
                                             ui.label(
-                                                RichText::new("🔴 Başarısız")
+                                                RichText::new("✕ Başarısız")
                                                     .size(11.0)
                                                     .color(ACCENT_RED)
                                                     .strong(),
@@ -201,7 +201,7 @@ impl RenderQueueDialog {
                                         }
                                         RenderJobStatus::Cancelled => {
                                             ui.label(
-                                                RichText::new("⚪ İptal Edildi")
+                                                RichText::new("○ İptal Edildi")
                                                     .size(11.0)
                                                     .color(TEXT_MUTED),
                                             );
@@ -225,28 +225,28 @@ impl RenderQueueDialog {
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                         match &job.status {
                                             RenderJobStatus::InProgress { .. } => {
-                                                if ui.small_button("❌ İptal").clicked() {
+                                                if ui.small_button("✕ İptal").clicked() {
                                                     job_to_cancel = Some(job.id.clone());
                                                 }
                                             }
                                             RenderJobStatus::Completed { output_path } => {
-                                                if ui.small_button("📁 Klasörde Göster").clicked() {
+                                                if ui.small_button("↗ Klasörde Göster").clicked() {
                                                     folder_to_open = Some(output_path.clone());
                                                 }
-                                                if ui.small_button("🗑").clicked() {
+                                                if ui.small_button("✕").clicked() {
                                                     job_to_remove = Some(job.id.clone());
                                                 }
                                             }
                                             RenderJobStatus::Queued => {
-                                                if ui.small_button("❌ İptal").clicked() {
+                                                if ui.small_button("✕ İptal").clicked() {
                                                     job_to_cancel = Some(job.id.clone());
                                                 }
-                                                if ui.small_button("🗑").clicked() {
+                                                if ui.small_button("✕").clicked() {
                                                     job_to_remove = Some(job.id.clone());
                                                 }
                                             }
                                             _ => {
-                                                if ui.small_button("🗑 Sil").clicked() {
+                                                if ui.small_button("✕ Sil").clicked() {
                                                     job_to_remove = Some(job.id.clone());
                                                 }
                                             }

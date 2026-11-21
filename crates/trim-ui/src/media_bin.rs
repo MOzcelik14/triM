@@ -140,14 +140,14 @@ pub fn render_media_bin(
         ui.spacing_mut().item_spacing.x = 4.0;
 
         let new_bin_btn = Button::new(
-            RichText::new("📁+ Klasör")
+            RichText::new("+ Klasör")
                 .size(10.5)
                 .color(Color32::from_rgb(0xfb, 0xbf, 0x24)),
         )
         .fill(Color32::from_rgb(0x22, 0x24, 0x30))
         .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x3a, 0x3e, 0x50)));
         if ui
-            .add_sized([72.0, 19.0], new_bin_btn)
+            .add_sized([68.0, 19.0], new_bin_btn)
             .on_hover_text("Yeni Medya Klasörü (Bin) Oluştur")
             .clicked()
         {
@@ -155,14 +155,14 @@ pub fn render_media_bin(
         }
 
         let new_seq_btn = Button::new(
-            RichText::new("🎞️+ Sekans")
+            RichText::new("+ Sekans")
                 .size(10.5)
                 .color(Color32::from_rgb(0xa7, 0x8b, 0xfa)),
         )
         .fill(Color32::from_rgb(0x22, 0x20, 0x30))
         .stroke(Stroke::new(1.0_f32, Color32::from_rgb(0x3e, 0x38, 0x54)));
         if ui
-            .add_sized([76.0, 19.0], new_seq_btn)
+            .add_sized([72.0, 19.0], new_seq_btn)
             .on_hover_text("Yeni Sekans (Timeline) Oluştur")
             .clicked()
         {
@@ -170,7 +170,7 @@ pub fn render_media_bin(
         }
 
         ui.menu_button(
-            RichText::new("🎛+ SFX")
+            RichText::new("+ SFX")
                 .size(10.5)
                 .color(Color32::from_rgb(0x34, 0xd3, 0x99)),
             |ui| {
@@ -210,9 +210,9 @@ pub fn render_media_bin(
 
         let filter_chips = [
             (MediaFilterType::All, "Tümü"),
-            (MediaFilterType::Video, "🎬 Video"),
-            (MediaFilterType::Audio, "🎵 Ses"),
-            (MediaFilterType::Image, "🖼️ Görsel"),
+            (MediaFilterType::Video, "▸ Video"),
+            (MediaFilterType::Audio, "♪ Ses"),
+            (MediaFilterType::Image, "■ Görsel"),
         ];
 
         for (chip_type, label) in filter_chips {
@@ -259,7 +259,7 @@ pub fn render_media_bin(
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let back_btn = Button::new(
-                        RichText::new("⬅ Geri")
+                        RichText::new("← Geri")
                             .size(10.5)
                             .color(Color32::from_rgb(0x60, 0xa5, 0xfa)),
                     )
@@ -273,7 +273,7 @@ pub fn render_media_bin(
                     }
 
                     ui.label(
-                        RichText::new("📁")
+                        RichText::new("⊞")
                             .size(11.0)
                             .color(Color32::from_rgb(0xf5, 0x9e, 0x0b)),
                     );
@@ -501,7 +501,11 @@ pub fn render_media_bin(
                     .show(ui, |ui| {
                         ui.set_max_width(340.0);
                         ui.vertical_centered(|ui| {
-                            ui.label(RichText::new("📁").size(26.0));
+                            ui.label(
+                                RichText::new("⊞")
+                                    .size(26.0)
+                                    .color(Color32::from_rgb(0xfb, 0xbf, 0x24)),
+                            );
                             ui.add_space(6.0);
                             ui.label(
                                 RichText::new("Bu Klasörde Medya Yok")
@@ -511,7 +515,7 @@ pub fn render_media_bin(
                             );
                             ui.add_space(4.0);
                             ui.label(
-                                RichText::new("Dosyaları buraya sürükleyebilir veya medyaları\nsağ tıklayıp '📁 Klasöre Taşı' ile ekleyebilirsiniz.")
+                                RichText::new("Dosyaları buraya sürükleyebilir veya medyaları\nsağ tıklayıp '▸ Klasöre Taşı' ile ekleyebilirsiniz.")
                                     .color(Color32::from_rgb(0x94, 0xa3, 0xb8))
                                     .size(11.0),
                             );
@@ -545,7 +549,11 @@ pub fn render_media_bin(
                     .show(ui, |ui| {
                         ui.set_max_width(300.0);
                         ui.vertical_centered(|ui| {
-                            ui.label(RichText::new("🔍").size(24.0));
+                            ui.label(
+                                RichText::new("⌖")
+                                    .size(24.0)
+                                    .color(Color32::from_rgb(0x94, 0xa3, 0xb8)),
+                            );
                             ui.add_space(6.0);
                             ui.label(
                                 RichText::new("Eşleşen Medya Bulunamadı")
@@ -572,7 +580,7 @@ pub fn render_media_bin(
                                    m_id: &String|
      -> Option<MediaBinAction> {
         let mut move_act = None;
-        ui.menu_button("📁 Klasöre Taşı", |ui| {
+        ui.menu_button("▸ Klasöre Taşı", |ui| {
             ui.set_min_width(190.0);
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             ui.spacing_mut().button_padding = Vec2::new(8.0, 4.0);
@@ -583,7 +591,7 @@ pub fn render_media_bin(
                 egui::Button::new(if is_in_root {
                     "✓ Ana Havuz (Kök Dizin)"
                 } else {
-                    "📁 Ana Havuz (Kök Dizin)"
+                    "▸ Ana Havuz (Kök Dizin)"
                 }),
             );
             if root_btn.clicked() {
@@ -601,7 +609,7 @@ pub fn render_media_bin(
                     let label = if is_in_this {
                         format!("✓ {}", bin.name)
                     } else {
-                        format!("📁 {}", bin.name)
+                        format!("▸ {}", bin.name)
                     };
                     let bin_btn = ui.add_enabled(!is_in_this, egui::Button::new(label));
                     if bin_btn.clicked() {
@@ -677,8 +685,8 @@ pub fn render_media_bin(
                     painter.text(
                         thumb_rect.center(),
                         egui::Align2::CENTER_CENTER,
-                        "📁",
-                        egui::FontId::proportional(28.0),
+                        "⊞",
+                        egui::FontId::proportional(26.0),
                         Color32::from_rgb(0xfb, 0xbf, 0x24),
                     );
 
@@ -733,16 +741,16 @@ pub fn render_media_bin(
                         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                         ui.spacing_mut().button_padding = Vec2::new(8.0, 4.0);
 
-                        if ui.button("📂 Klasörü Aç (Çift Tık)").clicked() {
+                        if ui.button("↗ Klasörü Aç (Çift Tık)").clicked() {
                             action = Some(MediaBinAction::EnterBin(Some(folder.id.clone())));
                             ui.close_menu();
                         }
-                        if ui.button("✏️ Yeniden Adlandır...").clicked() {
+                        if ui.button("✎ Yeniden Adlandır...").clicked() {
                             action = Some(MediaBinAction::RenameBinPrompt(folder.id.clone()));
                             ui.close_menu();
                         }
                         ui.separator();
-                        if ui.button("🗑️ Klasörü Sil").clicked() {
+                        if ui.button("✕ Klasörü Sil").clicked() {
                             action = Some(MediaBinAction::DeleteBin(folder.id.clone()));
                             ui.close_menu();
                         }
@@ -784,12 +792,12 @@ pub fn render_media_bin(
                     let thumb_rect = Rect::from_min_size(card_rect.min, Vec2::new(card_w, thumb_h));
                     painter.rect_filled(thumb_rect, 2.0, Color32::from_rgb(0x12, 0x10, 0x18));
 
-                    // Sequence symbol 🎞️
+                    // Sequence symbol ≡
                     painter.text(
                         thumb_rect.center(),
                         egui::Align2::CENTER_CENTER,
-                        "🎞️",
-                        egui::FontId::proportional(28.0),
+                        "≡",
+                        egui::FontId::proportional(26.0),
                         Color32::from_rgb(0xa7, 0x8b, 0xfa),
                     );
 
@@ -875,13 +883,13 @@ pub fn render_media_bin(
                             action = Some(MediaBinAction::AddToTimeline(format!("seq:{}", seq.id)));
                             ui.close_menu();
                         }
-                        if ui.button("📋 Sekansı Çoğalt (Duplicate)").clicked() {
+                        if ui.button("+ Sekansı Çoğalt (Duplicate)").clicked() {
                             action = Some(MediaBinAction::DuplicateSequence(seq.id.clone()));
                             ui.close_menu();
                         }
                         if project.sequences.len() > 1 {
                             ui.separator();
-                            if ui.button("🗑️ Sekansı Sil").clicked() {
+                            if ui.button("✕ Sekansı Sil").clicked() {
                                 action = Some(MediaBinAction::DeleteSequence(seq.id.clone()));
                                 ui.close_menu();
                             }
@@ -1089,9 +1097,9 @@ pub fn render_media_bin(
 
                         if item.media_type == MediaType::Video {
                             let proxy_label = if item.proxy_path.is_some() {
-                                "⚡ Proxy Mevcut (Yeniden Oluştur)"
+                                "◈ Proxy Mevcut (Yeniden Oluştur)"
                             } else {
-                                "⚡ 720p Proxy Oluştur"
+                                "◈ 720p Proxy Oluştur"
                             };
                             if ui.button(proxy_label).clicked() {
                                 action = Some(MediaBinAction::GenerateProxy(m_id.clone()));
@@ -1151,7 +1159,7 @@ pub fn render_media_bin(
                 painter.text(
                     pill_rect.center(),
                     egui::Align2::CENTER_CENTER,
-                    "📁",
+                    "⊞",
                     egui::FontId::proportional(14.0),
                     Color32::from_rgb(0xfb, 0xbf, 0x24),
                 );
@@ -1183,16 +1191,16 @@ pub fn render_media_bin(
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                     ui.spacing_mut().button_padding = Vec2::new(8.0, 4.0);
 
-                    if ui.button("📂 Klasörü Aç (Çift Tık)").clicked() {
+                    if ui.button("↗ Klasörü Aç (Çift Tık)").clicked() {
                         action = Some(MediaBinAction::EnterBin(Some(folder.id.clone())));
                         ui.close_menu();
                     }
-                    if ui.button("✏️ Yeniden Adlandır...").clicked() {
+                    if ui.button("✎ Yeniden Adlandır...").clicked() {
                         action = Some(MediaBinAction::RenameBinPrompt(folder.id.clone()));
                         ui.close_menu();
                     }
                     ui.separator();
-                    if ui.button("🗑️ Klasörü Sil").clicked() {
+                    if ui.button("✕ Klasörü Sil").clicked() {
                         action = Some(MediaBinAction::DeleteBin(folder.id.clone()));
                         ui.close_menu();
                     }
@@ -1222,7 +1230,7 @@ pub fn render_media_bin(
                 painter.text(
                     egui::pos2(rect.left() + 18.0, rect.center().y),
                     egui::Align2::CENTER_CENTER,
-                    "🎞️",
+                    "≡",
                     egui::FontId::proportional(14.0),
                     Color32::from_rgb(0xa7, 0x8b, 0xfa),
                 );
@@ -1287,13 +1295,13 @@ pub fn render_media_bin(
                         action = Some(MediaBinAction::AddToTimeline(format!("seq:{}", seq.id)));
                         ui.close_menu();
                     }
-                    if ui.button("📋 Sekansı Çoğalt (Duplicate)").clicked() {
+                    if ui.button("+ Sekansı Çoğalt (Duplicate)").clicked() {
                         action = Some(MediaBinAction::DuplicateSequence(seq.id.clone()));
                         ui.close_menu();
                     }
                     if project.sequences.len() > 1 {
                         ui.separator();
-                        if ui.button("🗑️ Sekansı Sil").clicked() {
+                        if ui.button("✕ Sekansı Sil").clicked() {
                             action = Some(MediaBinAction::DeleteSequence(seq.id.clone()));
                             ui.close_menu();
                         }
@@ -1426,9 +1434,9 @@ pub fn render_media_bin(
 
                     if item.media_type == MediaType::Video {
                         let proxy_label = if item.proxy_path.is_some() {
-                            "⚡ Proxy Mevcut (Yeniden Oluştur)"
+                            "◈ Proxy Mevcut (Yeniden Oluştur)"
                         } else {
-                            "⚡ 720p Proxy Oluştur"
+                            "◈ 720p Proxy Oluştur"
                         };
                         if ui.button(proxy_label).clicked() {
                             action = Some(MediaBinAction::GenerateProxy(m_id.clone()));

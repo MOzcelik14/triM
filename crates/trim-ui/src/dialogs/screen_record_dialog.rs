@@ -60,7 +60,7 @@ impl ScreenRecordDialog {
         let is_rec = self.is_recording();
 
         Window::new(
-            RichText::new("📹 Ekran & Web Kamerası Kaydedici")
+            RichText::new("● Ekran & Web Kamerası Kaydedici")
                 .size(15.0)
                 .strong(),
         )
@@ -135,7 +135,7 @@ impl ScreenRecordDialog {
             ui.horizontal(|ui| {
                 if is_rec {
                     let stop_btn = Button::new(
-                        RichText::new("⏹️ Kaydı Bitir ve İçe Aktar")
+                        RichText::new("⏹ Kaydı Bitir ve İçe Aktar")
                             .color(Color32::WHITE)
                             .strong(),
                     )
@@ -163,7 +163,7 @@ impl ScreenRecordDialog {
                     }
                 } else {
                     let start_btn = Button::new(
-                        RichText::new("🔴 Kaydı Başlat")
+                        RichText::new("● Kaydı Başlat")
                             .color(Color32::WHITE)
                             .strong(),
                     )

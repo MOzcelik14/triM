@@ -24,9 +24,9 @@ impl CaptureSource {
 
     pub fn label(&self) -> &'static str {
         match self {
-            Self::ScreenAndMic => "🖥️ Ekran + Mikrofon",
-            Self::ScreenOnly => "🖥️ Sadece Ekran (Sessiz)",
-            Self::WebcamOnly => "📷 Sadece Web Kamerası",
+            Self::ScreenAndMic => "⊞ Ekran + Mikrofon",
+            Self::ScreenOnly => "⊞ Sadece Ekran (Sessiz)",
+            Self::WebcamOnly => "● Sadece Web Kamerası",
         }
     }
 }

@@ -62,7 +62,7 @@ impl TranscribeDialog {
         let mut action = None;
         let mut open = self.is_open;
 
-        Window::new(RichText::new("🎙️ Yerel Whisper ile Deşifre Et (Speech-to-Text)").size(15.0).strong())
+        Window::new(RichText::new("◈ Yerel Whisper ile Deşifre Et (Speech-to-Text)").size(15.0).strong())
             .open(&mut open)
             .resizable(false)
             .collapsible(false)
@@ -90,7 +90,7 @@ impl TranscribeDialog {
                 } else {
                     ui.group(|ui| {
                         ui.label(
-                            RichText::new("⚠️ Yerel Whisper CLI veya whisper.cpp bulunamadı")
+                            RichText::new("⚠ Yerel Whisper CLI veya whisper.cpp bulunamadı")
                                 .color(Color32::from_rgb(0xe0, 0x90, 0x30))
                                 .strong(),
                         );
@@ -155,7 +155,7 @@ impl TranscribeDialog {
                 ui.horizontal(|ui| {
                     let can_run = !self.is_transcribing && !self.media_path.is_empty();
                     let start_btn = Button::new(
-                        RichText::new(if self.is_transcribing { "⏳ Deşifre Ediliyor..." } else { "⚡ Deşifre Et ve Altyazı Ekle" })
+                        RichText::new(if self.is_transcribing { "↺ Deşifre Ediliyor..." } else { "◈ Deşifre Et ve Altyazı Ekle" })
                             .color(Color32::WHITE)
                             .strong(),
                     )

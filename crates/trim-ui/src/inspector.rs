@@ -109,7 +109,7 @@ const LABEL_COLOR: Color32 = Color32::from_rgb(0x9c, 0xa3, 0xb8);
 const ACCENT_AMBER: Color32 = Color32::from_rgb(0xe0, 0x7a, 0x38);
 const ACCENT_BLUE: Color32 = Color32::from_rgb(0x38, 0x7a, 0xe0);
 const ACCENT_TEAL: Color32 = Color32::from_rgb(0x2d, 0xb8, 0x9a);
-const LABEL_COL_W: f32 = 88.0;
+const LABEL_COL_W: f32 = 104.0;
 
 pub fn render_inspector_panel(
     ui: &mut Ui,
@@ -301,7 +301,7 @@ fn inspector_card(
                 .inner_margin(Margin::symmetric(10.0, 6.0))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(icon).size(12.0).color(accent));
+                        ui.label(RichText::new(icon).size(11.5).strong().color(accent));
                         ui.label(
                             RichText::new(title)
                                 .size(11.5)
@@ -339,9 +339,12 @@ fn prop_row<R>(ui: &mut Ui, label: &str, add_contents: impl FnOnce(&mut Ui) -> R
             Vec2::new(LABEL_COL_W, 20.0),
             Layout::left_to_right(egui::Align::Center),
             |ui| {
-                ui.label(RichText::new(label).size(11.0).color(LABEL_COLOR));
+                ui.add(
+                    egui::Label::new(RichText::new(label).size(11.0).color(LABEL_COLOR)).truncate(),
+                );
             },
         );
+        ui.spacing_mut().slider_width = (ui.available_width() - 56.0).max(60.0);
         add_contents(ui)
     })
     .inner
@@ -361,7 +364,7 @@ fn render_sequence_inspector(
     let ar_label = project.timeline.aspect_ratio().short_label();
     inspector_card(
         ui,
-        "🎬",
+        "▸",
         "Sekans & Proje Ayarları",
         ACCENT_AMBER,
         |ui| {
@@ -412,39 +415,36 @@ fn render_sequence_inspector(
             });
 
             prop_row(ui, "Hazır Boyut", |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    for (lbl, pw, ph) in [
-                        ("4K", 3840_u32, 2160_u32),
-                        ("1080p", 1920, 1080),
-                        ("9:16", 1080, 1920),
-                        ("1:1", 1080, 1080),
-                    ] {
-                        let is_active =
-                            project.timeline.width == pw && project.timeline.height == ph;
-                        let btn = Button::new(RichText::new(lbl).size(10.5).strong().color(
-                            if is_active {
-                                Color32::WHITE
-                            } else {
-                                Color32::from_rgb(0xb8, 0xc0, 0xd4)
-                            },
-                        ))
+                ui.spacing_mut().item_spacing.x = 4.0;
+                let btn_w = ((ui.available_width() - 4.0 * 3.0) / 4.0).max(36.0);
+                for (lbl, pw, ph) in [
+                    ("4K", 3840_u32, 2160_u32),
+                    ("1080p", 1920, 1080),
+                    ("9:16", 1080, 1920),
+                    ("1:1", 1080, 1080),
+                ] {
+                    let is_active = project.timeline.width == pw && project.timeline.height == ph;
+                    let btn =
+                        Button::new(RichText::new(lbl).size(10.5).strong().color(if is_active {
+                            Color32::WHITE
+                        } else {
+                            Color32::from_rgb(0xb8, 0xc0, 0xd4)
+                        }))
                         .fill(if is_active {
                             ACCENT_AMBER
                         } else {
                             Color32::from_rgb(0x1f, 0x23, 0x30)
                         })
                         .rounding(Rounding::same(4.0));
-                        if ui
-                            .add(btn)
-                            .on_hover_text(format!("{}×{} px", pw, ph))
-                            .clicked()
-                        {
-                            project.set_resolution(pw, ph);
-                            *action = Some(InspectorAction::ClipModified);
-                        }
+                    if ui
+                        .add_sized([btn_w, 20.0], btn)
+                        .on_hover_text(format!("{}×{} px", pw, ph))
+                        .clicked()
+                    {
+                        project.set_resolution(pw, ph);
+                        *action = Some(InspectorAction::ClipModified);
                     }
-                });
+                }
             });
 
             if let Some((vw, vh, vfps, vname)) = first_video_media {
@@ -452,7 +452,7 @@ fn render_sequence_inspector(
                     ui.add_space(2.0);
                     let btn_sync = Button::new(
                         RichText::new(format!(
-                            "📐 Kaynak Videoya Eşitle ({}×{} @ {:.0}fps)",
+                            "⊞ Kaynak Videoya Eşitle ({}×{} @ {:.0}fps)",
                             vw,
                             vh,
                             if vfps > 1.0 {
@@ -511,7 +511,7 @@ fn render_sequence_inspector(
                         Color32::from_rgb(0x1f, 0x23, 0x30)
                     })
                     .rounding(Rounding::same(4.0));
-                    if ui.add(pill).clicked() {
+                    if ui.add_sized([30.0, 20.0], pill).clicked() {
                         project.set_fps(preset_fps);
                         *action = Some(InspectorAction::ClipModified);
                     }
@@ -529,7 +529,7 @@ fn render_sequence_inspector(
 
     inspector_card(
         ui,
-        "📊",
+        "≡",
         "Zaman Çizgisi Özeti",
         ACCENT_BLUE,
         |_| {},
@@ -570,7 +570,7 @@ fn render_sequence_inspector(
         .show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 ui.label(
-                    RichText::new("🎞  Klip Denetçisi")
+                    RichText::new("◈  Klip Denetçisi")
                         .size(12.0)
                         .strong()
                         .color(Color32::from_rgb(0xb8, 0xc0, 0xd4)),
@@ -598,7 +598,7 @@ fn render_info_and_timing_card(
     let clip_dur = clip.duration();
     inspector_card(
         ui,
-        "🎞",
+        "▸",
         "Klip Bilgisi & Zamanlama",
         accent,
         |ui| {
@@ -700,11 +700,7 @@ fn render_info_and_timing_card(
 
             prop_row(ui, "A/V Senkron", |ui| {
                 if clip.linked_group_id.is_some() {
-                    render_badge(
-                        ui,
-                        "🔗 Bağlı (A/V Senkron)",
-                        Color32::from_rgb(59, 130, 246),
-                    );
+                    render_badge(ui, "● Bağlı (A/V Senkron)", Color32::from_rgb(59, 130, 246));
                 } else {
                     render_badge(ui, "Bağımsız Klip", Color32::from_rgb(100, 116, 139));
                 }
@@ -776,7 +772,7 @@ fn render_transform_card(
     let reset_clicked = std::cell::Cell::new(false);
     inspector_card(
         ui,
-        "📐",
+        "◈",
         "Video Dönüşümü & Keyframe",
         ACCENT_AMBER,
         |ui| {
@@ -821,7 +817,6 @@ fn render_transform_card(
             }
 
             prop_row(ui, "Konum X", |ui| {
-                render_kf_btn(ui, clip, "pos_x", clip_time, clip.pos_x, action);
                 let r = ui.add(DragValue::new(&mut clip.pos_x).speed(1.0).suffix(" px"));
                 if r.drag_started() {
                     record_start(ui, &mut orig_tf, clip);
@@ -833,10 +828,10 @@ fn render_transform_card(
                 if r.drag_stopped() || r.lost_focus() {
                     check_stop(ui, &mut orig_tf, clip, action);
                 }
+                render_kf_btn(ui, clip, "pos_x", clip_time, clip.pos_x, action);
             });
 
             prop_row(ui, "Konum Y", |ui| {
-                render_kf_btn(ui, clip, "pos_y", clip_time, clip.pos_y, action);
                 let r = ui.add(DragValue::new(&mut clip.pos_y).speed(1.0).suffix(" px"));
                 if r.drag_started() {
                     record_start(ui, &mut orig_tf, clip);
@@ -848,10 +843,11 @@ fn render_transform_card(
                 if r.drag_stopped() || r.lost_focus() {
                     check_stop(ui, &mut orig_tf, clip, action);
                 }
+                render_kf_btn(ui, clip, "pos_y", clip_time, clip.pos_y, action);
             });
 
             prop_row(ui, "Ölçek", |ui| {
-                render_kf_btn(ui, clip, "scale", clip_time, clip.scale, action);
+                ui.spacing_mut().slider_width = (ui.available_width() - 84.0).max(48.0);
                 let r1 = ui.add(
                     Slider::new(&mut clip.scale, 0.1..=4.0)
                         .show_value(false)
@@ -884,10 +880,10 @@ fn render_transform_card(
                 if r2.drag_stopped() || r2.lost_focus() {
                     check_stop(ui, &mut orig_tf, clip, action);
                 }
+                render_kf_btn(ui, clip, "scale", clip_time, clip.scale, action);
             });
 
             prop_row(ui, "Döndürme", |ui| {
-                render_kf_btn(ui, clip, "rotation", clip_time, clip.rotation, action);
                 let r = ui.add(
                     DragValue::new(&mut clip.rotation)
                         .speed(0.5)
@@ -904,10 +900,11 @@ fn render_transform_card(
                 if r.drag_stopped() || r.lost_focus() {
                     check_stop(ui, &mut orig_tf, clip, action);
                 }
+                render_kf_btn(ui, clip, "rotation", clip_time, clip.rotation, action);
             });
 
             prop_row(ui, "Opaklık", |ui| {
-                render_kf_btn(ui, clip, "opacity", clip_time, clip.opacity, action);
+                ui.spacing_mut().slider_width = (ui.available_width() - 84.0).max(48.0);
                 let r1 = ui.add(
                     Slider::new(&mut clip.opacity, 0.0..=1.0)
                         .show_value(false)
@@ -940,6 +937,7 @@ fn render_transform_card(
                 if r2.drag_stopped() || r2.lost_focus() {
                     check_stop(ui, &mut orig_tf, clip, action);
                 }
+                render_kf_btn(ui, clip, "opacity", clip_time, clip.opacity, action);
             });
 
             prop_row(ui, "Ken Burns", |ui| {
@@ -1014,7 +1012,7 @@ fn render_crop_card(
 
     inspector_card(
         ui,
-        "✂️",
+        "✂",
         "Video Kırpma (Crop)",
         ACCENT_AMBER,
         |ui| {
@@ -1221,7 +1219,7 @@ fn render_speed_card(
     let has_ramp = clip.has_speed_ramp();
     inspector_card(
         ui,
-        "⚡",
+        "▸",
         "Hız, Yön & Akıllı Kurgu",
         ACCENT_AMBER,
         |ui| {
@@ -1239,7 +1237,6 @@ fn render_speed_card(
         },
         |ui| {
             prop_row(ui, "Oynatma Hızı", |ui| {
-                render_kf_btn(ui, clip, "speed", clip_time, curr_speed, action);
                 let mut s = if has_ramp { curr_speed } else { clip.speed };
                 if ui
                     .add(
@@ -1277,12 +1274,13 @@ fn render_speed_card(
                         Color32::from_rgb(0x1f, 0x23, 0x30)
                     })
                     .rounding(Rounding::same(4.0));
-                    if ui.add(pill).clicked() {
+                    if ui.add_sized([28.0, 20.0], pill).clicked() {
                         clip.keyframes.remove("speed");
                         clip.change_speed(preset);
                         *action = Some(InspectorAction::ChangeSpeed(preset, clip.reverse));
                     }
                 }
+                render_kf_btn(ui, clip, "speed", clip_time, curr_speed, action);
             });
 
             prop_row(ui, "Stabilizasyon", |ui| {
@@ -1318,10 +1316,10 @@ fn render_speed_card(
                     .show_ui(ui, |ui| {
                         for (key, lbl) in [
                             ("none", "Sabit Hız (Eğriyi Temizle)"),
-                            ("bullet_time", "🔥 Bullet Time (Hızlı → Yavaş → Hızlı)"),
-                            ("action_burst", "⚡ Aksiyon Patlaması (Ortada Hızlı)"),
-                            ("ramp_up", "🚀 İvmelenen (Yavaştan Hızlıya)"),
-                            ("ramp_down", "🛑 Frenleyen (Hızlıdan Yavaşa)"),
+                            ("bullet_time", "▸ Bullet Time (Hızlı → Yavaş → Hızlı)"),
+                            ("action_burst", "▸ Aksiyon Patlaması (Ortada Hızlı)"),
+                            ("ramp_up", "▸ İvmelenen (Yavaştan Hızlıya)"),
+                            ("ramp_down", "▸ Frenleyen (Hızlıdan Yavaşa)"),
                         ] {
                             if ui.button(lbl).clicked() {
                                 clip.apply_speed_ramp_preset(key);
@@ -1391,7 +1389,7 @@ fn render_speed_card(
             if !clip.media_id.is_empty() {
                 ui.add_space(4.0);
                 let btn_scene = Button::new(
-                    RichText::new("🎬  Sahneleri Algıla ve Böl (Smart Cut)")
+                    RichText::new("✂  Sahneleri Algıla ve Böl (Smart Cut)")
                         .size(11.0)
                         .strong()
                         .color(Color32::from_rgb(0xf5, 0x9e, 0x42)),
@@ -1408,7 +1406,7 @@ fn render_speed_card(
                 }
 
                 let btn_silence = Button::new(
-                    RichText::new("⚡  Sessizlikleri Otomatik Kes (Jump-Cut)")
+                    RichText::new("∿  Sessizlikleri Otomatik Kes (Jump-Cut)")
                         .size(11.0)
                         .strong()
                         .color(Color32::from_rgb(0x4a, 0xde, 0x80)),
@@ -1553,14 +1551,14 @@ fn render_color_card(
     let trigger_shot_match = std::cell::Cell::new(false);
     inspector_card(
         ui,
-        "🎨",
+        "◈",
         "Renk Düzenleme, Presetler & 3D LUT",
         ACCENT_BLUE,
         |ui| {
             if ui
                 .add(
                     Button::new(
-                        RichText::new("🎯 Eşle")
+                        RichText::new("⌖ Eşle")
                             .size(10.0)
                             .color(Color32::from_rgb(0xe8, 0xa8, 0x38)),
                     )
@@ -1630,7 +1628,7 @@ fn render_color_card(
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(
-                            RichText::new("🎥 Kamera Log Giriş Profili")
+                            RichText::new("▸ Kamera Log Giriş Profili")
                                 .size(11.0)
                                 .strong()
                                 .color(Color32::from_rgb(0xb8, 0xc2, 0xd8)),
@@ -1639,9 +1637,10 @@ fn render_color_card(
                             render_badge(ui, clip.camera_log_profile.short_label(), ACCENT_BLUE);
                         });
                     });
-                    ui.add_space(3.0);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        let pill_w = ((ui.available_width() - 4.0 * 4.0) / 5.0).max(36.0);
                         for profile in CameraLogProfile::ALL {
                             let is_sel = clip.camera_log_profile == *profile;
                             let btn = Button::new(
@@ -1668,7 +1667,12 @@ fn render_color_card(
                                 },
                             ))
                             .rounding(Rounding::same(4.0));
-                            if ui.add(btn).on_hover_text(profile.label()).clicked() && !is_sel {
+                            if ui
+                                .add_sized([pill_w, 22.0], btn)
+                                .on_hover_text(profile.label())
+                                .clicked()
+                                && !is_sel
+                            {
                                 let old_state = ClipColorGradingState::from_clip(clip);
                                 clip.camera_log_profile = *profile;
                                 let new_state = ClipColorGradingState::from_clip(clip);
@@ -1688,7 +1692,7 @@ fn render_color_card(
 
                     ui.horizontal(|ui| {
                         ui.label(
-                            RichText::new("☀ Beyaz Dengesi (White Balance)")
+                            RichText::new("▸ Beyaz Dengesi (White Balance)")
                                 .size(11.5)
                                 .strong()
                                 .color(Color32::WHITE),
@@ -1700,7 +1704,7 @@ fn render_color_card(
                                 && ui
                                     .add(
                                         Button::new(
-                                            RichText::new("Sıfırla")
+                                            RichText::new("↺ Sıfırla")
                                                 .size(9.5)
                                                 .color(LABEL_COLOR),
                                         )
@@ -1727,12 +1731,13 @@ fn render_color_card(
 
                     ui.add_space(4.0);
 
-                    // Auto White Balance + Monitor Eyedropper Buttons
+                    // Auto White Balance + Monitor Eyedropper Buttons (2 equal columns)
                     let is_auto = clip.wb_preset == WhiteBalancePreset::Auto;
                     ui.horizontal(|ui| {
-                        let half_w = ((ui.available_width() - 6.0) * 0.58).max(100.0);
+                        ui.spacing_mut().item_spacing.x = 6.0;
+                        let half_w = ((ui.available_width() - 6.0) * 0.5).max(80.0);
                         let auto_btn = Button::new(
-                            RichText::new("✨ Otomatik WB (Auto)")
+                            RichText::new("◈ Otomatik WB (Auto)")
                                 .size(10.5)
                                 .strong()
                                 .color(if is_auto {
@@ -1747,11 +1752,10 @@ fn render_color_card(
                             Color32::from_rgba_unmultiplied(0xe0, 0x7a, 0x38, 34)
                         })
                         .stroke(Stroke::new(1.0_f32, ACCENT_AMBER))
-                        .rounding(Rounding::same(5.0))
-                        .min_size(Vec2::new(half_w, 26.0));
+                        .rounding(Rounding::same(5.0));
 
                         if ui
-                            .add(auto_btn)
+                            .add_sized([half_w, 26.0], auto_btn)
                             .on_hover_text(
                                 "Mevcut video karesinin renk dağılımını analiz ederek otomatik sıcaklık ve renk tonu hesaplar",
                             )
@@ -1764,18 +1768,17 @@ fn render_color_card(
                         }
 
                         let pick_btn = Button::new(
-                            RichText::new("🎯 WB Damlalık")
+                            RichText::new("⌖ WB Damlalık")
                                 .size(10.5)
                                 .strong()
                                 .color(Color32::from_rgb(0x88, 0xd4, 0xff)),
                         )
                         .fill(Color32::from_rgba_unmultiplied(0x38, 0x7a, 0xe0, 38))
                         .stroke(Stroke::new(1.0_f32, ACCENT_BLUE))
-                        .rounding(Rounding::same(5.0))
-                        .min_size(Vec2::new(ui.available_width(), 26.0));
+                        .rounding(Rounding::same(5.0));
 
                         if ui
-                            .add(pick_btn)
+                            .add_sized([half_w, 26.0], pick_btn)
                             .on_hover_text(
                                 "Program Monitörü üzerinden nötr beyaz/gri bir piksel seçerek Beyaz Dengesini kalibre et",
                             )
@@ -1790,7 +1793,7 @@ fn render_color_card(
 
                     ui.add_space(4.0);
 
-                    // WB Presets Grid (7 illumination presets)
+                    // WB Presets Grid (2 equal columns)
                     let wb_presets = [
                         WhiteBalancePreset::Daylight,
                         WhiteBalancePreset::Tungsten,
@@ -1801,46 +1804,56 @@ fn render_color_card(
                         WhiteBalancePreset::Cool,
                     ];
 
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
-                        for preset in wb_presets {
-                            let is_sel = clip.wb_preset == preset;
-                            let sw = preset.swatch_rgb();
-                            let sw_col = Color32::from_rgb(sw[0], sw[1], sw[2]);
-                            let btn = Button::new(
-                                RichText::new(format!("● {}", preset.short_label()))
-                                    .size(10.5)
-                                    .strong()
-                                    .color(if is_sel { Color32::WHITE } else { sw_col }),
-                            )
-                            .fill(if is_sel {
-                                Color32::from_rgb(0x28, 0x38, 0x54)
-                            } else {
-                                Color32::from_rgb(0x17, 0x1a, 0x24)
-                            })
-                            .stroke(Stroke::new(
-                                1.0_f32,
-                                if is_sel {
-                                    ACCENT_BLUE
+                    let wb_col_w = ((ui.available_width() - 6.0) * 0.5).max(80.0);
+                    egui::Grid::new(format!("wb_presets_grid_{}", clip.id))
+                        .num_columns(2)
+                        .spacing([6.0, 4.0])
+                        .show(ui, |ui| {
+                            for (idx, preset) in wb_presets.iter().enumerate() {
+                                let is_sel = clip.wb_preset == *preset;
+                                let sw = preset.swatch_rgb();
+                                let sw_col = Color32::from_rgb(sw[0], sw[1], sw[2]);
+                                let btn = Button::new(
+                                    RichText::new(format!("● {}", preset.short_label()))
+                                        .size(10.5)
+                                        .strong()
+                                        .color(if is_sel { Color32::WHITE } else { sw_col }),
+                                )
+                                .fill(if is_sel {
+                                    Color32::from_rgb(0x28, 0x38, 0x54)
                                 } else {
-                                    Color32::from_rgb(0x26, 0x2b, 0x3a)
-                                },
-                            ))
-                            .rounding(Rounding::same(4.0));
+                                    Color32::from_rgb(0x17, 0x1a, 0x24)
+                                })
+                                .stroke(Stroke::new(
+                                    1.0_f32,
+                                    if is_sel {
+                                        ACCENT_BLUE
+                                    } else {
+                                        Color32::from_rgb(0x26, 0x2b, 0x3a)
+                                    },
+                                ))
+                                .rounding(Rounding::same(4.0));
 
-                            if ui.add(btn).on_hover_text(preset.label()).clicked() {
-                                let old_state = ClipColorGradingState::from_clip(clip);
-                                clip.apply_wb_preset(preset);
-                                let new_state = ClipColorGradingState::from_clip(clip);
-                                *action = Some(InspectorAction::SetColorGrading {
-                                    track_id: track_id.to_string(),
-                                    clip_id: clip.id.clone(),
-                                    old_state: Box::new(old_state),
-                                    new_state: Box::new(new_state),
-                                });
+                                if ui
+                                    .add_sized([wb_col_w, 22.0], btn)
+                                    .on_hover_text(preset.label())
+                                    .clicked()
+                                {
+                                    let old_state = ClipColorGradingState::from_clip(clip);
+                                    clip.apply_wb_preset(*preset);
+                                    let new_state = ClipColorGradingState::from_clip(clip);
+                                    *action = Some(InspectorAction::SetColorGrading {
+                                        track_id: track_id.to_string(),
+                                        clip_id: clip.id.clone(),
+                                        old_state: Box::new(old_state),
+                                        new_state: Box::new(new_state),
+                                    });
+                                }
+                                if idx % 2 == 1 {
+                                    ui.end_row();
+                                }
                             }
-                        }
-                    });
+                        });
 
                     ui.add_space(4.0);
 
@@ -1914,7 +1927,7 @@ fn render_color_card(
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(
-                            RichText::new("🌗 Parlaklık & Kontrast Hazır Ayarları")
+                            RichText::new("▸ Parlaklık & Kontrast Hazır Ayarları")
                                 .size(11.5)
                                 .strong()
                                 .color(Color32::WHITE),
@@ -2094,7 +2107,7 @@ fn render_color_card(
                     ui.separator();
                     ui.add_space(2.0);
                     ui.label(
-                        RichText::new("✨ Görsel Efektler (Blur / Keskinlik / Vinyet / Gren)")
+                        RichText::new("▸ Görsel Efektler (Blur / Keskinlik / Vinyet / Gren)")
                             .size(11.0)
                             .strong()
                             .color(Color32::from_rgb(0xb8, 0xc2, 0xd8)),
@@ -2206,7 +2219,7 @@ fn render_color_card(
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(
-                            RichText::new("🎬 Yaratıcı Renk Görünümleri (Color Looks)")
+                            RichText::new("▸ Yaratıcı Renk Görünümleri (Color Looks)")
                                 .size(11.5)
                                 .strong()
                                 .color(Color32::WHITE),
@@ -2238,18 +2251,19 @@ fn render_color_card(
                         .data_mut(|d| d.get_temp::<String>(search_id))
                         .unwrap_or_default();
 
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        let tab_w = ((ui.available_width() - 4.0 * 4.0) / 5.0).max(38.0);
                         let tabs: [(u8, &str); 5] = [
                             (0, "Tümü"),
-                            (1, "🎬 Sinematik"),
-                            (2, "🎞 Film"),
-                            (3, "🎨 Yaratıcı"),
-                            (4, "★ Favoriler"),
+                            (1, "Sinematik"),
+                            (2, "Film"),
+                            (3, "Yaratıcı"),
+                            (4, "★ Favori"),
                         ];
                         for (tab_id, title) in tabs {
                             let is_active = active_tab == tab_id;
-                            let btn = Button::new(RichText::new(title).size(10.5).strong().color(
+                            let btn = Button::new(RichText::new(title).size(10.0).strong().color(
                                 if is_active {
                                     Color32::WHITE
                                 } else {
@@ -2262,7 +2276,7 @@ fn render_color_card(
                                 Color32::from_rgb(0x18, 0x1c, 0x26)
                             })
                             .rounding(Rounding::same(4.0));
-                            if ui.add(btn).clicked() {
+                            if ui.add_sized([tab_w, 22.0], btn).clicked() {
                                 active_tab = tab_id;
                                 ui.data_mut(|d| d.insert_temp(cat_tab_id, active_tab));
                             }
@@ -2271,15 +2285,21 @@ fn render_color_card(
 
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
+                        let has_q = !search_q.is_empty();
+                        let edit_w = if has_q {
+                            (ui.available_width() - 26.0).max(60.0)
+                        } else {
+                            ui.available_width()
+                        };
                         let resp = ui.add(
                             TextEdit::singleline(&mut search_q)
-                                .hint_text("🔍 Görünüm veya Film LUT ara...")
-                                .desired_width(ui.available_width() - 28.0),
+                                .hint_text("Görünüm veya Film LUT ara...")
+                                .desired_width(edit_w),
                         );
                         if resp.changed() {
                             ui.data_mut(|d| d.insert_temp(search_id, search_q.clone()));
                         }
-                        if !search_q.is_empty() && ui.small_button("✕").clicked() {
+                        if has_q && ui.small_button("✕").clicked() {
                             search_q.clear();
                             ui.data_mut(|d| d.insert_temp(search_id, String::new()));
                         }
@@ -2475,19 +2495,20 @@ fn render_color_card(
                                 });
                             }
                             ui.label(
-                                RichText::new(format!("📁 {}", fname))
+                                RichText::new(fname)
                                     .size(11.0)
                                     .color(Color32::from_rgb(0x58, 0xb0, 0xff)),
                             );
                         } else if ui
-                            .add(
+                            .add_sized(
+                                [ui.available_width(), 22.0],
                                 Button::new(
-                                    RichText::new("📁 .cube Dosyası Seç...")
-                                        .size(11.0)
+                                    RichText::new("+ .cube Dosyası Seç...")
+                                        .size(10.5)
                                         .color(Color32::from_rgb(0xc8, 0xd0, 0xe4)),
                                 )
                                 .fill(Color32::from_rgb(0x1f, 0x23, 0x30))
-                                .rounding(Rounding::same(5.0)),
+                                .rounding(Rounding::same(4.0)),
                             )
                             .clicked()
                         {
@@ -2497,7 +2518,7 @@ fn render_color_card(
 
                     ui.add_space(3.0);
                     let export_lut_btn = Button::new(
-                        RichText::new("💾 Mevcut Renk Ayarını .cube LUT Olarak Kaydet...")
+                        RichText::new("↗ Mevcut Renk Ayarını .cube LUT Olarak Kaydet...")
                             .size(10.5)
                             .strong()
                             .color(Color32::from_rgb(0x98, 0xe2, 0xc6)),
@@ -2599,7 +2620,7 @@ fn render_color_card(
                     if ui
                         .checkbox(
                             &mut has_ck,
-                            RichText::new("🟢 Yeşil / Mavi Perde (Chroma Key)")
+                            RichText::new("◈ Yeşil / Mavi Perde (Chroma Key)")
                                 .size(11.0)
                                 .strong(),
                         )
@@ -2670,7 +2691,7 @@ fn render_color_card(
                         if ui
                             .checkbox(
                                 &mut has_cc,
-                                RichText::new("📈 Özel RGB / Luma Eğrileri (Spline Curves)")
+                                RichText::new("∿ Özel RGB / Luma Eğrileri (Spline Curves)")
                                     .size(11.0)
                                     .strong(),
                             )
@@ -2860,7 +2881,7 @@ fn render_color_card(
                     if ui
                         .checkbox(
                             &mut has_hsl,
-                            RichText::new("🌈 6-Vektör HSL Eğrileri (Hue vs Hue/Sat/Luma)")
+                            RichText::new("◈ 6-Vektör HSL Eğrileri (Hue vs Hue/Sat/Luma)")
                                 .size(11.0)
                                 .strong(),
                         )
@@ -2876,31 +2897,44 @@ fn render_color_card(
                     if let Some(hsl) = &mut clip.hsl_curves {
                         let tab_id = ui.make_persistent_id(format!("hsl_tab_{}", clip.id));
                         let mut tab: usize = ui.data_mut(|d| d.get_temp(tab_id).unwrap_or(0));
-                        ui.horizontal_wrapped(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 4.0;
+                            let tab_w = ((ui.available_width() - 4.0 * 3.0) / 4.0).max(44.0);
                             for (idx, lbl) in [
                                 (0usize, "Hue vs Hue"),
                                 (1usize, "Hue vs Sat"),
                                 (2usize, "Hue vs Luma"),
                                 (3usize, "Luma vs Sat"),
                             ] {
-                                if ui
-                                    .selectable_label(tab == idx, RichText::new(lbl).size(10.0))
-                                    .clicked()
-                                {
+                                let is_sel = tab == idx;
+                                let btn = Button::new(
+                                    RichText::new(lbl).size(9.5).strong().color(if is_sel {
+                                        Color32::WHITE
+                                    } else {
+                                        LABEL_COLOR
+                                    }),
+                                )
+                                .fill(if is_sel {
+                                    ACCENT_BLUE
+                                } else {
+                                    Color32::from_rgb(0x18, 0x1c, 0x26)
+                                })
+                                .rounding(Rounding::same(4.0));
+                                if ui.add_sized([tab_w, 20.0], btn).clicked() {
                                     tab = idx;
                                     ui.data_mut(|d| d.insert_temp(tab_id, tab));
                                 }
                             }
                         });
-                        ui.add_space(2.0);
+                        ui.add_space(4.0);
                         if tab < 3 {
                             let vec_labels = [
-                                ("R", Color32::from_rgb(235, 75, 75)),
-                                ("Y", Color32::from_rgb(235, 205, 65)),
-                                ("G", Color32::from_rgb(75, 215, 105)),
-                                ("C", Color32::from_rgb(65, 210, 235)),
-                                ("B", Color32::from_rgb(85, 135, 245)),
-                                ("M", Color32::from_rgb(225, 85, 215)),
+                                ("● Kırmızı (R)", Color32::from_rgb(235, 75, 75)),
+                                ("● Sarı (Y)", Color32::from_rgb(235, 205, 65)),
+                                ("● Yeşil (G)", Color32::from_rgb(75, 215, 105)),
+                                ("● Camgöbeği (C)", Color32::from_rgb(65, 210, 235)),
+                                ("● Mavi (B)", Color32::from_rgb(85, 135, 245)),
+                                ("● Macenta (M)", Color32::from_rgb(225, 85, 215)),
                             ];
                             let arr = match tab {
                                 0 => &mut hsl.hue_vs_hue,
@@ -2909,14 +2943,24 @@ fn render_color_card(
                             };
                             for (i, (name, col)) in vec_labels.iter().enumerate() {
                                 ui.horizontal(|ui| {
-                                    ui.colored_label(
-                                        *col,
-                                        RichText::new(*name).size(11.0).strong(),
+                                    ui.spacing_mut().item_spacing.x = 6.0;
+                                    ui.allocate_ui_with_layout(
+                                        Vec2::new(LABEL_COL_W, 20.0),
+                                        Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            ui.colored_label(
+                                                *col,
+                                                RichText::new(*name).size(10.5).strong(),
+                                            );
+                                        },
                                     );
+                                    ui.spacing_mut().slider_width =
+                                        (ui.available_width() - 56.0).max(60.0);
                                     if ui
                                         .add(
                                             Slider::new(&mut arr[i], -1.0..=1.0)
                                                 .show_value(true)
+                                                .trailing_fill(true)
                                                 .fixed_decimals(2),
                                         )
                                         .changed()
@@ -2939,6 +2983,7 @@ fn render_color_card(
                                         .add(
                                             Slider::new(&mut hsl.luma_vs_sat[i], -1.0..=1.0)
                                                 .show_value(true)
+                                                .trailing_fill(true)
                                                 .fixed_decimals(2),
                                         )
                                         .changed()
@@ -2965,7 +3010,7 @@ fn render_color_card(
                     if ui
                         .checkbox(
                             &mut has_q,
-                            RichText::new("💧 3D HSL Seçici (İkincil Renk / Qualifier)")
+                            RichText::new("⌖ 3D HSL Seçici (İkincil Renk / Qualifier)")
                                 .size(11.0)
                                 .strong(),
                         )
@@ -2987,7 +3032,7 @@ fn render_color_card(
                         if ui
                             .checkbox(
                                 &mut q.show_matte,
-                                RichText::new("🔍 Matte Önizleme (Seçilmeyenleri Gri Yap)")
+                                RichText::new("◧ Matte Önizleme (Seçilmeyenleri Gri Yap)")
                                     .size(10.5)
                                     .color(ACCENT_AMBER),
                             )
@@ -2997,7 +3042,11 @@ fn render_color_card(
                         }
                         prop_row(ui, "Renk (Hue°)", |ui| {
                             if ui
-                                .add(Slider::new(&mut q.hue_center, 0.0..=360.0).suffix("°"))
+                                .add(
+                                    Slider::new(&mut q.hue_center, 0.0..=360.0)
+                                        .suffix("°")
+                                        .trailing_fill(true),
+                                )
                                 .changed()
                             {
                                 *action = Some(InspectorAction::ClipModified);
@@ -3005,7 +3054,11 @@ fn render_color_card(
                         });
                         prop_row(ui, "Hue Genişliği", |ui| {
                             if ui
-                                .add(Slider::new(&mut q.hue_width, 5.0..=180.0).suffix("°"))
+                                .add(
+                                    Slider::new(&mut q.hue_width, 5.0..=180.0)
+                                        .suffix("°")
+                                        .trailing_fill(true),
+                                )
                                 .changed()
                             {
                                 *action = Some(InspectorAction::ClipModified);
@@ -3013,7 +3066,11 @@ fn render_color_card(
                         });
                         prop_row(ui, "Yumuşaklık", |ui| {
                             if ui
-                                .add(Slider::new(&mut q.hue_softness, 1.0..=90.0).suffix("°"))
+                                .add(
+                                    Slider::new(&mut q.hue_softness, 1.0..=90.0)
+                                        .suffix("°")
+                                        .trailing_fill(true),
+                                )
                                 .changed()
                             {
                                 *action = Some(InspectorAction::ClipModified);
@@ -3047,20 +3104,29 @@ fn render_color_card(
                         });
                         prop_row(ui, "Seçim Hue Kaydır", |ui| {
                             if ui
-                                .add(Slider::new(&mut q.hue_shift, -180.0..=180.0).suffix("°"))
+                                .add(
+                                    Slider::new(&mut q.hue_shift, -180.0..=180.0)
+                                        .suffix("°")
+                                        .trailing_fill(true),
+                                )
                                 .changed()
                             {
                                 *action = Some(InspectorAction::ClipModified);
                             }
                         });
                         prop_row(ui, "Seçim Doygunluk", |ui| {
-                            if ui.add(Slider::new(&mut q.sat_scale, 0.0..=2.5)).changed() {
+                            if ui
+                                .add(Slider::new(&mut q.sat_scale, 0.0..=2.5).trailing_fill(true))
+                                .changed()
+                            {
                                 *action = Some(InspectorAction::ClipModified);
                             }
                         });
                         prop_row(ui, "Seçim Parlaklık", |ui| {
                             if ui
-                                .add(Slider::new(&mut q.luma_offset, -0.5..=0.5))
+                                .add(
+                                    Slider::new(&mut q.luma_offset, -0.5..=0.5).trailing_fill(true),
+                                )
                                 .changed()
                             {
                                 *action = Some(InspectorAction::ClipModified);
@@ -3081,7 +3147,7 @@ fn render_color_card(
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(
-                            RichText::new("🎞 Analog Film Emülasyonu & Lens Işık Motoru")
+                            RichText::new("▸ Analog Film Emülasyonu & Lens Işık Motoru")
                                 .size(11.0)
                                 .strong()
                                 .color(Color32::WHITE),
@@ -3090,9 +3156,10 @@ fn render_color_card(
                             render_badge(ui, clip.film_format.short_label(), ACCENT_AMBER);
                         });
                     });
-                    ui.add_space(3.0);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        let pill_w = ((ui.available_width() - 4.0 * 3.0) / 4.0).max(40.0);
                         for fmt in FilmStockFormat::ALL {
                             let is_sel = clip.film_format == *fmt;
                             let btn = Button::new(
@@ -3119,7 +3186,12 @@ fn render_color_card(
                                 },
                             ))
                             .rounding(Rounding::same(4.0));
-                            if ui.add(btn).on_hover_text(fmt.label()).clicked() && !is_sel {
+                            if ui
+                                .add_sized([pill_w, 22.0], btn)
+                                .on_hover_text(fmt.label())
+                                .clicked()
+                                && !is_sel
+                            {
                                 let old_state = ClipColorGradingState::from_clip(clip);
                                 clip.film_format = *fmt;
                                 let new_state = ClipColorGradingState::from_clip(clip);
@@ -3138,6 +3210,7 @@ fn render_color_card(
                             .add(
                                 Slider::new(&mut clip.highlight_rolloff, 0.0..=1.0)
                                     .show_value(true)
+                                    .trailing_fill(true)
                                     .fixed_decimals(2),
                             )
                             .on_hover_text("Highlight Roll-off Knee: Yüksek ışıkları analog film gibi yumuşakça sıkıştırır")
@@ -3151,6 +3224,7 @@ fn render_color_card(
                             .add(
                                 Slider::new(&mut clip.halation, 0.0..=1.0)
                                     .show_value(true)
+                                    .trailing_fill(true)
                                     .fixed_decimals(2),
                             )
                             .on_hover_text("Parlak kenarlarda kırmızı-turuncu analog film halesi")
@@ -3164,6 +3238,7 @@ fn render_color_card(
                             .add(
                                 Slider::new(&mut clip.bloom, 0.0..=1.0)
                                     .show_value(true)
+                                    .trailing_fill(true)
                                     .fixed_decimals(2),
                             )
                             .on_hover_text("Yüksek ışıklarda yumuşak sinematik parlama")
@@ -3177,6 +3252,7 @@ fn render_color_card(
                             .add(
                                 Slider::new(&mut clip.diffusion, 0.0..=1.0)
                                     .show_value(true)
+                                    .trailing_fill(true)
                                     .fixed_decimals(2),
                             )
                             .on_hover_text("Pro-Mist / Lens Difüzyonu: Kontrastı yumuşatarak orta tonları kadifeleştirir")
@@ -3190,6 +3266,7 @@ fn render_color_card(
                             .add(
                                 Slider::new(&mut clip.mist, 0.0..=1.0)
                                     .show_value(true)
+                                    .trailing_fill(true)
                                     .fixed_decimals(2),
                             )
                             .on_hover_text("Atmosferik Sis: Parlak bölgelerin etrafında serin sinematik pus oluşturur")
@@ -3203,6 +3280,7 @@ fn render_color_card(
                             .add(
                                 Slider::new(&mut clip.gate_weave, 0.0..=1.0)
                                     .show_value(true)
+                                    .trailing_fill(true)
                                     .fixed_decimals(2),
                             )
                             .on_hover_text("Analog projektör mekanik kare titremesi (Gate Weave)")
@@ -3216,6 +3294,7 @@ fn render_color_card(
                             .add(
                                 Slider::new(&mut clip.chromatic_aberration, 0.0..=1.0)
                                     .show_value(true)
+                                    .trailing_fill(true)
                                     .fixed_decimals(2),
                             )
                             .on_hover_text("Chromatic Aberration: R/B kanal saçaklanması")
@@ -3232,7 +3311,7 @@ fn render_color_card(
 fn render_transitions_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<InspectorAction>) {
     inspector_card(
         ui,
-        "✨",
+        "◈",
         "Giriş / Çıkış ve Geçişler",
         ACCENT_BLUE,
         |_| {},
@@ -3322,7 +3401,7 @@ fn render_audio_card(
     let is_muted = clip.muted;
     inspector_card(
         ui,
-        "🔊",
+        "♪",
         "Ses & EQ Profili",
         ACCENT_TEAL,
         |ui| {
@@ -3385,14 +3464,15 @@ fn render_audio_card(
 
             prop_row(ui, "Oto. Kısma", |ui| {
                 let duck_btn = Button::new(
-                    RichText::new("🔉 Konuşmada Müziği Kıs (Auto-Duck)")
+                    RichText::new("∿ Konuşmada Müziği Kıs (Auto-Duck)")
                         .size(10.5)
                         .strong()
                         .color(Color32::WHITE),
                 )
                 .fill(Color32::from_rgb(0x1e, 0x36, 0x44))
                 .stroke(Stroke::new(1.0_f32, ACCENT_TEAL))
-                .rounding(Rounding::same(5.0));
+                .rounding(Rounding::same(5.0))
+                .min_size(Vec2::new(ui.available_width(), 22.0));
                 if ui
                     .add(duck_btn)
                     .on_hover_text(
@@ -3444,10 +3524,12 @@ fn render_audio_card(
             });
 
             prop_row(ui, "Stereo Pan", |ui| {
+                ui.spacing_mut().slider_width = (ui.available_width() - 80.0).max(48.0);
                 if ui
                     .add(
                         Slider::new(&mut clip.pan, -1.0..=1.0)
                             .show_value(true)
+                            .trailing_fill(true)
                             .fixed_decimals(2),
                     )
                     .on_hover_text("-1.0 = Tam Sol (L), 0.0 = Merkez (C), +1.0 = Tam Sağ (R)")
@@ -3470,6 +3552,7 @@ fn render_audio_card(
                     .add(
                         Slider::new(&mut clip.reverb_amount, 0.0..=1.0)
                             .show_value(true)
+                            .trailing_fill(true)
                             .fixed_decimals(2),
                     )
                     .changed()
@@ -3483,6 +3566,7 @@ fn render_audio_card(
                     .add(
                         Slider::new(&mut clip.echo_amount, 0.0..=1.0)
                             .show_value(true)
+                            .trailing_fill(true)
                             .fixed_decimals(2),
                     )
                     .changed()
@@ -3505,7 +3589,7 @@ fn render_audio_card(
                     if ui
                         .checkbox(
                             &mut has_peq,
-                            RichText::new("🎚 6-Bant Parametrik EQ (Fairlight)")
+                            RichText::new("≡ 6-Bant Parametrik EQ (Fairlight)")
                                 .size(11.0)
                                 .strong(),
                         )
@@ -3570,19 +3654,28 @@ fn render_audio_card(
                         let band_names = ["80Hz", "200Hz", "650Hz", "2kHz", "5.5kHz", "12kHz"];
                         for (i, band) in peq.bands.iter_mut().enumerate() {
                             ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 5.0;
                                 if ui.checkbox(&mut band.enabled, "").changed() {
                                     *action = Some(InspectorAction::ClipModified);
                                 }
-                                ui.add_sized(
-                                    [42.0, 16.0],
-                                    egui::Label::new(
-                                        RichText::new(band_names[i]).size(10.0).color(LABEL_COLOR),
-                                    ),
+                                ui.allocate_ui_with_layout(
+                                    Vec2::new(42.0, 18.0),
+                                    Layout::left_to_right(egui::Align::Center),
+                                    |ui| {
+                                        ui.label(
+                                            RichText::new(band_names[i])
+                                                .size(10.0)
+                                                .color(LABEL_COLOR),
+                                        );
+                                    },
                                 );
+                                ui.spacing_mut().slider_width =
+                                    (ui.available_width() - 98.0).max(46.0);
                                 if ui
                                     .add(
                                         Slider::new(&mut band.gain_db, -18.0..=18.0)
                                             .suffix(" dB")
+                                            .trailing_fill(true)
                                             .fixed_decimals(1),
                                     )
                                     .changed()
@@ -3619,7 +3712,7 @@ fn render_audio_card(
                     if ui
                         .checkbox(
                             &mut has_comp,
-                            RichText::new("🎛 Dinamik İşlemci (Compressor / Limiter / De-Esser)")
+                            RichText::new("◈ Dinamik İşlemci (Compressor / Limiter / De-Esser)")
                                 .size(11.0)
                                 .strong(),
                         )
@@ -3639,7 +3732,11 @@ fn render_audio_card(
                         comp.enabled = true;
                         prop_row(ui, "Eşik (Thresh)", |ui| {
                             if ui
-                                .add(Slider::new(&mut comp.threshold_db, -48.0..=0.0).suffix(" dB"))
+                                .add(
+                                    Slider::new(&mut comp.threshold_db, -48.0..=0.0)
+                                        .suffix(" dB")
+                                        .trailing_fill(true),
+                                )
                                 .changed()
                             {
                                 *action = Some(InspectorAction::ClipModified);
@@ -3647,7 +3744,11 @@ fn render_audio_card(
                         });
                         prop_row(ui, "Oran (Ratio)", |ui| {
                             if ui
-                                .add(Slider::new(&mut comp.ratio, 1.0..=20.0).suffix(":1"))
+                                .add(
+                                    Slider::new(&mut comp.ratio, 1.0..=20.0)
+                                        .suffix(":1")
+                                        .trailing_fill(true),
+                                )
                                 .changed()
                             {
                                 *action = Some(InspectorAction::ClipModified);
@@ -3677,7 +3778,11 @@ fn render_audio_card(
                         });
                         prop_row(ui, "Makeup Kazanç", |ui| {
                             if ui
-                                .add(Slider::new(&mut comp.makeup_db, 0.0..=24.0).suffix(" dB"))
+                                .add(
+                                    Slider::new(&mut comp.makeup_db, 0.0..=24.0)
+                                        .suffix(" dB")
+                                        .trailing_fill(true),
+                                )
                                 .changed()
                             {
                                 *action = Some(InspectorAction::ClipModified);
@@ -3685,7 +3790,11 @@ fn render_audio_card(
                         });
                         prop_row(ui, "De-Esser (S/Ş)", |ui| {
                             if ui
-                                .add(Slider::new(&mut comp.de_esser, 0.0..=1.0).fixed_decimals(2))
+                                .add(
+                                    Slider::new(&mut comp.de_esser, 0.0..=1.0)
+                                        .trailing_fill(true)
+                                        .fixed_decimals(2),
+                                )
                                 .on_hover_text("6.5 kHz sert sibilans seslerini yumuşatır")
                                 .changed()
                             {
@@ -3715,7 +3824,7 @@ fn render_audio_card(
                     if ui
                         .checkbox(
                             &mut has_vis,
-                            RichText::new("Görsel Ses Dalgası (Audio Visualizer)")
+                            RichText::new("∿ Görsel Ses Dalgası (Audio Visualizer)")
                                 .size(11.0)
                                 .strong(),
                         )
@@ -3734,6 +3843,7 @@ fn render_audio_card(
                         prop_row(ui, "Dalga Stili", |ui| {
                             egui::ComboBox::from_id_salt("vis_style_combo")
                                 .selected_text(vis.style.label())
+                                .width(ui.available_width().max(110.0))
                                 .show_ui(ui, |ui| {
                                     for st in VisualizerStyle::ALL {
                                         if ui
@@ -3787,7 +3897,7 @@ fn render_titler_card(
     let track_id_owned = track_id.to_string();
     inspector_card(
         ui,
-        "🔤",
+        "T",
         "Metin & Altyazı (Titler)",
         ACCENT_AMBER,
         |_| {},
@@ -3814,8 +3924,9 @@ fn render_titler_card(
                     ui.label(RichText::new("Yazı İçeriği:").size(11.0).color(LABEL_COLOR));
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                         let tr_btn = Button::new(
-                            RichText::new("🔤 TR → EN Harf Dönüştür")
+                            RichText::new("TR → EN Harf Dönüştür")
                                 .size(9.5)
+                                .strong()
                                 .color(Color32::from_rgb(0xfb, 0xbf, 0x24)),
                         )
                         .fill(Color32::from_rgb(0x1f, 0x23, 0x30))
@@ -3900,23 +4011,29 @@ fn render_titler_card(
                 });
 
                 prop_row(ui, "Özel Font", |ui| {
+                    let is_custom = txt.is_custom_font_file();
+                    let btn_w = if is_custom {
+                        (ui.available_width() - 28.0).max(60.0)
+                    } else {
+                        ui.available_width()
+                    };
                     let font_btn = Button::new(
-                        RichText::new("📁 .ttf / .otf Dosyası Seç...")
+                        RichText::new("+ .ttf / .otf Dosyası Seç...")
                             .size(10.0)
                             .color(Color32::from_rgb(0xd8, 0xde, 0xf0)),
                     )
                     .fill(Color32::from_rgb(0x1f, 0x23, 0x30))
                     .rounding(Rounding::same(4.0));
                     if ui
-                        .add(font_btn)
+                        .add_sized([btn_w, 20.0], font_btn)
                         .on_hover_text("Bilgisayarınızdaki özel bir .ttf veya .otf font dosyasını doğrudan yükler")
                         .clicked()
                     {
                         *action = Some(InspectorAction::SelectCustomFont(clip_id.clone()));
                     }
-                    if txt.is_custom_font_file()
+                    if is_custom
                         && ui
-                            .small_button("×")
+                            .small_button("✕")
                             .on_hover_text(
                                 "Özel font dosyasını kaldır ve varsayılan Inter fontuna dön",
                             )
@@ -3942,13 +4059,16 @@ fn render_titler_card(
                 });
 
                 prop_row(ui, "Hızlı Konum", |ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    let btn_w = ((ui.available_width() - 4.0 * 2.0) / 3.0).max(40.0);
                     for (lbl, py, bg) in [
                         ("Üst", 0.15_f32, None),
                         ("Orta", 0.50_f32, None),
                         ("Alt Yazı", 0.85_f32, Some([0, 0, 0, 180])),
                     ] {
                         if ui
-                            .add(
+                            .add_sized(
+                                [btn_w, 20.0],
                                 Button::new(RichText::new(lbl).size(10.5))
                                     .fill(Color32::from_rgb(0x1f, 0x23, 0x30))
                                     .rounding(Rounding::same(4.0)),
@@ -4019,10 +4139,12 @@ fn render_titler_card(
                 });
 
                 prop_row(ui, "Kontur (Stroke)", |ui| {
+                    ui.spacing_mut().slider_width = (ui.available_width() - 84.0).max(48.0);
                     if ui
                         .add(
                             Slider::new(&mut txt.stroke_width, 0.0..=12.0)
                                 .suffix(" px")
+                                .trailing_fill(true)
                                 .fixed_decimals(1),
                         )
                         .changed()
@@ -4046,6 +4168,7 @@ fn render_titler_card(
                         .add(
                             Slider::new(&mut txt.letter_spacing, -4.0..=24.0)
                                 .suffix(" px")
+                                .trailing_fill(true)
                                 .fixed_decimals(1),
                         )
                         .changed()
@@ -4098,13 +4221,15 @@ fn render_titler_card(
                     MotionTitleStyle::LowerThird
                         | MotionTitleStyle::RollingCredits
                         | MotionTitleStyle::ChapterCard
+                        | MotionTitleStyle::Ticker
                 ) {
                     prop_row(ui, "Alt Başlık", |ui| {
                         let mut sub = txt.subtitle_text.clone().unwrap_or_default();
                         if ui
                             .add(
                                 TextEdit::singleline(&mut sub)
-                                    .hint_text("Ünvan / Oyuncular / Bölüm Açıklaması"),
+                                    .hint_text("Ünvan / Oyuncular / Rozet Metni")
+                                    .desired_width(ui.available_width()),
                             )
                             .changed()
                         {
@@ -4136,9 +4261,9 @@ fn render_titler_card(
 
                 ui.add_space(4.0);
                 let foley_label = if txt.motion_style == MotionTitleStyle::Typewriter {
-                    "🔊 Daktilo Tuş + 35mm Projektör Foley Sesi Üret ve Ekle"
+                    "♪ Daktilo Tuş + 35mm Projektör Foley Sesi Üret ve Ekle"
                 } else {
-                    "🔊 Sinematik Başlık Foley Sesi Üret ve Ekle"
+                    "♪ Sinematik Başlık Foley Sesi Üret ve Ekle"
                 };
                 let btn_foley = Button::new(
                     RichText::new(foley_label)
@@ -4169,9 +4294,12 @@ fn render_titler_card(
 
             ui.add_space(4.0);
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                let half_w = ((ui.available_width() - 6.0) * 0.5).max(80.0);
                 if ui
-                    .add(
-                        Button::new(RichText::new("📥 SRT İçe Aktar").size(10.5))
+                    .add_sized(
+                        [half_w, 24.0],
+                        Button::new(RichText::new("↙ SRT İçe Aktar").size(10.5))
                             .fill(Color32::from_rgb(0x1f, 0x23, 0x30))
                             .rounding(Rounding::same(5.0)),
                     )
@@ -4180,8 +4308,9 @@ fn render_titler_card(
                     *action = Some(InspectorAction::ImportSubtitles);
                 }
                 if ui
-                    .add(
-                        Button::new(RichText::new("📤 SRT Dışa Aktar").size(10.5))
+                    .add_sized(
+                        [half_w, 24.0],
+                        Button::new(RichText::new("↗ SRT Dışa Aktar").size(10.5))
                             .fill(Color32::from_rgb(0x1f, 0x23, 0x30))
                             .rounding(Rounding::same(5.0)),
                     )
@@ -4192,7 +4321,7 @@ fn render_titler_card(
             });
 
             let btn_whisper = Button::new(
-                RichText::new("🎙️  Lokal Whisper ile Otomatik Deşifre Et")
+                RichText::new("◈  Lokal Whisper ile Otomatik Deşifre Et")
                     .size(11.0)
                     .strong()
                     .color(Color32::from_rgb(0x60, 0xb0, 0xff)),
@@ -4233,7 +4362,7 @@ fn render_compositing_card(
 
     inspector_card(
         ui,
-        "✨",
+        "◈",
         title,
         accent,
         move |ui| {
@@ -4242,11 +4371,7 @@ fn render_compositing_card(
             }
         },
         |ui| {
-            ui.horizontal(|ui| {
-                ui.add_sized(
-                    [LABEL_COL_W, 20.0],
-                    egui::Label::new(RichText::new("Karışım Modu").size(11.5).color(LABEL_COLOR)),
-                );
+            prop_row(ui, "Karışım Modu", |ui| {
                 let mut selected = clip.blend_mode;
                 egui::ComboBox::from_id_salt(format!("blend_mode_{}", clip.id))
                     .selected_text(selected.label())
@@ -4276,7 +4401,7 @@ fn render_compositing_card(
                 if ui
                     .checkbox(
                         &mut clip.track_matte_above,
-                        RichText::new("🎭 Üst Kanalı Maske Olarak Kullan (Track Matte)")
+                        RichText::new("◧ Üst Kanalı Maske Olarak Kullan (Track Matte)")
                             .size(11.0),
                     )
                     .on_hover_text(
@@ -4299,7 +4424,7 @@ fn render_compositing_card(
                             if ui
                                 .checkbox(
                                     &mut has_cp,
-                                    RichText::new("📐 4 Köşe Perspektif (Corner Pin)")
+                                    RichText::new("⊞ 4 Köşe Perspektif (Corner Pin)")
                                         .size(11.0)
                                         .strong(),
                                 )
@@ -4363,14 +4488,12 @@ fn render_compositing_card(
                     ui.data_mut(|d| d.get_temp(op_drag_id));
                 let cur_op = clip.get_property_at_time("opacity", clip_time);
                 let mut op_val = cur_op;
-                ui.horizontal(|ui| {
-                    ui.add_sized(
-                        [LABEL_COL_W, 20.0],
-                        egui::Label::new(RichText::new("Opaklık").size(11.5).color(LABEL_COLOR)),
-                    );
+                prop_row(ui, "Opaklık", |ui| {
+                    ui.spacing_mut().slider_width = (ui.available_width() - 84.0).max(48.0);
                     let resp = ui.add(
                         egui::Slider::new(&mut op_val, 0.0..=1.0)
                             .fixed_decimals(2)
+                            .trailing_fill(true)
                             .show_value(true),
                     );
                     if resp.drag_started() {
@@ -4428,14 +4551,16 @@ fn render_masks_card(
     let count_txt = format!("{} maske", clip.masks.len());
     inspector_card(
         ui,
-        "🎭",
+        "◧",
         "Maskeler",
         ACCENT_TEAL,
         move |ui| {
             ui.label(RichText::new(count_txt).size(10.5).color(LABEL_COLOR));
         },
         |ui| {
-            ui.horizontal_wrapped(|ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                let btn_w = ((ui.available_width() - 6.0 * 2.0) / 3.0).max(58.0);
                 for (lbl, shape, name_base) in [
                     (
                         "+ Dikdörtgen",
@@ -4446,7 +4571,8 @@ fn render_masks_card(
                     ("+ Bezier", trim_core::MaskShape::Bezier, "Bezier"),
                 ] {
                     if ui
-                        .add(
+                        .add_sized(
+                            [btn_w, 24.0],
                             Button::new(RichText::new(lbl).size(10.5).color(Color32::WHITE))
                                 .fill(Color32::from_rgb(0x20, 0x26, 0x34))
                                 .rounding(Rounding::same(4.0)),
@@ -4508,7 +4634,7 @@ fn render_masks_card(
                                 if ui
                                     .add(
                                         Button::new(
-                                            RichText::new("🗑").size(10.5).color(Color32::WHITE),
+                                            RichText::new("✕").size(10.5).color(Color32::WHITE),
                                         )
                                         .fill(Color32::from_rgb(0x3a, 0x20, 0x28))
                                         .rounding(Rounding::same(4.0)),
@@ -4521,7 +4647,7 @@ fn render_masks_card(
                                 if ui
                                     .add(
                                         Button::new(
-                                            RichText::new("🎯 Takip")
+                                            RichText::new("⌖ Takip")
                                                 .size(10.0)
                                                 .strong()
                                                 .color(Color32::WHITE),
@@ -4546,11 +4672,13 @@ fn render_masks_card(
 
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            ui.add_sized(
-                                [62.0, 20.0],
-                                egui::Label::new(
-                                    RichText::new("Hedef").size(11.0).color(LABEL_COLOR),
-                                ),
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            ui.allocate_ui_with_layout(
+                                Vec2::new(76.0, 20.0),
+                                Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.label(RichText::new("Hedef").size(11.0).color(LABEL_COLOR));
+                                },
                             );
                             let mut tgt = m.target;
                             egui::ComboBox::from_id_salt(format!(
@@ -4599,15 +4727,24 @@ fn render_masks_card(
                              prop: &str,
                              m_ref: &mut trim_core::Mask| {
                                 ui.horizontal(|ui| {
-                                    ui.add_sized(
-                                        [68.0, 18.0],
-                                        egui::Label::new(
-                                            RichText::new(label).size(10.5).color(LABEL_COLOR),
-                                        ),
+                                    ui.spacing_mut().item_spacing.x = 6.0;
+                                    ui.allocate_ui_with_layout(
+                                        Vec2::new(76.0, 18.0),
+                                        Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            ui.label(
+                                                RichText::new(label)
+                                                    .size(10.5)
+                                                    .color(LABEL_COLOR),
+                                            );
+                                        },
                                     );
+                                    ui.spacing_mut().slider_width =
+                                        (ui.available_width() - 80.0).max(48.0);
                                     let resp = ui.add(
                                         egui::Slider::new(val, range)
                                             .fixed_decimals(2)
+                                            .trailing_fill(true)
                                             .show_value(true),
                                     );
                                     if resp.drag_started() {

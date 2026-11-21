@@ -47,7 +47,7 @@ const FORMAT_PRESETS: [FormatPreset; 4] = [
         title: "1080p Standart",
         subtitle: "1920×1080 · 30 FPS",
         badge: "16:9 Yatay",
-        icon: "🖥",
+        icon: "⊞",
         width: 1920,
         height: 1080,
         fps: 30.0,
@@ -56,7 +56,7 @@ const FORMAT_PRESETS: [FormatPreset; 4] = [
         title: "4K Sinematik",
         subtitle: "3840×2160 · 60 FPS",
         badge: "UHD Master",
-        icon: "🎬",
+        icon: "◈",
         width: 3840,
         height: 2160,
         fps: 60.0,
@@ -65,7 +65,7 @@ const FORMAT_PRESETS: [FormatPreset; 4] = [
         title: "9:16 Shorts/Reels",
         subtitle: "1080×1920 · 30 FPS",
         badge: "Dikey Mobil",
-        icon: "📱",
+        icon: "◧",
         width: 1080,
         height: 1920,
         fps: 30.0,
@@ -74,7 +74,7 @@ const FORMAT_PRESETS: [FormatPreset; 4] = [
         title: "720p Hızlı Web",
         subtitle: "1280×720 · 30 FPS",
         badge: "Hafif Kurgu",
-        icon: "⚡",
+        icon: "▸",
         width: 1280,
         height: 720,
         fps: 30.0,
@@ -402,7 +402,7 @@ impl WelcomeDialog {
                                 );
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     let open_btn = Button::new(
-                                        RichText::new("📂 Mevcut Projeyi Aç...")
+                                        RichText::new("↗ Mevcut Projeyi Aç...")
                                             .size(11.5)
                                             .strong()
                                             .color(Color32::from_rgb(0xe4, 0xe8, 0xf4)),
@@ -444,8 +444,8 @@ impl WelcomeDialog {
                                         ui.vertical_centered(|ui| {
                                             ui.add_space(68.0);
                                             ui.label(
-                                                RichText::new("📂")
-                                                    .size(34.0)
+                                                RichText::new("⊞")
+                                                    .size(32.0)
                                                     .color(Color32::from_rgb(0x4c, 0x50, 0x62)),
                                             );
                                             ui.add_space(6.0);
@@ -572,13 +572,13 @@ impl WelcomeDialog {
                                     ui.horizontal(|ui| {
                                         let (ff_icon, ff_text, ff_col) = if ffmpeg_ok {
                                             (
-                                                "🟢",
+                                                "●",
                                                 "FFmpeg Motoru Hazır",
                                                 Color32::from_rgb(0x52, 0xd8, 0x8a),
                                             )
                                         } else {
                                             (
-                                                "🔴",
+                                                "●",
                                                 "FFmpeg Eksik",
                                                 Color32::from_rgb(0xf8, 0x71, 0x71),
                                             )
@@ -591,7 +591,7 @@ impl WelcomeDialog {
                                         );
                                         ui.separator();
                                         ui.label(
-                                            RichText::new(format!("⚡ Kodlayıcı: {hw_summary}"))
+                                            RichText::new(format!("▸ Kodlayıcı: {hw_summary}"))
                                                 .size(10.5)
                                                 .color(Color32::from_rgb(0x9c, 0xb8, 0xe8)),
                                         );
@@ -599,7 +599,7 @@ impl WelcomeDialog {
                                     ui.add_space(2.0);
                                     ui.label(
                                         RichText::new(
-                                            "🛡 OpenGL 3.3 Renk/LUT Shader · Otomatik Çökme Kurtarma (Autosave) Aktif",
+                                            "◈ OpenGL 3.3 Renk/LUT Shader · Otomatik Çökme Kurtarma (Autosave) Aktif",
                                         )
                                         .size(9.5)
                                         .color(Color32::from_rgb(0x7c, 0x82, 0x98)),

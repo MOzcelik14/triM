@@ -2,6 +2,13 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [2.2.1] - 2026-11-21
+
+### Changed & Fixed
+- **Strict Inspector Alignment & Equal-Column Grids**: Unified label column widths (`104px`), aligned all slider bars and keyframe diamond indicators (`◆`/`◇`) across Transform, Compositing, Masks, Speed, Color, Audio, and Titler panels, and converted ragged wrapped buttons into uniform equal-width column grids.
+- **Clean Vector Iconography Across UI**: Replaced emojis across the Inspector, Media Bin, Timeline, Monitor, Menus, and Modal Dialogs with crisp typographic/geometric vector symbols (`▸`, `▾`, `●`, `○`, `■`, `□`, `◆`, `◇`, `◈`, `⊞`, `◧`, `⬒`, `▥`, `★`, `☆`, `⚙`, `≡`, `↗`, `←`, `→`, `⌖`, `▶`, `⏸`, `⏹`, `∿`, `♪`, `✂`, `✓`, `✕`, `↺`).
+- **News Ticker (`MotionTitleStyle::Ticker`) Badge Clipping Fix**: Fixed scrolling ticker text overlapping the left badge (`BİLGİ` / subtitle badge) by dynamically sizing the badge to its text width and clipping the scrolling text region cleanly at the right edge of the badge.
+
 ## [2.2.0] - 2026-11-21
 
 ### Added
