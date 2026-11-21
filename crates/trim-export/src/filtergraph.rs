@@ -2949,4 +2949,159 @@ mod tests {
             assert!(out_video.is_file() && out_video.metadata().unwrap().len() > 0);
         }
     }
+
+    #[test]
+    fn test_adversarial_drawtext_and_path_escaping_with_ffmpeg() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let vid_path = tmp.path().join("adv_base.mp4");
+        if trim_media::is_ffmpeg_available() {
+            let gen = trim_media::ffmpeg_cmd()
+                .args([
+                    "-y",
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=black:s=320x180:r=25:d=1.0",
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                ])
+                .arg(&vid_path)
+                .output()
+                .expect("gen adv base");
+            assert!(gen.status.success());
+        } else {
+            let _ = std::fs::write(&vid_path, b"dummy");
+        }
+
+        let mut proj = Project::default();
+        proj.settings.width = 320;
+        proj.settings.height = 180;
+        proj.settings.fps = 25.0;
+        let mut m = MediaItem::new(&vid_path);
+        m.media_type = MediaType::Video;
+        m.duration = 1.0;
+        m.width = 320;
+        m.height = 180;
+        m.fps = 25.0;
+        let mid = m.id.clone();
+        proj.add_media(m);
+
+        let adversarial = "Merhaba 'Dünya': [1,2]; %100 \\ kaçış\nTürkçe: ğüşiöçİĞÜŞÖÇ ".repeat(4);
+        let mut txt_clip = Clip::new(&mid, 0.0, 1.0);
+        txt_clip.text_overlay = Some(trim_core::TextOverlay {
+            content: adversarial,
+            font_size: 24.0,
+            ..Default::default()
+        });
+        proj.timeline.tracks[0].add_clip(txt_clip);
+
+        let out_mp4 = tmp.path().join("adv_out.mp4");
+        let (cmd_args, _) = TimelineExporter::build_export_pipeline(
+            &proj,
+            &ExportPreset {
+                width: Some(320),
+                height: Some(180),
+                fps: Some(25.0),
+                ..Default::default()
+            },
+            out_mp4.to_str().expect("utf8 path"),
+        )
+        .expect("build adversarial filtergraph");
+
+        if trim_media::is_ffmpeg_available() {
+            let fg_idx = cmd_args
+                .iter()
+                .position(|a| a == "-filter_complex")
+                .expect("filter_complex flag");
+            let fg_str = &cmd_args[fg_idx + 1];
+            let out = trim_media::ffmpeg_cmd()
+                .args([
+                    "-y",
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=black:s=320x180:r=25:d=1.0",
+                    "-f",
+                    "lavfi",
+                    "-t",
+                    "1.0",
+                    "-i",
+                    "anullsrc=r=48000:cl=stereo",
+                    "-protocol_whitelist",
+                    "file",
+                    "-i",
+                    vid_path.to_str().expect("utf8"),
+                    "-filter_complex",
+                    fg_str,
+                    "-map",
+                    "[outv]",
+                    "-map",
+                    "[outa]",
+                    "-frames:v",
+                    "1",
+                    "-f",
+                    "null",
+                    "-",
+                ])
+                .output()
+                .expect("run ffmpeg -filter_complex");
+            assert!(
+                out.status.success(),
+                "FFmpeg rejected escaped adversarial drawtext filtergraph:\nfg={fg_str}\nerr={}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+    }
+
+    #[test]
+    fn test_golden_filtergraph_snapshot() {
+        let mut proj = Project::default();
+        proj.settings.width = 640;
+        proj.settings.height = 360;
+        proj.settings.fps = 30.0;
+        let mut m = MediaItem::new("/tmp/golden_base.mp4");
+        m.media_type = MediaType::Video;
+        m.duration = 2.0;
+        m.width = 640;
+        m.height = 360;
+        m.fps = 30.0;
+        let mid = m.id.clone();
+        proj.add_media(m);
+
+        let mut txt = Clip::new(&mid, 0.0, 2.0);
+        txt.text_overlay = Some(trim_core::TextOverlay {
+            content: "Golden Snapshot".to_string(),
+            font_size: 32.0,
+            ..Default::default()
+        });
+        proj.timeline.tracks[0].add_clip(txt);
+
+        let (cmd_args, _) = TimelineExporter::build_export_pipeline(
+            &proj,
+            &ExportPreset {
+                width: Some(640),
+                height: Some(360),
+                fps: Some(30.0),
+                loudness_norm: LoudnessNorm::Off,
+                ..Default::default()
+            },
+            "/tmp/golden.mp4",
+        )
+        .expect("golden pipeline");
+        let fg_idx = cmd_args
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .expect("filter_complex flag");
+        let fg = &cmd_args[fg_idx + 1];
+        assert!(fg.contains("[0:v]format=yuv420p,setsar=1[base0];"));
+        assert!(fg.contains("drawtext=text='Golden Snapshot'"));
+        assert!(fg.contains("[base1]format=yuv420p[outv];"));
+        assert!(fg.ends_with("alimiter=limit=0.988553:attack=1:release=75:level=disabled[outa]"));
+    }
 }

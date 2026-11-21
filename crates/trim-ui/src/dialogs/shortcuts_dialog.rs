@@ -88,6 +88,13 @@ impl ShortcutsDialog {
                         ("P", "Kalem / Eğri Aracı (Pen Tool)"),
                         ("H", "El / Kaydırma Aracı (Hand Tool)"),
                     ],
+                    ShortcutProfile::FinalCutPro => vec![
+                        ("A", "Seçim Aracı (Select)"),
+                        ("B", "Bıçak Aracı (Blade)"),
+                        ("T", "Kırpma Aracı (Trim)"),
+                        ("P", "Konum Aracı (Position)"),
+                        ("H", "El Aracı (Hand)"),
+                    ],
                 };
 
                 let edit_shortcuts = match profile {
@@ -119,6 +126,14 @@ impl ShortcutsDialog {
                         ("Backspace", "Standart Silme (Delete)"),
                         ("Shift + Del", "Boşluğu Kapatıp Sil (Ripple Delete)"),
                         ("Ctrl + A", "Tüm Klipleri Seç"),
+                    ],
+                    ShortcutProfile::FinalCutPro => vec![
+                        ("Ctrl + B", "İmleç Konumunda Klibi Böl (Blade)"),
+                        ("[ / ]", "Baş / Son Kırpma (Trim Start / End)"),
+                        ("Ctrl + Z", "Son İşlemi Geri Al (Undo)"),
+                        ("Ctrl + Shift + Z", "Yinele (Redo)"),
+                        ("Backspace", "Standart Silme (Delete)"),
+                        ("Shift + Del", "Boşluğu Kapatıp Sil (Ripple Delete)"),
                     ],
                 };
 

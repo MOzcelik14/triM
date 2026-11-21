@@ -430,6 +430,15 @@ impl Project {
             && raw.get("timeline").and_then(|t| t.get("height")).is_some();
 
         let mut proj: Self = serde_json::from_value(raw)?;
+        const CURRENT_PROJECT_VERSION: u32 = 1;
+        if proj.version == 0 {
+            proj.version = 1;
+        } else if proj.version > CURRENT_PROJECT_VERSION {
+            return Err(serde::de::Error::custom(format!(
+                "Unsupported project version {} (max supported: {})",
+                proj.version, CURRENT_PROJECT_VERSION
+            )));
+        }
 
         if timeline_has_dims {
             // If timeline had non-default resolution/fps (e.g. 3840x2160 set on timeline while
@@ -724,5 +733,17 @@ mod tests {
         assert!(proj.remove_sequence(&id));
         assert_eq!(proj.sequences.len(), 1);
         assert!(!proj.remove_sequence("missing-id"));
+    }
+
+    #[test]
+    fn test_project_version_migration_and_future_rejection() {
+        let legacy_v0 = r#"{"format":"cutline","version":0,"settings":{"name":"Legacy","width":1280,"height":720,"fps":24.0}}"#;
+        let migrated = Project::from_json(legacy_v0).expect("migrate v0 cutline");
+        assert_eq!(migrated.version, 1);
+        assert_eq!(migrated.timeline.width, 1280);
+        assert_eq!(migrated.timeline.height, 720);
+
+        let future_v99 = r#"{"format":"trim","version":99,"settings":{"name":"Future"}}"#;
+        assert!(Project::from_json(future_v99).is_err());
     }
 }

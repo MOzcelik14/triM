@@ -6,6 +6,7 @@ pub mod compositing;
 pub mod error;
 pub mod interchange;
 pub mod keyframe;
+pub mod keymap;
 pub mod lru;
 pub mod marker;
 pub mod mask;
