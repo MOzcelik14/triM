@@ -15,7 +15,7 @@
   <a href="#sistem-gereksinimleri"><img src="https://img.shields.io/badge/Platform-Linux%20%7C%20Windows-2f3542?style=flat-square" alt="Platform: Linux | Windows" /></a>
   <a href="https://github.com/MOzcelik14/triM/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/MOzcelik14/triM/ci.yml?style=flat-square&color=2f3542&label=CI" alt="CI" /></a>
   <a href="https://github.com/MOzcelik14/triM/commits/master"><img src="https://img.shields.io/github/last-commit/MOzcelik14/triM?style=flat-square&color=2f3542" alt="Son Commit" /></a>
-  <a href="https://mozcelik14.github.io/prism-suite"><img src="https://img.shields.io/badge/Part%20of-prisM.%20Suite-2f3542?style=flat-square" alt="Part of prisM. Suite" /></a>
+  <a href="https://github.com/MOzcelik14/prism-suite"><img src="https://img.shields.io/badge/Part%20of-prisM.%20Suite-2f3542?style=flat-square" alt="Part of prisM. Suite" /></a>
 </p>
 
 <p>
