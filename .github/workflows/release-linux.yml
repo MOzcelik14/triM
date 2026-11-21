@@ -301,9 +301,48 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  macos:
+    name: macOS build · arm64 tar.gz
+    needs: rust-tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo registry and target directory
+        uses: Swatinem/rust-cache@v2
+      - name: Build macOS binary
+        run: cargo build --locked --release -p trim-app
+      - name: Package macOS tar.gz
+        run: |
+          set -euo pipefail
+          RAW_VER="${{ github.ref_name }}"
+          if [[ -z "${RAW_VER}" || "${RAW_VER}" != v* ]]; then
+            VER="$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n1)"
+          else
+            VER="${RAW_VER#v}"
+          fi
+          mkdir -p dist
+          STAGE="$(mktemp -d)"
+          PKG="${STAGE}/triM-${VER}-macos-arm64"
+          mkdir -p "${PKG}"
+          cp target/release/trim "${PKG}/trim"
+          cp -r resources "${PKG}/resources"
+          cp README.md LICENSE "${PKG}/"
+          tar -C "${STAGE}" -czf "dist/triM-${VER}-macos-arm64.tar.gz" "triM-${VER}-macos-arm64"
+          rm -rf "${STAGE}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trim-macos-package
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
   publish:
     name: Publish GitHub Release
-    needs: [deb-appimage, rpm, windows]
+    needs: [deb-appimage, rpm, windows, macos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -321,7 +360,7 @@ jobs:
           test "$(find dist -maxdepth 1 -name '*.deb' | wc -l)" -eq 1
           test "$(find dist -maxdepth 1 -name '*.rpm' | wc -l)" -eq 1
           test "$(find dist -maxdepth 1 -name '*.AppImage' | wc -l)" -eq 1
-          test "$(find dist -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 1
+          test "$(find dist -maxdepth 1 -name '*.tar.gz' | wc -l)" -eq 2
           test "$(find dist -maxdepth 1 -name '*.zip' | wc -l)" -eq 1
           (cd dist && sha256sum -- *.deb *.rpm *.AppImage *.tar.gz *.zip > SHA256SUMS.txt)
           cat dist/SHA256SUMS.txt
