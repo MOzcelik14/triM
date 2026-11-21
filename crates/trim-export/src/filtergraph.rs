@@ -1520,7 +1520,11 @@ impl TimelineExporter {
         for l in &audio_labels {
             mix.push_str(&format!("[{l}]"));
         }
-        if let Some(target_lufs) = preset.loudness_norm.target_lufs() {
+        if let Some(target_lufs) = preset
+            .loudness_norm
+            .target_lufs()
+            .filter(|_| !audio_labels.is_empty())
+        {
             mix.push_str(&format!(
                 "amix=inputs={}:duration=first:dropout_transition=0:normalize=0[mixa];[mixa]alimiter=limit=0.988553:attack=1:release=75:level=disabled[lima];[lima]loudnorm=I={:.1}:LRA=11:TP=-1.5,aresample=48000,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[outa]",
                 audio_labels.len() + 1,

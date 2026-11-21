@@ -134,9 +134,9 @@ Unbounded caching of decoded video frames and raw PCM audio buffers rapidly exha
 
 ## 4. Subprocess & RAII Safety (`ChildGuard`)
 
-All external media processes (`ffmpeg`, `ffprobe`, `pw-cat`, `aplay`, `paplay`, `parecord`) are spawned through `trim_media::ffmpeg::create_command`, which strips conflicting library paths (`LD_LIBRARY_PATH`, `LIBGL_DRIVERS_PATH`) injected by sandboxed environments.
+All external media processes (`ffmpeg`, `ffprobe`, `pw-cat`, `aplay`, `paplay`, `parecord`, `ffplay`) are spawned through `trim_media::ffmpeg::create_command`, which strips conflicting library paths (`LD_LIBRARY_PATH`, `LIBGL_DRIVERS_PATH`) injected by sandboxed environments.
 
-Every spawned `std::process::Child` that runs across multiple frames or inside a worker thread is wrapped in `ChildGuard`:
+Long-running and streaming subprocesses (`PlaybackStreamer` forward & reverse decoders in `trim-media/src/video.rs`, single-frame decoder in `video.rs`, `AudioStreamPlayer` sink in `audio.rs`, `ScreenRecorder`, `VoiceoverRecorder`, and `ExportRunner`) are wrapped in `ChildGuard`:
 
 ```rust
 pub struct ChildGuard {
@@ -145,6 +145,9 @@ pub struct ChildGuard {
 }
 ```
 
+Short-lived synchronous probes (`FFprobeAnalyzer`, `detect_available_encoders`, `whisper` CLI invocation, and bounded waveform/thumbnail extractors) use `Command::output()` with bounded I/O and exit-status checks.
+
+- **Panic Policy (`panic = "unwind"`):** Root `Cargo.toml` configures `panic = "unwind"` in `[profile.release]` specifically so `ChildGuard::drop` executes on panic and terminates active FFmpeg/audio child processes without leaving orphan processes behind.
 - **Lifecycle Guarantee:** When `ChildGuard` goes out of scope (whether by normal completion, early `Result` return, channel disconnection, or thread panic), its `Drop` implementation invokes `child.kill()` followed immediately by `child.wait()`.
 - **Zombie Prevention:** Reaping the process via `wait()` ensures the OS kernel process table never accumulates defunct `<zombie>` `ffmpeg` or `pw-cat` processes during rapid timeline scrubbing or repeated play/pause toggling.
 - **Status Inspection:** `ChildGuard::wait()` and `ChildGuard::try_wait()` cache the resulting `ExitStatus` in `exit_status`, allowing callers to inspect process termination codes idempotently even after the underlying handle has been reaped.

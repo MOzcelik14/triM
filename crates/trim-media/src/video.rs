@@ -100,7 +100,7 @@ pub struct PlaybackStreamer {
     active_clip_id: Option<String>,
     frame_rx: Option<Receiver<(f64, Arc<RgbaImage>)>>,
     stop_flag: Option<Arc<AtomicBool>>,
-    active_child: Option<Arc<Mutex<Option<std::process::Child>>>>,
+    active_child: Option<Arc<Mutex<Option<crate::ffmpeg::ChildGuard>>>>,
     child_handle: Option<std::thread::JoinHandle<()>>,
     current_frame: Option<Arc<RgbaImage>>,
     last_pts: f64,
@@ -224,7 +224,8 @@ impl PlaybackStreamer {
         let clip_str = clip_id.to_string();
         let stop_flag = Arc::new(AtomicBool::new(false));
         let stop_clone = stop_flag.clone();
-        let active_child: Arc<Mutex<Option<std::process::Child>>> = Arc::new(Mutex::new(None));
+        let active_child: Arc<Mutex<Option<crate::ffmpeg::ChildGuard>>> =
+            Arc::new(Mutex::new(None));
         let child_holder = active_child.clone();
 
         self.pending_future_frame = None;
@@ -262,27 +263,23 @@ impl PlaybackStreamer {
                 ]);
                 cmd.stdout(Stdio::piped()).stderr(Stdio::null());
 
-                let mut child = match cmd.spawn() {
-                    Ok(c) => c,
+                let mut guard = match crate::ffmpeg::ChildGuard::spawn(&mut cmd) {
+                    Ok(g) => g,
                     Err(_) => return,
                 };
 
-                let mut stdout = match child.stdout.take() {
+                let mut stdout = match guard.take_stdout() {
                     Some(s) => s,
                     None => {
-                        let _ = child.kill();
-                        let _ = child.wait();
                         return;
                     }
                 };
 
                 if let Ok(mut lock) = child_holder.lock() {
                     if stop_clone.load(Ordering::Acquire) {
-                        let _ = child.kill();
-                        let _ = child.wait();
                         return;
                     }
-                    *lock = Some(child);
+                    *lock = Some(guard);
                 }
 
                 let mut frame_idx = 0u64;
@@ -305,10 +302,7 @@ impl PlaybackStreamer {
                 }
 
                 if let Ok(mut lock) = child_holder.lock() {
-                    if let Some(mut c) = lock.take() {
-                        let _ = c.kill();
-                        let _ = c.wait();
-                    }
+                    drop(lock.take());
                 }
             } else {
                 // Reverse streaming: chunked forward decode in 2.0s segments, reversed in memory.
@@ -345,27 +339,23 @@ impl PlaybackStreamer {
                     ]);
                     cmd.stdout(Stdio::piped()).stderr(Stdio::null());
 
-                    let mut child = match cmd.spawn() {
-                        Ok(c) => c,
+                    let mut guard = match crate::ffmpeg::ChildGuard::spawn(&mut cmd) {
+                        Ok(g) => g,
                         Err(_) => break,
                     };
 
-                    let mut stdout = match child.stdout.take() {
+                    let mut stdout = match guard.take_stdout() {
                         Some(s) => s,
                         None => {
-                            let _ = child.kill();
-                            let _ = child.wait();
                             break;
                         }
                     };
 
                     if let Ok(mut lock) = child_holder.lock() {
                         if stop_clone.load(Ordering::Acquire) {
-                            let _ = child.kill();
-                            let _ = child.wait();
                             break;
                         }
-                        *lock = Some(child);
+                        *lock = Some(guard);
                     }
 
                     let mut chunk_frames = Vec::new();
@@ -388,11 +378,12 @@ impl PlaybackStreamer {
                     }
 
                     if let Ok(mut lock) = child_holder.lock() {
-                        if let Some(mut c) = lock.take() {
+                        if let Some(mut g) = lock.take() {
                             if stop_clone.load(Ordering::Acquire) {
-                                let _ = c.kill();
+                                let _ = g.kill();
+                            } else {
+                                let _ = g.wait();
                             }
-                            let _ = c.wait();
                         }
                     }
 
@@ -3005,5 +2996,70 @@ LUT_3D_SIZE 2
             100,
             "Adjustment layer outside ColorAndEffects mask should keep backdrop"
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_playback_streamer_panic_cleans_up_ffmpeg_child() {
+        if !crate::ffmpeg::is_ffmpeg_available() {
+            return;
+        }
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let vid_path = tmp.path().join("test_panic.mp4");
+        let gen = crate::ffmpeg::ffmpeg_cmd()
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=5:size=320x180:rate=30",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&vid_path)
+            .output()
+            .expect("spawn ffmpeg testsrc");
+        assert!(gen.status.success(), "testsrc generation failed");
+
+        let vid_str = vid_path.to_string_lossy().to_string();
+        let pid_slot = Arc::new(Mutex::new(None::<u32>));
+        let pid_capture = pid_slot.clone();
+
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let mut streamer = PlaybackStreamer::new();
+            streamer.start("clip_panic", &vid_str, 0.0, 30.0, false, 0.0);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+            while std::time::Instant::now() < deadline {
+                if let Some(ref arc) = streamer.active_child {
+                    if let Ok(guard_opt) = arc.lock() {
+                        if let Some(ref g) = *guard_opt {
+                            if let Some(pid) = g.id() {
+                                if let Ok(mut slot) = pid_capture.lock() {
+                                    *slot = Some(pid);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(15));
+            }
+            panic!("intentional panic to test ChildGuard::drop");
+        }));
+        assert!(res.is_err(), "expected panic");
+
+        if let Some(pid) = pid_slot.lock().ok().and_then(|g| *g) {
+            let proc_dir = std::path::PathBuf::from(format!("/proc/{pid}"));
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while proc_dir.exists() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            assert!(
+                !proc_dir.exists(),
+                "FFmpeg child PID {pid} survived panic/unwind!"
+            );
+        }
     }
 }

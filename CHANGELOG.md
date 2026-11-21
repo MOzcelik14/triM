@@ -2,6 +2,14 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [Unreleased]
+
+### Fixed & Verified (P0 Reliability)
+- **RAII `ChildGuard` in `PlaybackStreamer`**: Wrapped both forward and reverse `PlaybackStreamer` FFmpeg subprocesses (`crates/trim-media/src/video.rs`) in `ChildGuard` so child processes are deterministically terminated and reaped on drop or thread unwind.
+- **Release Panic Policy (`panic = "unwind"`)**: Switched `[profile.release]` in root `Cargo.toml` from `abort` to `unwind` so `ChildGuard::drop` executes on panic instead of leaving orphan FFmpeg/audio processes.
+- **Subprocess & Roadmap Documentation Alignment**: Updated `ARCHITECTURE.md` §4 (`ChildGuard` coverage & `panic = "unwind"`) and added a verified `ISSUE` status table to `ROADMAP.md`.
+- **Tests**: Added Linux-only panic/drop child cleanup test (`test_playback_streamer_panic_cleans_up_ffmpeg_child`) and headless FFmpeg E2E smoke test (`crates/trim-export/tests/e2e_smoke.rs`).
+
 ## [2.2.1] - 2026-11-21
 
 ### Changed & Fixed

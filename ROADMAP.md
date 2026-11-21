@@ -2,6 +2,19 @@
 
 This document defines the upcoming engineering milestones and issue specifications for `triM`. Tasks are organized across four two-week sprints, with explicit technical scope, affected crates, and acceptance criteria.
 
+## Current Implementation Status (Verified)
+
+| ISSUE | Durum | Kanıt (`dosya:satır`) |
+|---|---|---|
+| `ISSUE-001` (Custom Keybindings) | Partial (presets only) | `crates/trim-ui/src/shortcuts.rs:1-43`, `crates/trim-core/src/preferences.rs:17` |
+| `ISSUE-002` (Wayland Fractional Scaling) | Partial | `crates/trim-ui/src/app.rs:326` (`set_pixels_per_point`), per-widget pixel snapping missing |
+| `ISSUE-003` (Brickwall Limiter) | **Done** | `crates/trim-media/src/dsp/limiter.rs:37-220`, `crates/trim-media/src/audio.rs:641-675`, `crates/trim-ui/src/vu_meter.rs` |
+| `ISSUE-004` (Async File Dialogs) | **Done** | `crates/trim-ui/src/file_dialog.rs:138-184` (background thread + `mpsc`; main-thread on macOS AppKit) |
+| `ISSUE-005` (FCPXML/EDL Import) | **Done** (rational `<gap>`/`relink` basic) | `crates/trim-export/src/fcpxml.rs`, `crates/trim-export/src/edl.rs` |
+| `ISSUE-006` (HW Encoder Probe) | **Done** | `crates/trim-media/src/ffmpeg.rs:343-430` (`detect_available_encoders`, VAAPI/NVENC/QSV/AMF 1-frame probe) |
+| `ISSUE-007` (GLSL GPU Compositor) | **Done** | `crates/trim-ui/src/gpu_compositor.rs:943-2087`, `crates/trim-ui/src/app/playback.rs:252-276` |
+| `ISSUE-008` (Waveform/Thumb Cache) | **Done** | `crates/trim-core/src/paths.rs` (`file_mtime_and_size` + `stable_hash_64`), `crates/trim-media/src/waveform.rs` (`LruCache`), `crates/trim-core/src/cache_manager.rs` |
+
 ---
 
 ## Sprint 1 (Weeks 1-2): Input Customization & Windowing Precision
