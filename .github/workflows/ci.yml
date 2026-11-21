@@ -61,11 +61,6 @@ jobs:
       - name: Security audit and license check
         uses: embarkstudios/cargo-deny-action@v2
 
-      - name: RustSec vulnerability audit
-        uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build release binaries
         run: cargo build --workspace --release --locked
 
