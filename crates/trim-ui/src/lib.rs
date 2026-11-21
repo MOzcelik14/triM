@@ -5,7 +5,7 @@ pub mod canvas;
 pub mod color_wheel;
 pub mod dialogs;
 pub mod file_dialog;
-pub mod gpu_compositor;
+pub use trim_render as gpu_compositor;
 pub mod i18n;
 pub mod inspector;
 pub mod media_bin;

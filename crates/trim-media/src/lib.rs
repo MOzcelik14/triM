@@ -4,6 +4,7 @@ pub mod analyzer;
 pub mod audio;
 pub mod dsp;
 pub mod ffmpeg;
+pub mod frame_pool;
 pub mod proxy;
 pub mod scene_detect;
 pub mod screen_record;
@@ -27,6 +28,7 @@ pub use ffmpeg::{
     is_ffprobe_available, refresh_ffmpeg_availability, resolve_binary_path, AvailableEncoders,
     ChildGuard, CREATE_NO_WINDOW,
 };
+pub use frame_pool::FrameBufferPool;
 pub use proxy::{default_proxy_path_for, generate_proxy};
 pub use scene_detect::{detect_scene_changes, parse_scene_cut_timestamps};
 pub use screen_record::{CaptureSource, ScreenRecorder};

@@ -9,9 +9,7 @@ use trim_media::{calculate_preview_size, parse_cube_lut_file, CompositorLayer, C
 
 pub const GPU_PREVIEW_SCALE: u32 = 2; // 1280x720 for 16:9 (2x logical 640x360 coordinate space)
 
-#[path = "gpu_compositor/shaders.rs"]
 mod shaders;
-#[path = "gpu_compositor/uniforms.rs"]
 mod uniforms;
 
 use shaders::{FRAGMENT_SHADER_BODY, VERTEX_SHADER_BODY};

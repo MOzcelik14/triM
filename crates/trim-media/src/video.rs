@@ -109,6 +109,7 @@ pub struct PlaybackStreamer {
     is_reversed: bool,
     started_at: std::time::Instant,
     frames_delivered: u64,
+    frame_pool: crate::frame_pool::FrameBufferPool,
 }
 
 impl Drop for PlaybackStreamer {
@@ -132,6 +133,7 @@ impl Default for PlaybackStreamer {
             is_reversed: false,
             started_at: std::time::Instant::now(),
             frames_delivered: 0,
+            frame_pool: crate::frame_pool::FrameBufferPool::new(16),
         }
     }
 }
@@ -239,6 +241,7 @@ impl PlaybackStreamer {
 
         let thread_path = path_str.clone();
         let thread_fps = if fps > 1.0 { fps } else { 30.0 };
+        let pool = self.frame_pool.clone();
 
         let handle = std::thread::spawn(move || {
             let vf_str = format!(
@@ -285,8 +288,9 @@ impl PlaybackStreamer {
 
                 let mut frame_idx = 0u64;
                 while !stop_clone.load(Ordering::Acquire) {
-                    let mut buf = vec![0u8; frame_bytes];
+                    let mut buf = pool.checkout(frame_bytes);
                     if stdout.read_exact(&mut buf).is_err() {
+                        pool.checkin(buf);
                         break;
                     }
 
@@ -363,8 +367,9 @@ impl PlaybackStreamer {
                     let mut frame_idx = 0u64;
 
                     while !stop_clone.load(Ordering::Acquire) {
-                        let mut buf = vec![0u8; frame_bytes];
+                        let mut buf = pool.checkout(frame_bytes);
                         if stdout.read_exact(&mut buf).is_err() {
+                            pool.checkin(buf);
                             break;
                         }
 
@@ -437,7 +442,9 @@ impl PlaybackStreamer {
             };
             if is_due {
                 if let Some((p, frame)) = self.pending_future_frame.take() {
-                    self.current_frame = Some(frame);
+                    if let Some(old) = self.current_frame.replace(frame) {
+                        self.frame_pool.recycle_arc(old);
+                    }
                     self.last_pts = p;
                     self.frames_delivered += 1;
                 }
@@ -453,7 +460,9 @@ impl PlaybackStreamer {
                         pts <= target_source_time + 0.005
                     };
                     if is_due {
-                        self.current_frame = Some(frame);
+                        if let Some(old) = self.current_frame.replace(frame) {
+                            self.frame_pool.recycle_arc(old);
+                        }
                         self.last_pts = pts;
                         self.frames_delivered += 1;
                     } else {
@@ -488,7 +497,9 @@ impl PlaybackStreamer {
         }
         self.active_path = None;
         self.active_clip_id = None;
-        self.pending_future_frame = None;
+        if let Some((_, old)) = self.pending_future_frame.take() {
+            self.frame_pool.recycle_arc(old);
+        }
         self.frames_delivered = 0;
     }
 }

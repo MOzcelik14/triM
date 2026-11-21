@@ -11,6 +11,7 @@ trim-commands = { path = "../trim-commands" }
 trim-timeline = { path = "../trim-timeline" }
 trim-project = { path = "../trim-project" }
 trim-media = { path = "../trim-media" }
+trim-render = { path = "../trim-render" }
 trim-export = { path = "../trim-export" }
 egui = { workspace = true }
 eframe = { workspace = true }

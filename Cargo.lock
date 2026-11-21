@@ -3137,6 +3137,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "trim-render"
+version = "2.3.0"
+dependencies = [
+ "eframe",
+ "egui",
+ "image",
+ "log",
+ "trim-core",
+ "trim-media",
+]
+
+[[package]]
 name = "trim-timeline"
 version = "2.3.0"
 dependencies = [
@@ -3160,6 +3172,7 @@ dependencies = [
  "trim-export",
  "trim-media",
  "trim-project",
+ "trim-render",
  "trim-timeline",
  "uuid",
 ]

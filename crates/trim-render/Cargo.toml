@@ -1,0 +1,14 @@
+[package]
+name = "trim-render"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+trim-core = { path = "../trim-core" }
+trim-media = { path = "../trim-media" }
+egui = { workspace = true }
+eframe = { workspace = true }
+image = { workspace = true }
+log = { workspace = true }

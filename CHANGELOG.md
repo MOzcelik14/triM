@@ -27,6 +27,10 @@ All notable changes to **triM.** are documented in this file.
 - **Title Templates (`TitleTemplate`)**: Added 5 title template mappings (`LowerThird`, `OpeningTitle`, `ChapterCard`, `RollingCredits`, `TickerBanner`) onto `TextOverlay` + `MotionTitleStyle`.
 - **Versioned Autosave Snapshots (`trim-project`)**: Added `AutosaveSnapshotEntry`, `AutosaveManager::save_versioned_snapshot`, and `AutosaveManager::list_snapshots` with TR/EN `i18n.rs` strings.
 
+### Performance & Advanced Architecture (Stage 5)
+- **RGBA Frame Buffer Ring Pool (`trim-media::frame_pool::FrameBufferPool`)**: Added a thread-safe bounded buffer pool (`max_buffers = 16`) wired into `PlaybackStreamer` forward/reverse decode loops and frame replacement/stop cleanup to recycle decoded RGBA allocations instead of allocating per-frame.
+- **Render/UI Workspace Separation (`crates/trim-render`)**: Extracted `GpuCompositor`, `LayerUniforms`, GLSL shaders, and uniform calculation from `trim-ui` into a dedicated `trim-render` workspace crate (`trim-ui` re-exports `trim_render as gpu_compositor` for seamless API compatibility).
+
 ## [2.2.1] - 2026-11-21
 
 ### Changed & Fixed

@@ -5,6 +5,7 @@ members = [
     "crates/trim-timeline",
     "crates/trim-project",
     "crates/trim-media",
+    "crates/trim-render",
     "crates/trim-export",
     "crates/trim-ui",
     "crates/trim-app",
