@@ -248,6 +248,22 @@ fn translate(lang: Language, key: &str) -> &str {
         (Language::Turkish, "dialog_close") => "Kapat",
         (Language::English, "dialog_close") => "Close",
 
+        // Look Library & Title Templates & Autosave Snapshots
+        (Language::Turkish, "looks_library") => "Görünüm Kütüphanesi (.trimlook)",
+        (Language::English, "looks_library") => "Look Library (.trimlook)",
+        (Language::Turkish, "title_tpl_lower_third") => "Alt Üçlü (Lower Third)",
+        (Language::English, "title_tpl_lower_third") => "Lower Third",
+        (Language::Turkish, "title_tpl_opening") => "Açılış Başlığı",
+        (Language::English, "title_tpl_opening") => "Opening Title",
+        (Language::Turkish, "title_tpl_chapter") => "Bölüm Kartı",
+        (Language::English, "title_tpl_chapter") => "Chapter Card",
+        (Language::Turkish, "title_tpl_credits") => "Kayan Jenerik",
+        (Language::English, "title_tpl_credits") => "Rolling Credits",
+        (Language::Turkish, "title_tpl_ticker") => "Haber Bandı (Ticker)",
+        (Language::English, "title_tpl_ticker") => "News Ticker",
+        (Language::Turkish, "autosave_snapshots") => "Otomatik Yedek Sürümleri",
+        (Language::English, "autosave_snapshots") => "Autosave Snapshots",
+
         // Fallback: return key verbatim if not found
         (_, other) => other,
     }

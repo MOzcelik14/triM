@@ -42,6 +42,26 @@ pub fn config_dir() -> PathBuf {
     home_dir().join(".config").join("trim")
 }
 
+/// Returns the standard user data directory (looks, presets, templates).
+/// - Windows: `%APPDATA%\triM`
+/// - Linux / macOS: `$XDG_DATA_HOME/trim` or `$HOME/.local/share/trim`
+pub fn data_dir() -> PathBuf {
+    if cfg!(windows) {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            if !appdata.is_empty() {
+                return PathBuf::from(appdata).join("triM");
+            }
+        }
+        return home_dir().join(".trim");
+    }
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
+        if !xdg.is_empty() {
+            return PathBuf::from(xdg).join("trim");
+        }
+    }
+    home_dir().join(".local").join("share").join("trim")
+}
+
 /// Returns the standard cache directory for temporary/reproducible data (thumbnails, waveforms, frames).
 /// - Windows: `%LOCALAPPDATA%\triM` (e.g. `C:\Users\Username\AppData\Local\triM`)
 /// - Linux / macOS: `$HOME/.cache/trim`

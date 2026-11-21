@@ -449,6 +449,103 @@ impl AutosaveManager {
         Ok(())
     }
 
+    /// Writes both the primary recovery file and a versioned timestamped snapshot, pruning
+    /// older snapshots beyond `max_versions`.
+    pub fn save_versioned_snapshot(
+        &self,
+        project: &Project,
+        max_versions: usize,
+    ) -> Result<(), ProjectError> {
+        self.save_snapshot(project)?;
+        if !project.is_dirty || max_versions == 0 {
+            return Ok(());
+        }
+        let stem = self
+            .get_recovery_path(project)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("project")
+            .to_string();
+        let ts_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let versioned = self
+            .recovery_dir
+            .join(format!("{stem}.snap.{ts_ms}.autosave.trim"));
+        let json_data = project.to_json()?;
+        write_atomic(&versioned, json_data.as_bytes())?;
+
+        // Prune excess snapshots for this project stem
+        let prefix = format!("{stem}.snap.");
+        if let Ok(entries) = fs::read_dir(&self.recovery_dir) {
+            let mut snaps: Vec<(u64, PathBuf)> = entries
+                .flatten()
+                .filter_map(|e| {
+                    let p = e.path();
+                    let name = p.file_name()?.to_str()?;
+                    if !name.starts_with(&prefix) || !name.ends_with(".autosave.trim") {
+                        return None;
+                    }
+                    let mtime = e
+                        .metadata()
+                        .ok()?
+                        .modified()
+                        .ok()?
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .ok()?
+                        .as_millis() as u64;
+                    Some((mtime, p))
+                })
+                .collect();
+            snaps.sort_by_key(|a| std::cmp::Reverse(a.0));
+            for (_, old_path) in snaps.into_iter().skip(max_versions) {
+                let _ = fs::remove_file(old_path);
+            }
+        }
+        Ok(())
+    }
+
+    /// Lists available autosave recovery snapshots sorted newest-first.
+    pub fn list_snapshots(&self) -> Vec<AutosaveSnapshotEntry> {
+        let Ok(entries) = fs::read_dir(&self.recovery_dir) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for entry in entries.flatten() {
+            let p = entry.path();
+            let Some(name) = p.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".autosave.trim") {
+                continue;
+            }
+            let modified_epoch_secs = entry
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            if let Ok(raw) = fs::read_to_string(&p) {
+                if let Ok(proj) = Project::from_json(&raw) {
+                    let clip_count: usize =
+                        proj.timeline.tracks.iter().map(|t| t.clips.len()).sum();
+                    let duration_secs = proj.timeline.duration();
+                    out.push(AutosaveSnapshotEntry {
+                        path: p,
+                        project_name: proj.settings.name,
+                        clip_count,
+                        duration_secs,
+                        modified_epoch_secs,
+                    });
+                }
+            }
+        }
+        out.sort_by_key(|a| std::cmp::Reverse(a.modified_epoch_secs));
+        out
+    }
+
     pub fn cleanup(&self, project: &Project) {
         let rec_path = self.get_recovery_path(project);
         if rec_path.is_file() {
@@ -462,11 +559,41 @@ impl AutosaveManager {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct AutosaveSnapshotEntry {
+    pub path: PathBuf,
+    pub project_name: String,
+    pub clip_count: usize,
+    pub duration_secs: f64,
+    pub modified_epoch_secs: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;
     use trim_core::clip::Clip;
+
+    #[test]
+    fn test_versioned_autosave_snapshots_list_and_prune() {
+        let dir = tempdir().expect("tempdir");
+        let mgr = AutosaveManager::new(dir.path());
+        let mut proj = Project::new("SnapTest");
+        proj.timeline.tracks[0].add_clip(Clip::new("m1", 0.0, 2.5));
+        proj.is_dirty = true;
+
+        for _ in 0..4 {
+            mgr.save_versioned_snapshot(&proj, 2)
+                .expect("save versioned snapshot");
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+
+        let snaps = mgr.list_snapshots();
+        // 1 primary recovery + max 2 versioned snapshots = <= 3 entries
+        assert!(snaps.len() >= 2 && snaps.len() <= 3, "got {}", snaps.len());
+        assert_eq!(snaps[0].clip_count, 1);
+        assert!((snaps[0].duration_secs - 2.5).abs() < 1e-6);
+    }
 
     #[test]
     fn test_save_and_load_roundtrip() {
