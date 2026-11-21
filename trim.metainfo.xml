@@ -56,6 +56,17 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2.2.0" date="2026-11-21">
+      <description>
+        <p>triM. v2.2.0 - 3D .cube LUT Pişirme, Kamera Log Profilleri, Analog Film Laboratuvarı, Akan Sinema Jeneriği, Prosedürel SFX Sentezleyici ve 5 Stüdyo Teması:</p>
+        <ul>
+          <li>Export'ta 1:1 renk tutarlılığı için 33x33x33 3D .cube LUT pişirme, kullanıcı renk ayarını .cube olarak dışa aktarma, Kamera Log giriş profilleri (S-Log3, C-Log, V-Log, Log-C) ve monitör üstü Beyaz Dengesi (WB) damlalığı eklendi.</li>
+          <li>35mm / 16mm / 8mm analog film stok emülasyonu, Highlight Roll-off, Diffusion, Mist, Gate Weave, LUT galerisi arama/favoriler, Dikey Wipe ve 2x Yan Yana kıyaslama modları ile 2.39:1 Sinemaskop kılavuzu eklendi.</li>
+          <li>Akan Sinema Jeneriği (Rolling Credits), Bölüm Kartı (Chapter Card), özel .ttf/.otf font dosyası yükleyici, TR -> EN karakter dönüştürücü ve prosedürel SFX / daktilo foley sentezleyici eklendi.</li>
+          <li>5 yerleşik stüdyo renk teması, Hoş Geldiniz ekranında donanım/GPU teşhis kartı, içe aktarmada otomatik 720p proxy seçeneği ve uygulama içi sürüm kontrolü eklendi.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.1.0" date="2026-11-17">
       <description>
         <p>triM. v2.1.0 - Sesli Scrubbing, Çok Katmanlı Video Akışı, Arka Plan İş Yöneticisi ve Performans Güncellemesi:</p>

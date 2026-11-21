@@ -43,10 +43,17 @@ pub struct UserPreferences {
     /// Maximum RAM memory budget in megabytes for frame and audio PCM caches (256, 512, 1024, 2048)
     #[serde(default = "default_memory_budget_mb")]
     pub max_memory_budget_mb: usize,
+    /// Studio UI theme identifier ("indigo", "noir_lime", "monochrome", "midnight_blue", "warm_tungsten")
+    #[serde(default = "default_theme_id")]
+    pub theme_id: String,
 }
 
 fn default_memory_budget_mb() -> usize {
     512
+}
+
+fn default_theme_id() -> String {
+    "indigo".to_string()
 }
 
 impl Default for UserPreferences {
@@ -70,6 +77,7 @@ impl Default for UserPreferences {
             preferred_hw_accel: "auto".to_string(),
             default_track_height: 56.0,
             max_memory_budget_mb: 512,
+            theme_id: "indigo".to_string(),
         }
     }
 }

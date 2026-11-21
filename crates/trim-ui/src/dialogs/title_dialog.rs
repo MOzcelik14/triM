@@ -116,7 +116,9 @@ impl TitleDialog {
                                         self.has_box = true;
                                         self.font_size = 38;
                                     }
-                                    MotionTitleStyle::CinematicZoom => {
+                                    MotionTitleStyle::CinematicZoom
+                                    | MotionTitleStyle::RollingCredits
+                                    | MotionTitleStyle::ChapterCard => {
                                         self.position = TitlePosition::Center;
                                         self.has_shadow = true;
                                     }
@@ -132,13 +134,18 @@ impl TitleDialog {
 
                 ui.add_space(6.0);
 
-                // 2. Text Content (Main Title & Subtitle for Lower Thirds)
+                // 2. Text Content (Main Title & Subtitle for Lower Thirds / Credits / Chapter Card)
                 ui.group(|ui| {
-                    if self.motion_style == MotionTitleStyle::LowerThird {
+                    if matches!(
+                        self.motion_style,
+                        MotionTitleStyle::LowerThird
+                            | MotionTitleStyle::RollingCredits
+                            | MotionTitleStyle::ChapterCard
+                    ) {
                         ui.strong("Ana İsim / Başlık:");
                         ui.text_edit_singleline(&mut self.text);
                         ui.add_space(4.0);
-                        ui.strong("Alt Başlık / Ünvan / Açıklama:");
+                        ui.strong("Alt Başlık / Ünvan / Jenerik Satırı:");
                         ui.text_edit_singleline(&mut self.subtitle_text);
                     } else {
                         ui.strong("Metin İçeriği");
@@ -280,8 +287,12 @@ impl TitleDialog {
                             [0, 0, 0, 0] // 100% transparent
                         };
 
-                        let sub = if self.motion_style == MotionTitleStyle::LowerThird
-                            && !self.subtitle_text.trim().is_empty()
+                        let sub = if matches!(
+                            self.motion_style,
+                            MotionTitleStyle::LowerThird
+                                | MotionTitleStyle::RollingCredits
+                                | MotionTitleStyle::ChapterCard
+                        ) && !self.subtitle_text.trim().is_empty()
                         {
                             Some(self.subtitle_text.trim().to_string())
                         } else {

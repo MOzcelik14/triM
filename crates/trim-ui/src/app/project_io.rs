@@ -480,6 +480,48 @@ impl TrimApp {
                     }
                 }
             }
+            FileDialogRequest::SelectCustomFont { clip_id } => {
+                crate::theme::register_custom_font_file(ctx, &path);
+                let font_path_str = path.to_string_lossy().to_string();
+                let font_name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("Özel Font")
+                    .to_string();
+                for track in &mut self.project.timeline.tracks {
+                    if let Some(clip) = track.get_clip_by_id_mut(&clip_id) {
+                        if let Some(txt) = &mut clip.text_overlay {
+                            txt.font_family = font_path_str;
+                            self.project.mark_dirty();
+                            self.last_rendered_dirty = true;
+                            self.status_message =
+                                format!("🔤 Özel font dosyası yüklendi: {}", font_name);
+                        }
+                        break;
+                    }
+                }
+            }
+            FileDialogRequest::ExportCubeLut {
+                cube_text,
+                clip_name,
+            } => {
+                let mut target = path;
+                if target.extension().is_none() {
+                    target.set_extension("cube");
+                }
+                match std::fs::write(&target, cube_text) {
+                    Ok(()) => {
+                        self.status_message = format!(
+                            "💾 '{}' renk ayarı 3D .cube LUT olarak kaydedildi: {}",
+                            clip_name,
+                            target.display()
+                        );
+                    }
+                    Err(e) => {
+                        self.status_message = format!("⚠ .cube LUT dosyası kaydedilemedi: {e}");
+                    }
+                }
+            }
             FileDialogRequest::RelinkFolder => {
                 let count = self.project.relink_media_from_folder(&path);
                 if count > 0 {

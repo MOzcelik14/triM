@@ -3,6 +3,218 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Camera Log / Transfer input profiles converted to Rec.709 before primary color grading.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CameraLogProfile {
+    #[default]
+    Rec709,
+    SLog3,
+    CLog,
+    VLog,
+    LogC,
+}
+
+impl CameraLogProfile {
+    pub const ALL: &'static [Self] = &[
+        Self::Rec709,
+        Self::SLog3,
+        Self::CLog,
+        Self::VLog,
+        Self::LogC,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Rec709 => "Rec.709 (Standart)",
+            Self::SLog3 => "Sony S-Log3 → Rec.709",
+            Self::CLog => "Canon C-Log → Rec.709",
+            Self::VLog => "Panasonic V-Log → Rec.709",
+            Self::LogC => "ARRI Log-C → Rec.709",
+        }
+    }
+
+    pub fn short_label(&self) -> &'static str {
+        match self {
+            Self::Rec709 => "Rec.709",
+            Self::SLog3 => "S-Log3",
+            Self::CLog => "C-Log",
+            Self::VLog => "V-Log",
+            Self::LogC => "Log-C",
+        }
+    }
+
+    pub fn shader_id(&self) -> i32 {
+        match self {
+            Self::Rec709 => 0,
+            Self::SLog3 => 1,
+            Self::CLog => 2,
+            Self::VLog => 3,
+            Self::LogC => 4,
+        }
+    }
+
+    /// Converts a single normalized Log channel value `[0.0, 1.0]` to linear scene reflectance
+    /// and then encodes with the Rec.709 OETF.
+    #[inline]
+    pub fn apply_channel(&self, x: f32) -> f32 {
+        let x = x.clamp(0.0, 1.0);
+        let lin = match self {
+            Self::Rec709 => return x,
+            Self::SLog3 => {
+                if x >= 0.100_537_78 {
+                    (10.0_f32.powf((x - 0.790453) / 0.344676) - 0.009468) / 0.555556
+                } else {
+                    (x - 0.092864) / 8.735631
+                }
+            }
+            Self::CLog => {
+                if x >= 0.100_686_68 {
+                    (10.0_f32.powf((x - 0.384316) / 0.245281) - 0.064829) / 5.555556
+                } else {
+                    (x - 0.092864) / 8.799461
+                }
+            }
+            Self::VLog => {
+                let cut = 171.210_3 / 1023.0;
+                if x >= cut {
+                    10.0_f32.powf((x * 1023.0 - 420.0) / 261.5) * 0.19 - 0.01
+                } else {
+                    ((x * 1023.0 - 95.0) * 0.01125) / (171.210_3 - 95.0)
+                }
+            }
+            Self::LogC => {
+                if x > 0.14 {
+                    (10.0_f32.powf(3.89616 * x - 2.27752) - 0.0929) / 0.9892
+                } else {
+                    (x - 0.0929) / 6.025
+                }
+            }
+        };
+        let v = lin.clamp(0.0, 1.0);
+        let oetf = if v < 0.018 {
+            4.5 * v
+        } else {
+            1.099 * v.powf(0.45) - 0.099
+        };
+        oetf.clamp(0.0, 1.0)
+    }
+
+    #[inline]
+    pub fn apply_rgb(&self, r: f32, g: f32, b: f32) -> [f32; 3] {
+        if *self == Self::Rec709 {
+            return [r, g, b];
+        }
+        [
+            self.apply_channel(r),
+            self.apply_channel(g),
+            self.apply_channel(b),
+        ]
+    }
+}
+
+/// Analog film stock formats modeling toe compression, dye density, and highlight roll-off knee.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FilmStockFormat {
+    #[default]
+    None,
+    Film35mm,
+    Film16mm,
+    Film8mm,
+}
+
+impl FilmStockFormat {
+    pub const ALL: &'static [Self] = &[Self::None, Self::Film35mm, Self::Film16mm, Self::Film8mm];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::None => "Kapalı (Dijital)",
+            Self::Film35mm => "35mm Sinema Filmi (Dengeli Kontrast & İnce Doku)",
+            Self::Film16mm => "16mm Bağımsız Film (Yumuşak Parlaklık & Organik Toe)",
+            Self::Film8mm => "8mm Vintage Film (Yüksek Kontrast & Nostaljik Sıcaklık)",
+        }
+    }
+
+    pub fn short_label(&self) -> &'static str {
+        match self {
+            Self::None => "Yok",
+            Self::Film35mm => "35mm",
+            Self::Film16mm => "16mm",
+            Self::Film8mm => "8mm",
+        }
+    }
+
+    pub fn shader_id(&self) -> i32 {
+        match self {
+            Self::None => 0,
+            Self::Film35mm => 1,
+            Self::Film16mm => 2,
+            Self::Film8mm => 3,
+        }
+    }
+
+    /// Applies analog film stock tone response and exponential highlight roll-off knee to `[0.0, 1.0]` RGB.
+    #[inline]
+    pub fn apply_rgb(self, mut r: f32, mut g: f32, mut b: f32, highlight_rolloff: f32) -> [f32; 3] {
+        let roll_extra = highlight_rolloff.clamp(0.0, 1.0);
+        if self == Self::None && roll_extra <= 1e-4 {
+            return [r, g, b];
+        }
+
+        let (fmt_contrast, fmt_roll, warm_shift, shadow_lift, sat_scale) = match self {
+            Self::None => (0.0_f32, 0.0_f32, 0.0_f32, 0.0_f32, 1.0_f32),
+            Self::Film35mm => (0.06, 0.14, 0.015, 0.02, 0.96),
+            Self::Film16mm => (0.11, 0.22, 0.028, 0.035, 0.91),
+            Self::Film8mm => (0.17, 0.30, 0.045, 0.05, 0.84),
+        };
+
+        // Warm print bias & shadow toe lift
+        r = (r + warm_shift + shadow_lift * (1.0 - r) * (1.0 - r)).clamp(0.0, 1.0);
+        g = (g + warm_shift * 0.25 + shadow_lift * 0.85 * (1.0 - g) * (1.0 - g)).clamp(0.0, 1.0);
+        b = (b - warm_shift * 0.75 + shadow_lift * 1.15 * (1.0 - b) * (1.0 - b)).clamp(0.0, 1.0);
+
+        // Midtone contrast
+        if fmt_contrast > 1e-4 {
+            let k = 1.0 + fmt_contrast;
+            r = ((r - 0.5) * k + 0.5).clamp(0.0, 1.0);
+            g = ((g - 0.5) * k + 0.5).clamp(0.0, 1.0);
+            b = ((b - 0.5) * k + 0.5).clamp(0.0, 1.0);
+        }
+
+        // Exponential highlight roll-off knee
+        let roll = (fmt_roll + roll_extra * 0.65).clamp(0.0, 1.0);
+        if roll > 1e-4 {
+            let knee = 0.62 - roll * 0.18;
+            let denom = (1.0 - knee).max(0.001);
+            let k_exp = 1.0 + roll * 1.5;
+            let e_denom = (1.0 - (-k_exp).exp()).max(1e-4);
+            let roll_chan = |c: f32| -> f32 {
+                if c <= knee {
+                    c
+                } else {
+                    let t = (c - knee) / denom;
+                    let comp = knee + denom * (1.0 - (-t * k_exp).exp()) / e_denom;
+                    (c * (1.0 - roll) + comp * roll).clamp(0.0, 1.0)
+                }
+            };
+            r = roll_chan(r);
+            g = roll_chan(g);
+            b = roll_chan(b);
+        }
+
+        // Dye density saturation response
+        if (sat_scale - 1.0).abs() > 1e-4 {
+            let luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+            r = (luma + (r - luma) * sat_scale).clamp(0.0, 1.0);
+            g = (luma + (g - luma) * sat_scale).clamp(0.0, 1.0);
+            b = (luma + (b - luma) * sat_scale).clamp(0.0, 1.0);
+        }
+
+        [r, g, b]
+    }
+}
+
 /// White balance presets for quick color temperature & tint calibration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1333,6 +1545,69 @@ impl HslQualifierConfig {
     }
 }
 
+/// Computes corrective `(temperature, tint)` values in `[-100.0, 100.0]` from a single
+/// 8-bit RGB pixel picked with the White Balance Eyedropper so that the sampled pixel becomes neutral gray.
+pub fn compute_wb_from_neutral_rgb(r: u8, g: u8, b: u8) -> (f64, f64) {
+    let rf = (r as f64).max(4.0);
+    let gf = (g as f64).max(4.0);
+    let bf = (b as f64).max(4.0);
+
+    // Blue > Red => positive temperature (warms); Red > Blue => negative temperature (cools)
+    let rb_log = (bf / rf).ln();
+    let raw_temp = (rb_log / 0.56) * 100.0;
+
+    // Green > sqrt(R*B) => positive tint (shifts toward magenta)
+    let rb_geom = (rf * bf).sqrt().max(4.0);
+    let gm_log = (gf / rb_geom).ln();
+    let raw_tint = (gm_log / 0.28) * 100.0;
+
+    let temp = (raw_temp.clamp(-100.0, 100.0) * 2.0).round() / 2.0;
+    let tint = (raw_tint.clamp(-100.0, 100.0) * 2.0).round() / 2.0;
+    (temp, tint)
+}
+
+/// Bakes a clip's complete color grading pipeline (Camera Log profile, 3-Point Color Wheels,
+/// White Balance, Contrast/Brightness/Gamma/Saturation, Creative Look Preset, Custom RGB/Luma Curves,
+/// 6-Vector HSL Curves, and 3D HSL Qualifier) into a standard Adobe/Resolve `.cube` 3D LUT string.
+pub fn bake_clip_grade_to_cube(clip: &crate::clip::Clip, size: usize) -> String {
+    use std::fmt::Write;
+    let n = size.clamp(17, 65);
+    let title = if clip.name.trim().is_empty() {
+        "triM Color Grade".to_string()
+    } else {
+        clip.name
+            .chars()
+            .filter(|c| *c != '"' && *c != '\n' && *c != '\r')
+            .collect::<String>()
+    };
+    let mut out = String::with_capacity(n * n * n * 28 + 160);
+    let _ = writeln!(out, "# Generated by triM. Color Engine");
+    let _ = writeln!(out, "TITLE \"{title}\"");
+    let _ = writeln!(out, "LUT_3D_SIZE {n}");
+    let _ = writeln!(out, "DOMAIN_MIN 0.0 0.0 0.0");
+    let _ = writeln!(out, "DOMAIN_MAX 1.0 1.0 1.0");
+
+    let denom = (n - 1) as f32;
+    for b_idx in 0..n {
+        let b_in = b_idx as f32 / denom;
+        for g_idx in 0..n {
+            let g_in = g_idx as f32 / denom;
+            for r_idx in 0..n {
+                let r_in = r_idx as f32 / denom;
+                let [ro, go, bo] = clip.evaluate_color_pipeline_rgb(r_in, g_in, b_in);
+                let _ = writeln!(
+                    out,
+                    "{:.6} {:.6} {:.6}",
+                    ro.clamp(0.0, 1.0),
+                    go.clamp(0.0, 1.0),
+                    bo.clamp(0.0, 1.0)
+                );
+            }
+        }
+    }
+    out
+}
+
 /// Computes automatic Shot Match grading parameters `(brightness, contrast, saturation, temperature, tint)`
 /// to match `src_rgba` statistics to `ref_rgba` statistics.
 pub fn analyze_shot_match_rgba(
@@ -1491,5 +1766,61 @@ mod tests {
             assert!((0.1..=3.0).contains(&c));
             assert!((0.2..=3.0).contains(&g));
         }
+    }
+
+    #[test]
+    fn test_camera_log_profiles_and_wb_eyedropper_and_cube_baking() {
+        for profile in CameraLogProfile::ALL {
+            let [rs, gs, bs] = profile.apply_rgb(0.25, 0.25, 0.25);
+            let [rh, gh, bh] = profile.apply_rgb(0.75, 0.75, 0.75);
+            for v in [rs, gs, bs, rh, gh, bh] {
+                assert!((0.0..=1.0).contains(&v));
+            }
+            if *profile != CameraLogProfile::Rec709 {
+                let diff = (rs - 0.25).abs() + (rh - 0.75).abs();
+                assert!(
+                    diff > 0.05,
+                    "Log profile {:?} should expand contrast between shadows and highlights (diff={})",
+                    profile,
+                    diff
+                );
+            }
+        }
+
+        let (temp_n, tint_n) = compute_wb_from_neutral_rgb(128, 128, 128);
+        assert!(temp_n.abs() < 0.1 && tint_n.abs() < 0.1);
+        let (temp_blue, _) = compute_wb_from_neutral_rgb(90, 125, 175);
+        assert!(
+            temp_blue > 25.0,
+            "blue pixel should require positive warming temp"
+        );
+        let (temp_warm, _) = compute_wb_from_neutral_rgb(185, 125, 85);
+        assert!(
+            temp_warm < -25.0,
+            "warm pixel should require negative cooling temp"
+        );
+
+        let mut clip = crate::clip::Clip::new("m1", 0.0, 5.0);
+        clip.name = "Noir Scene 01".to_string();
+        clip.camera_log_profile = CameraLogProfile::SLog3;
+        clip.temperature = 18.0;
+        clip.contrast = 1.2;
+        clip.lut_preset = LutPreset::Kodak2383;
+        assert!(clip.needs_baked_cube_lut());
+
+        let cube = bake_clip_grade_to_cube(&clip, 17);
+        assert!(cube.contains("TITLE \"Noir Scene 01\""));
+        assert!(cube.contains("LUT_3D_SIZE 17"));
+        let data_lines = cube
+            .lines()
+            .filter(|l| {
+                !l.starts_with('#')
+                    && !l.starts_with("TITLE")
+                    && !l.starts_with("LUT_3D_SIZE")
+                    && !l.starts_with("DOMAIN_")
+                    && !l.trim().is_empty()
+            })
+            .count();
+        assert_eq!(data_lines, 17 * 17 * 17);
     }
 }

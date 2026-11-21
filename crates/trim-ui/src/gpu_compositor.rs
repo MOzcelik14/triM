@@ -67,6 +67,7 @@ uniform float u_contrast;
 uniform float u_brightness;
 uniform float u_gamma;
 uniform float u_saturation;
+uniform int u_camera_log_profile;
 uniform int u_lut_preset;
 uniform int u_custom_lut_enabled;
 uniform int u_lut_size;
@@ -77,6 +78,11 @@ uniform float u_film_grain;
 uniform float u_halation;
 uniform float u_bloom;
 uniform float u_chromatic_aberration;
+uniform int u_film_format;
+uniform float u_highlight_rolloff;
+uniform float u_diffusion;
+uniform float u_mist;
+uniform float u_gate_weave;
 uniform int u_cp_enabled;
 uniform vec2 u_cp_tl;
 uniform vec2 u_cp_tr;
@@ -85,6 +91,45 @@ uniform vec2 u_cp_bl;
 uniform float u_glitch_intensity;
 uniform float u_light_leak;
 uniform float u_time_seed;
+
+float log_to_linear_chan(float x, int p) {
+    if (p == 1) { // Sony S-Log3
+        return (x >= 0.100537775)
+            ? ((pow(10.0, (x - 0.790453) / 0.344676) - 0.009468) / 0.555556)
+            : ((x - 0.092864) / 8.735631);
+    }
+    if (p == 2) { // Canon C-Log
+        return (x >= 0.100686685)
+            ? ((pow(10.0, (x - 0.384316) / 0.245281) - 0.064829) / 5.555556)
+            : ((x - 0.092864) / 8.799461);
+    }
+    if (p == 3) { // Panasonic V-Log
+        float cut = 171.2102946929 / 1023.0;
+        return (x >= cut)
+            ? (pow(10.0, (x * 1023.0 - 420.0) / 261.5) * 0.19 - 0.01)
+            : (((x * 1023.0 - 95.0) * 0.01125) / (171.2102946929 - 95.0));
+    }
+    if (p == 4) { // ARRI Log-C
+        return (x > 0.14)
+            ? ((pow(10.0, 3.89616 * x - 2.27752) - 0.0929) / 0.9892)
+            : ((x - 0.0929) / 6.025);
+    }
+    return x;
+}
+
+float rec709_oetf_chan(float l) {
+    float v = clamp(l, 0.0, 1.0);
+    return (v < 0.018) ? (4.5 * v) : (1.099 * pow(v, 0.45) - 0.099);
+}
+
+vec3 apply_camera_log_profile(vec3 c, int p) {
+    if (p <= 0) return c;
+    return clamp(vec3(
+        rec709_oetf_chan(log_to_linear_chan(c.r, p)),
+        rec709_oetf_chan(log_to_linear_chan(c.g, p)),
+        rec709_oetf_chan(log_to_linear_chan(c.b, p))
+    ), 0.0, 1.0);
+}
 
 vec2 invert_bilinear_quad(vec2 p, vec2 p00, vec2 p10, vec2 p11, vec2 p01) {
     vec2 u = 0.5 * vec2(1.0);
@@ -183,6 +228,11 @@ void main() {
 
             uv = (rot_rel / max(u_clip_size, vec2(1.0))) + vec2(0.5);
         }
+        if (u_gate_weave > 0.001) {
+            float wx = sin(u_time_seed * 41.0) * 0.0035 * u_gate_weave;
+            float wy = cos(u_time_seed * 67.0) * 0.0045 * u_gate_weave;
+            uv += vec2(wx, wy);
+        }
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
             discard;
         }
@@ -266,6 +316,10 @@ void main() {
     }
 
     vec3 ungraded_rgb = rgb;
+
+    if (u_camera_log_profile > 0) {
+        rgb = apply_camera_log_profile(rgb, u_camera_log_profile);
+    }
 
     if (u_cw_enabled == 1) {
         float luma = dot(rgb, vec3(0.299, 0.587, 0.114));
@@ -461,6 +515,41 @@ void main() {
         rgb = sample_3d_lut(rgb, u_lut_size);
     }
 
+    if (u_film_format > 0 || u_highlight_rolloff > 0.001) {
+        float fmt_c = (u_film_format == 3) ? 0.17 : ((u_film_format == 2) ? 0.11 : ((u_film_format == 1) ? 0.06 : 0.0));
+        float fmt_r = (u_film_format == 3) ? 0.30 : ((u_film_format == 2) ? 0.22 : ((u_film_format == 1) ? 0.14 : 0.0));
+        float warm_s = (u_film_format == 3) ? 0.045 : ((u_film_format == 2) ? 0.028 : ((u_film_format == 1) ? 0.015 : 0.0));
+        float sh_lift = (u_film_format == 3) ? 0.05 : ((u_film_format == 2) ? 0.035 : ((u_film_format == 1) ? 0.02 : 0.0));
+        float sat_sc = (u_film_format == 3) ? 0.84 : ((u_film_format == 2) ? 0.91 : ((u_film_format == 1) ? 0.96 : 1.0));
+
+        vec3 inv_c = vec3(1.0) - rgb;
+        rgb.r = clamp(rgb.r + warm_s + sh_lift * inv_c.r * inv_c.r, 0.0, 1.0);
+        rgb.g = clamp(rgb.g + warm_s * 0.25 + sh_lift * 0.85 * inv_c.g * inv_c.g, 0.0, 1.0);
+        rgb.b = clamp(rgb.b - warm_s * 0.75 + sh_lift * 1.15 * inv_c.b * inv_c.b, 0.0, 1.0);
+
+        if (fmt_c > 0.001) {
+            rgb = clamp((rgb - vec3(0.5)) * (1.0 + fmt_c) + vec3(0.5), 0.0, 1.0);
+        }
+
+        float roll = clamp(fmt_r + u_highlight_rolloff * 0.65, 0.0, 1.0);
+        if (roll > 0.001) {
+            float knee = 0.62 - roll * 0.18;
+            float denom = max(0.001, 1.0 - knee);
+            float k_exp = 1.0 + roll * 1.5;
+            float e_denom = max(0.0001, 1.0 - exp(-k_exp));
+            vec3 over = max(vec3(0.0), rgb - vec3(knee));
+            vec3 t = over / denom;
+            vec3 comp = vec3(knee) + denom * (vec3(1.0) - exp(-t * k_exp)) / e_denom;
+            vec3 mask = step(vec3(knee), rgb);
+            rgb = clamp(mix(rgb, mix(rgb, comp, roll), mask), 0.0, 1.0);
+        }
+
+        if (abs(sat_sc - 1.0) > 0.001) {
+            float fl = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+            rgb = clamp(mix(vec3(fl), rgb, sat_sc), 0.0, 1.0);
+        }
+    }
+
     if (u_halation > 0.001) {
         float luma_h = dot(rgb, vec3(0.299, 0.587, 0.114));
         float hi_mask = clamp((luma_h - 0.55) / 0.45, 0.0, 1.0);
@@ -473,6 +562,19 @@ void main() {
         float hi_mask = clamp((luma_b - 0.45) / 0.55, 0.0, 1.0);
         float glow = hi_mask * u_bloom * 0.22;
         rgb = clamp(rgb + vec3(glow), 0.0, 1.0);
+    }
+
+    if (u_diffusion > 0.001) {
+        float luma_d = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+        vec3 soft_lift = max(rgb, vec3(luma_d * 0.92 + 0.06));
+        rgb = clamp(mix(rgb, soft_lift, u_diffusion * 0.35), 0.0, 1.0);
+    }
+
+    if (u_mist > 0.001) {
+        float luma_m = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+        float mist_mask = smoothstep(0.25, 0.92, luma_m);
+        vec3 mist_glow = vec3(0.94, 0.96, 1.0) * mist_mask * u_mist * 0.22;
+        rgb = clamp(1.0 - (1.0 - rgb) * (1.0 - mist_glow), 0.0, 1.0);
     }
 
     if (u_vignette > 0.001) {
@@ -545,6 +647,11 @@ pub struct LayerUniforms {
     pub halation: f32,
     pub bloom: f32,
     pub chromatic_aberration: f32,
+    pub film_format: i32,
+    pub highlight_rolloff: f32,
+    pub diffusion: f32,
+    pub mist: f32,
+    pub gate_weave: f32,
     pub cp_enabled: bool,
     pub cp_tl: [f32; 2],
     pub cp_tr: [f32; 2],
@@ -553,6 +660,7 @@ pub struct LayerUniforms {
     pub glitch_intensity: f32,
     pub light_leak: f32,
     pub time_seed: f32,
+    pub camera_log_profile: i32,
     pub lut_preset: i32,
     pub crop: [f32; 4],
     pub blend_mode: i32,
@@ -804,6 +912,11 @@ impl LayerUniforms {
             halation: clip.halation.clamp(0.0, 1.0),
             bloom: clip.bloom.clamp(0.0, 1.0),
             chromatic_aberration: clip.chromatic_aberration.clamp(0.0, 1.0),
+            film_format: clip.film_format.shader_id(),
+            highlight_rolloff: clip.highlight_rolloff.clamp(0.0, 1.0),
+            diffusion: clip.diffusion.clamp(0.0, 1.0),
+            mist: clip.mist.clamp(0.0, 1.0),
+            gate_weave: clip.gate_weave.clamp(0.0, 1.0),
             cp_enabled,
             cp_tl,
             cp_tr,
@@ -812,6 +925,7 @@ impl LayerUniforms {
             glitch_intensity,
             light_leak,
             time_seed: (current_time as f32).fract(),
+            camera_log_profile: clip.camera_log_profile.shader_id(),
             lut_preset,
             crop: [
                 clip.crop_left.clamp(0.0, 1.0),
@@ -1703,6 +1817,9 @@ impl GpuCompositor {
                 if let Some(loc) = gl.get_uniform_location(prog, "u_saturation") {
                     gl.uniform_1_f32(Some(&loc), u.saturation);
                 }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_camera_log_profile") {
+                    gl.uniform_1_i32(Some(&loc), u.camera_log_profile);
+                }
                 if let Some(loc) = gl.get_uniform_location(prog, "u_lut_preset") {
                     gl.uniform_1_i32(Some(&loc), u.lut_preset);
                 }
@@ -1732,6 +1849,21 @@ impl GpuCompositor {
                 }
                 if let Some(loc) = gl.get_uniform_location(prog, "u_chromatic_aberration") {
                     gl.uniform_1_f32(Some(&loc), u.chromatic_aberration);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_film_format") {
+                    gl.uniform_1_i32(Some(&loc), u.film_format);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_highlight_rolloff") {
+                    gl.uniform_1_f32(Some(&loc), u.highlight_rolloff);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_diffusion") {
+                    gl.uniform_1_f32(Some(&loc), u.diffusion);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_mist") {
+                    gl.uniform_1_f32(Some(&loc), u.mist);
+                }
+                if let Some(loc) = gl.get_uniform_location(prog, "u_gate_weave") {
+                    gl.uniform_1_f32(Some(&loc), u.gate_weave);
                 }
                 if let Some(loc) = gl.get_uniform_location(prog, "u_cp_enabled") {
                     gl.uniform_1_i32(Some(&loc), i32::from(u.cp_enabled));

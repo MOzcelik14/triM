@@ -191,77 +191,118 @@ impl TimelineExporter {
         filters
     }
 
+    /// Writes a baked 3D `.cube` LUT file for `clip` into the temporary export directory
+    /// and returns its normalized FFmpeg filtergraph path.
+    pub fn write_baked_clip_cube_lut(clip: &Clip, size: usize) -> Option<String> {
+        let dir = std::env::temp_dir().join("trim_baked_luts");
+        std::fs::create_dir_all(&dir).ok()?;
+        let safe_id: String = clip
+            .id
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let file_name = if safe_id.is_empty() {
+            "trim_grade_default.cube".to_string()
+        } else {
+            format!("trim_grade_{safe_id}.cube")
+        };
+        let path = dir.join(file_name);
+        let cube_text = trim_core::color::bake_clip_grade_to_cube(clip, size);
+        std::fs::write(&path, cube_text).ok()?;
+        Some(trim_core::paths::normalize_filtergraph_path(&path))
+    }
+
     /// Color grading filter list shared by regular video clips and Adjustment Layers.
     fn clip_color_filters(clip: &Clip) -> Vec<String> {
         let mut f = Vec::new();
-        if clip.temperature.abs() > 1e-4 || clip.tint.abs() > 1e-4 {
-            let [wbr, wbg, wbb] =
-                trim_core::color::white_balance_gains(clip.temperature as f32, clip.tint as f32);
-            f.push(format!(
-                "colorchannelmixer=rr={wbr:.4}:gg={wbg:.4}:bb={wbb:.4}"
-            ));
-        }
-
-        let has_gamma = (clip.gamma - 1.0).abs() > 1e-4;
-        if clip.brightness.abs() > 1e-4
-            || (clip.contrast - 1.0).abs() > 1e-4
-            || (clip.saturation - 1.0).abs() > 1e-4
-            || has_gamma
-        {
-            if has_gamma {
+        if clip.needs_baked_cube_lut() {
+            if let Some(sanitized_baked) = Self::write_baked_clip_cube_lut(clip, 33) {
+                f.push(format!("lut3d=file='{sanitized_baked}':interp=trilinear"));
+            }
+            if let Some(lut_path) = &clip.custom_lut_path {
+                if !lut_path.trim().is_empty() {
+                    let sanitized = trim_core::paths::normalize_filtergraph_path(lut_path.trim());
+                    f.push(format!("lut3d=file='{sanitized}'"));
+                }
+            }
+        } else {
+            if clip.temperature.abs() > 1e-4 || clip.tint.abs() > 1e-4 {
+                let [wbr, wbg, wbb] = trim_core::color::white_balance_gains(
+                    clip.temperature as f32,
+                    clip.tint as f32,
+                );
                 f.push(format!(
-                    "eq=brightness={:.3}:contrast={:.3}:saturation={:.3}:gamma={:.3}",
-                    clip.brightness, clip.contrast, clip.saturation, clip.gamma
-                ));
-            } else {
-                f.push(format!(
-                    "eq=brightness={:.3}:contrast={:.3}:saturation={:.3}",
-                    clip.brightness, clip.contrast, clip.saturation
+                    "colorchannelmixer=rr={wbr:.4}:gg={wbg:.4}:bb={wbb:.4}"
                 ));
             }
-        }
 
-        if let Some(lut_path) = &clip.custom_lut_path {
-            if !lut_path.trim().is_empty() {
-                let sanitized = trim_core::paths::normalize_filtergraph_path(lut_path.trim());
-                f.push(format!("lut3d=file='{sanitized}'"));
+            let has_gamma = (clip.gamma - 1.0).abs() > 1e-4;
+            if clip.brightness.abs() > 1e-4
+                || (clip.contrast - 1.0).abs() > 1e-4
+                || (clip.saturation - 1.0).abs() > 1e-4
+                || has_gamma
+            {
+                if has_gamma {
+                    f.push(format!(
+                        "eq=brightness={:.3}:contrast={:.3}:saturation={:.3}:gamma={:.3}",
+                        clip.brightness, clip.contrast, clip.saturation, clip.gamma
+                    ));
+                } else {
+                    f.push(format!(
+                        "eq=brightness={:.3}:contrast={:.3}:saturation={:.3}",
+                        clip.brightness, clip.contrast, clip.saturation
+                    ));
+                }
+            }
+
+            if let Some(lut_path) = &clip.custom_lut_path {
+                if !lut_path.trim().is_empty() {
+                    let sanitized = trim_core::paths::normalize_filtergraph_path(lut_path.trim());
+                    f.push(format!("lut3d=file='{sanitized}'"));
+                } else if let Some(preset_filter) = clip.lut_preset.ffmpeg_filter() {
+                    f.push(preset_filter.to_string());
+                }
             } else if let Some(preset_filter) = clip.lut_preset.ffmpeg_filter() {
                 f.push(preset_filter.to_string());
             }
-        } else if let Some(preset_filter) = clip.lut_preset.ffmpeg_filter() {
-            f.push(preset_filter.to_string());
-        }
 
-        if let Some(cw) = &clip.color_wheels {
-            let rs = (cw.lift[0] + cw.luminance[0]).clamp(-1.0, 1.0);
-            let gs = (cw.lift[1] + cw.luminance[0]).clamp(-1.0, 1.0);
-            let bs = (cw.lift[2] + cw.luminance[0]).clamp(-1.0, 1.0);
-            let rm = (cw.gamma[0] + cw.luminance[1] - 1.0).clamp(-1.0, 1.0);
-            let gm = (cw.gamma[1] + cw.luminance[1] - 1.0).clamp(-1.0, 1.0);
-            let bm = (cw.gamma[2] + cw.luminance[1] - 1.0).clamp(-1.0, 1.0);
-            let rh = (cw.gain[0] + cw.luminance[2] - 1.0).clamp(-1.0, 1.0);
-            let gh = (cw.gain[1] + cw.luminance[2] - 1.0).clamp(-1.0, 1.0);
-            let bh = (cw.gain[2] + cw.luminance[2] - 1.0).clamp(-1.0, 1.0);
-            if rs.abs() > 1e-4
-                || gs.abs() > 1e-4
-                || bs.abs() > 1e-4
-                || rm.abs() > 1e-4
-                || gm.abs() > 1e-4
-                || bm.abs() > 1e-4
-                || rh.abs() > 1e-4
-                || gh.abs() > 1e-4
-                || bh.abs() > 1e-4
-            {
-                f.push(format!(
-                    "colorbalance=rs={:.3}:gs={:.3}:bs={:.3}:rm={:.3}:gm={:.3}:bm={:.3}:rh={:.3}:gh={:.3}:bh={:.3}",
-                    rs, gs, bs, rm, gm, bm, rh, gh, bh
-                ));
+            if let Some(cw) = &clip.color_wheels {
+                let rs = (cw.lift[0] + cw.luminance[0]).clamp(-1.0, 1.0);
+                let gs = (cw.lift[1] + cw.luminance[0]).clamp(-1.0, 1.0);
+                let bs = (cw.lift[2] + cw.luminance[0]).clamp(-1.0, 1.0);
+                let rm = (cw.gamma[0] + cw.luminance[1] - 1.0).clamp(-1.0, 1.0);
+                let gm = (cw.gamma[1] + cw.luminance[1] - 1.0).clamp(-1.0, 1.0);
+                let bm = (cw.gamma[2] + cw.luminance[1] - 1.0).clamp(-1.0, 1.0);
+                let rh = (cw.gain[0] + cw.luminance[2] - 1.0).clamp(-1.0, 1.0);
+                let gh = (cw.gain[1] + cw.luminance[2] - 1.0).clamp(-1.0, 1.0);
+                let bh = (cw.gain[2] + cw.luminance[2] - 1.0).clamp(-1.0, 1.0);
+                if rs.abs() > 1e-4
+                    || gs.abs() > 1e-4
+                    || bs.abs() > 1e-4
+                    || rm.abs() > 1e-4
+                    || gm.abs() > 1e-4
+                    || bm.abs() > 1e-4
+                    || rh.abs() > 1e-4
+                    || gh.abs() > 1e-4
+                    || bh.abs() > 1e-4
+                {
+                    f.push(format!(
+                        "colorbalance=rs={:.3}:gs={:.3}:bs={:.3}:rm={:.3}:gm={:.3}:bm={:.3}:rh={:.3}:gh={:.3}:bh={:.3}",
+                        rs, gs, bs, rm, gm, bm, rh, gh, bh
+                    ));
+                }
             }
-        }
 
-        if let Some(curves) = &clip.custom_curves {
-            if let Some(cf) = curves.ffmpeg_filter() {
-                f.push(cf);
+            if let Some(curves) = &clip.custom_curves {
+                if let Some(cf) = curves.ffmpeg_filter() {
+                    f.push(cf);
+                }
             }
         }
         if clip.chromatic_aberration > 1e-4 {
@@ -280,6 +321,20 @@ impl TimelineExporter {
             let br = (clip.bloom * 0.08).clamp(0.01, 0.15);
             let gm = (1.0 + clip.bloom * 0.18).clamp(1.01, 1.35);
             f.push(format!("eq=brightness={br:.3}:gamma={gm:.3}"));
+        }
+        if clip.diffusion > 1e-4 {
+            let ct = (1.0 - clip.diffusion * 0.14).clamp(0.80, 0.99);
+            let gm = (1.0 + clip.diffusion * 0.12).clamp(1.01, 1.20);
+            f.push(format!("eq=contrast={ct:.3}:gamma={gm:.3}"));
+        }
+        if clip.mist > 1e-4 {
+            let br = (clip.mist * 0.06).clamp(0.005, 0.10);
+            let ct = (1.0 - clip.mist * 0.10).clamp(0.85, 0.99);
+            f.push(format!("eq=brightness={br:.3}:contrast={ct:.3}"));
+        }
+        if clip.gate_weave > 1e-4 {
+            let shift = ((clip.gate_weave * 3.0).round() as i32).clamp(1, 4);
+            f.push(format!("rgbashift=rv={shift}:gv={shift}:bv={shift}"));
         }
 
         if clip.blur > 1e-4 {
@@ -480,7 +535,11 @@ impl TimelineExporter {
                 (false, true) => ":style=Italic",
                 (false, false) => "",
             };
-            let font_part = if txt.font_family != "Sans-Serif" || !font_style.is_empty() {
+            let font_part = if txt.is_custom_font_file() {
+                let sanitized_path =
+                    trim_core::paths::normalize_filtergraph_path(txt.font_family.trim());
+                format!(":fontfile='{sanitized_path}'")
+            } else if txt.font_family != "Sans-Serif" || !font_style.is_empty() {
                 let sanitized_fam: String = txt
                     .font_family
                     .chars()
@@ -624,6 +683,30 @@ impl TimelineExporter {
                         "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
                     ));
                 }
+                MotionTitleStyle::RollingCredits => {
+                    let x_expr = format!("(w-text_w)*{:.3}", txt.pos_x.clamp(0.0, 1.0));
+                    let y_expr = format!("'h-(t/{dur:.4})*(h+text_h)'");
+                    f.push(format!(
+                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                    ));
+                    if let Some(sub) = &txt.subtitle_text {
+                        if !sub.trim().is_empty() {
+                            let sub_sanitized = sub
+                                .replace('\\', "\\\\")
+                                .replace('\'', "\\'")
+                                .replace(':', "\\:")
+                                .replace('%', "\\%");
+                            let sub_size = ((font_size as f64 * 0.62).round().max(8.0)) as u32;
+                            let sub_y = format!(
+                                "'h-(t/{dur:.4})*(h+text_h)+{:.0}'",
+                                font_size as f64 * 1.35
+                            );
+                            f.push(format!(
+                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}{font_part}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}"
+                            ));
+                        }
+                    }
+                }
                 MotionTitleStyle::BoxReveal => {
                     let reveal_t = (dur * 0.25).min(0.5);
                     let x_expr = format!("(w-text_w)*{:.3}", txt.pos_x.clamp(0.0, 1.0));
@@ -633,7 +716,7 @@ impl TimelineExporter {
                         "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}{enable_clause}"
                     ));
                 }
-                MotionTitleStyle::None => {
+                MotionTitleStyle::ChapterCard | MotionTitleStyle::None => {
                     let x_expr = format!("(w-text_w)*{:.3}", txt.pos_x.clamp(0.0, 1.0));
                     let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
                     f.push(format!(
@@ -2516,6 +2599,38 @@ mod tests {
         assert!(
             fg.contains("atempo=1.5000"),
             "Missing average speed-ramp atempo on audio: {fg}"
+        );
+    }
+
+    #[test]
+    fn test_baked_cube_lut_filtergraph_for_camera_log_and_hsl_curves() {
+        let mut proj = Project::new("BakedCubeTest");
+        let mut v = MediaItem::new("/tmp/slog_footage.mp4");
+        v.media_type = MediaType::Video;
+        v.duration = 6.0;
+        let vid_id = v.id.clone();
+        proj.add_media(v);
+
+        let mut c1 = Clip::new(&vid_id, 0.0, 4.0);
+        c1.camera_log_profile = trim_core::CameraLogProfile::SLog3;
+        c1.temperature = 14.0;
+        c1.lut_preset = trim_core::LutPreset::Kodak2383;
+        proj.timeline.tracks[0].add_clip(c1);
+
+        let (cmd, _) = TimelineExporter::build_export_pipeline(
+            &proj,
+            &ExportPreset::default(),
+            "/tmp/out.mp4",
+        )
+        .unwrap();
+        let fg = cmd
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd[idx + 1])
+            .unwrap();
+        assert!(
+            fg.contains("lut3d=file='") && fg.contains(":interp=trilinear"),
+            "Camera Log clip should bake 3D .cube LUT and emit trilinear lut3d filter: {fg}"
         );
     }
 }

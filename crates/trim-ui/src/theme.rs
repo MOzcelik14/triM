@@ -19,42 +19,129 @@ pub const COLOR_CLIP_VIDEO_SELECTED: Color32 = Color32::from_rgb(0x32, 0x69, 0xa
 pub const COLOR_CLIP_AUDIO: Color32 = Color32::from_rgb(0x24, 0x64, 0x46);
 pub const COLOR_CLIP_AUDIO_SELECTED: Color32 = Color32::from_rgb(0x2d, 0x7d, 0x58);
 
-pub fn setup_theme(ctx: &egui::Context) {
+/// Available studio theme presets: (id, label_tr, label_en)
+pub const STUDIO_THEMES: &[(&str, &str, &str)] = &[
+    (
+        "indigo",
+        "Varsayılan İndigo & Amber",
+        "Default Indigo & Amber",
+    ),
+    (
+        "noir_lime",
+        "Sinema Lime (Noir Studio)",
+        "Cinema Lime (Noir Studio)",
+    ),
+    (
+        "monochrome",
+        "Saf Monokrom (Karanlık Oda)",
+        "Pure Monochrome (Darkroom)",
+    ),
+    (
+        "midnight_blue",
+        "Gece Mavisi (Deep Broadcast)",
+        "Midnight Blue (Deep Broadcast)",
+    ),
+    (
+        "warm_tungsten",
+        "Sıcak Tungsten (Analog Lab)",
+        "Warm Tungsten (Analog Lab)",
+    ),
+];
+
+pub fn apply_studio_theme(ctx: &egui::Context, theme_id: &str) {
     let mut visuals = Visuals::dark();
 
-    visuals.panel_fill = COLOR_PANEL;
-    visuals.window_fill = COLOR_BG;
-    visuals.extreme_bg_color = Color32::from_rgb(0x12, 0x12, 0x15);
-    visuals.faint_bg_color = COLOR_BG;
+    let (panel_bg, win_bg, extreme_bg, widget_bg, widget_hov, border_col, active_bg, sel_bg) =
+        match theme_id {
+            "noir_lime" => (
+                Color32::from_rgb(0x14, 0x16, 0x14),
+                Color32::from_rgb(0x0e, 0x10, 0x0e),
+                Color32::from_rgb(0x0a, 0x0c, 0x0a),
+                Color32::from_rgb(0x1e, 0x22, 0x1e),
+                Color32::from_rgb(0x28, 0x30, 0x28),
+                Color32::from_rgb(0x2c, 0x36, 0x2c),
+                Color32::from_rgb(0x52, 0x9e, 0x28),
+                Color32::from_rgb(0x42, 0x82, 0x20),
+            ),
+            "monochrome" => (
+                Color32::from_rgb(0x18, 0x18, 0x18),
+                Color32::from_rgb(0x11, 0x11, 0x11),
+                Color32::from_rgb(0x0b, 0x0b, 0x0b),
+                Color32::from_rgb(0x22, 0x22, 0x22),
+                Color32::from_rgb(0x2e, 0x2e, 0x2e),
+                Color32::from_rgb(0x2b, 0x2b, 0x2b),
+                Color32::from_rgb(0x60, 0x60, 0x68),
+                Color32::from_rgb(0x4a, 0x4a, 0x52),
+            ),
+            "midnight_blue" => (
+                Color32::from_rgb(0x13, 0x18, 0x24),
+                Color32::from_rgb(0x0d, 0x11, 0x1b),
+                Color32::from_rgb(0x09, 0x0c, 0x14),
+                Color32::from_rgb(0x1c, 0x23, 0x33),
+                Color32::from_rgb(0x26, 0x30, 0x45),
+                Color32::from_rgb(0x24, 0x2e, 0x42),
+                Color32::from_rgb(0x25, 0x63, 0xeb),
+                Color32::from_rgb(0x1d, 0x4e, 0xd8),
+            ),
+            "warm_tungsten" => (
+                Color32::from_rgb(0x1f, 0x1b, 0x18),
+                Color32::from_rgb(0x17, 0x14, 0x12),
+                Color32::from_rgb(0x11, 0x0e, 0x0c),
+                Color32::from_rgb(0x2b, 0x25, 0x20),
+                Color32::from_rgb(0x38, 0x30, 0x29),
+                Color32::from_rgb(0x33, 0x2b, 0x25),
+                Color32::from_rgb(0xd9, 0x77, 0x24),
+                Color32::from_rgb(0xb4, 0x5d, 0x18),
+            ),
+            _ => (
+                COLOR_PANEL,
+                COLOR_BG,
+                Color32::from_rgb(0x12, 0x12, 0x15),
+                COLOR_WIDGET,
+                COLOR_WIDGET_HOVER,
+                COLOR_BORDER,
+                Color32::from_rgb(0x32, 0x6e, 0xbf),
+                Color32::from_rgb(0x28, 0x5a, 0x9e),
+            ),
+        };
+
+    visuals.panel_fill = panel_bg;
+    visuals.window_fill = win_bg;
+    visuals.extreme_bg_color = extreme_bg;
+    visuals.faint_bg_color = win_bg;
 
     // Normal widgets
-    visuals.widgets.noninteractive.bg_fill = COLOR_PANEL;
-    visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, COLOR_BORDER);
+    visuals.widgets.noninteractive.bg_fill = panel_bg;
+    visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, border_col);
     visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, COLOR_TEXT);
     visuals.widgets.noninteractive.rounding = Rounding::same(3.0);
 
-    visuals.widgets.inactive.bg_fill = COLOR_WIDGET;
-    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, COLOR_BORDER);
+    visuals.widgets.inactive.bg_fill = widget_bg;
+    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, border_col);
     visuals.widgets.inactive.fg_stroke = Stroke::new(1.0_f32, COLOR_TEXT);
     visuals.widgets.inactive.rounding = Rounding::same(3.0);
 
     // Hover
-    visuals.widgets.hovered.bg_fill = COLOR_WIDGET_HOVER;
+    visuals.widgets.hovered.bg_fill = widget_hov;
     visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, Color32::from_rgb(0x42, 0x42, 0x4e));
     visuals.widgets.hovered.fg_stroke = Stroke::new(1.0_f32, Color32::WHITE);
     visuals.widgets.hovered.rounding = Rounding::same(3.0);
 
     // Active
-    visuals.widgets.active.bg_fill = Color32::from_rgb(0x32, 0x6e, 0xbf);
-    visuals.widgets.active.bg_stroke = Stroke::new(1.0_f32, Color32::from_rgb(0x4a, 0x8a, 0xe8));
+    visuals.widgets.active.bg_fill = active_bg;
+    visuals.widgets.active.bg_stroke = Stroke::new(1.0_f32, Color32::WHITE);
     visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, Color32::WHITE);
     visuals.widgets.active.rounding = Rounding::same(3.0);
 
-    // Selection - high contrast, pure white text over slate blue
-    visuals.selection.bg_fill = Color32::from_rgb(0x28, 0x5a, 0x9e);
+    // Selection
+    visuals.selection.bg_fill = sel_bg;
     visuals.selection.stroke = Stroke::new(1.0_f32, Color32::WHITE);
 
     ctx.set_visuals(visuals);
+}
+
+pub fn setup_theme(ctx: &egui::Context) {
+    apply_studio_theme(ctx, "indigo");
 
     let mut style = (*ctx.style()).clone();
     style.text_styles = [
@@ -101,6 +188,9 @@ pub fn setup_theme(ctx: &egui::Context) {
     }
 
     register_popular_system_fonts(&mut fonts);
+    if let Ok(mut guard) = global_font_defs().lock() {
+        *guard = fonts.clone();
+    }
     ctx.set_fonts(fonts);
 }
 
@@ -108,8 +198,48 @@ static LOADED_NAMED_FONTS: std::sync::OnceLock<
     std::sync::Mutex<std::collections::HashSet<String>>,
 > = std::sync::OnceLock::new();
 
+static GLOBAL_FONT_DEFS: std::sync::OnceLock<std::sync::Mutex<egui::FontDefinitions>> =
+    std::sync::OnceLock::new();
+
 fn loaded_named_fonts() -> &'static std::sync::Mutex<std::collections::HashSet<String>> {
     LOADED_NAMED_FONTS.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
+fn global_font_defs() -> &'static std::sync::Mutex<egui::FontDefinitions> {
+    GLOBAL_FONT_DEFS.get_or_init(|| std::sync::Mutex::new(egui::FontDefinitions::default()))
+}
+
+/// Dynamically registers a custom `.ttf` or `.otf` font file into egui so live preview matches FFmpeg export.
+pub fn register_custom_font_file(ctx: &egui::Context, path: &std::path::Path) {
+    let key = path.to_string_lossy().to_string();
+    if let Ok(set) = loaded_named_fonts().lock() {
+        if set.contains(&key) {
+            return;
+        }
+    }
+    let Ok(data) = std::fs::read(path) else {
+        return;
+    };
+    if let Ok(mut fonts) = global_font_defs().lock() {
+        let fallback_prop = fonts
+            .families
+            .get(&egui::FontFamily::Proportional)
+            .cloned()
+            .unwrap_or_default();
+        let data_key = format!("custom_font_{key}");
+        fonts
+            .font_data
+            .insert(data_key.clone(), egui::FontData::from_owned(data));
+        let mut chain = vec![data_key];
+        chain.extend(fallback_prop);
+        fonts
+            .families
+            .insert(egui::FontFamily::Name(key.clone().into()), chain);
+        ctx.set_fonts(fonts.clone());
+    }
+    if let Ok(mut set) = loaded_named_fonts().lock() {
+        set.insert(key);
+    }
 }
 
 /// Resolves a `TextOverlay::font_family` name to a registered `egui::FontFamily`,

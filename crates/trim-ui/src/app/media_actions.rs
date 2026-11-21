@@ -167,18 +167,27 @@ impl TrimApp {
                     }
                 }
 
+                let is_video = item.media_type == MediaType::Video;
                 item.bin_id = self.media_bin_current_bin.clone();
                 self.project.add_media(item);
                 if has_audio {
                     self.audio_mixer.preload_audio_async(&file_path);
                 }
                 // Automatically set as active in Source Monitor
-                self.source_state.media_id = Some(m_id);
+                self.source_state.media_id = Some(m_id.clone());
                 self.source_state.current_time = 0.0;
                 self.source_state.mark_in = None;
                 self.source_state.mark_out = None;
                 self.source_state.last_decoded_time = None;
-                self.status_message = format!("Medya içe aktarıldı: {}", name);
+                if is_video && self.preferences.auto_generate_proxies {
+                    self.generate_proxy_for_media(&m_id);
+                    self.status_message = format!(
+                        "Medya içe aktarıldı ve otomatik 720p Proxy başlatıldı: {}",
+                        name
+                    );
+                } else {
+                    self.status_message = format!("Medya içe aktarıldı: {}", name);
+                }
             }
             Err(e) => {
                 self.status_message = format!("Medya analizi başarısız: {}", e);
@@ -352,6 +361,153 @@ impl TrimApp {
             .add_filter("3D LUT (.cube)", &["cube"]);
         self.file_dialog_bridge
             .open(FileDialogRequest::SelectCustomLut { clip_id }, config);
+    }
+
+    pub fn prompt_custom_font(&mut self, clip_id: String) {
+        let config = FileDialogConfig::pick_file("Özel Font Dosyası Seç (.ttf, .otf)").add_filter(
+            "Font Dosyaları (*.ttf, *.otf)",
+            &["ttf", "otf", "TTF", "OTF"],
+        );
+        self.file_dialog_bridge
+            .open(FileDialogRequest::SelectCustomFont { clip_id }, config);
+    }
+
+    pub fn generate_and_insert_soundscape(
+        &mut self,
+        preset: trim_media::SoundscapePreset,
+        duration_override: Option<f64>,
+        char_count: usize,
+        insert_time_override: Option<f64>,
+    ) {
+        let dur = duration_override
+            .unwrap_or_else(|| preset.default_duration())
+            .clamp(0.5, 30.0);
+        match trim_media::synthesize_soundscape_wav(preset, dur, char_count) {
+            Ok(wav_path) => {
+                let p_str = wav_path.to_string_lossy().to_string();
+                let media_id = if let Some(existing) = self
+                    .project
+                    .media_pool
+                    .values()
+                    .find(|m| m.file_path == p_str)
+                {
+                    existing.id.clone()
+                } else {
+                    let mut media_item = trim_core::media::MediaItem::new(&p_str);
+                    media_item.media_type = MediaType::Audio;
+                    media_item.duration = dur;
+                    media_item.name = format!("{} ({:.1}s)", preset.label(), dur);
+                    media_item.bin_id = self.media_bin_current_bin.clone();
+                    let id = media_item.id.clone();
+                    self.project.add_media(media_item);
+                    self.audio_mixer.preload_audio_async(&p_str);
+                    id
+                };
+
+                let target_track_id = self
+                    .project
+                    .timeline
+                    .get_track_by_id(&self.target_audio_track)
+                    .filter(|t| !t.locked)
+                    .map(|t| t.id.clone())
+                    .or_else(|| {
+                        self.project
+                            .timeline
+                            .get_audio_tracks()
+                            .into_iter()
+                            .find(|t| !t.locked)
+                            .map(|t| t.id.clone())
+                    });
+
+                let insert_t = insert_time_override.unwrap_or(self.current_time);
+                if let Some(track_id) = target_track_id {
+                    let mut clip = Clip::new(&media_id, insert_t, insert_t + dur);
+                    clip.name = preset.label().to_string();
+                    clip.source_in = 0.0;
+                    clip.source_out = Some(dur);
+                    let cmd = Box::new(AddClipCommand::new(track_id, clip));
+                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                    self.project.mark_dirty();
+                    self.status_message = format!(
+                        "🎛 '{}' ({:.1}s) prosedürel olarak sentezlendi ve ses kanalına eklendi.",
+                        preset.label(),
+                        dur
+                    );
+                } else {
+                    self.status_message = format!(
+                        "🎛 '{}' ({:.1}s) sentezlendi ve medya havuzuna eklendi.",
+                        preset.label(),
+                        dur
+                    );
+                }
+            }
+            Err(e) => {
+                self.status_message = format!("⚠ Prosedürel ses sentezlenemedi: {e}");
+            }
+        }
+    }
+
+    pub fn generate_title_foley_for_clip(&mut self, track_id: &str, clip_id: &str) {
+        let Some((dur, timeline_in, char_count)) = self
+            .project
+            .timeline
+            .get_track_by_id(track_id)
+            .and_then(|t| t.get_clip_by_id(clip_id))
+            .map(|c| {
+                let chars = c
+                    .text_overlay
+                    .as_ref()
+                    .map(|txt| txt.content.chars().count().max(4))
+                    .unwrap_or(18);
+                (c.duration(), c.timeline_in, chars)
+            })
+        else {
+            return;
+        };
+        self.generate_and_insert_soundscape(
+            trim_media::SoundscapePreset::TypewriterFoley,
+            Some(dur),
+            char_count,
+            Some(timeline_in),
+        );
+    }
+
+    pub fn prompt_export_cube_lut(&mut self, track_id: &str, clip_id: &str) {
+        let Some(clip) = self
+            .project
+            .timeline
+            .get_track_by_id(track_id)
+            .and_then(|t| t.get_clip_by_id(clip_id))
+        else {
+            return;
+        };
+        let cube_text = trim_core::color::bake_clip_grade_to_cube(clip, 33);
+        let safe_name: String = clip
+            .name
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let default_file = if safe_name.trim_matches('_').is_empty() {
+            "triM_grade.cube".to_string()
+        } else {
+            format!("{}_grade.cube", safe_name.trim_matches('_'))
+        };
+        let config =
+            FileDialogConfig::save_file("3D LUT Olarak Kaydet (.cube)", Some(default_file))
+                .add_filter("3D LUT (.cube)", &["cube"]);
+        self.file_dialog_bridge.open(
+            FileDialogRequest::ExportCubeLut {
+                cube_text,
+                clip_name: clip.name.clone(),
+            },
+            config,
+        );
     }
 
     pub fn update_media_bin_thumbnails(&mut self, ctx: &egui::Context) {

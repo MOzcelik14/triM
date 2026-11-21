@@ -37,8 +37,9 @@ impl AudioEqPreset {
 }
 
 pub use crate::color::{
-    BrightnessContrastPreset, ColorGradeParams, CustomCurvesConfig, HslCurvesConfig,
-    HslQualifierConfig, LookCategory, LutPreset, WhiteBalancePreset,
+    BrightnessContrastPreset, CameraLogProfile, ColorGradeParams, CustomCurvesConfig,
+    FilmStockFormat, HslCurvesConfig, HslQualifierConfig, LookCategory, LutPreset,
+    WhiteBalancePreset,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -272,6 +273,8 @@ pub enum MotionTitleStyle {
     CinematicZoom,
     Ticker,
     BoxReveal,
+    RollingCredits,
+    ChapterCard,
 }
 
 impl MotionTitleStyle {
@@ -282,6 +285,8 @@ impl MotionTitleStyle {
         Self::CinematicZoom,
         Self::Ticker,
         Self::BoxReveal,
+        Self::RollingCredits,
+        Self::ChapterCard,
     ];
 
     pub fn label(&self) -> &'static str {
@@ -292,6 +297,8 @@ impl MotionTitleStyle {
             Self::CinematicZoom => "🎬 Sinematik Büyüme (Fade & Zoom)",
             Self::Ticker => "📰 Kayan Yazı (Haber Şeridi)",
             Self::BoxReveal => "📦 Kutulu Açılış (Box Reveal)",
+            Self::RollingCredits => "🎞 Sinema Akan Jenerik (Rolling Credits)",
+            Self::ChapterCard => "🎭 Perde / Bölüm Kartı (Chapter Card)",
         }
     }
 }
@@ -644,6 +651,37 @@ impl Default for TextOverlay {
     }
 }
 
+impl TextOverlay {
+    /// Converts Turkish characters (`Ğ, ğ, Ş, ş, İ, ı, Ç, ç, Ö, ö, Ü, ü`) to their ASCII
+    /// display-font equivalents (`G, g, S, s, I, i, C, c, O, o, U, u`).
+    pub fn convert_turkish_to_ascii(input: &str) -> String {
+        input
+            .chars()
+            .map(|c| match c {
+                'Ğ' => 'G',
+                'ğ' => 'g',
+                'Ş' => 'S',
+                'ş' => 's',
+                'İ' => 'I',
+                'ı' => 'i',
+                'Ç' => 'C',
+                'ç' => 'c',
+                'Ö' => 'O',
+                'ö' => 'o',
+                'Ü' => 'U',
+                'ü' => 'u',
+                other => other,
+            })
+            .collect()
+    }
+
+    /// Returns true if `font_family` points to a custom `.ttf` / `.otf` font file path.
+    pub fn is_custom_font_file(&self) -> bool {
+        let lower = self.font_family.trim().to_lowercase();
+        lower.ends_with(".ttf") || lower.ends_with(".otf")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Clip {
     pub id: String,
@@ -776,6 +814,18 @@ pub struct Clip {
     pub corner_pin: Option<CornerPinConfig>,
     #[serde(default)]
     pub track_matte_above: bool,
+    #[serde(default)]
+    pub camera_log_profile: CameraLogProfile,
+    #[serde(default)]
+    pub film_format: FilmStockFormat,
+    #[serde(default)]
+    pub highlight_rolloff: f32,
+    #[serde(default)]
+    pub diffusion: f32,
+    #[serde(default)]
+    pub mist: f32,
+    #[serde(default)]
+    pub gate_weave: f32,
 }
 
 fn default_speed() -> f64 {
@@ -855,6 +905,12 @@ impl Default for Clip {
             echo_amount: 0.0,
             corner_pin: None,
             track_matte_above: false,
+            camera_log_profile: CameraLogProfile::Rec709,
+            film_format: FilmStockFormat::None,
+            highlight_rolloff: 0.0,
+            diffusion: 0.0,
+            mist: 0.0,
+            gate_weave: 0.0,
         }
     }
 }
@@ -887,7 +943,13 @@ impl Clip {
 
 impl Clip {
     pub fn has_color_adjustments(&self) -> bool {
-        self.brightness.abs() > 1e-4
+        self.camera_log_profile != CameraLogProfile::Rec709
+            || self.film_format != FilmStockFormat::None
+            || self.highlight_rolloff > 1e-4
+            || self.diffusion > 1e-4
+            || self.mist > 1e-4
+            || self.gate_weave > 1e-4
+            || self.brightness.abs() > 1e-4
             || (self.contrast - 1.0).abs() > 1e-4
             || (self.saturation - 1.0).abs() > 1e-4
             || (self.gamma - 1.0).abs() > 1e-4
@@ -909,6 +971,100 @@ impl Clip {
             || self.halation > 1e-4
             || self.bloom > 1e-4
             || self.chromatic_aberration > 1e-4
+    }
+
+    /// Returns true if the clip uses color pipeline stages (Camera Log profile, Film Stock Emulation,
+    /// Highlight Roll-off, 6-Vector HSL Curves, or 3D HSL Qualifier) that require baking a 3D `.cube`
+    /// LUT for exact FFmpeg export parity.
+    pub fn needs_baked_cube_lut(&self) -> bool {
+        self.camera_log_profile != CameraLogProfile::Rec709
+            || self.film_format != FilmStockFormat::None
+            || self.highlight_rolloff > 1e-4
+            || self.hsl_curves.as_ref().is_some_and(|c| !c.is_identity())
+            || self
+                .hsl_qualifier
+                .as_ref()
+                .is_some_and(|q| q.enabled && !q.show_matte)
+    }
+
+    /// Evaluates the full per-pixel color pipeline for normalized `[0.0, 1.0]` RGB input,
+    /// matching the OpenGL fragment shader and CPU preview grading pipeline.
+    #[inline]
+    pub fn evaluate_color_pipeline_rgb(&self, r: f32, g: f32, b: f32) -> [f32; 3] {
+        // 0. Camera Log -> Rec.709 conversion
+        let [mut r, mut g, mut b] = self.camera_log_profile.apply_rgb(r, g, b);
+
+        // 1. 3-Point Color Wheels (Lift / Gamma / Gain + Luminance offsets)
+        if let Some(cw) = &self.color_wheels {
+            let luma = 0.299 * r + 0.587 * g + 0.114 * b;
+            let shadow_w = (1.0 - luma * 2.0).clamp(0.0, 1.0);
+            let hi_w = ((luma - 0.5) * 2.0).clamp(0.0, 1.0);
+            let mid_w = (1.0 - shadow_w - hi_w).clamp(0.0, 1.0);
+
+            let lift = [
+                cw.lift[0] + cw.luminance[0],
+                cw.lift[1] + cw.luminance[0],
+                cw.lift[2] + cw.luminance[0],
+            ];
+            let gamma = [
+                (cw.gamma[0] + cw.luminance[1]).max(0.05),
+                (cw.gamma[1] + cw.luminance[1]).max(0.05),
+                (cw.gamma[2] + cw.luminance[1]).max(0.05),
+            ];
+            let gain = [
+                (cw.gain[0] + cw.luminance[2]).max(0.0),
+                (cw.gain[1] + cw.luminance[2]).max(0.0),
+                (cw.gain[2] + cw.luminance[2]).max(0.0),
+            ];
+
+            r += lift[0] * (128.0 / 255.0) * shadow_w;
+            g += lift[1] * (128.0 / 255.0) * shadow_w;
+            b += lift[2] * (128.0 / 255.0) * shadow_w;
+
+            r *= 1.0 + (gamma[0] - 1.0) * mid_w;
+            g *= 1.0 + (gamma[1] - 1.0) * mid_w;
+            b *= 1.0 + (gamma[2] - 1.0) * mid_w;
+
+            r *= 1.0 + (gain[0] - 1.0) * hi_w;
+            g *= 1.0 + (gain[1] - 1.0) * hi_w;
+            b *= 1.0 + (gain[2] - 1.0) * hi_w;
+
+            r = r.clamp(0.0, 1.0);
+            g = g.clamp(0.0, 1.0);
+            b = b.clamp(0.0, 1.0);
+        }
+
+        // 2. White Balance, Contrast, Brightness, Gamma, Saturation, and Creative Look Preset
+        let params = self.color_grade_params();
+        [r, g, b] = crate::color::apply_color_grade_normalized(r, g, b, &params);
+
+        // 3. Custom RGB / Luma Spline Curves
+        if let Some(curves) = &self.custom_curves {
+            if !curves.is_identity() {
+                [r, g, b] = curves.apply_rgb(r, g, b);
+            }
+        }
+
+        // 4. 6-Vector HSL Curves
+        if let Some(hsl) = &self.hsl_curves {
+            if !hsl.is_identity() {
+                [r, g, b] = hsl.apply_rgb(r, g, b);
+            }
+        }
+
+        // 5. 3D HSL Qualifier
+        if let Some(qual) = &self.hsl_qualifier {
+            if qual.enabled {
+                [r, g, b] = qual.apply_rgb(r, g, b);
+            }
+        }
+
+        // 6. Analog Film Stock Emulation (35mm / 16mm / 8mm) & Highlight Roll-off Knee
+        if self.film_format != FilmStockFormat::None || self.highlight_rolloff > 1e-4 {
+            [r, g, b] = self.film_format.apply_rgb(r, g, b, self.highlight_rolloff);
+        }
+
+        [r.clamp(0.0, 1.0), g.clamp(0.0, 1.0), b.clamp(0.0, 1.0)]
     }
 
     pub fn color_grade_params(&self) -> ColorGradeParams {
@@ -940,6 +1096,12 @@ impl Clip {
     }
 
     pub fn reset_color_grading(&mut self) {
+        self.camera_log_profile = CameraLogProfile::Rec709;
+        self.film_format = FilmStockFormat::None;
+        self.highlight_rolloff = 0.0;
+        self.diffusion = 0.0;
+        self.mist = 0.0;
+        self.gate_weave = 0.0;
         self.brightness = 0.0;
         self.contrast = 1.0;
         self.saturation = 1.0;

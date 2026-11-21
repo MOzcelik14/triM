@@ -8,9 +8,9 @@ use egui::{
 use trim_commands::commands::ClipColorGradingState;
 use trim_core::clip::{
     AudioCompressorConfig, AudioEqPreset, AudioVisualizerConfig, BrightnessContrastPreset,
-    CaptionStyle, ChromaKeyConfig, Clip, ColorLabel, ColorWheelsConfig, CornerPinConfig,
-    LookCategory, LutPreset, MotionTitleStyle, PanZoomPreset, ParametricEqConfig, TextOverlay,
-    VisualizerStyle, WhiteBalancePreset,
+    CameraLogProfile, CaptionStyle, ChromaKeyConfig, Clip, ColorLabel, ColorWheelsConfig,
+    CornerPinConfig, FilmStockFormat, LookCategory, LutPreset, MotionTitleStyle, PanZoomPreset,
+    ParametricEqConfig, TextOverlay, VisualizerStyle, WhiteBalancePreset,
 };
 use trim_core::color::{CustomCurvesConfig, HslCurvesConfig, HslQualifierConfig};
 use trim_core::keyframe::Interpolation;
@@ -36,7 +36,20 @@ pub enum InspectorAction {
     ImportSubtitles,
     ExportSubtitles,
     SelectCustomLut(String),
+    SelectCustomFont(String),
+    GenerateTitleFoley {
+        track_id: String,
+        clip_id: String,
+    },
+    ExportCubeLut {
+        track_id: String,
+        clip_id: String,
+    },
     AutoWhiteBalance {
+        track_id: String,
+        clip_id: String,
+    },
+    StartWbEyedropper {
         track_id: String,
         clip_id: String,
     },
@@ -188,7 +201,7 @@ pub fn render_inspector_panel(
 
             // If clip has text overlay enabled, surface Titler near the top
             if !is_audio && clip.text_overlay.is_some() {
-                render_titler_card(ui, clip, &mut action);
+                render_titler_card(ui, &track_id, clip, &mut action);
                 ui.add_space(6.0);
             }
 
@@ -1607,7 +1620,7 @@ fn render_color_card(
             }
 
             // =================================================================
-            // 1. WHITE BALANCE (BEYAZ DENGESİ)
+            // 1. CAMERA LOG PROFILE & WHITE BALANCE (BEYAZ DENGESİ)
             // =================================================================
             Frame::none()
                 .fill(SUBCARD_BG)
@@ -1615,6 +1628,64 @@ fn render_color_card(
                 .rounding(Rounding::same(6.0))
                 .inner_margin(Margin::symmetric(8.0, 7.0))
                 .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("🎥 Kamera Log Giriş Profili")
+                                .size(11.0)
+                                .strong()
+                                .color(Color32::from_rgb(0xb8, 0xc2, 0xd8)),
+                        );
+                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                            render_badge(ui, clip.camera_log_profile.short_label(), ACCENT_BLUE);
+                        });
+                    });
+                    ui.add_space(3.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                        for profile in CameraLogProfile::ALL {
+                            let is_sel = clip.camera_log_profile == *profile;
+                            let btn = Button::new(
+                                RichText::new(profile.short_label())
+                                    .size(10.0)
+                                    .strong()
+                                    .color(if is_sel {
+                                        Color32::WHITE
+                                    } else {
+                                        Color32::from_rgb(0xc0, 0xc8, 0xdc)
+                                    }),
+                            )
+                            .fill(if is_sel {
+                                ACCENT_BLUE
+                            } else {
+                                Color32::from_rgb(0x17, 0x1a, 0x24)
+                            })
+                            .stroke(Stroke::new(
+                                1.0_f32,
+                                if is_sel {
+                                    ACCENT_BLUE
+                                } else {
+                                    Color32::from_rgb(0x26, 0x2b, 0x3a)
+                                },
+                            ))
+                            .rounding(Rounding::same(4.0));
+                            if ui.add(btn).on_hover_text(profile.label()).clicked() && !is_sel {
+                                let old_state = ClipColorGradingState::from_clip(clip);
+                                clip.camera_log_profile = *profile;
+                                let new_state = ClipColorGradingState::from_clip(clip);
+                                *action = Some(InspectorAction::SetColorGrading {
+                                    track_id: track_id.to_string(),
+                                    clip_id: clip.id.clone(),
+                                    old_state: Box::new(old_state),
+                                    new_state: Box::new(new_state),
+                                });
+                            }
+                        }
+                    });
+
+                    ui.add_space(5.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
                     ui.horizontal(|ui| {
                         ui.label(
                             RichText::new("☀ Beyaz Dengesi (White Balance)")
@@ -1656,39 +1727,66 @@ fn render_color_card(
 
                     ui.add_space(4.0);
 
-                    // Auto White Balance Button
+                    // Auto White Balance + Monitor Eyedropper Buttons
                     let is_auto = clip.wb_preset == WhiteBalancePreset::Auto;
-                    let auto_btn = Button::new(
-                        RichText::new("✨ Otomatik Beyaz Dengesi (Auto WB - Kare Analizi)")
-                            .size(11.0)
-                            .strong()
-                            .color(if is_auto {
-                                Color32::WHITE
-                            } else {
-                                Color32::from_rgb(0xf5, 0xb9, 0x71)
-                            }),
-                    )
-                    .fill(if is_auto {
-                        ACCENT_AMBER
-                    } else {
-                        Color32::from_rgba_unmultiplied(0xe0, 0x7a, 0x38, 34)
-                    })
-                    .stroke(Stroke::new(1.0_f32, ACCENT_AMBER))
-                    .rounding(Rounding::same(5.0))
-                    .min_size(Vec2::new(ui.available_width(), 26.0));
-
-                    if ui
-                        .add(auto_btn)
-                        .on_hover_text(
-                            "Mevcut video karesinin renk dağılımını analiz ederek otomatik sıcaklık ve renk tonu hesaplar",
+                    ui.horizontal(|ui| {
+                        let half_w = ((ui.available_width() - 6.0) * 0.58).max(100.0);
+                        let auto_btn = Button::new(
+                            RichText::new("✨ Otomatik WB (Auto)")
+                                .size(10.5)
+                                .strong()
+                                .color(if is_auto {
+                                    Color32::WHITE
+                                } else {
+                                    Color32::from_rgb(0xf5, 0xb9, 0x71)
+                                }),
                         )
-                        .clicked()
-                    {
-                        *action = Some(InspectorAction::AutoWhiteBalance {
-                            track_id: track_id.to_string(),
-                            clip_id: clip.id.clone(),
-                        });
-                    }
+                        .fill(if is_auto {
+                            ACCENT_AMBER
+                        } else {
+                            Color32::from_rgba_unmultiplied(0xe0, 0x7a, 0x38, 34)
+                        })
+                        .stroke(Stroke::new(1.0_f32, ACCENT_AMBER))
+                        .rounding(Rounding::same(5.0))
+                        .min_size(Vec2::new(half_w, 26.0));
+
+                        if ui
+                            .add(auto_btn)
+                            .on_hover_text(
+                                "Mevcut video karesinin renk dağılımını analiz ederek otomatik sıcaklık ve renk tonu hesaplar",
+                            )
+                            .clicked()
+                        {
+                            *action = Some(InspectorAction::AutoWhiteBalance {
+                                track_id: track_id.to_string(),
+                                clip_id: clip.id.clone(),
+                            });
+                        }
+
+                        let pick_btn = Button::new(
+                            RichText::new("🎯 WB Damlalık")
+                                .size(10.5)
+                                .strong()
+                                .color(Color32::from_rgb(0x88, 0xd4, 0xff)),
+                        )
+                        .fill(Color32::from_rgba_unmultiplied(0x38, 0x7a, 0xe0, 38))
+                        .stroke(Stroke::new(1.0_f32, ACCENT_BLUE))
+                        .rounding(Rounding::same(5.0))
+                        .min_size(Vec2::new(ui.available_width(), 26.0));
+
+                        if ui
+                            .add(pick_btn)
+                            .on_hover_text(
+                                "Program Monitörü üzerinden nötr beyaz/gri bir piksel seçerek Beyaz Dengesini kalibre et",
+                            )
+                            .clicked()
+                        {
+                            *action = Some(InspectorAction::StartWbEyedropper {
+                                track_id: track_id.to_string(),
+                                clip_id: clip.id.clone(),
+                            });
+                        }
+                    });
 
                     ui.add_space(4.0);
 
@@ -2120,18 +2218,34 @@ fn render_color_card(
 
                     ui.add_space(4.0);
 
-                    // Category filter tabs stored in egui temp data
+                    // Category filter tabs + Favorites & Search stored in egui data
                     let cat_tab_id = ui.make_persistent_id(format!("look_cat_tab_{}", clip.id));
                     let mut active_tab: u8 =
                         ui.data_mut(|d| d.get_temp::<u8>(cat_tab_id)).unwrap_or(0);
+                    let fav_id = egui::Id::new("trim_favorite_lut_presets_v1");
+                    let mut fav_presets: Vec<LutPreset> = ui
+                        .data_mut(|d| d.get_persisted::<Vec<LutPreset>>(fav_id))
+                        .unwrap_or_else(|| {
+                            vec![
+                                LutPreset::TealOrange,
+                                LutPreset::Kodak2383,
+                                LutPreset::MonochromeNoir,
+                                LutPreset::GoldenHour,
+                            ]
+                        });
+                    let search_id = ui.make_persistent_id(format!("look_search_q_{}", clip.id));
+                    let mut search_q: String = ui
+                        .data_mut(|d| d.get_temp::<String>(search_id))
+                        .unwrap_or_default();
 
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
-                        let tabs: [(u8, &str); 4] = [
+                        let tabs: [(u8, &str); 5] = [
                             (0, "Tümü"),
                             (1, "🎬 Sinematik"),
                             (2, "🎞 Film"),
                             (3, "🎨 Yaratıcı"),
+                            (4, "★ Favoriler"),
                         ];
                         for (tab_id, title) in tabs {
                             let is_active = active_tab == tab_id;
@@ -2155,9 +2269,25 @@ fn render_color_card(
                         }
                     });
 
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        let resp = ui.add(
+                            TextEdit::singleline(&mut search_q)
+                                .hint_text("🔍 Görünüm veya Film LUT ara...")
+                                .desired_width(ui.available_width() - 28.0),
+                        );
+                        if resp.changed() {
+                            ui.data_mut(|d| d.insert_temp(search_id, search_q.clone()));
+                        }
+                        if !search_q.is_empty() && ui.small_button("✕").clicked() {
+                            search_q.clear();
+                            ui.data_mut(|d| d.insert_temp(search_id, String::new()));
+                        }
+                    });
+
                     ui.add_space(5.0);
 
-                    let filtered_looks: Vec<LutPreset> = match active_tab {
+                    let base_looks: Vec<LutPreset> = match active_tab {
                         1 => {
                             let mut v = vec![LutPreset::None];
                             v.extend_from_slice(LutPreset::by_category(LookCategory::Cinematic));
@@ -2175,7 +2305,26 @@ fn render_color_card(
                             v.extend_from_slice(LutPreset::by_category(LookCategory::Creative));
                             v
                         }
+                        4 => {
+                            let mut v = vec![LutPreset::None];
+                            v.extend(fav_presets.iter().copied());
+                            v
+                        }
                         _ => LutPreset::ALL.to_vec(),
+                    };
+
+                    let q_lower = search_q.trim().to_lowercase();
+                    let filtered_looks: Vec<LutPreset> = if q_lower.is_empty() {
+                        base_looks
+                    } else {
+                        base_looks
+                            .into_iter()
+                            .filter(|p| {
+                                *p == LutPreset::None
+                                    || p.label().to_lowercase().contains(&q_lower)
+                                    || p.short_label().to_lowercase().contains(&q_lower)
+                            })
+                            .collect()
                     };
 
                     // Visual Preset Thumbnail Grid (2 columns)
@@ -2187,6 +2336,7 @@ fn render_color_card(
                         .show(ui, |ui| {
                             for (idx, preset) in filtered_looks.iter().enumerate() {
                                 let is_sel = clip.lut_preset == *preset;
+                                let is_fav = fav_presets.contains(preset);
                                 let (rect, resp) = ui.allocate_exact_size(
                                     Vec2::new(col_w, 34.0),
                                     egui::Sense::click(),
@@ -2241,17 +2391,51 @@ fn render_color_card(
                                     Color32::from_rgb(0x7c, 0x86, 0x9e),
                                 );
 
-                                if resp.on_hover_text(preset.label()).clicked() {
-                                    let old_state = ClipColorGradingState::from_clip(clip);
-                                    clip.lut_preset = *preset;
-                                    let new_state = ClipColorGradingState::from_clip(clip);
-                                    if old_state != new_state {
-                                        *action = Some(InspectorAction::SetColorGrading {
-                                            track_id: track_id.to_string(),
-                                            clip_id: clip.id.clone(),
-                                            old_state: Box::new(old_state),
-                                            new_state: Box::new(new_state),
+                                let star_rect = egui::Rect::from_min_size(
+                                    egui::pos2(rect.right() - 18.0, rect.top() + 2.0),
+                                    Vec2::new(16.0, 16.0),
+                                );
+                                if *preset != LutPreset::None {
+                                    ui.painter().text(
+                                        star_rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        if is_fav { "★" } else { "☆" },
+                                        egui::FontId::proportional(10.5),
+                                        if is_fav {
+                                            Color32::from_rgb(0xf5, 0xb9, 0x42)
+                                        } else {
+                                            Color32::from_rgb(0x64, 0x6e, 0x84)
+                                        },
+                                    );
+                                }
+
+                                let resp = resp.on_hover_text(preset.label());
+                                if resp.clicked() {
+                                    let clicked_star = *preset != LutPreset::None
+                                        && resp
+                                            .interact_pointer_pos()
+                                            .is_some_and(|p| star_rect.expand(2.0).contains(p));
+                                    if clicked_star {
+                                        if is_fav {
+                                            fav_presets.retain(|x| x != preset);
+                                        } else {
+                                            fav_presets.push(*preset);
+                                        }
+                                        ui.data_mut(|d| {
+                                            d.insert_persisted(fav_id, fav_presets.clone())
                                         });
+                                    } else {
+                                        let old_state = ClipColorGradingState::from_clip(clip);
+                                        clip.lut_preset = *preset;
+                                        let new_state = ClipColorGradingState::from_clip(clip);
+                                        if old_state != new_state {
+                                            *action = Some(InspectorAction::SetColorGrading {
+                                                track_id: track_id.to_string(),
+                                                clip_id: clip.id.clone(),
+                                                old_state: Box::new(old_state),
+                                                new_state: Box::new(new_state),
+                                            });
+                                        }
                                     }
                                 }
 
@@ -2310,6 +2494,31 @@ fn render_color_card(
                             *action = Some(InspectorAction::SelectCustomLut(clip.id.clone()));
                         }
                     });
+
+                    ui.add_space(3.0);
+                    let export_lut_btn = Button::new(
+                        RichText::new("💾 Mevcut Renk Ayarını .cube LUT Olarak Kaydet...")
+                            .size(10.5)
+                            .strong()
+                            .color(Color32::from_rgb(0x98, 0xe2, 0xc6)),
+                    )
+                    .fill(Color32::from_rgba_unmultiplied(0x2d, 0xb8, 0x9a, 28))
+                    .stroke(Stroke::new(1.0_f32, ACCENT_TEAL))
+                    .rounding(Rounding::same(5.0))
+                    .min_size(Vec2::new(ui.available_width(), 24.0));
+
+                    if ui
+                        .add(export_lut_btn)
+                        .on_hover_text(
+                            "Klibin tüm renk, Log profili, çark, eğri ve görünüm ayarlarını 33×33×33 standart .cube 3D LUT dosyası olarak dışa aktar",
+                        )
+                        .clicked()
+                    {
+                        *action = Some(InspectorAction::ExportCubeLut {
+                            track_id: track_id.to_string(),
+                            clip_id: clip.id.clone(),
+                        });
+                    }
                 });
 
             // Subcard: 3-Point Color Wheels
@@ -2861,7 +3070,7 @@ fn render_color_card(
                 });
 
             // =================================================================
-            // 8. ANALOG FILM & LENS FX (HALATION, BLOOM, CHROMATIC ABERRATION)
+            // 8. ANALOG FILM & LENS FX (35mm/16mm/8mm, HALATION, BLOOM, DIFFUSION, MIST, WEAVE)
             // =================================================================
             ui.add_space(6.0);
             Frame::none()
@@ -2870,13 +3079,73 @@ fn render_color_card(
                 .rounding(Rounding::same(6.0))
                 .inner_margin(Margin::symmetric(8.0, 6.0))
                 .show(ui, |ui| {
-                    ui.label(
-                        RichText::new("🎞 Analog Film & Lens Efektleri")
-                            .size(11.0)
-                            .strong()
-                            .color(Color32::WHITE),
-                    );
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("🎞 Analog Film Emülasyonu & Lens Işık Motoru")
+                                .size(11.0)
+                                .strong()
+                                .color(Color32::WHITE),
+                        );
+                        ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                            render_badge(ui, clip.film_format.short_label(), ACCENT_AMBER);
+                        });
+                    });
                     ui.add_space(3.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                        for fmt in FilmStockFormat::ALL {
+                            let is_sel = clip.film_format == *fmt;
+                            let btn = Button::new(
+                                RichText::new(fmt.short_label())
+                                    .size(10.0)
+                                    .strong()
+                                    .color(if is_sel {
+                                        Color32::WHITE
+                                    } else {
+                                        Color32::from_rgb(0xd4, 0xd8, 0xe8)
+                                    }),
+                            )
+                            .fill(if is_sel {
+                                ACCENT_AMBER
+                            } else {
+                                Color32::from_rgb(0x17, 0x1a, 0x24)
+                            })
+                            .stroke(Stroke::new(
+                                1.0_f32,
+                                if is_sel {
+                                    ACCENT_AMBER
+                                } else {
+                                    Color32::from_rgb(0x26, 0x2b, 0x3a)
+                                },
+                            ))
+                            .rounding(Rounding::same(4.0));
+                            if ui.add(btn).on_hover_text(fmt.label()).clicked() && !is_sel {
+                                let old_state = ClipColorGradingState::from_clip(clip);
+                                clip.film_format = *fmt;
+                                let new_state = ClipColorGradingState::from_clip(clip);
+                                *action = Some(InspectorAction::SetColorGrading {
+                                    track_id: track_id.to_string(),
+                                    clip_id: clip.id.clone(),
+                                    old_state: Box::new(old_state),
+                                    new_state: Box::new(new_state),
+                                });
+                            }
+                        }
+                    });
+                    ui.add_space(4.0);
+                    prop_row(ui, "Parlaklık Kırılması", |ui| {
+                        if ui
+                            .add(
+                                Slider::new(&mut clip.highlight_rolloff, 0.0..=1.0)
+                                    .show_value(true)
+                                    .fixed_decimals(2),
+                            )
+                            .on_hover_text("Highlight Roll-off Knee: Yüksek ışıkları analog film gibi yumuşakça sıkıştırır")
+                            .changed()
+                        {
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                    });
                     prop_row(ui, "Halation (Film)", |ui| {
                         if ui
                             .add(
@@ -2898,6 +3167,45 @@ fn render_color_card(
                                     .fixed_decimals(2),
                             )
                             .on_hover_text("Yüksek ışıklarda yumuşak sinematik parlama")
+                            .changed()
+                        {
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                    });
+                    prop_row(ui, "Diffusion (Lens)", |ui| {
+                        if ui
+                            .add(
+                                Slider::new(&mut clip.diffusion, 0.0..=1.0)
+                                    .show_value(true)
+                                    .fixed_decimals(2),
+                            )
+                            .on_hover_text("Pro-Mist / Lens Difüzyonu: Kontrastı yumuşatarak orta tonları kadifeleştirir")
+                            .changed()
+                        {
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                    });
+                    prop_row(ui, "Mist (Atmosfer)", |ui| {
+                        if ui
+                            .add(
+                                Slider::new(&mut clip.mist, 0.0..=1.0)
+                                    .show_value(true)
+                                    .fixed_decimals(2),
+                            )
+                            .on_hover_text("Atmosferik Sis: Parlak bölgelerin etrafında serin sinematik pus oluşturur")
+                            .changed()
+                        {
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                    });
+                    prop_row(ui, "35mm Gate Weave", |ui| {
+                        if ui
+                            .add(
+                                Slider::new(&mut clip.gate_weave, 0.0..=1.0)
+                                    .show_value(true)
+                                    .fixed_decimals(2),
+                            )
+                            .on_hover_text("Analog projektör mekanik kare titremesi (Gate Weave)")
                             .changed()
                         {
                             *action = Some(InspectorAction::ClipModified);
@@ -3469,7 +3777,14 @@ fn render_audio_card(
     );
 }
 
-fn render_titler_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<InspectorAction>) {
+fn render_titler_card(
+    ui: &mut Ui,
+    track_id: &str,
+    clip: &mut Clip,
+    action: &mut Option<InspectorAction>,
+) {
+    let clip_id = clip.id.clone();
+    let track_id_owned = track_id.to_string();
     inspector_card(
         ui,
         "🔤",
@@ -3495,7 +3810,32 @@ fn render_titler_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
 
             if let Some(txt) = &mut clip.text_overlay {
                 ui.add_space(4.0);
-                ui.label(RichText::new("Yazı İçeriği:").size(11.0).color(LABEL_COLOR));
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Yazı İçeriği:").size(11.0).color(LABEL_COLOR));
+                    ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                        let tr_btn = Button::new(
+                            RichText::new("🔤 TR → EN Harf Dönüştür")
+                                .size(9.5)
+                                .color(Color32::from_rgb(0xfb, 0xbf, 0x24)),
+                        )
+                        .fill(Color32::from_rgb(0x1f, 0x23, 0x30))
+                        .rounding(Rounding::same(4.0));
+                        if ui
+                            .add(tr_btn)
+                            .on_hover_text(
+                                "Özel yabancı fontlarda bozulan Türkçe harfleri (Ğ→G, Ş→S, İ→I, Ç→C, Ö→O, Ü→U) otomatik ASCII karşılıklarına dönüştürür.",
+                            )
+                            .clicked()
+                        {
+                            txt.content = TextOverlay::convert_turkish_to_ascii(&txt.content);
+                            if let Some(sub) = &txt.subtitle_text {
+                                txt.subtitle_text =
+                                    Some(TextOverlay::convert_turkish_to_ascii(sub));
+                            }
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                    });
+                });
                 if ui
                     .add(
                         TextEdit::multiline(&mut txt.content)
@@ -3509,8 +3849,17 @@ fn render_titler_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
 
                 prop_row(ui, "Yazı Tipi (Font)", |ui| {
                     let mut changed = false;
+                    let display_font = if txt.is_custom_font_file() {
+                        std::path::Path::new(&txt.font_family)
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or(&txt.font_family)
+                            .to_string()
+                    } else {
+                        txt.font_family.clone()
+                    };
                     egui::ComboBox::from_id_salt("inspector_font_family")
-                        .selected_text(&txt.font_family)
+                        .selected_text(display_font)
                         .show_ui(ui, |ui| {
                             for &font in trim_core::clip::POPULAR_FONT_FAMILIES {
                                 if ui
@@ -3546,6 +3895,34 @@ fn render_titler_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
                     }
 
                     if changed {
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                });
+
+                prop_row(ui, "Özel Font", |ui| {
+                    let font_btn = Button::new(
+                        RichText::new("📁 .ttf / .otf Dosyası Seç...")
+                            .size(10.0)
+                            .color(Color32::from_rgb(0xd8, 0xde, 0xf0)),
+                    )
+                    .fill(Color32::from_rgb(0x1f, 0x23, 0x30))
+                    .rounding(Rounding::same(4.0));
+                    if ui
+                        .add(font_btn)
+                        .on_hover_text("Bilgisayarınızdaki özel bir .ttf veya .otf font dosyasını doğrudan yükler")
+                        .clicked()
+                    {
+                        *action = Some(InspectorAction::SelectCustomFont(clip_id.clone()));
+                    }
+                    if txt.is_custom_font_file()
+                        && ui
+                            .small_button("×")
+                            .on_hover_text(
+                                "Özel font dosyasını kaldır ve varsayılan Inter fontuna dön",
+                            )
+                            .clicked()
+                    {
+                        txt.font_family = "Inter".to_string();
                         *action = Some(InspectorAction::ClipModified);
                     }
                 });
@@ -3716,11 +4093,19 @@ fn render_titler_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
                         });
                 });
 
-                if txt.motion_style == MotionTitleStyle::LowerThird {
+                if matches!(
+                    txt.motion_style,
+                    MotionTitleStyle::LowerThird
+                        | MotionTitleStyle::RollingCredits
+                        | MotionTitleStyle::ChapterCard
+                ) {
                     prop_row(ui, "Alt Başlık", |ui| {
                         let mut sub = txt.subtitle_text.clone().unwrap_or_default();
                         if ui
-                            .add(TextEdit::singleline(&mut sub).hint_text("Ünvan / Açıklama"))
+                            .add(
+                                TextEdit::singleline(&mut sub)
+                                    .hint_text("Ünvan / Oyuncular / Bölüm Açıklaması"),
+                            )
                             .changed()
                         {
                             txt.subtitle_text = if sub.trim().is_empty() {
@@ -3748,6 +4133,38 @@ fn render_titler_card(ui: &mut Ui, clip: &mut Clip, action: &mut Option<Inspecto
                             }
                         });
                 });
+
+                ui.add_space(4.0);
+                let foley_label = if txt.motion_style == MotionTitleStyle::Typewriter {
+                    "🔊 Daktilo Tuş + 35mm Projektör Foley Sesi Üret ve Ekle"
+                } else {
+                    "🔊 Sinematik Başlık Foley Sesi Üret ve Ekle"
+                };
+                let btn_foley = Button::new(
+                    RichText::new(foley_label)
+                        .size(10.5)
+                        .strong()
+                        .color(Color32::from_rgb(0xfb, 0xbf, 0x24)),
+                )
+                .fill(Color32::from_rgba_unmultiplied(0xe0, 0x7a, 0x38, 28))
+                .stroke(Stroke::new(
+                    1.0_f32,
+                    Color32::from_rgba_unmultiplied(0xe0, 0x7a, 0x38, 120),
+                ))
+                .rounding(Rounding::same(5.0))
+                .min_size(Vec2::new(ui.available_width(), 24.0));
+                if ui
+                    .add(btn_foley)
+                    .on_hover_text(
+                        "Metin uzunluğuna ve klip süresine göre prosedürel daktilo tıkırtısı + 35mm projektör foley sesini (.wav) sentezler ve alt ses kanalına yerleştirir.",
+                    )
+                    .clicked()
+                {
+                    *action = Some(InspectorAction::GenerateTitleFoley {
+                        track_id: track_id_owned.clone(),
+                        clip_id: clip_id.clone(),
+                    });
+                }
             }
 
             ui.add_space(4.0);

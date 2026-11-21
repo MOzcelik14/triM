@@ -180,6 +180,7 @@ pub struct TrimApp {
     pub paste_attr_audio: bool,
     pub paste_attr_speed: bool,
     pub last_scope_rgba: Option<(Vec<u8>, u32, u32)>,
+    pub wb_eyedropper_target: Option<(String, String)>,
     pub bg_task_tx: std::sync::mpsc::Sender<BackgroundTaskMsg>,
     pub bg_task_rx: std::sync::mpsc::Receiver<BackgroundTaskMsg>,
 }
@@ -307,6 +308,7 @@ impl Default for TrimApp {
             paste_attr_audio: true,
             paste_attr_speed: false,
             last_scope_rgba: None,
+            wb_eyedropper_target: None,
             bg_task_tx,
             bg_task_rx,
         }
@@ -317,6 +319,7 @@ impl TrimApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         setup_theme(&cc.egui_ctx);
         let prefs = UserPreferences::load();
+        crate::theme::apply_studio_theme(&cc.egui_ctx, &prefs.theme_id);
         cc.egui_ctx.set_pixels_per_point(prefs.ui_scale);
 
         // Pre-warm hardware encoder detection in background so preferences/export dialogs are instant
@@ -655,6 +658,7 @@ impl TrimApp {
             self.multicam_active_angle,
             multicam_labels.to_vec(),
         )
+        .wb_eyedropper(self.wb_eyedropper_target.is_some())
         .show(prog_ui);
 
         if let Some(act) = p_act {
@@ -880,6 +884,60 @@ impl TrimApp {
                                 x_norm,
                                 y_norm,
                             );
+                    }
+                }
+                MonitorAction::CancelWbEyedropper => {
+                    self.wb_eyedropper_target = None;
+                    self.status_message = "WB Damlalığı iptal edildi.".to_string();
+                }
+                MonitorAction::PickWhiteBalancePixel { x_norm, y_norm } => {
+                    if let Some((track_id, clip_id)) = self.wb_eyedropper_target.take() {
+                        let sample = if let Some((rgba, rw, rh)) = &self.last_scope_rgba {
+                            trim_core::scopes::sample_pixel_rgba(rgba, *rw, *rh, x_norm, y_norm)
+                        } else if let Some(frame) = &self.last_rendered_monitor_frame {
+                            trim_core::scopes::sample_pixel_rgba(
+                                frame.as_raw(),
+                                frame.width(),
+                                frame.height(),
+                                x_norm,
+                                y_norm,
+                            )
+                        } else {
+                            None
+                        };
+                        if let Some(ro) = sample {
+                            let (temp, tint) = trim_core::color::compute_wb_from_neutral_rgb(
+                                ro.rgb[0], ro.rgb[1], ro.rgb[2],
+                            );
+                            if let Some(clip_ref) = self
+                                .project
+                                .timeline
+                                .get_track_by_id(&track_id)
+                                .and_then(|t| t.get_clip_by_id(&clip_id))
+                                .cloned()
+                            {
+                                let old_state = ClipColorGradingState::from_clip(&clip_ref);
+                                let mut new_state = old_state.clone();
+                                new_state.wb_preset = trim_core::clip::WhiteBalancePreset::Custom;
+                                new_state.temperature = temp;
+                                new_state.tint = tint;
+                                let cmd = Box::new(SetClipColorGradingCommand::new(
+                                    track_id, clip_id, old_state, new_state,
+                                ));
+                                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                self.project.mark_dirty();
+                                self.last_rendered_monitor_frame = None;
+                                self.video_engine.last_rendered_frame = None;
+                                self.scopes_panel.mark_dirty();
+                                self.status_message = format!(
+                                    "🎯 WB Damlalığı uygulandı (RGB: {},{},{} → Sıcaklık: {:+.1}, Ton: {:+.1})",
+                                    ro.rgb[0], ro.rgb[1], ro.rgb[2], temp, tint
+                                );
+                            }
+                        } else {
+                            self.status_message =
+                                "⚠ Piksel rengi okunamadı (aktif kare yok).".to_string();
+                        }
                     }
                 }
                 _ => {}
@@ -1915,6 +1973,20 @@ impl eframe::App for TrimApp {
                 ui.menu_button(lang.t("menu_help"), |ui| {
                     if ui.button(lang.t("menu_shortcuts_f1")).clicked() {
                         self.shortcuts_dialog.open();
+                        ui.close_menu();
+                    }
+                    let update_lbl = match lang {
+                        Language::Turkish => "🔄 Güncellemeleri Kontrol Et (GitHub Releases)",
+                        Language::English => "🔄 Check for Updates (GitHub Releases)",
+                    };
+                    if ui.button(update_lbl).clicked() {
+                        ctx.open_url(egui::OpenUrl::new_tab(
+                            "https://github.com/MOzcelik14/triM/releases/latest",
+                        ));
+                        self.status_message = format!(
+                            "🔄 Yüklü sürüm: v{} — GitHub Releases sayfası tarayıcıda açıldı.",
+                            env!("CARGO_PKG_VERSION")
+                        );
                         ui.close_menu();
                     }
                     ui.separator();
@@ -3616,6 +3688,9 @@ impl eframe::App for TrimApp {
                                         self.status_message = "Sekans silindi".to_string();
                                     }
                                 }
+                                MediaBinAction::GenerateSoundscape(preset) => {
+                                    self.generate_and_insert_soundscape(preset, None, 18, None);
+                                }
                             }
                         }
                     }
@@ -3739,6 +3814,26 @@ impl eframe::App for TrimApp {
                                 }
                                 InspectorAction::SelectCustomLut(clip_id) => {
                                     self.prompt_custom_lut(clip_id);
+                                }
+                                InspectorAction::SelectCustomFont(clip_id) => {
+                                    self.prompt_custom_font(clip_id);
+                                }
+                                InspectorAction::GenerateTitleFoley { track_id, clip_id } => {
+                                    self.generate_title_foley_for_clip(&track_id, &clip_id);
+                                }
+                                InspectorAction::ExportCubeLut { track_id, clip_id } => {
+                                    self.prompt_export_cube_lut(&track_id, &clip_id);
+                                }
+                                InspectorAction::StartWbEyedropper { track_id, clip_id } => {
+                                    if self.wb_eyedropper_target.is_some() {
+                                        self.wb_eyedropper_target = None;
+                                        self.status_message =
+                                            "WB Damlalığı kapatıldı.".to_string();
+                                    } else {
+                                        self.wb_eyedropper_target = Some((track_id, clip_id));
+                                        self.status_message =
+                                            "🎯 WB Damlalığı Aktif: Program Monitörü üzerinde nötr beyaz/gri bir noktaya tıklayın.".to_string();
+                                    }
                                 }
                                 InspectorAction::SetColorGrading {
                                     track_id,
@@ -4260,11 +4355,13 @@ impl eframe::App for TrimApp {
                                         italic,
                                         ..Default::default()
                                     });
-                                    if motion_style
-                                        == trim_core::clip::MotionTitleStyle::CinematicZoom
-                                        || motion_style
-                                            == trim_core::clip::MotionTitleStyle::LowerThird
-                                    {
+                                    if matches!(
+                                        motion_style,
+                                        trim_core::clip::MotionTitleStyle::CinematicZoom
+                                            | trim_core::clip::MotionTitleStyle::LowerThird
+                                            | trim_core::clip::MotionTitleStyle::RollingCredits
+                                            | trim_core::clip::MotionTitleStyle::ChapterCard
+                                    ) {
                                         clip.fade_in = 0.5;
                                         clip.fade_out = 0.5;
                                     }
@@ -4573,6 +4670,7 @@ impl eframe::App for TrimApp {
                     let old_snap = self.preferences.snap_enabled_by_default;
                     let new_snap = new_prefs.snap_enabled_by_default;
 
+                    crate::theme::apply_studio_theme(ctx, &new_prefs.theme_id);
                     if (old_scale - new_scale).abs() > 0.001 {
                         ctx.set_pixels_per_point(new_scale);
                     }
@@ -4613,7 +4711,9 @@ impl eframe::App for TrimApp {
                     }
                     self.preferences = new_prefs;
                 }
-                PreferencesAction::Close => {}
+                PreferencesAction::Close => {
+                    crate::theme::apply_studio_theme(ctx, &self.preferences.theme_id);
+                }
             }
         }
 
@@ -4861,7 +4961,7 @@ impl eframe::App for TrimApp {
                                     .strong()
                                     .color(Color32::from_rgb(0xd8, 0xdc, 0xec)),
                             )
-                            .min_size(Vec2::new(115.0, 32.0))
+                            .min_size(Vec2::new(105.0, 32.0))
                             .rounding(egui::Rounding::same(6.0))
                             .fill(Color32::from_rgb(0x22, 0x25, 0x32))
                             .stroke(Stroke::new(
@@ -4879,7 +4979,7 @@ impl eframe::App for TrimApp {
                                 ));
                             }
 
-                            ui.add_space(6.0);
+                            ui.add_space(4.0);
 
                             let gh_btn = Button::new(
                                 RichText::new("🐙 GitHub")
@@ -4887,7 +4987,7 @@ impl eframe::App for TrimApp {
                                     .strong()
                                     .color(Color32::from_rgb(0xd8, 0xdc, 0xec)),
                             )
-                            .min_size(Vec2::new(105.0, 32.0))
+                            .min_size(Vec2::new(92.0, 32.0))
                             .rounding(egui::Rounding::same(6.0))
                             .fill(Color32::from_rgb(0x22, 0x25, 0x32))
                             .stroke(Stroke::new(
@@ -4905,6 +5005,32 @@ impl eframe::App for TrimApp {
                                 ));
                             }
 
+                            ui.add_space(4.0);
+
+                            let upd_btn = Button::new(
+                                RichText::new("🔄 Güncellemeler")
+                                    .size(11.5)
+                                    .strong()
+                                    .color(Color32::from_rgb(0x60, 0xd0, 0x98)),
+                            )
+                            .min_size(Vec2::new(124.0, 32.0))
+                            .rounding(egui::Rounding::same(6.0))
+                            .fill(Color32::from_rgb(0x1b, 0x2a, 0x24))
+                            .stroke(Stroke::new(
+                                1.0_f32,
+                                Color32::from_rgb(0x2d, 0x52, 0x40),
+                            ));
+
+                            if ui
+                                .add(upd_btn)
+                                .on_hover_text("https://github.com/MOzcelik14/triM/releases/latest")
+                                .clicked()
+                            {
+                                ctx.open_url(egui::OpenUrl::new_tab(
+                                    "https://github.com/MOzcelik14/triM/releases/latest",
+                                ));
+                            }
+
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
@@ -4914,7 +5040,7 @@ impl eframe::App for TrimApp {
                                             .strong()
                                             .color(Color32::WHITE),
                                     )
-                                    .min_size(Vec2::new(100.0, 32.0))
+                                    .min_size(Vec2::new(88.0, 32.0))
                                     .rounding(egui::Rounding::same(6.0))
                                     .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
 

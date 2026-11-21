@@ -89,6 +89,13 @@ pub enum FileDialogRequest {
     SelectCustomLut {
         clip_id: String,
     },
+    SelectCustomFont {
+        clip_id: String,
+    },
+    ExportCubeLut {
+        cube_text: String,
+        clip_name: String,
+    },
     RelinkFolder,
     RelinkSingleMedia {
         media_id: String,

@@ -2636,6 +2636,12 @@ impl Command for SetTextOverlayContentCommand {
 // -----------------------------------------------------------------------------
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClipColorGradingState {
+    pub camera_log_profile: trim_core::color::CameraLogProfile,
+    pub film_format: trim_core::color::FilmStockFormat,
+    pub highlight_rolloff: f32,
+    pub diffusion: f32,
+    pub mist: f32,
+    pub gate_weave: f32,
     pub brightness: f64,
     pub contrast: f64,
     pub saturation: f64,
@@ -2662,6 +2668,12 @@ pub struct ClipColorGradingState {
 impl ClipColorGradingState {
     pub fn from_clip(clip: &Clip) -> Self {
         Self {
+            camera_log_profile: clip.camera_log_profile,
+            film_format: clip.film_format,
+            highlight_rolloff: clip.highlight_rolloff,
+            diffusion: clip.diffusion,
+            mist: clip.mist,
+            gate_weave: clip.gate_weave,
             brightness: clip.brightness,
             contrast: clip.contrast,
             saturation: clip.saturation,
@@ -2687,6 +2699,12 @@ impl ClipColorGradingState {
     }
 
     pub fn apply_to_clip(&self, clip: &mut Clip) {
+        clip.camera_log_profile = self.camera_log_profile;
+        clip.film_format = self.film_format;
+        clip.highlight_rolloff = self.highlight_rolloff;
+        clip.diffusion = self.diffusion;
+        clip.mist = self.mist;
+        clip.gate_weave = self.gate_weave;
         clip.brightness = self.brightness;
         clip.contrast = self.contrast;
         clip.saturation = self.saturation;

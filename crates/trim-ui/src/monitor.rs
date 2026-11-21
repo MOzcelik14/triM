@@ -56,6 +56,11 @@ pub enum MonitorAction {
         x_norm: f32,
         y_norm: f32,
     },
+    PickWhiteBalancePixel {
+        x_norm: f32,
+        y_norm: f32,
+    },
+    CancelWbEyedropper,
     MasksEdited {
         clip_id: String,
         old_masks: Vec<trim_core::Mask>,
@@ -168,6 +173,7 @@ pub struct MonitorWidget<'a> {
     pub active_tool: Option<crate::toolbar::EditTool>,
     pub inline_text_edit: Option<String>,
     pub active_masks: Option<ActiveMaskOverlay>,
+    pub wb_eyedropper_active: bool,
 }
 
 impl<'a> MonitorWidget<'a> {
@@ -222,7 +228,13 @@ impl<'a> MonitorWidget<'a> {
             active_tool: None,
             inline_text_edit: None,
             active_masks: None,
+            wb_eyedropper_active: false,
         }
+    }
+
+    pub fn wb_eyedropper(mut self, active: bool) -> Self {
+        self.wb_eyedropper_active = active;
+        self
     }
 
     pub fn custom_texture_id(mut self, id: Option<egui::TextureId>) -> Self {
@@ -411,66 +423,217 @@ impl<'a> MonitorWidget<'a> {
             .or_else(|| self.texture.map(|t| t.id()))
         {
             if self.mode == MonitorMode::Program && self.split_wipe_enabled {
-                let split_x = frame_rect.left() + frame_rect.width() * self.split_wipe_pos;
-                let left_rect = Rect::from_min_max(
-                    frame_rect.left_top(),
-                    Pos2::new(split_x, frame_rect.bottom()),
-                );
-                let right_rect = Rect::from_min_max(
-                    Pos2::new(split_x, frame_rect.top()),
-                    frame_rect.right_bottom(),
-                );
-                let left_uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(self.split_wipe_pos, 1.0));
-                let right_uv =
-                    Rect::from_min_max(Pos2::new(self.split_wipe_pos, 0.0), Pos2::new(1.0, 1.0));
+                let cmp_mode_id = egui::Id::new("program_monitor_compare_submode");
+                let mut cmp_mode: u8 = ui.data_mut(|d| d.get_temp::<u8>(cmp_mode_id)).unwrap_or(0);
 
-                if let Some(ref_tex) = self.reference_texture {
-                    painter.image(ref_tex.id(), left_rect, left_uv, Color32::WHITE);
-                } else {
-                    painter.image(tex_id, left_rect, left_uv, Color32::from_rgb(205, 205, 210));
-                }
-                painter.image(tex_id, right_rect, right_uv, Color32::WHITE);
+                match cmp_mode {
+                    1 => {
+                        // Vertical Wipe (Top vs Bottom)
+                        let split_y = frame_rect.top() + frame_rect.height() * self.split_wipe_pos;
+                        let top_rect = Rect::from_min_max(
+                            frame_rect.left_top(),
+                            Pos2::new(frame_rect.right(), split_y),
+                        );
+                        let bot_rect = Rect::from_min_max(
+                            Pos2::new(frame_rect.left(), split_y),
+                            frame_rect.right_bottom(),
+                        );
+                        let top_uv =
+                            Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, self.split_wipe_pos));
+                        let bot_uv = Rect::from_min_max(
+                            Pos2::new(0.0, self.split_wipe_pos),
+                            Pos2::new(1.0, 1.0),
+                        );
 
-                // Divider line & draggable handle
-                painter.line_segment(
-                    [
-                        Pos2::new(split_x, frame_rect.top()),
-                        Pos2::new(split_x, frame_rect.bottom()),
-                    ],
-                    Stroke::new(2.0_f32, Color32::from_rgb(0x58, 0xb4, 0xff)),
-                );
-                let handle_center = Pos2::new(split_x, frame_rect.center().y);
-                painter.circle_filled(handle_center, 9.0, Color32::from_rgb(0x18, 0x20, 0x30));
-                painter.circle_stroke(
-                    handle_center,
-                    9.0,
-                    Stroke::new(1.5_f32, Color32::from_rgb(0x58, 0xb4, 0xff)),
-                );
-                painter.text(
-                    Pos2::new(left_rect.left() + 8.0, frame_rect.top() + 14.0),
-                    egui::Align2::LEFT_CENTER,
-                    if self.reference_texture.is_some() {
-                        "REFERANS STILL"
-                    } else {
-                        "KARŞILAŞTIRMA (SOL)"
-                    },
-                    egui::FontId::monospace(9.5),
-                    Color32::from_rgb(220, 230, 245),
-                );
-                painter.text(
-                    Pos2::new(right_rect.right() - 8.0, frame_rect.top() + 14.0),
-                    egui::Align2::RIGHT_CENTER,
-                    "MEVCUT GRADE (SAĞ)",
-                    egui::FontId::monospace(9.5),
-                    Color32::from_rgb(88, 180, 255),
-                );
+                        if let Some(ref_tex) = self.reference_texture {
+                            painter.image(ref_tex.id(), top_rect, top_uv, Color32::WHITE);
+                        } else {
+                            painter.image(
+                                tex_id,
+                                top_rect,
+                                top_uv,
+                                Color32::from_rgb(205, 205, 210),
+                            );
+                        }
+                        painter.image(tex_id, bot_rect, bot_uv, Color32::WHITE);
 
-                if let Some(ptr) = response.interact_pointer_pos() {
-                    if response.dragged() && frame_rect.contains(ptr) {
-                        let new_pos =
-                            ((ptr.x - frame_rect.left()) / frame_rect.width()).clamp(0.05, 0.95);
-                        action = Some(MonitorAction::SplitWipePosChanged(new_pos));
+                        painter.line_segment(
+                            [
+                                Pos2::new(frame_rect.left(), split_y),
+                                Pos2::new(frame_rect.right(), split_y),
+                            ],
+                            Stroke::new(2.0_f32, Color32::from_rgb(0x58, 0xb4, 0xff)),
+                        );
+                        let handle_center = Pos2::new(frame_rect.center().x, split_y);
+                        painter.circle_filled(
+                            handle_center,
+                            9.0,
+                            Color32::from_rgb(0x18, 0x20, 0x30),
+                        );
+                        painter.circle_stroke(
+                            handle_center,
+                            9.0,
+                            Stroke::new(1.5_f32, Color32::from_rgb(0x58, 0xb4, 0xff)),
+                        );
+                        painter.text(
+                            Pos2::new(frame_rect.left() + 8.0, frame_rect.top() + 14.0),
+                            egui::Align2::LEFT_CENTER,
+                            if self.reference_texture.is_some() {
+                                "REFERANS STILL (ÜST)"
+                            } else {
+                                "KARŞILAŞTIRMA (ÜST)"
+                            },
+                            egui::FontId::monospace(9.5),
+                            Color32::from_rgb(220, 230, 245),
+                        );
+                        painter.text(
+                            Pos2::new(frame_rect.right() - 8.0, frame_rect.bottom() - 14.0),
+                            egui::Align2::RIGHT_CENTER,
+                            "MEVCUT GRADE (ALT)",
+                            egui::FontId::monospace(9.5),
+                            Color32::from_rgb(88, 180, 255),
+                        );
+
+                        if let Some(ptr) = response.interact_pointer_pos() {
+                            if response.dragged() && frame_rect.contains(ptr) {
+                                let new_pos = ((ptr.y - frame_rect.top()) / frame_rect.height())
+                                    .clamp(0.05, 0.95);
+                                action = Some(MonitorAction::SplitWipePosChanged(new_pos));
+                            }
+                        }
                     }
+                    2 => {
+                        // Side-by-Side 2x Comparison (Full Left vs Full Right)
+                        let mid_x = frame_rect.center().x;
+                        let left_rect = Rect::from_min_max(
+                            frame_rect.left_top(),
+                            Pos2::new(mid_x - 1.0, frame_rect.bottom()),
+                        );
+                        let right_rect = Rect::from_min_max(
+                            Pos2::new(mid_x + 1.0, frame_rect.top()),
+                            frame_rect.right_bottom(),
+                        );
+                        let full_uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+
+                        if let Some(ref_tex) = self.reference_texture {
+                            painter.image(ref_tex.id(), left_rect, full_uv, Color32::WHITE);
+                        } else {
+                            painter.image(
+                                tex_id,
+                                left_rect,
+                                full_uv,
+                                Color32::from_rgb(205, 205, 210),
+                            );
+                        }
+                        painter.image(tex_id, right_rect, full_uv, Color32::WHITE);
+
+                        painter.line_segment(
+                            [
+                                Pos2::new(mid_x, frame_rect.top()),
+                                Pos2::new(mid_x, frame_rect.bottom()),
+                            ],
+                            Stroke::new(2.0_f32, Color32::from_rgb(0x58, 0xb4, 0xff)),
+                        );
+                        painter.text(
+                            Pos2::new(left_rect.left() + 8.0, frame_rect.top() + 14.0),
+                            egui::Align2::LEFT_CENTER,
+                            if self.reference_texture.is_some() {
+                                "REFERANS (2x YAN YANA)"
+                            } else {
+                                "ÖNCESİ (2x YAN YANA)"
+                            },
+                            egui::FontId::monospace(9.5),
+                            Color32::from_rgb(220, 230, 245),
+                        );
+                        painter.text(
+                            Pos2::new(right_rect.right() - 8.0, frame_rect.top() + 14.0),
+                            egui::Align2::RIGHT_CENTER,
+                            "MEVCUT GRADE (2x)",
+                            egui::FontId::monospace(9.5),
+                            Color32::from_rgb(88, 180, 255),
+                        );
+                    }
+                    _ => {
+                        // Horizontal Wipe (Left vs Right)
+                        let split_x = frame_rect.left() + frame_rect.width() * self.split_wipe_pos;
+                        let left_rect = Rect::from_min_max(
+                            frame_rect.left_top(),
+                            Pos2::new(split_x, frame_rect.bottom()),
+                        );
+                        let right_rect = Rect::from_min_max(
+                            Pos2::new(split_x, frame_rect.top()),
+                            frame_rect.right_bottom(),
+                        );
+                        let left_uv =
+                            Rect::from_min_max(Pos2::ZERO, Pos2::new(self.split_wipe_pos, 1.0));
+                        let right_uv = Rect::from_min_max(
+                            Pos2::new(self.split_wipe_pos, 0.0),
+                            Pos2::new(1.0, 1.0),
+                        );
+
+                        if let Some(ref_tex) = self.reference_texture {
+                            painter.image(ref_tex.id(), left_rect, left_uv, Color32::WHITE);
+                        } else {
+                            painter.image(
+                                tex_id,
+                                left_rect,
+                                left_uv,
+                                Color32::from_rgb(205, 205, 210),
+                            );
+                        }
+                        painter.image(tex_id, right_rect, right_uv, Color32::WHITE);
+
+                        painter.line_segment(
+                            [
+                                Pos2::new(split_x, frame_rect.top()),
+                                Pos2::new(split_x, frame_rect.bottom()),
+                            ],
+                            Stroke::new(2.0_f32, Color32::from_rgb(0x58, 0xb4, 0xff)),
+                        );
+                        let handle_center = Pos2::new(split_x, frame_rect.center().y);
+                        painter.circle_filled(
+                            handle_center,
+                            9.0,
+                            Color32::from_rgb(0x18, 0x20, 0x30),
+                        );
+                        painter.circle_stroke(
+                            handle_center,
+                            9.0,
+                            Stroke::new(1.5_f32, Color32::from_rgb(0x58, 0xb4, 0xff)),
+                        );
+                        painter.text(
+                            Pos2::new(left_rect.left() + 8.0, frame_rect.top() + 14.0),
+                            egui::Align2::LEFT_CENTER,
+                            if self.reference_texture.is_some() {
+                                "REFERANS STILL"
+                            } else {
+                                "KARŞILAŞTIRMA (SOL)"
+                            },
+                            egui::FontId::monospace(9.5),
+                            Color32::from_rgb(220, 230, 245),
+                        );
+                        painter.text(
+                            Pos2::new(right_rect.right() - 8.0, frame_rect.top() + 14.0),
+                            egui::Align2::RIGHT_CENTER,
+                            "MEVCUT GRADE (SAĞ)",
+                            egui::FontId::monospace(9.5),
+                            Color32::from_rgb(88, 180, 255),
+                        );
+
+                        if let Some(ptr) = response.interact_pointer_pos() {
+                            if response.dragged() && frame_rect.contains(ptr) {
+                                let new_pos = ((ptr.x - frame_rect.left()) / frame_rect.width())
+                                    .clamp(0.05, 0.95);
+                                action = Some(MonitorAction::SplitWipePosChanged(new_pos));
+                            }
+                        }
+                    }
+                }
+
+                // Right-click on monitor while split wipe is active cycles mode (Horizontal -> Vertical -> Side-by-Side)
+                if response.secondary_clicked() && !self.wb_eyedropper_active {
+                    cmp_mode = (cmp_mode + 1) % 3;
+                    ui.data_mut(|d| d.insert_temp(cmp_mode_id, cmp_mode));
                 }
             } else {
                 painter.image(
@@ -538,6 +701,55 @@ impl<'a> MonitorWidget<'a> {
                     if let Some(click_pos) = response.interact_pointer_pos() {
                         if response.clicked() && qrect.contains(click_pos) {
                             action = Some(MonitorAction::MulticamAngleSelected(qi));
+                        }
+                    }
+                }
+            }
+
+            if self.mode == MonitorMode::Program && self.wb_eyedropper_active {
+                let banner_rect = Rect::from_center_size(
+                    Pos2::new(frame_rect.center().x, frame_rect.top() + 18.0),
+                    Vec2::new((frame_rect.width() - 16.0).clamp(160.0, 380.0), 22.0),
+                );
+                painter.rect_filled(
+                    banner_rect,
+                    4.0,
+                    Color32::from_rgba_unmultiplied(15, 22, 36, 225),
+                );
+                painter.rect_stroke(
+                    banner_rect,
+                    4.0,
+                    Stroke::new(1.2_f32, Color32::from_rgb(0x58, 0xb4, 0xff)),
+                );
+                painter.text(
+                    banner_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "🎯 WB Damlalığı: Nötr beyaz/gri bir noktaya tıklayın (İptal: Sağ Tık)",
+                    egui::FontId::proportional(10.5),
+                    Color32::WHITE,
+                );
+
+                if let Some(hover_pos) = response.hover_pos() {
+                    if frame_rect.contains(hover_pos) {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+                        painter.circle_stroke(
+                            hover_pos,
+                            7.0,
+                            Stroke::new(1.5_f32, Color32::from_rgb(0xf5, 0xb9, 0x71)),
+                        );
+                        painter.circle_stroke(hover_pos, 8.5, Stroke::new(1.0_f32, Color32::BLACK));
+                    }
+                }
+                if response.secondary_clicked() {
+                    action = Some(MonitorAction::CancelWbEyedropper);
+                } else if response.clicked() {
+                    if let Some(click_pos) = response.interact_pointer_pos() {
+                        if frame_rect.contains(click_pos) {
+                            let x_norm = ((click_pos.x - frame_rect.left()) / frame_rect.width())
+                                .clamp(0.0, 1.0);
+                            let y_norm = ((click_pos.y - frame_rect.top()) / frame_rect.height())
+                                .clamp(0.0, 1.0);
+                            action = Some(MonitorAction::PickWhiteBalancePixel { x_norm, y_norm });
                         }
                     }
                 }
@@ -1149,13 +1361,22 @@ impl<'a> MonitorWidget<'a> {
                             action = Some(MonitorAction::ToggleSafeZones);
                         }
 
+                        let cmp_mode_id = egui::Id::new("program_monitor_compare_submode");
+                        let mut cmp_mode: u8 = ui
+                            .data_mut(|d| d.get_temp::<u8>(cmp_mode_id))
+                            .unwrap_or(0);
+                        let wipe_lbl = match cmp_mode {
+                            1 => "⬒ Wipe (Dikey)",
+                            2 => "▥ 2x Yan Yana",
+                            _ => "◧ Wipe",
+                        };
                         let wipe_col = if self.split_wipe_enabled {
                             Color32::from_rgb(0x58, 0xb4, 0xff)
                         } else {
                             Color32::from_rgb(0xa0, 0xa0, 0xb0)
                         };
                         let btn_wipe = Button::new(
-                            RichText::new("◧ Wipe")
+                            RichText::new(wipe_lbl)
                                 .size(11.0)
                                 .color(wipe_col)
                                 .strong(),
@@ -1166,12 +1387,17 @@ impl<'a> MonitorWidget<'a> {
                         } else {
                             Color32::from_rgb(0x22, 0x22, 0x2a)
                         });
-                        if ui
-                            .add(btn_wipe)
-                            .on_hover_text("Bölünmüş Ekran (Before/After / Referans Still) Karşılaştırma Perdesi")
-                            .clicked()
-                        {
+                        let wipe_resp = ui.add(btn_wipe).on_hover_text(
+                            "Sol Tık: Bölünmüş Ekran Aç/Kapat • Sağ Tık: Mod Değiştir (Yatay Wipe / Dikey Wipe / 2x Yan Yana)",
+                        );
+                        if wipe_resp.clicked() {
                             action = Some(MonitorAction::ToggleSplitWipe);
+                        } else if wipe_resp.secondary_clicked() {
+                            cmp_mode = (cmp_mode + 1) % 3;
+                            ui.data_mut(|d| d.insert_temp(cmp_mode_id, cmp_mode));
+                            if !self.split_wipe_enabled {
+                                action = Some(MonitorAction::ToggleSplitWipe);
+                            }
                         }
 
                         let mc_col = if self.multicam_mode {
@@ -1474,6 +1700,85 @@ pub fn draw_text_overlays_on_rect(
                     painter.galley(tr.min, galley, text_col);
                 }
                 full_box
+            }
+            trim_core::clip::MotionTitleStyle::RollingCredits => {
+                let galley = painter.layout_no_wrap(ov.text.clone(), font.clone(), final_col);
+                let total_h = galley.size().y + 32.0;
+                let scroll_y = frame_rect.bottom()
+                    - ov.progress.clamp(0.0, 1.0) * (frame_rect.height() + total_h);
+                let tr = egui::Align2::CENTER_TOP
+                    .anchor_size(Pos2::new(target_x, scroll_y), galley.size());
+                let clipped = painter.with_clip_rect(frame_rect);
+                if ov.has_shadow {
+                    clipped.galley(
+                        tr.min + Vec2::new(2.0, 2.0),
+                        galley.clone(),
+                        Color32::from_black_alpha((180.0 * ov.alpha) as u8),
+                    );
+                }
+                clipped.galley(tr.min, galley, final_col);
+                if let Some(sub) = &ov.subtitle_text {
+                    if !sub.trim().is_empty() {
+                        let sub_font = egui::FontId::new(
+                            (scaled_font_size * 0.62).max(9.0),
+                            font.family.clone(),
+                        );
+                        let sub_galley = painter.layout_no_wrap(sub.clone(), sub_font, final_col);
+                        let sub_tr = egui::Align2::CENTER_TOP
+                            .anchor_size(Pos2::new(target_x, tr.bottom() + 6.0), sub_galley.size());
+                        clipped.galley(sub_tr.min, sub_galley, final_col);
+                    }
+                }
+                tr
+            }
+            trim_core::clip::MotionTitleStyle::ChapterCard => {
+                let galley = painter.layout_no_wrap(ov.text.clone(), font.clone(), final_col);
+                let tr = egui::Align2::CENTER_CENTER
+                    .anchor_size(Pos2::new(target_x, target_y), galley.size());
+                let rule_w = (galley.size().x * 1.15).max(80.0);
+                let rule_col = Color32::from_rgba_premultiplied(
+                    ov.highlight_color.r(),
+                    ov.highlight_color.g(),
+                    ov.highlight_color.b(),
+                    (190.0 * ov.alpha) as u8,
+                );
+                painter.line_segment(
+                    [
+                        Pos2::new(target_x - rule_w * 0.5, tr.top() - 8.0),
+                        Pos2::new(target_x + rule_w * 0.5, tr.top() - 8.0),
+                    ],
+                    Stroke::new(1.5_f32, rule_col),
+                );
+                if ov.has_shadow {
+                    painter.galley(
+                        tr.min + Vec2::new(2.0, 2.0),
+                        galley.clone(),
+                        Color32::from_black_alpha((180.0 * ov.alpha) as u8),
+                    );
+                }
+                painter.galley(tr.min, galley, final_col);
+                let mut bottom_y = tr.bottom() + 8.0;
+                if let Some(sub) = &ov.subtitle_text {
+                    if !sub.trim().is_empty() {
+                        let sub_font = egui::FontId::new(
+                            (scaled_font_size * 0.55).max(9.0),
+                            font.family.clone(),
+                        );
+                        let sub_galley = painter.layout_no_wrap(sub.clone(), sub_font, final_col);
+                        let sub_tr = egui::Align2::CENTER_TOP
+                            .anchor_size(Pos2::new(target_x, tr.bottom() + 6.0), sub_galley.size());
+                        painter.galley(sub_tr.min, sub_galley, final_col);
+                        bottom_y = sub_tr.bottom() + 8.0;
+                    }
+                }
+                painter.line_segment(
+                    [
+                        Pos2::new(target_x - rule_w * 0.5, bottom_y),
+                        Pos2::new(target_x + rule_w * 0.5, bottom_y),
+                    ],
+                    Stroke::new(1.5_f32, rule_col),
+                );
+                tr.expand(12.0)
             }
             trim_core::clip::MotionTitleStyle::None => match ov.caption_style {
                 trim_core::clip::CaptionStyle::PopUpBouncy => {
@@ -1884,6 +2189,39 @@ fn draw_safe_zones(painter: &egui::Painter, rect: Rect, is_vertical: bool) {
             egui::FontId::proportional(9.5),
             Color32::from_rgba_premultiplied(240, 180, 180, 140),
         );
+    } else {
+        // 2.39:1 Anamorphic Cinemascope letterbox safe-frame guides on landscape canvas
+        let scope_h = (rect.width() / 2.39).min(rect.height());
+        if scope_h + 4.0 < rect.height() {
+            let bar_h = (rect.height() - scope_h) * 0.5;
+            let top_y = rect.top() + bar_h;
+            let bot_y = rect.bottom() - bar_h;
+            let scope_stroke = Stroke::new(
+                1.0_f32,
+                Color32::from_rgba_premultiplied(0xb7, 0xe3, 0x6a, 110),
+            );
+            painter.line_segment(
+                [
+                    Pos2::new(rect.left(), top_y),
+                    Pos2::new(rect.right(), top_y),
+                ],
+                scope_stroke,
+            );
+            painter.line_segment(
+                [
+                    Pos2::new(rect.left(), bot_y),
+                    Pos2::new(rect.right(), bot_y),
+                ],
+                scope_stroke,
+            );
+            painter.text(
+                Pos2::new(rect.right() - 8.0, top_y - 3.0),
+                egui::Align2::RIGHT_BOTTOM,
+                "2.39:1 Sinemaskop",
+                egui::FontId::monospace(8.5),
+                Color32::from_rgba_premultiplied(0xb7, 0xe3, 0x6a, 160),
+            );
+        }
     }
 }
 

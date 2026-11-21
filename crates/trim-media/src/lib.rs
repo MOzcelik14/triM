@@ -8,6 +8,7 @@ pub mod proxy;
 pub mod scene_detect;
 pub mod screen_record;
 pub mod silence_detect;
+pub mod soundscape;
 pub mod thumbnail;
 pub mod transcribe;
 pub mod video;
@@ -31,6 +32,7 @@ pub use screen_record::{CaptureSource, ScreenRecorder};
 pub use silence_detect::{
     calculate_speech_intervals, detect_silence_regions, parse_silence_timestamps,
 };
+pub use soundscape::{synthesize_soundscape_wav, SoundscapePreset};
 pub use thumbnail::ThumbnailGenerator;
 pub use transcribe::{
     extract_audio_for_whisper, find_whisper_executable, run_whisper_transcription,

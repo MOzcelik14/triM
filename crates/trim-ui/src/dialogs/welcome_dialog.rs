@@ -427,8 +427,8 @@ impl WelcomeDialog {
 
                             ui.add_space(10.0);
 
-                            // Recent Projects List Area (Height ~346px)
-                            let list_h = 346.0;
+                            // Recent Projects List Area (Height ~260px)
+                            let list_h = 260.0;
                             Frame::none()
                                 .fill(Color32::from_rgb(0x12, 0x13, 0x19))
                                 .rounding(Rounding::same(8.0))
@@ -442,16 +442,16 @@ impl WelcomeDialog {
 
                                     if self.recent_projects.is_empty() {
                                         ui.vertical_centered(|ui| {
-                                            ui.add_space(105.0);
+                                            ui.add_space(68.0);
                                             ui.label(
                                                 RichText::new("📂")
-                                                    .size(38.0)
+                                                    .size(34.0)
                                                     .color(Color32::from_rgb(0x4c, 0x50, 0x62)),
                                             );
-                                            ui.add_space(8.0);
+                                            ui.add_space(6.0);
                                             ui.label(
                                                 RichText::new("Yakın zamanda açılan bir proje yok")
-                                                    .size(13.0)
+                                                    .size(12.5)
                                                     .strong()
                                                     .color(Color32::from_rgb(0x94, 0x98, 0xac)),
                                             );
@@ -460,7 +460,7 @@ impl WelcomeDialog {
                                                 RichText::new(
                                                     "Kaydettiğiniz .trim projeleri hızlı erişim için burada listelenir.",
                                                 )
-                                                .size(11.0)
+                                                .size(10.5)
                                                 .color(Color32::from_rgb(0x66, 0x6a, 0x7c)),
                                             );
                                         });
@@ -534,7 +534,79 @@ impl WelcomeDialog {
                                     }
                                 });
 
-                            ui.add_space(10.0);
+                            ui.add_space(8.0);
+
+                            // Hardware & Encoder Diagnostic Summary Card
+                            let ffmpeg_ok = trim_media::is_ffmpeg_available()
+                                && trim_media::is_ffprobe_available();
+                            let enc = trim_media::detect_available_encoders();
+                            let mut hw_tags = Vec::new();
+                            if enc.has_nvidia_nvenc() {
+                                hw_tags.push("NVENC");
+                            }
+                            if enc.has_vaapi() {
+                                hw_tags.push("VA-API");
+                            }
+                            if enc.has_intel_qsv() {
+                                hw_tags.push("Intel QSV");
+                            }
+                            if enc.has_amd_amf() {
+                                hw_tags.push("AMD AMF");
+                            }
+                            let hw_summary = if hw_tags.is_empty() {
+                                "CPU (libx264 / libx265)".to_string()
+                            } else {
+                                format!("GPU ({}) + CPU", hw_tags.join(" · "))
+                            };
+
+                            Frame::none()
+                                .fill(Color32::from_rgb(0x13, 0x15, 0x1d))
+                                .rounding(Rounding::same(7.0))
+                                .stroke(Stroke::new(
+                                    1.0_f32,
+                                    Color32::from_rgb(0x26, 0x2a, 0x38),
+                                ))
+                                .inner_margin(Margin::symmetric(10.0, 7.0))
+                                .show(ui, |ui| {
+                                    ui.set_min_width(right_w - 22.0);
+                                    ui.horizontal(|ui| {
+                                        let (ff_icon, ff_text, ff_col) = if ffmpeg_ok {
+                                            (
+                                                "🟢",
+                                                "FFmpeg Motoru Hazır",
+                                                Color32::from_rgb(0x52, 0xd8, 0x8a),
+                                            )
+                                        } else {
+                                            (
+                                                "🔴",
+                                                "FFmpeg Eksik",
+                                                Color32::from_rgb(0xf8, 0x71, 0x71),
+                                            )
+                                        };
+                                        ui.label(
+                                            RichText::new(format!("{ff_icon} {ff_text}"))
+                                                .size(10.5)
+                                                .strong()
+                                                .color(ff_col),
+                                        );
+                                        ui.separator();
+                                        ui.label(
+                                            RichText::new(format!("⚡ Kodlayıcı: {hw_summary}"))
+                                                .size(10.5)
+                                                .color(Color32::from_rgb(0x9c, 0xb8, 0xe8)),
+                                        );
+                                    });
+                                    ui.add_space(2.0);
+                                    ui.label(
+                                        RichText::new(
+                                            "🛡 OpenGL 3.3 Renk/LUT Shader · Otomatik Çökme Kurtarma (Autosave) Aktif",
+                                        )
+                                        .size(9.5)
+                                        .color(Color32::from_rgb(0x7c, 0x82, 0x98)),
+                                    );
+                                });
+
+                            ui.add_space(8.0);
 
                             // Bottom-Right Skip Action: "Doğrudan Boş Arayüze Geç"
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

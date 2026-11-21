@@ -372,6 +372,45 @@ impl PreferencesDialog {
                         }
                     });
                 ui.end_row();
+
+                // Studio Theme
+                ui.label(match lang {
+                    Language::Turkish => "Stüdyo Renk Teması:",
+                    Language::English => "Studio Color Theme:",
+                });
+                let cur_theme_lbl = crate::theme::STUDIO_THEMES
+                    .iter()
+                    .find(|(id, _, _)| *id == self.draft.theme_id)
+                    .map(|(_, tr, en)| match lang {
+                        Language::Turkish => *tr,
+                        Language::English => *en,
+                    })
+                    .unwrap_or(match lang {
+                        Language::Turkish => "Varsayılan İndigo & Amber",
+                        Language::English => "Default Indigo & Amber",
+                    });
+                ComboBox::from_id_salt("pref_theme_combo")
+                    .selected_text(cur_theme_lbl)
+                    .width(220.0)
+                    .show_ui(ui, |ui| {
+                        for (t_id, lbl_tr, lbl_en) in crate::theme::STUDIO_THEMES {
+                            let lbl = match lang {
+                                Language::Turkish => *lbl_tr,
+                                Language::English => *lbl_en,
+                            };
+                            if ui
+                                .selectable_value(
+                                    &mut self.draft.theme_id,
+                                    (*t_id).to_string(),
+                                    lbl,
+                                )
+                                .clicked()
+                            {
+                                crate::theme::apply_studio_theme(ui.ctx(), &self.draft.theme_id);
+                            }
+                        }
+                    });
+                ui.end_row();
             });
 
         ui.add_space(16.0);

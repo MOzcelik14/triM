@@ -2,6 +2,19 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [2.2.0] - 2026-11-21
+
+### Added
+- **3D `.cube` LUT Baking & Export (`bake_clip_grade_to_cube`)**: Bakes the entire clip color grading pipeline (Camera Log profile, Primary Color, 4-Way Color Wheels, RGB/Luma Curves, HSL Curves, Film Stock emulation, and `LutPreset`) into a `33×33×33` `.cube` 3D LUT for 1:1 OpenGL preview and FFmpeg `lut3d` export parity, plus user-facing `.cube` LUT file export from the Inspector.
+- **Camera Log Input Profiles (`CameraLogProfile`)**: Built-in mathematical EOTF/OETF conversion to Rec.709 for Sony `S-Log3`, Canon `C-Log`, Panasonic `V-Log`, and ARRI `Log-C` across OpenGL shaders, CPU preview, and FFmpeg export.
+- **On-Monitor White Balance Eyedropper (`compute_wb_from_neutral_rgb`)**: Pick any neutral gray/white pixel directly from the Program Monitor to calibrate clip color temperature and green/magenta tint in one click.
+- **Analog Film Emulation Lab (`FilmStockFormat`)**: `35mm`, `16mm`, and `8mm` film stock response curves with `Highlight Roll-off`, `Diffusion`, `Mist`, and `35mm Gate Weave` controls in both real-time GPU preview and FFmpeg export.
+- **Visual LUT Gallery Enhancements**: Added `★ Favoriler` (Favorites) tab, per-card star pinning, and live search filtering across built-in and custom LUTs.
+- **Monitor Comparison Modes & `2.39:1` Cinemascope Safe-Frame**: Added Horizontal Wipe (`◧`), Vertical Wipe (`⬒`), and Side-by-Side 2x (`▥`) comparison modes (cycled via right-click on the Wipe toggle) along with `2.39:1` anamorphic Cinemascope guide lines.
+- **Cinematic Title Styles, Custom `.ttf`/`.otf` Font Loader & TR → EN Converter**: Added `RollingCredits` and `ChapterCard` title animations, custom `.ttf`/`.otf` font file loading with live egui registration and FFmpeg `fontfile=` export, and a one-click `TR → EN` ASCII character converter (`Ğ→G, Ş→S, İ→I, Ç→C, Ö→O, Ü→U`).
+- **Procedural Soundscape & Title Foley Synthesizer (`trim_media::soundscape`)**: Built-in procedural `.wav` DSP synthesizer in the Media Bin (`🎛+ SFX`) and Titler Inspector generating `Gerilim Riser`, `Sub Bass Drop`, `35mm Film Projektörü`, `Gece Yağmuru`, `Sinematik Whoosh`, and text-synchronized `Daktilo + 35mm Projektör Foley`.
+- **5 Studio Themes, Welcome Hardware Diagnostics & Auto-Proxy**: Added 5 studio color themes (`Varsayılan İndigo & Amber`, `Sinema Lime`, `Saf Monokrom`, `Gece Mavisi`, `Sıcak Tungsten`), a hardware/encoder diagnostic summary card on the Welcome screen, automatic 720p proxy generation on video import when `auto_generate_proxies` is enabled, and in-app GitHub Releases update check.
+
 ## [2.1.0] - 2026-11-17
 
 ### Added

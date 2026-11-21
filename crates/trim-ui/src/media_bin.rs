@@ -42,6 +42,7 @@ pub enum MediaBinAction {
     CreateSequencePrompt,
     DuplicateSequence(String), // sequence_id
     DeleteSequence(String),    // sequence_id
+    GenerateSoundscape(trim_media::SoundscapePreset),
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -167,6 +168,41 @@ pub fn render_media_bin(
         {
             action = Some(MediaBinAction::CreateSequencePrompt);
         }
+
+        ui.menu_button(
+            RichText::new("🎛+ SFX")
+                .size(10.5)
+                .color(Color32::from_rgb(0x34, 0xd3, 0x99)),
+            |ui| {
+                ui.set_min_width(210.0);
+                ui.label(
+                    RichText::new("Prosedürel SFX / Ambiyans Üret")
+                        .size(10.5)
+                        .strong()
+                        .color(Color32::from_rgb(0x9c, 0xa3, 0xb8)),
+                );
+                ui.separator();
+                for preset in trim_media::SoundscapePreset::BIN_PRESETS {
+                    let item_text = format!(
+                        "{}  ({:.1}s)",
+                        preset.label(),
+                        preset.default_duration()
+                    );
+                    if ui
+                        .button(RichText::new(item_text).size(11.0))
+                        .on_hover_text(
+                            "Dahili DSP ile .wav sentezler, medya havuzuna ve aktif ses kanalına ekler",
+                        )
+                        .clicked()
+                    {
+                        action = Some(MediaBinAction::GenerateSoundscape(*preset));
+                        ui.close_menu();
+                    }
+                }
+            },
+        )
+        .response
+        .on_hover_text("Prosedürel Ses Efekti & Ambiyans Sentezleyici (Riser, Sub Drop, Projektör, Yağmur, Whoosh)");
 
         ui.add_space(2.0);
         ui.separator();

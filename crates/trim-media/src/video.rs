@@ -2054,6 +2054,15 @@ fn apply_clip_grading_rgb(
     color_params: &trim_core::ColorGradeParams,
     custom_lut: Option<&CubeLut3D>,
 ) -> [f32; 3] {
+    if clip.camera_log_profile != trim_core::CameraLogProfile::Rec709 {
+        let [lr, lg, lb] = clip
+            .camera_log_profile
+            .apply_rgb(r / 255.0, g / 255.0, b / 255.0);
+        r = lr * 255.0;
+        g = lg * 255.0;
+        b = lb * 255.0;
+    }
+
     if let Some(cw) = &clip.color_wheels {
         let luma = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0;
         let shadow_w = (1.0 - luma * 2.0).clamp(0.0, 1.0);
@@ -2106,6 +2115,11 @@ fn apply_clip_grading_rgb(
             if qual.enabled {
                 [nr, ng, nb] = qual.apply_rgb(nr, ng, nb);
             }
+        }
+        if clip.film_format != trim_core::FilmStockFormat::None || clip.highlight_rolloff > 1e-4 {
+            [nr, ng, nb] = clip
+                .film_format
+                .apply_rgb(nr, ng, nb, clip.highlight_rolloff);
         }
         if let Some(lut) = custom_lut {
             [nr, ng, nb] = lut.sample(nr, ng, nb);

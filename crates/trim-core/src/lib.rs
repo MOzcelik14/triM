@@ -26,8 +26,9 @@ pub use clip::{
 };
 pub use color::{
     analyze_auto_white_balance_rgba, analyze_shot_match_rgba, apply_color_grade_normalized,
-    white_balance_gains, BrightnessContrastPreset, ColorGradeParams, CustomCurvesConfig,
-    HslCurvesConfig, HslQualifierConfig, LookCategory, WhiteBalancePreset,
+    bake_clip_grade_to_cube, compute_wb_from_neutral_rgb, white_balance_gains,
+    BrightnessContrastPreset, CameraLogProfile, ColorGradeParams, CustomCurvesConfig,
+    FilmStockFormat, HslCurvesConfig, HslQualifierConfig, LookCategory, WhiteBalancePreset,
 };
 pub use compositing::{BlendMode, ClipKind};
 pub use error::CoreError;
