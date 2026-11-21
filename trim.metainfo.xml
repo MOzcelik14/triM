@@ -56,6 +56,16 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2.5.0" date="2026-11-21">
+      <description>
+        <p>triM. v2.5.0 - Güvenilirlik, Ses/Kare Senkronu, Look Kütüphanesi ve Mimari Güncelleme:</p>
+        <ul>
+          <li>Güvenilirlik ve CI: PlaybackStreamer ChildGuard ve panic=unwind, headless FFmpeg E2E/parity/adversarial testleri, proje sürüm geçişi ve gece CI.</li>
+          <li>Medya ve Ürün: Ses saati tabanlı A/V senkronu, .trimlook preset kütüphanesi, 5 başlık şablonu ve sürümlü otomatik kayıt snapshot'ları.</li>
+          <li>Performans ve Mimari: FrameBufferPool halka tampon geri dönüşümü ve trim-render / trim-ui workspace ayrımı.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.3.0" date="2026-11-21">
       <description>
         <p>triM. v2.3.0 - Kapsamlı Güvenlik, Stabilite, Performans ve Dağıtım Sürümü:</p>

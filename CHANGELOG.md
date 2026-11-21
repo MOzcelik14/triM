@@ -2,7 +2,7 @@
 
 All notable changes to **triM.** are documented in this file.
 
-## [Unreleased]
+## [2.5.0] - 2026-11-21
 
 ### Fixed & Verified (P0 Reliability)
 - **RAII `ChildGuard` in `PlaybackStreamer`**: Wrapped both forward and reverse `PlaybackStreamer` FFmpeg subprocesses (`crates/trim-media/src/video.rs`) in `ChildGuard` so child processes are deterministically terminated and reaped on drop or thread unwind.
