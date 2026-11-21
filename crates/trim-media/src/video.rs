@@ -94,7 +94,8 @@ pub fn decode_frame_raw_sized<P: AsRef<Path>>(
     ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(tw, th, buf)
 }
 
-/// Continuous background rawvideo pipe streamer for real-time 140+ FPS playback.
+/// Continuous background rawvideo pipe streamer for real-time preview playback
+/// (measured via `trim-media/examples/perf_bench.rs`; see `docs/benchmarks/baseline_v2.3.0.md`).
 pub struct PlaybackStreamer {
     active_path: Option<String>,
     active_clip_id: Option<String>,

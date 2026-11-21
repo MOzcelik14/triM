@@ -10,6 +10,11 @@ All notable changes to **triM.** are documented in this file.
 - **Subprocess & Roadmap Documentation Alignment**: Updated `ARCHITECTURE.md` §4 (`ChildGuard` coverage & `panic = "unwind"`) and added a verified `ISSUE` status table to `ROADMAP.md`.
 - **Tests**: Added Linux-only panic/drop child cleanup test (`test_playback_streamer_panic_cleans_up_ffmpeg_child`) and headless FFmpeg E2E smoke test (`crates/trim-export/tests/e2e_smoke.rs`).
 
+### Performance & Sync (P1)
+- **Benchmark Harness (`crates/trim-media/examples/perf_bench.rs`)**: Added repeatable 5-run median/range benchmark for 1080p/4K H.264/HEVC forward streaming, random seek latency (`p50`/`p95`), and 1/3-track compositing + RSS, with baseline saved in `docs/benchmarks/baseline_v2.3.0.md` and `PlaybackStreamer` doc comment updated.
+- **Hardware Decode Evaluation**: Benchmarked VAAPI (unsupported on test host) and CUDA (`4.63s` vs CPU `0.46s` for 2s 4K H.264); retained CPU decode per measured evidence.
+- **Audio-Clock Master & Off-UI-Thread Mixing (`AudioPlaybackWorker`)**: Moved `AudioMixer::render_audio_interval` out of `TrimApp::update_playback_tick` into a dedicated background `AudioPlaybackWorker` thread with sink-latency-compensated `compute_audio_clock_time` as the master playhead clock (wall-clock fallback when silent/no backend).
+
 ## [2.2.1] - 2026-11-21
 
 ### Changed & Fixed

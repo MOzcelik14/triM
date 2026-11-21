@@ -29,7 +29,12 @@ impl TrimApp {
             }
         }
         self.is_playing = true;
-        self.audio_player.prepare();
+        self.audio_worker.start(
+            self.project.clone(),
+            self.current_time,
+            self.playback_speed,
+            self.audio_mixer_dialog.master_volume,
+        );
         self.clock_start = Some(Instant::now());
         self.clock_start_time = self.current_time;
     }
@@ -42,6 +47,7 @@ impl TrimApp {
         self.playback_speed = 1.0;
         self.clock_start = None;
         self.video_engine.streamer.stop();
+        self.audio_worker.stop();
         self.audio_player.stop();
         self.audio_mixer.reset_limiter();
         self.vu_state.reset();
@@ -80,6 +86,12 @@ impl TrimApp {
 
         if self.is_playing {
             self.audio_player.stop();
+            self.audio_worker.start(
+                self.project.clone(),
+                self.current_time,
+                self.playback_speed,
+                self.audio_mixer_dialog.master_volume,
+            );
             self.clock_start = Some(Instant::now());
             self.clock_start_time = self.current_time;
         } else {
@@ -129,9 +141,10 @@ impl TrimApp {
                 .copied()
                 .unwrap_or(8.0);
             self.playback_speed = next;
-            if (self.playback_speed - 1.0).abs() >= 0.01 {
-                self.audio_player.stop();
-            }
+            self.audio_worker.update_speed_and_volume(
+                self.playback_speed,
+                self.audio_mixer_dialog.master_volume,
+            );
             self.clock_start = Some(Instant::now());
             self.clock_start_time = self.current_time;
         }
@@ -150,7 +163,10 @@ impl TrimApp {
                 .copied()
                 .unwrap_or(-8.0);
             self.playback_speed = next;
-            self.audio_player.stop();
+            self.audio_worker.update_speed_and_volume(
+                self.playback_speed,
+                self.audio_mixer_dialog.master_volume,
+            );
             self.clock_start = Some(Instant::now());
             self.clock_start_time = self.current_time;
         }
@@ -160,8 +176,13 @@ impl TrimApp {
     pub fn update_playback_tick(&mut self) {
         if self.is_playing {
             if let Some(start) = self.clock_start {
-                let elapsed = start.elapsed().as_secs_f64() * self.playback_speed;
-                let cur = self.clock_start_time + elapsed;
+                // Master clock is derived from the audio sink when active, with wall-clock fallback
+                let cur = if let Some(audio_t) = self.audio_worker.audio_clock_time() {
+                    audio_t
+                } else {
+                    let elapsed = start.elapsed().as_secs_f64() * self.playback_speed;
+                    self.clock_start_time + elapsed
+                };
                 let dur = self.project.timeline.duration();
 
                 if dur <= 0.0 {
@@ -173,62 +194,9 @@ impl TrimApp {
                     self.current_time = cur.clamp(0.0, dur);
                     self.pause();
                 } else {
-                    let prev_t = self.current_time;
                     self.current_time = cur.max(0.0);
-
-                    // Render mixed audio chunk & update VU levels & output to speakers (1x and JKL shuttle)
-                    let abs_speed = self.playback_speed.abs();
-                    if abs_speed > 0.05 && (self.current_time - prev_t).abs() > 1e-6 {
-                        let (lo_t, hi_t, reverse_dir) = if self.current_time >= prev_t {
-                            (prev_t, self.current_time, false)
-                        } else {
-                            (self.current_time, prev_t, true)
-                        };
-                        let (mut samples, mut db_l, mut db_r) = self
-                            .audio_mixer
-                            .render_audio_interval(&self.project, lo_t, hi_t);
-                        if reverse_dir && samples.len() >= 2 {
-                            let pairs = samples.len() / 2;
-                            for idx in 0..(pairs / 2) {
-                                let opp = pairs - 1 - idx;
-                                samples.swap(idx * 2, opp * 2);
-                                samples.swap(idx * 2 + 1, opp * 2 + 1);
-                            }
-                        }
-                        if (abs_speed - 1.0).abs() > 0.05 && samples.len() >= 4 {
-                            let src_frames = samples.len() / 2;
-                            let dst_frames =
-                                ((src_frames as f64) / abs_speed).round().max(1.0) as usize;
-                            let mut resampled = Vec::with_capacity(dst_frames * 2);
-                            for df in 0..dst_frames {
-                                let sf = ((df as f64) * abs_speed)
-                                    .floor()
-                                    .min((src_frames - 1) as f64)
-                                    as usize;
-                                resampled.push(samples[sf * 2]);
-                                resampled.push(samples[sf * 2 + 1]);
-                            }
-                            samples = resampled;
-                        }
-                        let master_vol = self.audio_mixer_dialog.master_volume;
-                        if (master_vol - 1.0).abs() > 1e-4 {
-                            for s in &mut samples {
-                                *s = ((*s as f32) * master_vol)
-                                    .round()
-                                    .clamp(i16::MIN as f32, i16::MAX as f32)
-                                    as i16;
-                            }
-                            if master_vol <= 0.0001 {
-                                db_l = -60.0;
-                                db_r = -60.0;
-                            } else {
-                                let gain_db = 20.0 * master_vol.log10();
-                                db_l = (db_l + gain_db).clamp(-60.0, 0.0);
-                                db_r = (db_r + gain_db).clamp(-60.0, 0.0);
-                            }
-                        }
+                    if let Some((db_l, db_r)) = self.audio_worker.vu_levels() {
                         self.vu_state.set_levels(db_l, db_r);
-                        self.audio_player.write_samples(&samples);
                     }
                 }
             }

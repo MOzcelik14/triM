@@ -97,6 +97,7 @@ pub struct TrimApp {
     pub video_engine: VideoEngine,
     pub audio_mixer: AudioMixer,
     pub audio_player: AudioStreamPlayer,
+    pub audio_worker: trim_media::audio::AudioPlaybackWorker,
     pub last_rendered_time: Option<f64>,
     pub last_rendered_dirty: bool,
 
@@ -250,8 +251,12 @@ impl Default for TrimApp {
             waveform_gen: WaveformGenerator::default(),
             thumbnail_gen: ThumbnailGenerator::default(),
             video_engine: VideoEngine::default(),
-            audio_mixer: AudioMixer::default(),
+            audio_mixer: {
+                // initialized below via Default
+                AudioMixer::default()
+            },
             audio_player: AudioStreamPlayer::default(),
+            audio_worker: trim_media::audio::AudioPlaybackWorker::new(AudioMixer::default()),
             last_rendered_time: None,
             last_rendered_dirty: false,
             source_state: SourceMonitorState::default(),
