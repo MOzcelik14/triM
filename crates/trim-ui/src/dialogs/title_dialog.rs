@@ -246,6 +246,9 @@ impl TitleDialog {
                     ui.horizontal(|ui| {
                         ui.label("Yazı Boyutu:");
                         ui.add(Slider::new(&mut self.font_size, 16..=140).suffix(" pt"));
+                        ui.add_space(8.0);
+                        ui.label("Renk:");
+                        ui.color_edit_button_srgb(&mut self.text_color);
                     });
 
                     ui.horizontal(|ui| {

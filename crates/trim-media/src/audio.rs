@@ -53,6 +53,21 @@ impl std::fmt::Debug for AudioMixer {
     }
 }
 
+struct InFlightGuard {
+    key: String,
+    in_flight: Arc<(Mutex<HashSet<String>>, Condvar)>,
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        let (lock, cvar) = &*self.in_flight;
+        if let Ok(mut set) = lock.lock() {
+            set.remove(&self.key);
+            cvar.notify_all();
+        }
+    }
+}
+
 impl AudioMixer {
     pub fn new() -> Self {
         let limiter = LookaheadLimiter::new(SAMPLE_RATE);
@@ -128,35 +143,27 @@ impl AudioMixer {
                         .and_then(|c| c.peek(&path_str).and_then(|v| v.as_ref()).cloned())
                         .is_some();
                     if !already_cached {
-                        let should_decode = {
+                        let _guard = {
                             let (lock, _) = &*in_flight_clone;
                             if let Ok(mut set) = lock.lock() {
                                 if set.contains(&path_str) {
-                                    false
+                                    None
                                 } else {
                                     set.insert(path_str.clone());
-                                    true
+                                    Some(InFlightGuard {
+                                        key: path_str.clone(),
+                                        in_flight: Arc::clone(&in_flight_clone),
+                                    })
                                 }
                             } else {
-                                false
+                                None
                             }
                         };
-                        if should_decode {
+                        if _guard.is_some() {
                             let pcm = decode_audio_to_pcm(&path).map(Arc::new);
-                            if let Some(ref arc_pcm) = pcm {
-                                let size_bytes = arc_pcm.len() * 4;
-                                if let Ok(mut c) = cache_clone.write() {
-                                    c.insert_with_size(
-                                        path_str.clone(),
-                                        Some(arc_pcm.clone()),
-                                        size_bytes,
-                                    );
-                                }
-                            }
-                            let (lock, cvar) = &*in_flight_clone;
-                            if let Ok(mut set) = lock.lock() {
-                                set.remove(&path_str);
-                                cvar.notify_all();
+                            let size_bytes = pcm.as_ref().map(|a| a.len() * 4).unwrap_or(64);
+                            if let Ok(mut c) = cache_clone.write() {
+                                c.insert_with_size(path_str.clone(), pcm, size_bytes);
                             }
                         }
                     }
@@ -168,7 +175,7 @@ impl AudioMixer {
         let path = file_path.as_ref().to_path_buf();
         let path_str = path.to_string_lossy().to_string();
         if let Ok(c) = self.pcm_cache.read() {
-            if c.peek(&path_str).and_then(|v| v.as_ref()).is_some() {
+            if c.peek(&path_str).is_some() {
                 return;
             }
         }
@@ -179,46 +186,36 @@ impl AudioMixer {
     pub fn get_audio_pcm<P: AsRef<Path>>(&self, file_path: P) -> Option<Arc<Vec<[i16; 2]>>> {
         let path = file_path.as_ref();
         let path_str = path.to_string_lossy().to_string();
-
         if let Ok(mut c) = self.pcm_cache.write() {
-            if let Some(Some(arc_pcm)) = c.get(&path_str) {
-                return Some(arc_pcm.clone());
+            if let Some(cached) = c.get(&path_str) {
+                return cached.clone();
             }
         }
 
-        // Wait if a background preload thread is already decoding this exact file
-        {
+        // Wait if another thread is decoding this exact file, then atomically claim in-flight
+        // ownership under the same lock so no TOCTOU race can occur.
+        let _guard = {
             let (lock, cvar) = &*self.in_flight;
-            if let Ok(mut set) = lock.lock() {
-                while set.contains(&path_str) {
-                    set = cvar.wait(set).unwrap_or_else(|e| e.into_inner());
+            let mut set = lock.lock().ok()?;
+            while set.contains(&path_str) {
+                set = cvar.wait(set).unwrap_or_else(|e| e.into_inner());
+            }
+            if let Ok(mut c) = self.pcm_cache.write() {
+                if let Some(cached) = c.get(&path_str) {
+                    return cached.clone();
                 }
             }
-        }
-        if let Ok(mut c) = self.pcm_cache.write() {
-            if let Some(Some(arc_pcm)) = c.get(&path_str) {
-                return Some(arc_pcm.clone());
+            set.insert(path_str.clone());
+            InFlightGuard {
+                key: path_str.clone(),
+                in_flight: Arc::clone(&self.in_flight),
             }
-        }
-        {
-            let (lock, _) = &*self.in_flight;
-            if let Ok(mut set) = lock.lock() {
-                set.insert(path_str.clone());
-            }
-        }
+        };
 
         let pcm = decode_audio_to_pcm(path).map(Arc::new);
-        if let Some(ref arc_pcm) = pcm {
-            let size_bytes = arc_pcm.len() * 4;
-            if let Ok(mut c) = self.pcm_cache.write() {
-                c.insert_with_size(path_str.clone(), Some(arc_pcm.clone()), size_bytes);
-            }
-        }
-
-        let (lock, cvar) = &*self.in_flight;
-        if let Ok(mut set) = lock.lock() {
-            set.remove(&path_str);
-            cvar.notify_all();
+        let size_bytes = pcm.as_ref().map(|a| a.len() * 4).unwrap_or(64);
+        if let Ok(mut c) = self.pcm_cache.write() {
+            c.insert_with_size(path_str, pcm.clone(), size_bytes);
         }
         pcm
     }
@@ -596,8 +593,10 @@ impl AudioMixer {
                 }
 
                 if let Ok(mut map) = self.clip_dsp_states.lock() {
-                    if map.len() > 64 {
-                        map.clear();
+                    if map.len() >= 64 && !map.contains_key(&clip.id) {
+                        if let Some(evict_key) = map.keys().find(|k| *k != &clip.id).cloned() {
+                            map.remove(&evict_key);
+                        }
                     }
                     map.insert(
                         clip.id.clone(),
@@ -805,6 +804,7 @@ fn run_ffmpeg_pcm_decode(
         "-err_detect",
         "ignore_err",
     ]);
+    cmd.args(["-protocol_whitelist", "file"]);
     if let Some(codec) = forced_input_codec {
         cmd.args(["-c:a", codec]);
     }
@@ -824,11 +824,15 @@ fn run_ffmpeg_pcm_decode(
     .stdout(Stdio::piped())
     .stderr(Stdio::null());
 
+    const MAX_PCM_DECODE_BYTES: u64 = 512 * 1024 * 1024;
     let mut raw_bytes = Vec::new();
     if let Ok(mut guard) = crate::ffmpeg::ChildGuard::spawn(&mut cmd) {
-        if let Some(mut stdout) = guard.take_stdout() {
-            let _ = stdout.read_to_end(&mut raw_bytes);
+        if let Some(stdout) = guard.take_stdout() {
+            let _ = stdout
+                .take(MAX_PCM_DECODE_BYTES)
+                .read_to_end(&mut raw_bytes);
         }
+        let _ = guard.kill();
         let _ = guard.wait();
     }
     raw_bytes
@@ -958,7 +962,33 @@ impl AudioStreamPlayer {
             .map(|c| (0, c))
     }
 
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
+    fn spawn_backend(_start_idx: usize) -> Option<(usize, crate::ffmpeg::ChildGuard)> {
+        let mut ffplay = crate::ffmpeg::ffplay_cmd();
+        ffplay
+            .args([
+                "-nodisp",
+                "-autoexit",
+                "-loglevel",
+                "quiet",
+                "-f",
+                "s16le",
+                "-ar",
+                "48000",
+                "-ac",
+                "2",
+                "-i",
+                "-",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        crate::ffmpeg::ChildGuard::spawn(&mut ffplay)
+            .ok()
+            .map(|c| (0, c))
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
     fn spawn_backend(start_idx: usize) -> Option<(usize, crate::ffmpeg::ChildGuard)> {
         for idx in start_idx..4 {
             let res = match idx {
@@ -1070,7 +1100,7 @@ impl AudioStreamPlayer {
             }
         }
 
-        self.child.as_mut().and_then(|c| c.stdin.as_mut())
+        self.child.as_mut().and_then(|c| c.stdin_mut())
     }
 
     /// Pre-spawns audio output process to eliminate startup delay upon clicking play.
@@ -1115,6 +1145,7 @@ impl AudioStreamPlayer {
     /// Stops audio playback immediately and kills the child audio process.
     pub fn stop(&mut self) {
         self.backend_unavailable = false;
+        self.backend_index = 0;
         if let Some(mut c) = self.child.take() {
             let _ = c.kill();
         }

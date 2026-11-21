@@ -957,13 +957,18 @@ pub struct GpuCompositor {
     layer_texture: glow::Texture,
     layer_tex_dims: (u32, u32),
     lut_texture: glow::Texture,
-    lut_cache: HashMap<String, Option<CubeLut3D>>,
+    lut_cache: trim_core::lru::LruCache<String, Option<CubeLut3D>>,
     uploaded_lut_path: Option<String>,
     uploaded_lut_size: u32,
     mask_texture: glow::Texture,
     mask_tex_dims: (u32, u32),
     mask_cache: HashMap<String, (u64, Vec<u8>, u32, u32)>,
     uploaded_mask_key: Option<(String, u64, u32, u32)>,
+    scope_fbo: glow::Framebuffer,
+    scope_texture: glow::Texture,
+    uniform_cache: HashMap<&'static str, Option<glow::UniformLocation>>,
+    max_tex_size: i32,
+    gl_destroyed: bool,
 }
 
 impl GpuCompositor {
@@ -1061,15 +1066,9 @@ impl GpuCompositor {
             let fbo_height = 360 * GPU_PREVIEW_SCALE;
 
             let exts = gl.supported_extensions();
-            let srgb_textures =
-                (ver.is_embedded && ver.major >= 3) || exts.iter().any(|ext| ext.contains("sRGB"));
             let supports_srgb_framebuffer =
                 exts.iter().any(|ext| ext.ends_with("ARB_framebuffer_sRGB"));
-            let fbo_internal_format = if srgb_textures {
-                glow::SRGB8_ALPHA8 as i32
-            } else {
-                glow::RGBA8 as i32
-            };
+            let fbo_internal_format = glow::RGBA8 as i32;
 
             let fbo_texture = match Self::create_texture_with_format(
                 &gl,
@@ -1219,6 +1218,51 @@ impl GpuCompositor {
                 }
             };
 
+            let scope_texture = match Self::create_rgba_texture(&gl, 320, 180) {
+                Ok(t) => t,
+                Err(e) => {
+                    log::error!("GPU Compositor: Scope dokusu oluşturulamadı: {}", e);
+                    gl.delete_texture(mask_texture);
+                    gl.delete_texture(lut_texture);
+                    gl.delete_texture(layer_texture);
+                    gl.delete_framebuffer(backdrop_fbo);
+                    gl.delete_texture(backdrop_texture);
+                    gl.delete_framebuffer(fbo);
+                    gl.delete_texture(fbo_texture);
+                    gl.delete_vertex_array(vao);
+                    gl.delete_program(program);
+                    return None;
+                }
+            };
+            let scope_fbo = match gl.create_framebuffer() {
+                Ok(f) => f,
+                Err(e) => {
+                    log::error!("GPU Compositor: Scope FBO oluşturulamadı: {}", e);
+                    gl.delete_texture(scope_texture);
+                    gl.delete_texture(mask_texture);
+                    gl.delete_texture(lut_texture);
+                    gl.delete_texture(layer_texture);
+                    gl.delete_framebuffer(backdrop_fbo);
+                    gl.delete_texture(backdrop_texture);
+                    gl.delete_framebuffer(fbo);
+                    gl.delete_texture(fbo_texture);
+                    gl.delete_vertex_array(vao);
+                    gl.delete_program(program);
+                    return None;
+                }
+            };
+            gl.bind_framebuffer(glow::FRAMEBUFFER, Some(scope_fbo));
+            gl.framebuffer_texture_2d(
+                glow::FRAMEBUFFER,
+                glow::COLOR_ATTACHMENT0,
+                glow::TEXTURE_2D,
+                Some(scope_texture),
+                0,
+            );
+            gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+
+            let max_tex_size = gl.get_parameter_i32(glow::MAX_TEXTURE_SIZE).max(256);
+
             Some(Self {
                 gl,
                 program,
@@ -1236,13 +1280,18 @@ impl GpuCompositor {
                 layer_texture,
                 layer_tex_dims: (640, 360),
                 lut_texture,
-                lut_cache: HashMap::new(),
+                lut_cache: trim_core::lru::LruCache::with_capacity(16),
                 uploaded_lut_path: None,
                 uploaded_lut_size: 0,
                 mask_texture,
                 mask_tex_dims: (320, 180),
                 mask_cache: HashMap::new(),
                 uploaded_mask_key: None,
+                scope_fbo,
+                scope_texture,
+                uniform_cache: HashMap::with_capacity(64),
+                max_tex_size,
+                gl_destroyed: false,
             })
         }
     }
@@ -1300,11 +1349,13 @@ impl GpuCompositor {
     }
 
     unsafe fn ensure_fbo_dimensions(&mut self, target_w: u32, target_h: u32) {
-        if self.fbo_width == target_w && self.fbo_height == target_h {
+        let clamped_w = target_w.max(16);
+        let clamped_h = target_h.max(16);
+        if self.fbo_width == clamped_w && self.fbo_height == clamped_h {
             return;
         }
-        self.fbo_width = target_w.max(16);
-        self.fbo_height = target_h.max(16);
+        self.fbo_width = clamped_w;
+        self.fbo_height = clamped_h;
         for tex in [self.fbo_texture, self.backdrop_texture] {
             self.gl.bind_texture(glow::TEXTURE_2D, Some(tex));
             self.gl.tex_image_2d(
@@ -1320,6 +1371,17 @@ impl GpuCompositor {
             );
         }
         self.gl.bind_texture(glow::TEXTURE_2D, None);
+        self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.fbo));
+        let status = self.gl.check_framebuffer_status(glow::FRAMEBUFFER);
+        self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+        if status != glow::FRAMEBUFFER_COMPLETE {
+            log::warn!(
+                "GPU Compositor: FBO resize {}x{} incomplete (0x{:X})",
+                clamped_w,
+                clamped_h,
+                status
+            );
+        }
     }
 
     unsafe fn upload_layer_frame(&mut self, frame: &image::RgbaImage, clip: &Clip) {
@@ -1446,6 +1508,7 @@ impl GpuCompositor {
                 glow::PixelUnpackData::Slice(&rgba),
             );
         }
+        self.uploaded_mask_key = None;
         self.gl.active_texture(glow::TEXTURE0);
         true
     }
@@ -1467,17 +1530,36 @@ impl GpuCompositor {
             return (true, self.uploaded_lut_size as i32);
         }
 
-        if !self.lut_cache.contains_key(path.as_ref()) {
+        let path_key = path.to_string();
+        if self.lut_cache.get(&path_key).is_none() {
             let parsed = parse_cube_lut_file(&norm_buf).map(|a| (*a).clone());
-            self.lut_cache.insert(path.to_string(), parsed);
+            self.lut_cache.insert(path_key.clone(), parsed);
         }
 
-        let Some(Some(lut)) = self.lut_cache.get(path.as_ref()) else {
+        let Some(Some(lut)) = self.lut_cache.get(&path_key) else {
             return (false, 0);
         };
 
-        let n = lut.size;
-        let tex_w = (n * n) as i32;
+        let n = lut.size as usize;
+        let Some(tex_w_usize) = n.checked_mul(n) else {
+            return (false, 0);
+        };
+        let Some(expected_bytes) = tex_w_usize.checked_mul(n).and_then(|v| v.checked_mul(4)) else {
+            return (false, 0);
+        };
+        if n == 0
+            || tex_w_usize > self.max_tex_size as usize
+            || n > self.max_tex_size as usize
+            || lut.rgba_strip.len() < expected_bytes
+        {
+            log::warn!(
+                "GPU Compositor: Geçersiz veya GPU limitini aşan 3D LUT boyutu (n={}, bytes={})",
+                n,
+                lut.rgba_strip.len()
+            );
+            return (false, 0);
+        }
+        let tex_w = tex_w_usize as i32;
         let tex_h = n as i32;
 
         self.gl.active_texture(glow::TEXTURE1);
@@ -1493,12 +1575,12 @@ impl GpuCompositor {
             0,
             glow::RGBA,
             glow::UNSIGNED_BYTE,
-            Some(&lut.rgba_strip),
+            Some(&lut.rgba_strip[..expected_bytes]),
         );
         self.uploaded_lut_path = Some(path.to_string());
-        self.uploaded_lut_size = n;
+        self.uploaded_lut_size = lut.size;
 
-        (true, n as i32)
+        (true, tex_h)
     }
 
     unsafe fn prepare_clip_masks(
@@ -1645,6 +1727,8 @@ impl GpuCompositor {
             let mut prev_viewport = [0i32; 4];
             self.gl
                 .get_parameter_i32_slice(glow::VIEWPORT, &mut prev_viewport);
+            let prev_scissor = self.gl.is_enabled(glow::SCISSOR_TEST);
+            let prev_unpack_align = self.gl.get_parameter_i32(glow::UNPACK_ALIGNMENT);
 
             self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.fbo));
             if self.supports_srgb_framebuffer {
@@ -1741,152 +1825,158 @@ impl GpuCompositor {
 
                 let gl = &self.gl;
                 let prog = self.program;
+                let uniform_cache = &mut self.uniform_cache;
+                let mut u_loc = |name: &'static str| -> Option<glow::UniformLocation> {
+                    *uniform_cache
+                        .entry(name)
+                        .or_insert_with(|| gl.get_uniform_location(prog, name))
+                };
 
-                if let Some(loc) = gl.get_uniform_location(prog, "u_has_mask") {
+                if let Some(loc) = u_loc("u_has_mask") {
                     gl.uniform_1_i32(Some(&loc), i32::from(has_mask));
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_blend_mode") {
+                if let Some(loc) = u_loc("u_blend_mode") {
                     gl.uniform_1_i32(Some(&loc), u.blend_mode);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_is_adjustment_layer") {
+                if let Some(loc) = u_loc("u_is_adjustment_layer") {
                     gl.uniform_1_i32(Some(&loc), i32::from(u.is_adjustment_layer));
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_canvas_size") {
+                if let Some(loc) = u_loc("u_canvas_size") {
                     gl.uniform_2_f32(Some(&loc), u.canvas_size[0], u.canvas_size[1]);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_clip_center") {
+                if let Some(loc) = u_loc("u_clip_center") {
                     gl.uniform_2_f32(Some(&loc), u.clip_center[0], u.clip_center[1]);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_clip_size") {
+                if let Some(loc) = u_loc("u_clip_size") {
                     gl.uniform_2_f32(Some(&loc), u.clip_size[0], u.clip_size[1]);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_rotation_rad") {
+                if let Some(loc) = u_loc("u_rotation_rad") {
                     gl.uniform_1_f32(Some(&loc), u.rotation_rad);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_opacity") {
+                if let Some(loc) = u_loc("u_opacity") {
                     gl.uniform_1_f32(Some(&loc), u.opacity);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_crop") {
+                if let Some(loc) = u_loc("u_crop") {
                     gl.uniform_4_f32(Some(&loc), u.crop[0], u.crop[1], u.crop[2], u.crop[3]);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_wipe_mode") {
+                if let Some(loc) = u_loc("u_wipe_mode") {
                     gl.uniform_1_i32(Some(&loc), u.wipe_mode);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_fade_factor") {
+                if let Some(loc) = u_loc("u_fade_factor") {
                     gl.uniform_1_f32(Some(&loc), u.fade_factor);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_dip_white") {
+                if let Some(loc) = u_loc("u_dip_white") {
                     gl.uniform_1_f32(Some(&loc), u.dip_white);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_ck_enabled") {
+                if let Some(loc) = u_loc("u_ck_enabled") {
                     gl.uniform_1_i32(Some(&loc), i32::from(u.ck_enabled));
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_ck_color") {
+                if let Some(loc) = u_loc("u_ck_color") {
                     gl.uniform_3_f32(Some(&loc), u.ck_color[0], u.ck_color[1], u.ck_color[2]);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_ck_similarity") {
+                if let Some(loc) = u_loc("u_ck_similarity") {
                     gl.uniform_1_f32(Some(&loc), u.ck_similarity);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_ck_smoothness") {
+                if let Some(loc) = u_loc("u_ck_smoothness") {
                     gl.uniform_1_f32(Some(&loc), u.ck_smoothness);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_cw_enabled") {
+                if let Some(loc) = u_loc("u_cw_enabled") {
                     gl.uniform_1_i32(Some(&loc), i32::from(u.cw_enabled));
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_cw_lift") {
+                if let Some(loc) = u_loc("u_cw_lift") {
                     gl.uniform_3_f32(Some(&loc), u.cw_lift[0], u.cw_lift[1], u.cw_lift[2]);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_cw_gamma") {
+                if let Some(loc) = u_loc("u_cw_gamma") {
                     gl.uniform_3_f32(Some(&loc), u.cw_gamma[0], u.cw_gamma[1], u.cw_gamma[2]);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_cw_gain") {
+                if let Some(loc) = u_loc("u_cw_gain") {
                     gl.uniform_3_f32(Some(&loc), u.cw_gain[0], u.cw_gain[1], u.cw_gain[2]);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_wb_gains") {
+                if let Some(loc) = u_loc("u_wb_gains") {
                     gl.uniform_3_f32(Some(&loc), u.wb_gains[0], u.wb_gains[1], u.wb_gains[2]);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_contrast") {
+                if let Some(loc) = u_loc("u_contrast") {
                     gl.uniform_1_f32(Some(&loc), u.contrast);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_brightness") {
+                if let Some(loc) = u_loc("u_brightness") {
                     gl.uniform_1_f32(Some(&loc), u.brightness);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_gamma") {
+                if let Some(loc) = u_loc("u_gamma") {
                     gl.uniform_1_f32(Some(&loc), u.gamma);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_saturation") {
+                if let Some(loc) = u_loc("u_saturation") {
                     gl.uniform_1_f32(Some(&loc), u.saturation);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_camera_log_profile") {
+                if let Some(loc) = u_loc("u_camera_log_profile") {
                     gl.uniform_1_i32(Some(&loc), u.camera_log_profile);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_lut_preset") {
+                if let Some(loc) = u_loc("u_lut_preset") {
                     gl.uniform_1_i32(Some(&loc), u.lut_preset);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_custom_lut_enabled") {
+                if let Some(loc) = u_loc("u_custom_lut_enabled") {
                     gl.uniform_1_i32(Some(&loc), i32::from(custom_lut_enabled));
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_lut_size") {
+                if let Some(loc) = u_loc("u_lut_size") {
                     gl.uniform_1_i32(Some(&loc), lut_size);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_blur") {
+                if let Some(loc) = u_loc("u_blur") {
                     gl.uniform_1_f32(Some(&loc), u.blur);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_sharpen") {
+                if let Some(loc) = u_loc("u_sharpen") {
                     gl.uniform_1_f32(Some(&loc), u.sharpen);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_vignette") {
+                if let Some(loc) = u_loc("u_vignette") {
                     gl.uniform_1_f32(Some(&loc), u.vignette);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_film_grain") {
+                if let Some(loc) = u_loc("u_film_grain") {
                     gl.uniform_1_f32(Some(&loc), u.film_grain);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_halation") {
+                if let Some(loc) = u_loc("u_halation") {
                     gl.uniform_1_f32(Some(&loc), u.halation);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_bloom") {
+                if let Some(loc) = u_loc("u_bloom") {
                     gl.uniform_1_f32(Some(&loc), u.bloom);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_chromatic_aberration") {
+                if let Some(loc) = u_loc("u_chromatic_aberration") {
                     gl.uniform_1_f32(Some(&loc), u.chromatic_aberration);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_film_format") {
+                if let Some(loc) = u_loc("u_film_format") {
                     gl.uniform_1_i32(Some(&loc), u.film_format);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_highlight_rolloff") {
+                if let Some(loc) = u_loc("u_highlight_rolloff") {
                     gl.uniform_1_f32(Some(&loc), u.highlight_rolloff);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_diffusion") {
+                if let Some(loc) = u_loc("u_diffusion") {
                     gl.uniform_1_f32(Some(&loc), u.diffusion);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_mist") {
+                if let Some(loc) = u_loc("u_mist") {
                     gl.uniform_1_f32(Some(&loc), u.mist);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_gate_weave") {
+                if let Some(loc) = u_loc("u_gate_weave") {
                     gl.uniform_1_f32(Some(&loc), u.gate_weave);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_cp_enabled") {
+                if let Some(loc) = u_loc("u_cp_enabled") {
                     gl.uniform_1_i32(Some(&loc), i32::from(u.cp_enabled));
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_cp_tl") {
+                if let Some(loc) = u_loc("u_cp_tl") {
                     gl.uniform_2_f32(Some(&loc), u.cp_tl[0], u.cp_tl[1]);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_cp_tr") {
+                if let Some(loc) = u_loc("u_cp_tr") {
                     gl.uniform_2_f32(Some(&loc), u.cp_tr[0], u.cp_tr[1]);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_cp_br") {
+                if let Some(loc) = u_loc("u_cp_br") {
                     gl.uniform_2_f32(Some(&loc), u.cp_br[0], u.cp_br[1]);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_cp_bl") {
+                if let Some(loc) = u_loc("u_cp_bl") {
                     gl.uniform_2_f32(Some(&loc), u.cp_bl[0], u.cp_bl[1]);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_glitch_intensity") {
+                if let Some(loc) = u_loc("u_glitch_intensity") {
                     gl.uniform_1_f32(Some(&loc), u.glitch_intensity);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_light_leak") {
+                if let Some(loc) = u_loc("u_light_leak") {
                     gl.uniform_1_f32(Some(&loc), u.light_leak);
                 }
-                if let Some(loc) = gl.get_uniform_location(prog, "u_time_seed") {
+                if let Some(loc) = u_loc("u_time_seed") {
                     gl.uniform_1_f32(Some(&loc), u.time_seed);
                 }
 
@@ -1904,6 +1994,11 @@ impl GpuCompositor {
             self.gl.active_texture(glow::TEXTURE0);
             self.gl.bind_texture(glow::TEXTURE_2D, None);
             self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+            self.gl
+                .pixel_store_i32(glow::UNPACK_ALIGNMENT, prev_unpack_align);
+            if prev_scissor {
+                self.gl.enable(glow::SCISSOR_TEST);
+            }
             self.gl.viewport(
                 prev_viewport[0],
                 prev_viewport[1],
@@ -1946,22 +2041,78 @@ impl GpuCompositor {
         }
         Some((buf, w, h))
     }
+
+    /// Reads back a 320x180 GPU-downsampled copy of the composited FBO for low-overhead real-time scopes.
+    pub fn readback_fbo_downsampled_rgba(&self) -> Option<(Vec<u8>, u32, u32)> {
+        if self.fbo_width == 0 || self.fbo_height == 0 {
+            return None;
+        }
+        let sw = 320u32;
+        let sh = 180u32;
+        let mut buf = vec![0u8; (sw as usize) * (sh as usize) * 4];
+        unsafe {
+            self.gl
+                .bind_framebuffer(glow::READ_FRAMEBUFFER, Some(self.fbo));
+            self.gl
+                .bind_framebuffer(glow::DRAW_FRAMEBUFFER, Some(self.scope_fbo));
+            self.gl.blit_framebuffer(
+                0,
+                0,
+                self.fbo_width as i32,
+                self.fbo_height as i32,
+                0,
+                0,
+                sw as i32,
+                sh as i32,
+                glow::COLOR_BUFFER_BIT,
+                glow::LINEAR,
+            );
+            self.gl
+                .bind_framebuffer(glow::FRAMEBUFFER, Some(self.scope_fbo));
+            self.gl.pixel_store_i32(glow::PACK_ALIGNMENT, 1);
+            self.gl.read_pixels(
+                0,
+                0,
+                sw as i32,
+                sh as i32,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelPackData::Slice(&mut buf),
+            );
+            self.gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None);
+            self.gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
+            self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+        }
+        Some((buf, sw, sh))
+    }
+
+    /// Explicitly deletes all OpenGL resources while the GL context is still current
+    /// (called from `eframe::App::on_exit`).
+    pub fn destroy(&mut self, gl: &glow::Context) {
+        if self.gl_destroyed {
+            return;
+        }
+        self.gl_destroyed = true;
+        unsafe {
+            gl.delete_framebuffer(self.scope_fbo);
+            gl.delete_texture(self.scope_texture);
+            gl.delete_texture(self.mask_texture);
+            gl.delete_texture(self.layer_texture);
+            gl.delete_texture(self.lut_texture);
+            gl.delete_framebuffer(self.backdrop_fbo);
+            gl.delete_texture(self.backdrop_texture);
+            gl.delete_framebuffer(self.fbo);
+            gl.delete_texture(self.fbo_texture);
+            gl.delete_vertex_array(self.vao);
+            gl.delete_program(self.program);
+        }
+    }
 }
 
 impl Drop for GpuCompositor {
     fn drop(&mut self) {
-        unsafe {
-            self.gl.delete_texture(self.mask_texture);
-            self.gl.delete_texture(self.layer_texture);
-            self.gl.delete_texture(self.lut_texture);
-            self.gl.delete_framebuffer(self.backdrop_fbo);
-            self.gl.delete_texture(self.backdrop_texture);
-            self.gl.delete_framebuffer(self.fbo);
-            if !self.fbo_texture_registered {
-                self.gl.delete_texture(self.fbo_texture);
-            }
-            self.gl.delete_vertex_array(self.vao);
-            self.gl.delete_program(self.program);
+        if !self.gl_destroyed {
+            log::debug!("GpuCompositor dropped without explicit on_exit GL cleanup");
         }
     }
 }

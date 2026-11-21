@@ -22,9 +22,10 @@ pub use analyzer::{
 pub use audio::{AudioMixer, AudioStreamPlayer, SAMPLE_RATE};
 pub use dsp::LookaheadLimiter;
 pub use ffmpeg::{
-    apply_no_window, create_command, detect_available_encoders, executable_filename, ffmpeg_cmd,
-    ffplay_cmd, ffprobe_cmd, is_ffmpeg_available, is_ffprobe_available, resolve_binary_path,
-    AvailableEncoders, ChildGuard, CREATE_NO_WINDOW,
+    apply_no_window, create_command, detect_available_encoders, detect_vaapi_device,
+    executable_filename, ffmpeg_cmd, ffplay_cmd, ffprobe_cmd, is_ffmpeg_available,
+    is_ffprobe_available, refresh_ffmpeg_availability, resolve_binary_path, AvailableEncoders,
+    ChildGuard, CREATE_NO_WINDOW,
 };
 pub use proxy::{default_proxy_path_for, generate_proxy};
 pub use scene_detect::{detect_scene_changes, parse_scene_cut_timestamps};

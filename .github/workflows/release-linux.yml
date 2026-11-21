@@ -112,7 +112,7 @@ jobs:
     name: Fedora build · rpm
     needs: rust-tests
     runs-on: ubuntu-latest
-    container: fedora:latest
+    container: fedora:41
     steps:
       - name: Install native build and packaging tools
         run: |
@@ -216,10 +216,18 @@ jobs:
               $ffExt = Join-Path $env:TEMP "ffmpeg-gh-ext"
               if (Test-Path $ffExt) { Remove-Item -Recurse -Force $ffExt }
               Invoke-WebRequest -Uri "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip" -OutFile $ffZip -UseBasicParsing
+              $ffShaUrl = "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip.sha256"
+              $expectedFfSha = ((Invoke-WebRequest -Uri $ffShaUrl -UseBasicParsing).Content.Trim() -split "\s+")[0].ToUpper()
+              $actualFfSha = (Get-FileHash -Path $ffZip -Algorithm SHA256).Hash.ToUpper()
+              if ($actualFfSha -ne $expectedFfSha) {
+                throw "FFmpeg zip SHA-256 mismatch! Expected: $expectedFfSha Actual: $actualFfSha"
+              }
               Expand-Archive -Path $ffZip -DestinationPath $ffExt -Force
               $ff = (Get-ChildItem -Path $ffExt -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1)?.FullName
               $probe = (Get-ChildItem -Path $ffExt -Filter "ffprobe.exe" -Recurse | Select-Object -First 1)?.FullName
               $play = (Get-ChildItem -Path $ffExt -Filter "ffplay.exe" -Recurse | Select-Object -First 1)?.FullName
+              $ffLic = (Get-ChildItem -Path $ffExt -Filter "LICENSE*" -Recurse | Select-Object -First 1)?.FullName
+              if ($ffLic) { Copy-Item -Path $ffLic -Destination (Join-Path $stageBin "FFMPEG-LICENSE.txt") -Force }
               $ready = Test-StagedFfmpeg -FfSrc $ff -ProbeSrc $probe -PlaySrc $play
             } catch {
               Write-Host "GitHub mirror failed: $_"
@@ -249,7 +257,7 @@ jobs:
         run: |
           $rawVer = "${{ github.ref_name }}"
           if ([string]::IsNullOrEmpty($rawVer) -or $rawVer -notlike "v*") {
-            $ver = "2.2.1"
+            $ver = "2.3.0"
           } else {
             $ver = $rawVer.TrimStart('v')
           }
@@ -262,13 +270,18 @@ jobs:
           Copy-Item -Path "target\release\trim.exe" -Destination $stage -Force
           Copy-Item -Path "resources" -Destination $stage -Recurse -Force
           Copy-Item -Path "README.md" -Destination $stage -Force
+          if (Test-Path "LICENSE") { Copy-Item -Path "LICENSE" -Destination $stage -Force }
           Copy-Item -Path "install.ps1" -Destination $stage -Force
 
-          # Copy FFmpeg binaries to root and bin/ of package
+          # Copy FFmpeg binaries and license to root and bin/ of package
           $stageBin = Join-Path $env:TEMP "ffmpeg-bin"
           if (Test-Path $stageBin) {
             Copy-Item -Path "$stageBin\*.exe" -Destination $stage -Force
             Copy-Item -Path "$stageBin\*.exe" -Destination (Join-Path $stage "bin") -Force
+            $ffLicStaged = Join-Path $stageBin "FFMPEG-LICENSE.txt"
+            if (Test-Path $ffLicStaged) {
+              Copy-Item -Path $ffLicStaged -Destination $stage -Force
+            }
           }
 
           # Verify mandatory binaries
@@ -336,11 +349,12 @@ jobs:
           rm -rf "${STAGE}"
 
           DMG_STAGE="$(mktemp -d)"
-          APP_DIR="${DMG_STAGE}/triM..app"
+          APP_DIR="${DMG_STAGE}/triM.app"
           mkdir -p "${APP_DIR}/Contents/MacOS" "${APP_DIR}/Contents/Resources"
           cp target/release/trim "${APP_DIR}/Contents/MacOS/trim"
           chmod +x "${APP_DIR}/Contents/MacOS/trim"
           cp -r resources "${APP_DIR}/Contents/Resources/resources"
+          cp LICENSE "${APP_DIR}/Contents/Resources/LICENSE"
 
           cat > "${APP_DIR}/Contents/Info.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>

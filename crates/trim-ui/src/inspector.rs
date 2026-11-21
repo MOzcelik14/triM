@@ -180,16 +180,14 @@ pub fn render_inspector_panel(
         None
     };
 
-    if target_clip_and_track.is_none() {
+    let Some((track_id, track_name, is_audio, clip)) = target_clip_and_track else {
         ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
                 render_sequence_inspector(ui, project, &mut action);
             });
         return action;
-    }
-
-    let (track_id, track_name, is_audio, clip) = target_clip_and_track.unwrap();
+    };
     let clip_time = (playhead_time - clip.timeline_in).max(0.0);
 
     ScrollArea::vertical()
@@ -2828,10 +2826,18 @@ fn render_color_card(
                                     } else {
                                         let min_x = pts[idx - 1][0] + 0.02;
                                         let max_x = pts[idx + 1][0] - 0.02;
-                                        pts[idx] = [nx.clamp(min_x, max_x), ny];
+                                        let clamped_x = if min_x <= max_x {
+                                            nx.clamp(min_x, max_x)
+                                        } else {
+                                            0.5 * (pts[idx - 1][0] + pts[idx + 1][0])
+                                        };
+                                        pts[idx] = [clamped_x, ny];
                                     }
                                     *action = Some(InspectorAction::ClipModified);
-                                } else if resp.clicked() && pts.len() < 8 {
+                                } else if resp.clicked()
+                                    && pts.len() < 8
+                                    && pts.iter().all(|p| (p[0] - nx).abs() >= 0.03)
+                                {
                                     pts.push([nx, ny]);
                                     pts.sort_by(|a, b| {
                                         a[0].partial_cmp(&b[0]).unwrap_or(std::cmp::Ordering::Equal)
@@ -3663,9 +3669,11 @@ fn render_audio_card(
                                     Layout::left_to_right(egui::Align::Center),
                                     |ui| {
                                         ui.label(
-                                            RichText::new(band_names[i])
-                                                .size(10.0)
-                                                .color(LABEL_COLOR),
+                                            RichText::new(
+                                                band_names.get(i).copied().unwrap_or("Band"),
+                                            )
+                                            .size(10.0)
+                                            .color(LABEL_COLOR),
                                         );
                                     },
                                 );

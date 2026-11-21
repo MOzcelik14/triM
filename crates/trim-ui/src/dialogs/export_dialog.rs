@@ -71,11 +71,12 @@ impl Default for ExportDialog {
         };
 
         let presets = get_default_presets();
-        let first_w = presets[0].width.unwrap_or(1920);
-        let first_h = presets[0].height.unwrap_or(1080);
-        let first_fps = presets[0].fps.unwrap_or(30.0);
-        let first_crf = presets[0].crf;
-        let first_norm = presets[0].loudness_norm;
+        let first = presets.first();
+        let first_w = first.and_then(|p| p.width).unwrap_or(1920);
+        let first_h = first.and_then(|p| p.height).unwrap_or(1080);
+        let first_fps = first.and_then(|p| p.fps).unwrap_or(30.0);
+        let first_crf = first.map(|p| p.crf).unwrap_or(18);
+        let first_norm = first.map(|p| p.loudness_norm).unwrap_or_default();
 
         Self {
             is_open: false,
@@ -149,14 +150,17 @@ impl ExportDialog {
             return None;
         }
 
-        // Escape closes when not currently rendering
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && !self.is_exporting {
+        let is_done = self.progress >= 99.9;
+
+        // Escape closes when not currently rendering (or once export has finished)
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && (!self.is_exporting || is_done) {
             self.is_open = false;
+            self.is_exporting = false;
             return None;
         }
 
-        if self.is_exporting {
-            ctx.request_repaint();
+        if self.is_exporting && !is_done {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
 
         // Full-screen modal backdrop dimmer & input blocker
@@ -378,7 +382,12 @@ impl ExportDialog {
                             Vec2::new(right_w, content_h),
                             Layout::top_down(egui::Align::Min),
                             |ui| {
-                                let curr_preset = &self.presets[self.selected_preset_idx];
+                                if self.selected_preset_idx >= self.presets.len() {
+                                    self.selected_preset_idx = 0;
+                                }
+                                let Some(curr_preset) = self.presets.get(self.selected_preset_idx) else {
+                                    return;
+                                };
 
                                 // Card 1: Video Parameters
                                 Frame::none()

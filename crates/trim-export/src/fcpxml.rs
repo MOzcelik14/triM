@@ -284,11 +284,11 @@ pub fn generate_fcpxml(project: &Project) -> String {
 }
 
 fn unescape_xml(s: &str) -> String {
-    s.replace("&amp;", "&")
-        .replace("&lt;", "<")
+    s.replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&apos;", "'")
+        .replace("&amp;", "&")
 }
 
 /// Decodes standard `file://` URL into a local filesystem path.
@@ -329,7 +329,7 @@ pub fn decode_file_url(url: &str) -> String {
 /// Parses FCPX time format (e.g., "5s", "100/25s", "1200/24000s") into seconds.
 pub fn parse_fcpx_time(s: &str) -> f64 {
     let clean = s.trim().trim_end_matches('s').trim();
-    if let Some((num, den)) = clean.split_once('/') {
+    let val = if let Some((num, den)) = clean.split_once('/') {
         let n: f64 = num.parse().unwrap_or(0.0);
         let d: f64 = den.parse().unwrap_or(1.0);
         if d != 0.0 {
@@ -339,6 +339,11 @@ pub fn parse_fcpx_time(s: &str) -> f64 {
         }
     } else {
         clean.parse().unwrap_or(0.0)
+    };
+    if val.is_finite() {
+        val
+    } else {
+        0.0
     }
 }
 
@@ -388,11 +393,15 @@ impl XmlNode {
     }
 
     pub fn parse(xml: &str) -> Result<Self, String> {
+        const MAX_DEPTH: usize = 128;
+        const MAX_NODES: usize = 100_000;
+
         let root = XmlNode {
             tag: "__root__".to_string(),
             ..Default::default()
         };
         let mut stack: Vec<XmlNode> = vec![root];
+        let mut node_count: usize = 0;
 
         let mut idx = 0;
         let bytes = xml.as_bytes();
@@ -430,9 +439,10 @@ impl XmlNode {
                     if let Some(end) = xml[idx..].find('>') {
                         idx += end + 1;
                         if stack.len() > 1 {
-                            let finished = stack.pop().unwrap();
-                            if let Some(parent) = stack.last_mut() {
-                                parent.children.push(finished);
+                            if let Some(finished) = stack.pop() {
+                                if let Some(parent) = stack.last_mut() {
+                                    parent.children.push(finished);
+                                }
                             }
                         }
                         continue;
@@ -466,11 +476,21 @@ impl XmlNode {
 
                     idx += end + 1;
 
+                    node_count += 1;
+                    if node_count > MAX_NODES {
+                        return Err(format!("XML node limit exceeded (max {MAX_NODES} nodes)"));
+                    }
+
                     if is_self_closing {
                         if let Some(top) = stack.last_mut() {
                             top.children.push(node);
                         }
                     } else {
+                        if stack.len() >= MAX_DEPTH {
+                            return Err(format!(
+                                "XML nesting depth limit exceeded (max {MAX_DEPTH})"
+                            ));
+                        }
                         stack.push(node);
                     }
                     continue;
@@ -489,18 +509,20 @@ impl XmlNode {
         }
 
         while stack.len() > 1 {
-            let finished = stack.pop().unwrap();
-            if let Some(parent) = stack.last_mut() {
-                parent.children.push(finished);
+            if let Some(finished) = stack.pop() {
+                if let Some(parent) = stack.last_mut() {
+                    parent.children.push(finished);
+                }
             }
         }
 
         let mut root = stack.pop().unwrap_or_default();
         if root.children.len() == 1 {
-            Ok(root.children.pop().unwrap())
-        } else {
-            Ok(root)
+            if let Some(child) = root.children.pop() {
+                return Ok(child);
+            }
         }
+        Ok(root)
     }
 }
 
@@ -938,5 +960,22 @@ mod tests {
         assert_eq!(v1.clips[0].timeline_in, 1.0);
         assert_eq!(v1.clips[0].timeline_out, 7.0);
         assert_eq!(v1.clips[0].source_in, 2.0);
+    }
+
+    #[test]
+    fn test_xml_depth_limit_and_unescape_order_and_nan_time() {
+        let mut deep_xml = String::new();
+        for _ in 0..300 {
+            deep_xml.push_str("<a>");
+        }
+        for _ in 0..300 {
+            deep_xml.push_str("</a>");
+        }
+        assert!(XmlNode::parse(&deep_xml).is_err());
+
+        assert_eq!(unescape_xml("&amp;lt;script&amp;gt;"), "&lt;script&gt;");
+        assert_eq!(parse_fcpx_time("NaNs"), 0.0);
+        assert_eq!(parse_fcpx_time("infs"), 0.0);
+        assert_eq!(parse_fcpx_time("1/0s"), 0.0);
     }
 }

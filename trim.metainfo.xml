@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>trim.desktop</id>
+  <id>com.mozcelik14.trim</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <name>triM.</name>
@@ -56,6 +56,16 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2.3.0" date="2026-11-21">
+      <description>
+        <p>triM. v2.3.0 - Kapsamlı Güvenlik, Stabilite, Performans ve Dağıtım Sürümü:</p>
+        <ul>
+          <li>Güvenlik sertleştirme: FFmpeg filtergraph/protokol enjeksiyon koruması, proje yol gezinme ve symlink korumaları, OOM/DoS sınırları ve SHA-256 paket doğrulamaları.</li>
+          <li>Stabilite ve doğruluk: Sıfır panic/unwrap üretim kodu, güvenli OpenGL kaynak temizliği, maske+blend/ayar katmanı export düzeltmeleri, VAAPI otomatik algılama ve tam Undo/Redo bütünlüğü.</li>
+          <li>Performans ve platform: Kanvas viewport culling, GPU uniform ve LUT önbellekleme, düşük maliyetli Scopes, arka plan iş yükleri, Windows DirectShow cihaz keşfi ve GPLv3/cargo-deny uyumu.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.2.1" date="2026-11-21">
       <description>
         <p>triM. v2.2.1 - Efekt &amp; Denetçi Hizalama, Vektörel İkonografi ve Kayan Haber Bandı (Ticker) Düzeltmesi:</p>

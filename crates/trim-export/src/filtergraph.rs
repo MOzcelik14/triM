@@ -27,6 +27,53 @@ const PREVIEW_H: f64 = 360.0;
 
 pub struct TimelineExporter;
 
+/// Prepared FFmpeg export invocation along with a private RAII temporary directory
+/// holding baked LUTs, mask PGMs, and any `-filter_complex_script` file.
+pub struct PreparedExport {
+    pub cmd_args: Vec<String>,
+    pub total_duration: f64,
+    pub temp_dir: Option<tempfile::TempDir>,
+}
+
+fn safe_ffmpeg_path_arg(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.starts_with('-') && std::path::Path::new(trimmed).is_relative() {
+        format!("./{trimmed}")
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn escape_filtergraph_file_option(raw: &str) -> String {
+    let forward = raw.replace('\\', "/");
+    let mut out = String::with_capacity(forward.len() + 8);
+    for ch in forward.chars() {
+        match ch {
+            '\0' | '\r' | '\n' => {}
+            ':' => out.push_str("\\:"),
+            '\'' => out.push_str("'\\''"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+fn sanitize_drawtext_value(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len() + 8);
+    for ch in raw.chars() {
+        match ch {
+            '\0' | '\r' => {}
+            '\n' => out.push(' '),
+            '\\' => out.push_str("\\\\"),
+            '\'' => out.push_str("'\\''"),
+            ':' => out.push_str("\\:"),
+            '%' => out.push_str("\\%"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 /// Accumulates FFmpeg input arguments and hands out input indices.
 struct InputList {
     args: Vec<String>,
@@ -69,7 +116,9 @@ fn keyframe_expr(keyframes: &[Keyframe], var: &str, map: impl Fn(f64) -> f64) ->
     }
 
     // Build nested if() from the last segment backwards.
-    let last = kfs.last().unwrap();
+    let Some(last) = kfs.last() else {
+        return format!("{:.6}", map(0.0));
+    };
     let mut expr = format!("{:.6}", map(last.value));
     for i in (0..kfs.len() - 1).rev() {
         let k0 = &kfs[i];
@@ -194,7 +243,18 @@ impl TimelineExporter {
     /// Writes a baked 3D `.cube` LUT file for `clip` into the temporary export directory
     /// and returns its normalized FFmpeg filtergraph path.
     pub fn write_baked_clip_cube_lut(clip: &Clip, size: usize) -> Option<String> {
-        let dir = std::env::temp_dir().join("trim_baked_luts");
+        Self::write_baked_clip_cube_lut_in(clip, size, None)
+    }
+
+    fn write_baked_clip_cube_lut_in(
+        clip: &Clip,
+        size: usize,
+        temp_dir: Option<&std::path::Path>,
+    ) -> Option<String> {
+        let dir = match temp_dir {
+            Some(d) => d.to_path_buf(),
+            None => std::env::temp_dir().join("trim_baked_luts"),
+        };
         std::fs::create_dir_all(&dir).ok()?;
         let safe_id: String = clip
             .id
@@ -208,26 +268,28 @@ impl TimelineExporter {
             })
             .collect();
         let file_name = if safe_id.is_empty() {
-            "trim_grade_default.cube".to_string()
-        } else {
+            format!("trim_grade_{}.cube", uuid::Uuid::new_v4())
+        } else if temp_dir.is_some() {
             format!("trim_grade_{safe_id}.cube")
+        } else {
+            format!("trim_grade_{safe_id}_{}.cube", uuid::Uuid::new_v4())
         };
         let path = dir.join(file_name);
         let cube_text = trim_core::color::bake_clip_grade_to_cube(clip, size);
         std::fs::write(&path, cube_text).ok()?;
-        Some(trim_core::paths::normalize_filtergraph_path(&path))
+        Some(escape_filtergraph_file_option(&path.to_string_lossy()))
     }
 
     /// Color grading filter list shared by regular video clips and Adjustment Layers.
-    fn clip_color_filters(clip: &Clip) -> Vec<String> {
+    fn clip_color_filters_in(clip: &Clip, temp_dir: Option<&std::path::Path>) -> Vec<String> {
         let mut f = Vec::new();
         if clip.needs_baked_cube_lut() {
-            if let Some(sanitized_baked) = Self::write_baked_clip_cube_lut(clip, 33) {
+            if let Some(sanitized_baked) = Self::write_baked_clip_cube_lut_in(clip, 33, temp_dir) {
                 f.push(format!("lut3d=file='{sanitized_baked}':interp=trilinear"));
             }
             if let Some(lut_path) = &clip.custom_lut_path {
                 if !lut_path.trim().is_empty() {
-                    let sanitized = trim_core::paths::normalize_filtergraph_path(lut_path.trim());
+                    let sanitized = escape_filtergraph_file_option(lut_path.trim());
                     f.push(format!("lut3d=file='{sanitized}'"));
                 }
             }
@@ -263,7 +325,7 @@ impl TimelineExporter {
 
             if let Some(lut_path) = &clip.custom_lut_path {
                 if !lut_path.trim().is_empty() {
-                    let sanitized = trim_core::paths::normalize_filtergraph_path(lut_path.trim());
+                    let sanitized = escape_filtergraph_file_option(lut_path.trim());
                     f.push(format!("lut3d=file='{sanitized}'"));
                 } else if let Some(preset_filter) = clip.lut_preset.ffmpeg_filter() {
                     f.push(preset_filter.to_string());
@@ -388,6 +450,7 @@ impl TimelineExporter {
         out_w: u32,
         out_h: u32,
         out_fps: f64,
+        temp_dir: Option<&std::path::Path>,
     ) -> String {
         let dur = clip.duration();
         let mut f: Vec<String> = Vec::new();
@@ -426,7 +489,7 @@ impl TimelineExporter {
         }
         f.push("setsar=1".into());
 
-        f.extend(Self::clip_color_filters(clip));
+        f.extend(Self::clip_color_filters_in(clip, temp_dir));
 
         f.push("format=rgba".into());
 
@@ -482,12 +545,7 @@ impl TimelineExporter {
         }
 
         if let Some(txt) = &clip.text_overlay {
-            let sanitized = txt
-                .content
-                .replace('\\', "\\\\")
-                .replace('\'', "\\'")
-                .replace(':', "\\:")
-                .replace('%', "\\%");
+            let sanitized = sanitize_drawtext_value(&txt.content);
             let font_size = ((txt.font_size as f64) * (out_h as f64 / 1080.0))
                 .round()
                 .max(10.0) as u32;
@@ -536,14 +594,13 @@ impl TimelineExporter {
                 (false, false) => "",
             };
             let font_part = if txt.is_custom_font_file() {
-                let sanitized_path =
-                    trim_core::paths::normalize_filtergraph_path(txt.font_family.trim());
+                let sanitized_path = escape_filtergraph_file_option(txt.font_family.trim());
                 format!(":fontfile='{sanitized_path}'")
             } else if txt.font_family != "Sans-Serif" || !font_style.is_empty() {
                 let sanitized_fam: String = txt
                     .font_family
                     .chars()
-                    .filter(|c| !matches!(c, '\'' | ':' | '\\' | '\n' | '\r'))
+                    .filter(|c| !matches!(c, '\'' | ':' | '\\' | '\n' | '\r' | '\0'))
                     .collect();
                 let fam = if sanitized_fam.trim().is_empty() {
                     "Sans-Serif"
@@ -565,16 +622,12 @@ impl TimelineExporter {
 
                     if total_chars <= 1 {
                         f.push(format!(
-                            "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                            "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}:expansion=none"
                         ));
                     } else {
                         for i in 1..=total_chars {
                             let sub: String = chars[..i].iter().collect();
-                            let sub_sanitized = sub
-                                .replace('\\', "\\\\")
-                                .replace('\'', "\\'")
-                                .replace(':', "\\:")
-                                .replace('%', "\\%");
+                            let sub_sanitized = sanitize_drawtext_value(&sub);
                             let st = (i - 1) as f64 * type_dur / total_chars as f64;
                             let et = if i < total_chars {
                                 i as f64 * type_dur / total_chars as f64
@@ -587,18 +640,14 @@ impl TimelineExporter {
                                 format!(":enable='gte(t,{:.4})'", st)
                             };
                             f.push(format!(
-                                "drawtext=text='{sub_sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}{enable_clause}"
+                                "drawtext=text='{sub_sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}{enable_clause}:expansion=none"
                             ));
                         }
                     }
 
                     if let Some(sub) = &txt.subtitle_text {
                         if !sub.trim().is_empty() {
-                            let sub_sanitized = sub
-                                .replace('\\', "\\\\")
-                                .replace('\'', "\\'")
-                                .replace(':', "\\:")
-                                .replace('%', "\\%");
+                            let sub_sanitized = sanitize_drawtext_value(sub);
                             let sub_size = ((font_size as f64 * 0.58).round().max(8.0)) as u32;
                             let sub_y = format!(
                                 "(h-text_h)*{:.3}+{:.0}",
@@ -607,7 +656,7 @@ impl TimelineExporter {
                             );
                             let sub_enable = format!(":enable='gte(t,{:.4})'", type_dur);
                             f.push(format!(
-                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}{font_part}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}{sub_enable}"
+                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}{font_part}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}{sub_enable}:expansion=none"
                             ));
                         }
                     }
@@ -622,16 +671,12 @@ impl TimelineExporter {
                     );
                     let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
                     f.push(format!(
-                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x='{x_expr}':y={y_expr}{shadow_part}{box_part}"
+                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x='{x_expr}':y={y_expr}{shadow_part}{box_part}:expansion=none"
                     ));
 
                     if let Some(sub) = &txt.subtitle_text {
                         if !sub.trim().is_empty() {
-                            let sub_sanitized = sub
-                                .replace('\\', "\\\\")
-                                .replace('\'', "\\'")
-                                .replace(':', "\\:")
-                                .replace('%', "\\%");
+                            let sub_sanitized = sanitize_drawtext_value(sub);
                             let sub_size = ((font_size as f64 * 0.58).round().max(8.0)) as u32;
                             let sub_y = format!(
                                 "(h-text_h)*{:.3}+{:.0}",
@@ -644,7 +689,7 @@ impl TimelineExporter {
                                 txt.pos_x.clamp(0.0, 1.0)
                             );
                             f.push(format!(
-                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}{font_part}:fontcolor=0xc8d7e6dc:x='{sub_x_expr}':y={sub_y}{shadow_part}"
+                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}{font_part}:fontcolor=0xc8d7e6dc:x='{sub_x_expr}':y={sub_y}{shadow_part}:expansion=none"
                             ));
                         }
                     }
@@ -654,16 +699,12 @@ impl TimelineExporter {
                     let x_expr = format!("(w-text_w)*{:.3}", txt.pos_x.clamp(0.0, 1.0));
                     let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
                     f.push(format!(
-                        "drawtext=text='{sanitized}':fontsize={size_expr}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                        "drawtext=text='{sanitized}':fontsize={size_expr}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}:expansion=none"
                     ));
 
                     if let Some(sub) = &txt.subtitle_text {
                         if !sub.trim().is_empty() {
-                            let sub_sanitized = sub
-                                .replace('\\', "\\\\")
-                                .replace('\'', "\\'")
-                                .replace(':', "\\:")
-                                .replace('%', "\\%");
+                            let sub_sanitized = sanitize_drawtext_value(sub);
                             let sub_size = ((font_size as f64 * 0.58).round().max(8.0)) as u32;
                             let sub_y = format!(
                                 "(h-text_h)*{:.3}+{:.0}",
@@ -671,7 +712,7 @@ impl TimelineExporter {
                                 font_size as f64 * 1.25
                             );
                             f.push(format!(
-                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}{font_part}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}"
+                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}{font_part}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}:expansion=none"
                             ));
                         }
                     }
@@ -680,29 +721,25 @@ impl TimelineExporter {
                     let x_expr = format!("w-(t/{dur:.4})*(w+text_w)");
                     let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
                     f.push(format!(
-                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}:expansion=none"
                     ));
                 }
                 MotionTitleStyle::RollingCredits => {
                     let x_expr = format!("(w-text_w)*{:.3}", txt.pos_x.clamp(0.0, 1.0));
                     let y_expr = format!("'h-(t/{dur:.4})*(h+text_h)'");
                     f.push(format!(
-                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}:expansion=none"
                     ));
                     if let Some(sub) = &txt.subtitle_text {
                         if !sub.trim().is_empty() {
-                            let sub_sanitized = sub
-                                .replace('\\', "\\\\")
-                                .replace('\'', "\\'")
-                                .replace(':', "\\:")
-                                .replace('%', "\\%");
+                            let sub_sanitized = sanitize_drawtext_value(sub);
                             let sub_size = ((font_size as f64 * 0.62).round().max(8.0)) as u32;
                             let sub_y = format!(
                                 "'h-(t/{dur:.4})*(h+text_h)+{:.0}'",
                                 font_size as f64 * 1.35
                             );
                             f.push(format!(
-                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}{font_part}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}"
+                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}{font_part}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}:expansion=none"
                             ));
                         }
                     }
@@ -713,23 +750,19 @@ impl TimelineExporter {
                     let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
                     let enable_clause = format!(":enable='gte(t,{:.4})'", reveal_t);
                     f.push(format!(
-                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}{enable_clause}"
+                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}{enable_clause}:expansion=none"
                     ));
                 }
                 MotionTitleStyle::ChapterCard | MotionTitleStyle::None => {
                     let x_expr = format!("(w-text_w)*{:.3}", txt.pos_x.clamp(0.0, 1.0));
                     let y_expr = format!("(h-text_h)*{:.3}", txt.pos_y.clamp(0.0, 1.0));
                     f.push(format!(
-                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}"
+                        "drawtext=text='{sanitized}':fontsize={font_size}{font_part}:fontcolor={font_color}:x={x_expr}:y={y_expr}{shadow_part}{box_part}:expansion=none"
                     ));
 
                     if let Some(sub) = &txt.subtitle_text {
                         if !sub.trim().is_empty() {
-                            let sub_sanitized = sub
-                                .replace('\\', "\\\\")
-                                .replace('\'', "\\'")
-                                .replace(':', "\\:")
-                                .replace('%', "\\%");
+                            let sub_sanitized = sanitize_drawtext_value(sub);
                             let sub_size = ((font_size as f64 * 0.58).round().max(8.0)) as u32;
                             let sub_y = format!(
                                 "(h-text_h)*{:.3}+{:.0}",
@@ -737,7 +770,7 @@ impl TimelineExporter {
                                 font_size as f64 * 1.25
                             );
                             f.push(format!(
-                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}"
+                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}:expansion=none"
                             ));
                         }
                     }
@@ -1043,11 +1076,43 @@ impl TimelineExporter {
         Self::build_export_pipeline_range(project, preset, output_path, None)
     }
 
+    pub fn build_export_pipeline_prepared(
+        project: &Project,
+        preset: &ExportPreset,
+        output_path: &str,
+        range: Option<(f64, f64)>,
+    ) -> Result<PreparedExport, String> {
+        let temp_dir = tempfile::TempDir::new()
+            .map_err(|e| format!("Geçici dışa aktarma klasörü oluşturulamadı: {e}"))?;
+        let (cmd_args, total_duration) = Self::build_export_pipeline_range_in(
+            project,
+            preset,
+            output_path,
+            range,
+            Some(temp_dir.path()),
+        )?;
+        Ok(PreparedExport {
+            cmd_args,
+            total_duration,
+            temp_dir: Some(temp_dir),
+        })
+    }
+
     pub fn build_export_pipeline_range(
         project: &Project,
         preset: &ExportPreset,
         output_path: &str,
         range: Option<(f64, f64)>,
+    ) -> Result<(Vec<String>, f64), String> {
+        Self::build_export_pipeline_range_in(project, preset, output_path, range, None)
+    }
+
+    fn build_export_pipeline_range_in(
+        project: &Project,
+        preset: &ExportPreset,
+        output_path: &str,
+        range: Option<(f64, f64)>,
+        temp_dir: Option<&std::path::Path>,
     ) -> Result<(Vec<String>, f64), String> {
         let flattened_tl = project.get_flattened_timeline();
         let orig_total_duration = flattened_tl.duration();
@@ -1196,11 +1261,15 @@ impl TimelineExporter {
                     if has_alpha_mask || has_fx_mask {
                         let mask_rgba =
                             trim_core::mask::rasterize_masks_rgba(&clip.masks, out_w, out_h, 0.0);
+                        let mask_dir = temp_dir
+                            .map(|p| p.to_path_buf())
+                            .unwrap_or_else(std::env::temp_dir);
                         if has_alpha_mask {
-                            let p = std::env::temp_dir()
-                                .join(format!("trim_mask_alpha_{}.pgm", clip.id));
+                            let p = mask_dir.join(format!("trim_mask_alpha_{}.pgm", clip.id));
                             if Self::write_mask_pgm(&p, out_w, out_h, &mask_rgba, 0).is_ok() {
                                 alpha_mask_idx = Some(inputs.push([
+                                    "-protocol_whitelist".into(),
+                                    "file".into(),
                                     "-loop".into(),
                                     "1".into(),
                                     "-framerate".into(),
@@ -1213,10 +1282,11 @@ impl TimelineExporter {
                             }
                         }
                         if has_fx_mask {
-                            let p =
-                                std::env::temp_dir().join(format!("trim_mask_fx_{}.pgm", clip.id));
+                            let p = mask_dir.join(format!("trim_mask_fx_{}.pgm", clip.id));
                             if Self::write_mask_pgm(&p, out_w, out_h, &mask_rgba, 1).is_ok() {
                                 fx_mask_idx = Some(inputs.push([
+                                    "-protocol_whitelist".into(),
+                                    "file".into(),
                                     "-loop".into(),
                                     "1".into(),
                                     "-framerate".into(),
@@ -1234,9 +1304,16 @@ impl TimelineExporter {
                     let k = overlay_count;
                     let bg_lbl = format!("adj_bg_{k}");
                     let in_lbl = format!("adj_in_{k}");
-                    filters.push(format!("[{last_video}]split[{bg_lbl}][{in_lbl}]"));
+                    let bg_fx_lbl = format!("adj_bgfx_{k}");
+                    if fx_mask_idx.is_some() {
+                        filters.push(format!(
+                            "[{last_video}]split=3[{bg_lbl}][{bg_fx_lbl}][{in_lbl}]"
+                        ));
+                    } else {
+                        filters.push(format!("[{last_video}]split=2[{bg_lbl}][{in_lbl}]"));
+                    }
 
-                    let color_filters = Self::clip_color_filters(clip);
+                    let color_filters = Self::clip_color_filters_in(clip, temp_dir);
                     let graded_lbl = if color_filters.is_empty() {
                         in_lbl
                     } else {
@@ -1251,7 +1328,7 @@ impl TimelineExporter {
                     let fx_lbl = if let Some(fx_i) = fx_mask_idx {
                         let fl = format!("adj_fx_{k}");
                         filters.push(format!(
-                            "[{bg_lbl}]format=yuv420p[adj_bg_y_{k}];[{graded_lbl}]format=yuv420p[adj_gr_y_{k}];[{fx_i}:v]format=gray[adj_fm_{k}];[adj_bg_y_{k}][adj_gr_y_{k}][adj_fm_{k}]maskedmerge=enable='between(t,{t0:.6},{t1:.6})'[{fl}]"
+                            "[{bg_fx_lbl}]format=yuv420p[adj_bg_y_{k}];[{graded_lbl}]format=yuv420p[adj_gr_y_{k}];[{fx_i}:v]format=gray[adj_fm_{k}];[adj_bg_y_{k}][adj_gr_y_{k}][adj_fm_{k}]maskedmerge=enable='between(t,{t0:.6},{t1:.6})'[{fl}]"
                         ));
                         fl
                     } else {
@@ -1265,7 +1342,7 @@ impl TimelineExporter {
                     if let Some(a_i) = alpha_mask_idx {
                         let bl = format!("adj_bl_{k}");
                         filters.push(format!(
-                            "[{bg_lbl}]format=yuv420p[adj_bgy_{k}];[adj_bgy_{k}][{fx_lbl}]blend=all_mode={blend_mode}:all_opacity={op:.4}:enable='between(t,{t0:.6},{t1:.6})':eof_action=pass[{bl}];[{a_i}:v]format=gray[adj_am_{k}];[adj_bgy_{k}][{bl}][adj_am_{k}]maskedmerge=enable='between(t,{t0:.6},{t1:.6})'[{next}]"
+                            "[{bg_lbl}]format=yuv420p,split=2[adj_bgy_{k}][adj_bgm_{k}];[adj_bgy_{k}][{fx_lbl}]blend=all_mode={blend_mode}:all_opacity={op:.4}:enable='between(t,{t0:.6},{t1:.6})':eof_action=pass[{bl}];[{a_i}:v]format=gray[adj_am_{k}];[adj_bgm_{k}][{bl}][adj_am_{k}]maskedmerge=enable='between(t,{t0:.6},{t1:.6})'[{next}]"
                         ));
                     } else {
                         filters.push(format!(
@@ -1291,8 +1368,11 @@ impl TimelineExporter {
                     continue;
                 }
 
+                let safe_media_path = safe_ffmpeg_path_arg(&media.file_path);
                 let input_idx = if is_image {
                     inputs.push([
+                        "-protocol_whitelist".into(),
+                        "file".into(),
                         "-loop".into(),
                         "1".into(),
                         "-framerate".into(),
@@ -1300,11 +1380,13 @@ impl TimelineExporter {
                         "-t".into(),
                         format!("{:.6}", dur),
                         "-i".into(),
-                        media.file_path.clone(),
+                        safe_media_path,
                     ])
                 } else {
                     let (src_start, src_dur) = source_window(clip);
                     let mut in_args = vec![
+                        "-protocol_whitelist".into(),
+                        "file".into(),
                         "-ss".into(),
                         format!("{:.6}", src_start),
                         "-t".into(),
@@ -1320,12 +1402,13 @@ impl TimelineExporter {
                         in_args.push(media.audio_codec.clone());
                     }
                     in_args.push("-i".into());
-                    in_args.push(media.file_path.clone());
+                    in_args.push(safe_media_path);
                     inputs.push(in_args)
                 };
 
                 if wants_video {
-                    let chain = Self::clip_video_chain(clip, media, out_w, out_h, out_fps);
+                    let chain =
+                        Self::clip_video_chain(clip, media, out_w, out_h, out_fps, temp_dir);
                     let clip_label = format!("cv{input_idx}");
                     filters.push(format!("[{input_idx}:v]{chain}[{clip_label}]"));
                     let (x, y) = Self::overlay_position(clip, out_w, out_h);
@@ -1334,10 +1417,14 @@ impl TimelineExporter {
                     if has_alpha_mask {
                         let mask_rgba =
                             trim_core::mask::rasterize_masks_rgba(&clip.masks, out_w, out_h, 0.0);
-                        let p =
-                            std::env::temp_dir().join(format!("trim_mask_alpha_{}.pgm", clip.id));
+                        let mask_dir = temp_dir
+                            .map(|p| p.to_path_buf())
+                            .unwrap_or_else(std::env::temp_dir);
+                        let p = mask_dir.join(format!("trim_mask_alpha_{}.pgm", clip.id));
                         if Self::write_mask_pgm(&p, out_w, out_h, &mask_rgba, 0).is_ok() {
                             alpha_mask_idx = Some(inputs.push([
+                                "-protocol_whitelist".into(),
+                                "file".into(),
                                 "-loop".into(),
                                 "1".into(),
                                 "-framerate".into(),
@@ -1360,15 +1447,26 @@ impl TimelineExporter {
                         let blend_mode = clip.blend_mode.ffmpeg_mode();
                         let bg_lbl = format!("cbg_{k}");
                         let bg_dup = format!("cbgd_{k}");
+                        let bg_blend = format!("cbgb_{k}");
                         let ov_lbl = format!("cov_{k}");
-                        filters.push(format!(
-                            "[{last_video}]format=yuv420p,split[{bg_lbl}][{bg_dup}];[{bg_dup}][{clip_label}]overlay=x={x}:y={y}:eval=frame:eof_action=pass[{ov_lbl}]"
-                        ));
+                        let has_blend = clip.blend_mode != trim_core::BlendMode::Normal;
+                        let has_alpha = alpha_mask_idx.is_some();
 
-                        let blended_lbl = if clip.blend_mode != trim_core::BlendMode::Normal {
-                            let bl = format!("cbl_{k}");
+                        if has_blend && has_alpha {
                             filters.push(format!(
-                                "[{bg_lbl}][{ov_lbl}]blend=all_mode={blend_mode}:all_opacity=1.0:enable='between(t,{t0:.6},{t1:.6})':eof_action=pass[{bl}]"
+                                "[{last_video}]format=yuv420p,split=3[{bg_lbl}][{bg_blend}][{bg_dup}];[{bg_dup}][{clip_label}]overlay=x={x}:y={y}:eval=frame:eof_action=pass[{ov_lbl}]"
+                            ));
+                        } else {
+                            filters.push(format!(
+                                "[{last_video}]format=yuv420p,split=2[{bg_lbl}][{bg_dup}];[{bg_dup}][{clip_label}]overlay=x={x}:y={y}:eval=frame:eof_action=pass[{ov_lbl}]"
+                            ));
+                        }
+
+                        let blended_lbl = if has_blend {
+                            let bl = format!("cbl_{k}");
+                            let blend_bg = if has_alpha { &bg_blend } else { &bg_lbl };
+                            filters.push(format!(
+                                "[{blend_bg}][{ov_lbl}]blend=all_mode={blend_mode}:all_opacity=1.0:enable='between(t,{t0:.6},{t1:.6})':eof_action=pass[{bl}]"
                             ));
                             bl
                         } else {
@@ -1392,7 +1490,13 @@ impl TimelineExporter {
 
                 if wants_audio {
                     let eff_vol = clip.volume * track.volume;
-                    let chain = Self::clip_audio_chain(clip, eff_vol);
+                    let mut chain = Self::clip_audio_chain(clip, eff_vol);
+                    if track.pan.abs() > 0.01 {
+                        let p = track.pan.clamp(-1.0, 1.0);
+                        let l_g = if p > 0.0 { 1.0 - p } else { 1.0 };
+                        let r_g = if p < 0.0 { 1.0 + p } else { 1.0 };
+                        chain.push_str(&format!(",pan=stereo|c0={l_g:.3}*c0|c1={r_g:.3}*c1"));
+                    }
                     let label = format!("ca{input_idx}");
                     filters.push(format!("[{input_idx}:a]{chain}[{label}]"));
                     audio_labels.push(label);
@@ -1418,7 +1522,7 @@ impl TimelineExporter {
         }
         if let Some(target_lufs) = preset.loudness_norm.target_lufs() {
             mix.push_str(&format!(
-                "amix=inputs={}:duration=first:dropout_transition=0:normalize=0[mixa];[mixa]alimiter=limit=0.988553:attack=1:release=75:level=disabled[lima];[lima]loudnorm=I={:.1}:LRA=11:TP=-1.5[outa]",
+                "amix=inputs={}:duration=first:dropout_transition=0:normalize=0[mixa];[mixa]alimiter=limit=0.988553:attack=1:release=75:level=disabled[lima];[lima]loudnorm=I={:.1}:LRA=11:TP=-1.5,aresample=48000[outa]",
                 audio_labels.len() + 1,
                 target_lufs
             ));
@@ -1440,7 +1544,9 @@ impl TimelineExporter {
             "-nostdin".into(),
         ];
         if uses_vaapi {
-            cmd.extend(["-vaapi_device".into(), "/dev/dri/renderD128".into()]);
+            let vaapi_dev = trim_media::detect_vaapi_device()
+                .unwrap_or_else(|| "/dev/dri/renderD128".to_string());
+            cmd.extend(["-vaapi_device".into(), vaapi_dev]);
         }
         cmd.extend(inputs.args);
         cmd.extend([
@@ -1464,6 +1570,19 @@ impl TimelineExporter {
                 if is_prores { "yuv422p10le" } else { "yuv420p" }.into(),
             ]);
         }
+        cmd.extend([
+            "-colorspace".into(),
+            "bt709".into(),
+            "-color_primaries".into(),
+            "bt709".into(),
+            "-color_trc".into(),
+            "bt709".into(),
+        ]);
+        let lower_out = output_path.to_ascii_lowercase();
+        if lower_out.ends_with(".mp4") || lower_out.ends_with(".mov") || lower_out.ends_with(".m4v")
+        {
+            cmd.extend(["-movflags".into(), "+faststart".into()]);
+        }
         cmd.extend(["-r".into(), format!("{}", out_fps)]);
 
         cmd.extend(vec![
@@ -1472,7 +1591,7 @@ impl TimelineExporter {
             "-progress".into(),
             "pipe:1".into(),
             "-nostats".into(),
-            output_path.to_string(),
+            safe_ffmpeg_path_arg(output_path),
         ]);
 
         Ok((cmd, eff_duration))
@@ -1573,11 +1692,18 @@ impl TimelineExporter {
                 } else {
                     "h264_amf"
                 };
+                let qp = preset.crf.clamp(1, 51).to_string();
                 vec![
                     "-c:v".into(),
                     codec.into(),
                     "-quality".into(),
                     "quality".into(),
+                    "-rc".into(),
+                    "cqp".into(),
+                    "-qp_i".into(),
+                    qp.clone(),
+                    "-qp_p".into(),
+                    qp,
                 ]
             }
             _ => {
@@ -2133,7 +2259,7 @@ mod tests {
             .map(|idx| &cmd1[idx + 1])
             .unwrap();
         assert!(
-            fg1.contains("colorbalance=rs=0.15"),
+            fg1.contains("colorbalance=rs=-0.20:gs=0.06:bs=0.28"),
             "should generate teal & orange filter: {fg1}"
         );
 
@@ -2632,5 +2758,191 @@ mod tests {
             fg.contains("lut3d=file='") && fg.contains(":interp=trilinear"),
             "Camera Log clip should bake 3D .cube LUT and emit trilinear lut3d filter: {fg}"
         );
+    }
+
+    #[test]
+    fn test_filtergraph_escapes_injection_and_uses_protocol_whitelist_and_tempdir() {
+        let mut proj = Project::new("SecurityTest");
+        let mut v = MediaItem::new("-evil_leading_dash.mp4");
+        v.media_type = MediaType::Video;
+        v.duration = 5.0;
+        let vid_id = v.id.clone();
+        proj.add_media(v);
+
+        let mut c1 = Clip::new(&vid_id, 0.0, 4.0);
+        let txt = trim_core::clip::TextOverlay {
+            content: "O'Brien %{localtime:%X}\n;copy[outv]".into(),
+            motion_style: MotionTitleStyle::None,
+            ..Default::default()
+        };
+        c1.text_overlay = Some(txt);
+        proj.timeline.tracks[0].add_clip(c1);
+
+        let prepared = TimelineExporter::build_export_pipeline_prepared(
+            &proj,
+            &ExportPreset::default(),
+            "-out.mp4",
+            None,
+        )
+        .unwrap();
+        let temp_path = prepared.temp_dir.as_ref().unwrap().path().to_path_buf();
+        assert!(temp_path.exists());
+
+        let cmd = &prepared.cmd_args;
+        assert!(cmd.windows(2).any(|w| w == ["-protocol_whitelist", "file"]));
+        assert!(cmd.contains(&"./-evil_leading_dash.mp4".to_string()));
+        assert_eq!(cmd.last().map(String::as_str), Some("./-out.mp4"));
+
+        let fg = cmd
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &cmd[idx + 1])
+            .unwrap();
+        assert!(fg.contains(":expansion=none"));
+        assert!(fg.contains("O'\\''Brien"));
+        assert!(!fg.contains("\n;copy[outv]"));
+
+        drop(prepared);
+        assert!(!temp_path.exists());
+    }
+
+    #[test]
+    fn test_k11_mask_plus_blend_and_adjustment_layer_split_valid_with_ffmpeg() {
+        let mut proj = Project::new("K11Parity");
+        proj.settings.width = 320;
+        proj.settings.height = 180;
+        proj.timeline.width = 320;
+        proj.timeline.height = 180;
+        proj.timeline.fps = 24.0;
+        proj.timeline.tracks[1].pan = -0.5;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let src_video = temp_dir.path().join("src.mp4");
+        let out_video = temp_dir.path().join("out.mp4");
+
+        // Create a real tiny 1-second test clip if FFmpeg is installed
+        let has_ffmpeg = trim_media::is_ffmpeg_available();
+        if has_ffmpeg {
+            let gen = trim_media::ffmpeg_cmd()
+                .args([
+                    "-y",
+                    "-v",
+                    "error",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "color=c=blue:s=320x180:r=24:d=1",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "sine=f=440:r=48000",
+                    "-ac",
+                    "2",
+                    "-t",
+                    "1",
+                    "-c:v",
+                    "libx264",
+                    "-c:a",
+                    "aac",
+                    src_video.to_str().unwrap(),
+                ])
+                .output();
+            assert!(
+                matches!(gen, Ok(o) if o.status.success()),
+                "failed to generate synthetic clip"
+            );
+        } else {
+            std::fs::write(&src_video, b"dummy").unwrap();
+        }
+
+        let mut v = MediaItem::new(src_video.to_str().unwrap());
+        v.media_type = MediaType::Video;
+        v.duration = 1.0;
+        v.audio_channels = 2;
+        v.audio_sample_rate = 48000;
+        let vid_id = v.id.clone();
+        proj.add_media(v);
+
+        let mut c1 = Clip::new(&vid_id, 0.0, 1.0);
+        c1.blend_mode = trim_core::BlendMode::Screen;
+        c1.masks.push(trim_core::mask::Mask::new(
+            trim_core::mask::MaskShape::Rectangle,
+            "m_alpha",
+        ));
+        proj.timeline.tracks[0].add_clip(c1);
+
+        let mut adj = Clip::new_adjustment_layer(0.0, 1.0);
+        adj.brightness = 0.1;
+        adj.masks.push(trim_core::mask::Mask::new(
+            trim_core::mask::MaskShape::Rectangle,
+            "adj_a",
+        ));
+        let mut adj_fx_mask =
+            trim_core::mask::Mask::new(trim_core::mask::MaskShape::Rectangle, "adj_fx");
+        adj_fx_mask.target = trim_core::mask::MaskTarget::ColorAndEffects;
+        adj.masks.push(adj_fx_mask);
+        proj.timeline.tracks[0].add_clip(adj);
+
+        let a1 = Clip::new(&vid_id, 0.0, 1.0);
+        let audio_track = proj
+            .timeline
+            .tracks
+            .iter_mut()
+            .find(|t| t.track_type == TrackType::Audio)
+            .unwrap();
+        audio_track.pan = -0.5;
+        audio_track.add_clip(a1);
+
+        let preset = ExportPreset {
+            loudness_norm: LoudnessNorm::YouTube,
+            ..Default::default()
+        };
+        let prepared = TimelineExporter::build_export_pipeline_prepared(
+            &proj,
+            &preset,
+            out_video.to_str().unwrap(),
+            None,
+        )
+        .unwrap();
+
+        let fg = prepared
+            .cmd_args
+            .iter()
+            .position(|a| a == "-filter_complex")
+            .map(|idx| &prepared.cmd_args[idx + 1])
+            .unwrap();
+        assert!(
+            fg.contains("split=3"),
+            "expected split=3 for blend+mask/adj: {fg}"
+        );
+        assert!(
+            fg.contains("aresample=48000"),
+            "expected 48kHz resample after loudnorm: {fg}"
+        );
+        assert!(
+            fg.contains("pan=stereo|"),
+            "expected track.pan in filtergraph: {fg}"
+        );
+        assert!(prepared
+            .cmd_args
+            .windows(2)
+            .any(|w| w == ["-colorspace", "bt709"]));
+        assert!(prepared
+            .cmd_args
+            .windows(2)
+            .any(|w| w == ["-movflags", "+faststart"]));
+
+        if has_ffmpeg {
+            let status = trim_media::create_command(&prepared.cmd_args[0])
+                .args(&prepared.cmd_args[1..])
+                .output()
+                .expect("run ffmpeg");
+            assert!(
+                status.status.success(),
+                "FFmpeg failed on K-11 mask+blend+adj export: {}",
+                String::from_utf8_lossy(&status.stderr)
+            );
+            assert!(out_video.is_file() && out_video.metadata().unwrap().len() > 0);
+        }
     }
 }

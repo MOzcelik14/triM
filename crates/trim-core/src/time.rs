@@ -18,7 +18,11 @@ pub fn seconds_to_timecode(seconds: f64, fps: f64) -> String {
 
 /// Parses timecode string (e.g. `HH:MM:SS:FF` or `MM:SS:FF` or `SS:FF`) back into seconds.
 pub fn timecode_to_seconds(tc: &str, fps: f64) -> Option<f64> {
-    let fps = if fps <= 0.0 { 30.0 } else { fps };
+    let fps = if !fps.is_finite() || fps <= 0.0 {
+        30.0
+    } else {
+        fps
+    };
     let fps_int = fps.round().max(1.0) as u64;
     let parts: Vec<&str> = tc.trim().split(':').collect();
     if parts.is_empty() {
@@ -31,23 +35,28 @@ pub fn timecode_to_seconds(tc: &str, fps: f64) -> Option<f64> {
             let mm = parts[1].parse::<u64>().ok()?;
             let ss = parts[2].parse::<u64>().ok()?;
             let ff = parts[3].parse::<u64>().ok()?;
-            let total_frames = (hh * 3600 + mm * 60 + ss) * fps_int + ff;
+            let secs = hh
+                .checked_mul(3600)?
+                .checked_add(mm.checked_mul(60)?)?
+                .checked_add(ss)?;
+            let total_frames = secs.checked_mul(fps_int)?.checked_add(ff)?;
             Some(total_frames as f64 / fps)
         }
         3 => {
             let mm = parts[0].parse::<u64>().ok()?;
             let ss = parts[1].parse::<u64>().ok()?;
             let ff = parts[2].parse::<u64>().ok()?;
-            let total_frames = (mm * 60 + ss) * fps_int + ff;
+            let secs = mm.checked_mul(60)?.checked_add(ss)?;
+            let total_frames = secs.checked_mul(fps_int)?.checked_add(ff)?;
             Some(total_frames as f64 / fps)
         }
         2 => {
             let ss = parts[0].parse::<u64>().ok()?;
             let ff = parts[1].parse::<u64>().ok()?;
-            let total_frames = ss * fps_int + ff;
+            let total_frames = ss.checked_mul(fps_int)?.checked_add(ff)?;
             Some(total_frames as f64 / fps)
         }
-        1 => parts[0].parse::<f64>().ok(),
+        1 => parts[0].parse::<f64>().ok().filter(|v| v.is_finite()),
         _ => None,
     }
 }

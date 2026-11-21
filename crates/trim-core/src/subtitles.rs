@@ -140,15 +140,21 @@ pub fn parse_srt(content: &str) -> Result<Vec<SubtitleEntry>, String> {
 
 /// Parses WebVTT (.vtt) subtitle format content.
 pub fn parse_vtt(content: &str) -> Result<Vec<SubtitleEntry>, String> {
-    // WebVTT has "WEBVTT" header at the beginning; strip it and parse remainder as standard subtitle blocks
-    let normalized = content.replace("\r\n", "\n").replace('\r', "\n");
-    let without_header = if let Some(stripped) = normalized.strip_prefix("WEBVTT") {
-        stripped
-    } else {
-        &normalized
-    };
+    let trimmed_bom = content.strip_prefix('\u{feff}').unwrap_or(content);
+    let normalized = trimmed_bom.replace("\r\n", "\n").replace('\r', "\n");
+    let mut blocks = Vec::new();
+    for (idx, block) in normalized.split("\n\n").enumerate() {
+        let t = block.trim_start();
+        if idx == 0 && t.starts_with("WEBVTT") {
+            continue;
+        }
+        if t.starts_with("NOTE") || t.starts_with("STYLE") || t.starts_with("REGION") {
+            continue;
+        }
+        blocks.push(block);
+    }
 
-    parse_srt(without_header)
+    parse_srt(&blocks.join("\n\n"))
 }
 
 /// Exports a list of subtitle entries to standard SRT string format.
@@ -300,5 +306,14 @@ mod tests {
         assert_eq!(roundtrip_entries.len(), 2);
         assert_eq!(roundtrip_entries[0].text, "Birinci baslik");
         assert_eq!(roundtrip_entries[1].text, "Ikinci baslik");
+    }
+
+    #[test]
+    fn test_parse_vtt_bom_and_note_blocks() {
+        let vtt = "\u{feff}WEBVTT\n\nNOTE ignore this comment\n\nSTYLE\n::cue { color: white; }\n\n00:00:01.000 --> 00:00:03.500\nMerhaba triM";
+        let entries = parse_vtt(vtt).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].text, "Merhaba triM");
+        assert!((entries[0].start_time - 1.0).abs() < 1e-6);
     }
 }

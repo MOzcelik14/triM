@@ -18,26 +18,30 @@ pub enum ProjectError {
     InvalidFormat(String),
 }
 
-/// Saves project to disk using atomic rename (.tmp -> dest).
+const MAX_PROJECT_FILE_BYTES: u64 = 64 * 1024 * 1024;
+
+fn write_atomic(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let parent = target
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    tmp.write_all(bytes)?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(target).map_err(|e| e.error)?;
+    Ok(())
+}
+
+/// Saves project to disk using atomic temp-file + sync_all + persist.
 pub fn save_project<P: AsRef<Path>>(
     project: &mut Project,
     target_path: P,
 ) -> Result<(), ProjectError> {
     let target = target_path.as_ref();
-    if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let tmp_path = target.with_extension("tmp");
     let json_data = project.to_json()?;
-
-    {
-        let mut file = fs::File::create(&tmp_path)?;
-        file.write_all(json_data.as_bytes())?;
-        file.sync_all()?;
-    }
-
-    fs::rename(&tmp_path, target)?;
+    write_atomic(target, json_data.as_bytes())?;
 
     project.file_path = Some(target.to_string_lossy().to_string());
     project.is_dirty = false;
@@ -45,52 +49,101 @@ pub fn save_project<P: AsRef<Path>>(
     Ok(())
 }
 
+fn resolve_safe_media_path(raw: &str, project_parent: &Path) -> String {
+    let norm = trim_core::paths::normalize_path(raw);
+    if !norm.is_relative() {
+        return norm.to_string_lossy().to_string();
+    }
+    if norm
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        log::warn!("Rejected path traversal in project reference: {:?}", raw);
+        return String::new();
+    }
+    let abs_path = project_parent.join(&norm);
+    if let Ok(meta) = fs::symlink_metadata(&abs_path) {
+        if !meta.file_type().is_symlink() && meta.is_file() {
+            return abs_path.to_string_lossy().to_string();
+        }
+    }
+    norm.to_string_lossy().to_string()
+}
+
 /// Loads project from disk (.trim or .cutline).
 pub fn load_project<P: AsRef<Path>>(path: P) -> Result<Project, ProjectError> {
+    use std::io::Read;
+
     let p = path.as_ref();
-    if !p.is_file() {
-        return Err(ProjectError::Io(std::io::Error::new(
+    let meta = fs::symlink_metadata(p).map_err(|_| {
+        ProjectError::Io(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             format!("Project file not found: {:?}", p),
+        ))
+    })?;
+    if meta.file_type().is_symlink() || !meta.is_file() {
+        return Err(ProjectError::InvalidFormat(format!(
+            "Project path is not a regular file: {:?}",
+            p
+        )));
+    }
+    if meta.len() > MAX_PROJECT_FILE_BYTES {
+        return Err(ProjectError::InvalidFormat(format!(
+            "Project file exceeds {} MiB safety limit",
+            MAX_PROJECT_FILE_BYTES / (1024 * 1024)
         )));
     }
 
-    let contents = fs::read_to_string(p)?;
+    let file = fs::File::open(p)?;
+    let mut contents = String::new();
+    file.take(MAX_PROJECT_FILE_BYTES + 1)
+        .read_to_string(&mut contents)?;
+    if contents.len() as u64 > MAX_PROJECT_FILE_BYTES {
+        return Err(ProjectError::InvalidFormat(format!(
+            "Project file exceeds {} MiB safety limit",
+            MAX_PROJECT_FILE_BYTES / (1024 * 1024)
+        )));
+    }
+
     let mut project = Project::from_json(&contents)?;
+    if project.format != "trim" && project.format != "cutline" {
+        return Err(ProjectError::InvalidFormat(format!(
+            "Unsupported project format: {:?}",
+            project.format
+        )));
+    }
+    if project.version == 0 || project.version > Project::CURRENT_SCHEMA_VERSION {
+        return Err(ProjectError::InvalidFormat(format!(
+            "Unsupported project schema version: {} (max supported: {})",
+            project.version,
+            Project::CURRENT_SCHEMA_VERSION
+        )));
+    }
+
     project.file_path = Some(p.to_string_lossy().to_string());
     project.is_dirty = false;
 
     // Normalize media and LUT paths across Unix/Windows separators and resolve relative paths
-    if let Some(parent) = p.parent() {
+    if let Some(parent) = p.parent().filter(|par| !par.as_os_str().is_empty()) {
         for item in project.media_pool.values_mut() {
-            let norm_item = trim_core::paths::normalize_path(&item.file_path);
-            if norm_item.is_relative() {
-                let abs_path = parent.join(&norm_item);
-                if abs_path.exists() {
-                    item.file_path = abs_path.to_string_lossy().to_string();
-                } else {
-                    item.file_path = norm_item.to_string_lossy().to_string();
-                }
-            } else {
-                item.file_path = norm_item.to_string_lossy().to_string();
-            }
+            item.file_path = resolve_safe_media_path(&item.file_path, parent);
             if let Some(proxy) = &mut item.proxy_path {
-                let norm_proxy = trim_core::paths::normalize_path(&*proxy);
-                *proxy = norm_proxy.to_string_lossy().to_string();
+                *proxy = resolve_safe_media_path(proxy, parent);
             }
         }
         for track in &mut project.timeline.tracks {
             for clip in &mut track.clips {
                 if let Some(lut) = &mut clip.custom_lut_path {
-                    let norm_lut = trim_core::paths::normalize_path(&*lut);
-                    if norm_lut.is_relative() {
-                        let abs_lut = parent.join(&norm_lut);
-                        if abs_lut.exists() {
-                            *lut = abs_lut.to_string_lossy().to_string();
-                            continue;
-                        }
+                    *lut = resolve_safe_media_path(lut, parent);
+                }
+            }
+        }
+        for seq in &mut project.sequences {
+            for track in &mut seq.timeline.tracks {
+                for clip in &mut track.clips {
+                    if let Some(lut) = &mut clip.custom_lut_path {
+                        *lut = resolve_safe_media_path(lut, parent);
                     }
-                    *lut = norm_lut.to_string_lossy().to_string();
                 }
             }
         }
@@ -113,6 +166,7 @@ pub fn bundle_project<P: AsRef<Path>>(
     fs::create_dir_all(&media_dir)?;
 
     let mut bundled_project = project.clone();
+    bundled_project.sync_active_sequence_to_list();
     let mut count = 0;
     let mut total_bytes = 0u64;
 
@@ -129,7 +183,14 @@ pub fn bundle_project<P: AsRef<Path>>(
         count: &mut usize,
         total_bytes: &mut u64,
     ) -> std::io::Result<Option<String>> {
-        if !src_path.exists() {
+        let Ok(meta) = fs::symlink_metadata(src_path) else {
+            return Ok(None);
+        };
+        if meta.file_type().is_symlink() || !meta.is_file() {
+            log::warn!(
+                "Skipping non-regular or symlinked media file during bundle: {:?}",
+                src_path
+            );
             return Ok(None);
         }
         let canon_path = fs::canonicalize(src_path).unwrap_or_else(|_| src_path.to_path_buf());
@@ -137,10 +198,25 @@ pub fn bundle_project<P: AsRef<Path>>(
             return Ok(Some(existing_rel.clone()));
         }
 
-        let orig_name = src_path
+        let raw_name = src_path
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| fallback_stem.to_string());
+        let orig_name: String = raw_name
+            .chars()
+            .map(|c| {
+                if matches!(c, '/' | '\\' | '\0') {
+                    '_'
+                } else {
+                    c
+                }
+            })
+            .collect();
+        let orig_name = if orig_name.is_empty() || orig_name == "." || orig_name == ".." {
+            fallback_stem.to_string()
+        } else {
+            orig_name
+        };
 
         let chosen_name = if !used_dest_names.contains(&orig_name) {
             orig_name
@@ -165,7 +241,13 @@ pub fn bundle_project<P: AsRef<Path>>(
         };
 
         let dest_file = media_dir.join(&chosen_name);
-        let bytes = fs::copy(src_path, &dest_file)?;
+        let mut src_file = fs::File::open(src_path)?;
+        let mut dst_file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&dest_file)?;
+        let bytes = std::io::copy(&mut src_file, &mut dst_file)?;
+        dst_file.sync_all()?;
         *total_bytes += bytes;
         *count += 1;
 
@@ -261,7 +343,7 @@ pub fn bundle_project<P: AsRef<Path>>(
     bundled_project.file_path = Some(proj_file.to_string_lossy().to_string());
     bundled_project.is_dirty = false;
     let json = bundled_project.to_json()?;
-    fs::write(&proj_file, json)?;
+    write_atomic(&proj_file, json.as_bytes())?;
 
     log::info!(
         "Project successfully bundled to {:?}: {} media files, {} bytes",
@@ -360,17 +442,9 @@ impl AutosaveManager {
             return Ok(());
         }
 
-        fs::create_dir_all(&self.recovery_dir)?;
         let rec_path = self.get_recovery_path(project);
-        let tmp_path = rec_path.with_extension("tmp");
-
         let json_data = project.to_json()?;
-        {
-            let mut file = fs::File::create(&tmp_path)?;
-            file.write_all(json_data.as_bytes())?;
-            file.sync_all()?;
-        }
-        fs::rename(&tmp_path, &rec_path)?;
+        write_atomic(&rec_path, json_data.as_bytes())?;
         log::debug!("Autosave snapshot written to {:?}", rec_path);
         Ok(())
     }
@@ -713,5 +787,45 @@ mod tests {
         proj_vert.timeline.tracks[1].add_clip(clip_reel);
 
         save_project(&mut proj_vert, "/tmp/trim_vertical.trim").unwrap();
+    }
+
+    #[test]
+    fn test_load_project_rejects_traversal_and_invalid_schema() {
+        let dir = tempdir().unwrap();
+        let proj_path = dir.path().join("evil.trim");
+
+        // 1. Reject unsupported format
+        let mut p = Project::new("Evil");
+        p.format = "not_trim".into();
+        std::fs::write(&proj_path, p.to_json().unwrap()).unwrap();
+        assert!(load_project(&proj_path).is_err());
+
+        // 2. Reject future schema version
+        let mut p = Project::new("Evil");
+        p.version = Project::CURRENT_SCHEMA_VERSION + 99;
+        std::fs::write(&proj_path, p.to_json().unwrap()).unwrap();
+        assert!(load_project(&proj_path).is_err());
+
+        // 3. Reject `..` path traversal in relative media_pool paths
+        let mut p = Project::new("Traversal");
+        let mut item = trim_core::media::MediaItem::new("../../etc/passwd");
+        item.media_type = trim_core::media::MediaType::Video;
+        let id = item.id.clone();
+        p.add_media(item);
+        std::fs::write(&proj_path, p.to_json().unwrap()).unwrap();
+        let loaded = load_project(&proj_path).unwrap();
+        assert_eq!(loaded.media_pool.get(&id).unwrap().file_path, "");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_load_project_rejects_symlink() {
+        let dir = tempdir().unwrap();
+        let real_path = dir.path().join("real.trim");
+        let link_path = dir.path().join("link.trim");
+        let mut p = Project::new("Real");
+        save_project(&mut p, &real_path).unwrap();
+        std::os::unix::fs::symlink(&real_path, &link_path).unwrap();
+        assert!(load_project(&link_path).is_err());
     }
 }

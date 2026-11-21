@@ -294,8 +294,10 @@ fn polygon_signed_distance(pt: [f32; 2], poly: &[[f32; 2]]) -> f32 {
         let a = poly[j];
         let b = poly[i];
         // Ray casting parity
+        let denom = b[1] - a[1];
         if ((a[1] > pt[1]) != (b[1] > pt[1]))
-            && (pt[0] < (b[0] - a[0]) * (pt[1] - a[1]) / (b[1] - a[1] + 1e-12) + a[0])
+            && denom.abs() > 1e-9
+            && (pt[0] < (b[0] - a[0]) * (pt[1] - a[1]) / denom + a[0])
         {
             inside = !inside;
         }
@@ -365,7 +367,8 @@ pub fn evaluate_single_mask_at_uv(
         }
         MaskShape::Bezier => {
             // Transform point back to normalized [0,1] polygon space with scale/pos/rot
-            let local_x = (rx / aspect) / params.scale_x.max(1e-4) + 0.5;
+            let safe_aspect = if aspect.abs() > 1e-4 { aspect } else { 1.0 };
+            let local_x = (rx / safe_aspect) / params.scale_x.max(1e-4) + 0.5;
             let local_y = ry / params.scale_y.max(1e-4) + 0.5;
             if let Some(poly) = bezier_poly {
                 polygon_signed_distance([local_x, local_y], poly)
@@ -442,10 +445,17 @@ pub fn evaluate_masks_at_uv(
 /// Rasterizes all enabled masks into an RGBA8 buffer (`R = ClipAlpha`, `G = ColorAndEffects`, `B = 0`, `A = 255`).
 /// Precomputes Bezier polygons once per frame for fast evaluation.
 pub fn rasterize_masks_rgba(masks: &[Mask], width: u32, height: u32, clip_time: f64) -> Vec<u8> {
+    const MAX_MASK_BUF_BYTES: usize = 256 * 1024 * 1024;
     let w = width as usize;
     let h = height as usize;
-    let mut buf = vec![255u8; w * h * 4];
-    if w == 0 || h == 0 || masks.is_empty() {
+    let Some(byte_len) = w.checked_mul(h).and_then(|px| px.checked_mul(4)) else {
+        return Vec::new();
+    };
+    if w == 0 || h == 0 || byte_len > MAX_MASK_BUF_BYTES {
+        return Vec::new();
+    }
+    let mut buf = vec![255u8; byte_len];
+    if masks.is_empty() {
         return buf;
     }
 

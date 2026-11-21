@@ -195,12 +195,16 @@ impl Project {
         if self.sequences.len() <= 1 {
             return false;
         }
+        let Some(pos) = self.sequences.iter().position(|s| s.id == sequence_id) else {
+            return false;
+        };
         let was_active = self.active_sequence_id.as_deref() == Some(sequence_id);
-        self.sequences.retain(|s| s.id != sequence_id);
+        self.sequences.remove(pos);
         if was_active {
-            let next_seq = self.sequences[0].clone();
-            self.timeline = next_seq.timeline;
-            self.active_sequence_id = Some(next_seq.id);
+            if let Some(next_seq) = self.sequences.first().cloned() {
+                self.timeline = next_seq.timeline;
+                self.active_sequence_id = Some(next_seq.id);
+            }
         }
         self.mark_dirty();
         true
@@ -415,6 +419,7 @@ impl Project {
 
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         let mut normalized = self.clone();
+        normalized.sync_active_sequence_to_list();
         normalized.sync_settings_from_timeline();
         serde_json::to_string_pretty(&normalized)
     }
@@ -449,7 +454,85 @@ impl Project {
             proj.timeline.height = proj.settings.height;
             proj.timeline.fps = proj.settings.fps;
         }
+        proj.validate_and_sanitize();
         Ok(proj)
+    }
+
+    /// Current supported `.trim` project schema version.
+    pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+
+    /// Clamps and sanitizes numeric project fields against NaN/Inf or extreme dimensions
+    /// from untrusted or corrupted `.trim` files.
+    pub fn validate_and_sanitize(&mut self) {
+        let clamp_dim = |d: u32, default: u32| -> u32 {
+            if d == 0 {
+                default
+            } else {
+                d.clamp(16, 16384)
+            }
+        };
+        let clamp_fps = |f: f64| -> f64 {
+            if f.is_finite() && f > 0.0 {
+                f.clamp(1.0, 240.0)
+            } else {
+                30.0
+            }
+        };
+        self.settings.width = clamp_dim(self.settings.width, 1920);
+        self.settings.height = clamp_dim(self.settings.height, 1080);
+        self.settings.fps = clamp_fps(self.settings.fps);
+        self.timeline.width = clamp_dim(self.timeline.width, self.settings.width);
+        self.timeline.height = clamp_dim(self.timeline.height, self.settings.height);
+        self.timeline.fps = clamp_fps(self.timeline.fps);
+
+        let sanitize_timeline = |tl: &mut TimelineModel| {
+            tl.width = clamp_dim(tl.width, 1920);
+            tl.height = clamp_dim(tl.height, 1080);
+            tl.fps = clamp_fps(tl.fps);
+            for track in &mut tl.tracks {
+                if !track.volume.is_finite() {
+                    track.volume = 1.0;
+                }
+                if !track.pan.is_finite() {
+                    track.pan = 0.0;
+                }
+                for clip in &mut track.clips {
+                    if !clip.timeline_in.is_finite() || clip.timeline_in < 0.0 {
+                        clip.timeline_in = 0.0;
+                    }
+                    if !clip.timeline_out.is_finite() || clip.timeline_out <= clip.timeline_in {
+                        clip.timeline_out = clip.timeline_in + 0.04;
+                    }
+                    if !clip.source_in.is_finite() || clip.source_in < 0.0 {
+                        clip.source_in = 0.0;
+                    }
+                    if let Some(sout) = clip.source_out {
+                        if !sout.is_finite() || sout <= clip.source_in {
+                            clip.source_out =
+                                Some(clip.source_in + (clip.timeline_out - clip.timeline_in));
+                        }
+                    }
+                    if !clip.speed.is_finite() || clip.speed <= 0.0 {
+                        clip.speed = 1.0;
+                    } else {
+                        clip.speed = clip.speed.clamp(0.05, 100.0);
+                    }
+                    if !clip.opacity.is_finite() {
+                        clip.opacity = 1.0;
+                    } else {
+                        clip.opacity = clip.opacity.clamp(0.0, 1.0);
+                    }
+                    if !clip.volume.is_finite() {
+                        clip.volume = 1.0;
+                    }
+                }
+            }
+        };
+
+        sanitize_timeline(&mut self.timeline);
+        for seq in &mut self.sequences {
+            sanitize_timeline(&mut seq.timeline);
+        }
     }
 }
 
@@ -628,5 +711,18 @@ mod tests {
             relinked_m1.file_path,
             existing_file.to_string_lossy().to_string()
         );
+    }
+
+    #[test]
+    fn test_remove_sequence_duplicate_id_no_panic() {
+        let mut proj = Project::new("DupSeqTest");
+        proj.ensure_sequences();
+        let dup = proj.sequences[0].clone();
+        proj.sequences.push(dup);
+        let id = proj.sequences[0].id.clone();
+
+        assert!(proj.remove_sequence(&id));
+        assert_eq!(proj.sequences.len(), 1);
+        assert!(!proj.remove_sequence("missing-id"));
     }
 }

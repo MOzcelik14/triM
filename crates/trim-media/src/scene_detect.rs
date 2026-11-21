@@ -46,6 +46,15 @@ pub fn detect_scene_changes(
         .output()
         .map_err(|e| format!("FFmpeg sahne algılama çalıştırılamadı: {}", e))?;
 
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "FFmpeg sahne algılama başarısız ({}): {}",
+            output.status,
+            stderr.trim()
+        ));
+    }
+
     let stdout_str = String::from_utf8_lossy(&output.stdout);
     let stderr_str = String::from_utf8_lossy(&output.stderr);
 

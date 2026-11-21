@@ -3,7 +3,6 @@
 use crate::app::{ActiveVoiceover, TrimApp};
 use crate::file_dialog::{FileDialogConfig, FileDialogRequest};
 use egui::{ColorImage, TextureOptions};
-use std::sync::mpsc::channel;
 use trim_commands::{AddClipCommand, Command, MacroCommand, MoveMultipleClipsCommand};
 use trim_core::clip::Clip;
 use trim_core::media::MediaType;
@@ -50,10 +49,12 @@ impl TrimApp {
             return;
         }
 
+        if self.proxy_generating_ids.iter().any(|id| id == media_id) {
+            return;
+        }
         let m_id = media_id.to_string();
         self.proxy_generating_ids.push(m_id.clone());
-        let (tx, rx) = channel();
-        self.proxy_rx = Some(rx);
+        let tx = self.proxy_tx.clone();
 
         std::thread::spawn(move || {
             let res = trim_media::generate_proxy(&src, &out);
@@ -301,7 +302,10 @@ fn percent_decode(s: &str) -> String {
 fn uri_or_str_to_path(s: &str) -> Option<std::path::PathBuf> {
     let s = s.trim();
     let decoded = percent_decode(s);
-    let path_str = if let Some(stripped) = decoded.strip_prefix("file://") {
+    let path_str = if let Some(stripped) = decoded
+        .strip_prefix("file://localhost")
+        .or_else(|| decoded.strip_prefix("file://"))
+    {
         if cfg!(windows) && stripped.starts_with('/') && stripped.chars().nth(2) == Some(':') {
             &stripped[1..]
         } else {

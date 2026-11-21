@@ -926,13 +926,23 @@ impl Clip {
 
     /// Creates a new adjustment layer clip spanning `[timeline_in, timeline_out)`.
     pub fn new_adjustment_layer(timeline_in: f64, timeline_out: f64) -> Self {
-        let duration = (timeline_out - timeline_in).max(0.0);
+        let safe_in = if timeline_in.is_finite() {
+            timeline_in.max(0.0)
+        } else {
+            0.0
+        };
+        let safe_out = if timeline_out.is_finite() {
+            timeline_out.max(safe_in + 0.04)
+        } else {
+            safe_in + 0.04
+        };
+        let duration = safe_out - safe_in;
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name: "Ayar Katmanı".to_string(),
             media_id: String::new(),
-            timeline_in,
-            timeline_out,
+            timeline_in: safe_in,
+            timeline_out: safe_out,
             source_in: 0.0,
             source_out: Some(duration),
             clip_kind: crate::compositing::ClipKind::AdjustmentLayer,
@@ -1364,7 +1374,11 @@ impl Clip {
     }
 
     pub fn trim_in(&mut self, new_in: f64) {
-        let clamped_in = new_in.clamp(0.0, self.timeline_out - 0.04);
+        if !new_in.is_finite() || !self.timeline_out.is_finite() {
+            return;
+        }
+        let max_in = (self.timeline_out - 0.04).max(0.0);
+        let clamped_in = new_in.clamp(0.0, max_in);
         let dt = clamped_in - self.timeline_in;
         if dt.abs() < 1e-9 {
             return;
@@ -1750,5 +1764,21 @@ mod tests {
 
         clip.reset_color_grading();
         assert!(!clip.has_color_adjustments());
+    }
+
+    #[test]
+    fn test_adjustment_layer_and_trim_in_bounds_no_panic() {
+        let mut adj = Clip::new_adjustment_layer(0.0, 0.0);
+        assert!(adj.timeline_out >= 0.04);
+        adj.trim_in(0.02);
+        adj.trim_in(f64::NAN);
+
+        let mut short = Clip {
+            timeline_in: 0.0,
+            timeline_out: 0.01,
+            ..Default::default()
+        };
+        short.trim_in(0.0);
+        assert_eq!(short.timeline_in, 0.0);
     }
 }

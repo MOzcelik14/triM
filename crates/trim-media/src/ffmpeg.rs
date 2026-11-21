@@ -117,22 +117,63 @@ pub fn ffplay_cmd() -> Command {
     create_command("ffplay")
 }
 
-/// Checks whether `ffmpeg` is available and executable.
-pub fn is_ffmpeg_available() -> bool {
-    ffmpeg_cmd()
-        .arg("-version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+static FFMPEG_AVAIL_CACHE: std::sync::OnceLock<std::sync::RwLock<Option<bool>>> =
+    std::sync::OnceLock::new();
+static FFPROBE_AVAIL_CACHE: std::sync::OnceLock<std::sync::RwLock<Option<bool>>> =
+    std::sync::OnceLock::new();
+
+/// Clears cached FFmpeg/FFprobe availability so the next check re-probes the system.
+pub fn refresh_ffmpeg_availability() {
+    if let Ok(mut w) = FFMPEG_AVAIL_CACHE
+        .get_or_init(|| std::sync::RwLock::new(None))
+        .write()
+    {
+        *w = None;
+    }
+    if let Ok(mut w) = FFPROBE_AVAIL_CACHE
+        .get_or_init(|| std::sync::RwLock::new(None))
+        .write()
+    {
+        *w = None;
+    }
 }
 
-/// Checks whether `ffprobe` is available and executable.
-pub fn is_ffprobe_available() -> bool {
-    ffprobe_cmd()
+/// Checks whether `ffmpeg` is available and executable (cached across UI frames).
+pub fn is_ffmpeg_available() -> bool {
+    let lock = FFMPEG_AVAIL_CACHE.get_or_init(|| std::sync::RwLock::new(None));
+    if let Ok(r) = lock.read() {
+        if let Some(val) = *r {
+            return val;
+        }
+    }
+    let avail = ffmpeg_cmd()
         .arg("-version")
         .output()
         .map(|o| o.status.success())
-        .unwrap_or(false)
+        .unwrap_or(false);
+    if let Ok(mut w) = lock.write() {
+        *w = Some(avail);
+    }
+    avail
+}
+
+/// Checks whether `ffprobe` is available and executable (cached across UI frames).
+pub fn is_ffprobe_available() -> bool {
+    let lock = FFPROBE_AVAIL_CACHE.get_or_init(|| std::sync::RwLock::new(None));
+    if let Ok(r) = lock.read() {
+        if let Some(val) = *r {
+            return val;
+        }
+    }
+    let avail = ffprobe_cmd()
+        .arg("-version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if let Ok(mut w) = lock.write() {
+        *w = Some(avail);
+    }
+    avail
 }
 
 /// Continuously drains a child process's stderr in a dedicated background worker
@@ -235,22 +276,17 @@ impl ChildGuard {
     pub fn into_inner(mut self) -> Option<std::process::Child> {
         self.child.take()
     }
-}
 
-impl std::ops::Deref for ChildGuard {
-    type Target = std::process::Child;
-    fn deref(&self) -> &Self::Target {
-        self.child
-            .as_ref()
-            .expect("Child process was already consumed")
+    pub fn stdin_mut(&mut self) -> Option<&mut std::process::ChildStdin> {
+        self.child.as_mut().and_then(|c| c.stdin.as_mut())
     }
-}
 
-impl std::ops::DerefMut for ChildGuard {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.child
-            .as_mut()
-            .expect("Child process was already consumed")
+    pub fn as_child(&self) -> Option<&std::process::Child> {
+        self.child.as_ref()
+    }
+
+    pub fn id(&self) -> Option<u32> {
+        self.child.as_ref().map(|c| c.id())
     }
 }
 
@@ -310,6 +346,25 @@ impl AvailableEncoders {
 }
 
 static ENCODERS_CACHE: std::sync::OnceLock<AvailableEncoders> = std::sync::OnceLock::new();
+static VAAPI_DEVICE_CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+
+fn candidate_vaapi_devices() -> Vec<String> {
+    let mut devs = Vec::new();
+    if let Ok(entries) = std::fs::read_dir("/dev/dri") {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let s = name.to_string_lossy();
+            if s.starts_with("renderD") {
+                devs.push(entry.path().to_string_lossy().to_string());
+            }
+        }
+    }
+    devs.sort();
+    if devs.is_empty() && std::path::Path::new("/dev/dri/renderD128").exists() {
+        devs.push("/dev/dri/renderD128".to_string());
+    }
+    devs
+}
 
 fn is_encoder_functional(codec: &str) -> bool {
     let output = ffmpeg_cmd()
@@ -332,6 +387,46 @@ fn is_encoder_functional(codec: &str) -> bool {
     matches!(output, Ok(o) if o.status.success())
 }
 
+fn is_vaapi_encoder_functional(codec: &str, device: &str) -> bool {
+    let output = ffmpeg_cmd()
+        .args([
+            "-v",
+            "quiet",
+            "-vaapi_device",
+            device,
+            "-f",
+            "lavfi",
+            "-i",
+            "color=s=256x256:d=0.04",
+            "-vf",
+            "format=nv12,hwupload",
+            "-frames:v",
+            "1",
+            "-c:v",
+            codec,
+            "-f",
+            "null",
+            "-",
+        ])
+        .output();
+    matches!(output, Ok(o) if o.status.success())
+}
+
+/// Returns the first functional VAAPI render device node (e.g. `/dev/dri/renderD128`), if any.
+pub fn detect_vaapi_device() -> Option<String> {
+    VAAPI_DEVICE_CACHE
+        .get_or_init(|| {
+            if !cfg!(target_os = "linux") {
+                return None;
+            }
+            candidate_vaapi_devices().into_iter().find(|dev| {
+                is_vaapi_encoder_functional("h264_vaapi", dev)
+                    || is_vaapi_encoder_functional("hevc_vaapi", dev)
+            })
+        })
+        .clone()
+}
+
 /// Queries FFmpeg for supported hardware encoders, caching the result for subsequent calls.
 pub fn detect_available_encoders() -> AvailableEncoders {
     *ENCODERS_CACHE.get_or_init(|| {
@@ -340,32 +435,78 @@ pub fn detect_available_encoders() -> AvailableEncoders {
         if let Ok(out) = output {
             let text = String::from_utf8_lossy(&out.stdout);
 
-            if text.contains("h264_nvenc") && is_encoder_functional("h264_nvenc") {
-                encoders.h264_nvenc = true;
-                encoders.hevc_nvenc =
-                    text.contains("hevc_nvenc") && is_encoder_functional("hevc_nvenc");
+            encoders.h264_nvenc =
+                text.contains("h264_nvenc") && is_encoder_functional("h264_nvenc");
+            encoders.hevc_nvenc =
+                text.contains("hevc_nvenc") && is_encoder_functional("hevc_nvenc");
+
+            encoders.h264_qsv = text.contains("h264_qsv") && is_encoder_functional("h264_qsv");
+            encoders.hevc_qsv = text.contains("hevc_qsv") && is_encoder_functional("hevc_qsv");
+
+            if let Some(vaapi_dev) = detect_vaapi_device() {
+                encoders.h264_vaapi = text.contains("h264_vaapi")
+                    && is_vaapi_encoder_functional("h264_vaapi", &vaapi_dev);
+                encoders.hevc_vaapi = text.contains("hevc_vaapi")
+                    && is_vaapi_encoder_functional("hevc_vaapi", &vaapi_dev);
             }
-            if text.contains("h264_qsv") && is_encoder_functional("h264_qsv") {
-                encoders.h264_qsv = true;
-                encoders.hevc_qsv = text.contains("hevc_qsv") && is_encoder_functional("hevc_qsv");
-            }
-            if text.contains("h264_vaapi") && is_encoder_functional("h264_vaapi") {
-                encoders.h264_vaapi = true;
-                encoders.hevc_vaapi =
-                    text.contains("hevc_vaapi") && is_encoder_functional("hevc_vaapi");
-            }
-            if text.contains("h264_amf") && is_encoder_functional("h264_amf") {
-                encoders.h264_amf = true;
-                encoders.hevc_amf = text.contains("hevc_amf") && is_encoder_functional("hevc_amf");
-            }
-            if text.contains("h264_videotoolbox") && is_encoder_functional("h264_videotoolbox") {
-                encoders.h264_videotoolbox = true;
-                encoders.hevc_videotoolbox = text.contains("hevc_videotoolbox")
-                    && is_encoder_functional("hevc_videotoolbox");
-            }
+
+            encoders.h264_amf = text.contains("h264_amf") && is_encoder_functional("h264_amf");
+            encoders.hevc_amf = text.contains("hevc_amf") && is_encoder_functional("hevc_amf");
+
+            encoders.h264_videotoolbox =
+                text.contains("h264_videotoolbox") && is_encoder_functional("h264_videotoolbox");
+            encoders.hevc_videotoolbox =
+                text.contains("hevc_videotoolbox") && is_encoder_functional("hevc_videotoolbox");
         }
         encoders
     })
+}
+
+/// Parses `ffmpeg -list_devices true -f dshow -i dummy` output into `(video_devices, audio_devices)`.
+pub fn parse_dshow_device_list(stderr: &str) -> (Vec<String>, Vec<String>) {
+    let mut video = Vec::new();
+    let mut audio = Vec::new();
+    for line in stderr.lines() {
+        let trimmed = line.trim();
+        let Some(first_q) = trimmed.find('"') else {
+            continue;
+        };
+        let rest = &trimmed[first_q + 1..];
+        let Some(end_q) = rest.find('"') else {
+            continue;
+        };
+        let name = rest[..end_q].to_string();
+        if name.is_empty() || trimmed.contains("Alternative name") {
+            continue;
+        }
+        let after = &rest[end_q + 1..];
+        if after.contains("(video)") {
+            video.push(name);
+        } else if after.contains("(audio)") {
+            audio.push(name);
+        }
+    }
+    (video, audio)
+}
+
+/// Lists available Windows DirectShow `(video, audio)` device names via FFmpeg.
+pub fn list_dshow_devices() -> (Vec<String>, Vec<String>) {
+    let Ok(out) = ffmpeg_cmd()
+        .args([
+            "-hide_banner",
+            "-list_devices",
+            "true",
+            "-f",
+            "dshow",
+            "-i",
+            "dummy",
+        ])
+        .output()
+    else {
+        return (Vec::new(), Vec::new());
+    };
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    parse_dshow_device_list(&stderr)
 }
 
 #[cfg(test)]
@@ -446,5 +587,25 @@ mod tests {
         }
         let _ = child.wait();
         assert!(finished, "Process deadlocked on full pipe buffer!");
+    }
+
+    #[test]
+    fn test_parse_dshow_device_list() {
+        let sample = "\
+[dshow @ 000001] \"Integrated Camera\" (video)
+[dshow @ 000001]   Alternative name \"@device_pnp_\\\\?\\usb#vid_1234\"
+[dshow @ 000001] \"OBS Virtual Camera\" (video)
+[dshow @ 000001] \"Microphone (Realtek(R) Audio)\" (audio)
+[dshow @ 000001] \"Stereo Mix (Realtek(R) Audio)\" (audio)
+";
+        let (video, audio) = parse_dshow_device_list(sample);
+        assert_eq!(video, vec!["Integrated Camera", "OBS Virtual Camera"]);
+        assert_eq!(
+            audio,
+            vec![
+                "Microphone (Realtek(R) Audio)",
+                "Stereo Mix (Realtek(R) Audio)"
+            ]
+        );
     }
 }

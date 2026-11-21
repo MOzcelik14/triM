@@ -27,6 +27,7 @@ pub struct ScopesPanelState {
     pub config: ScopeConfig,
     pub data: ScopeData,
     pub last_eval_time: f64,
+    pub last_refresh_instant: std::time::Instant,
     pub needs_refresh: bool,
     pub active_pixel_sample: Option<PixelSampleReadout>,
     pub last_frame_rgba: Option<(Vec<u8>, u32, u32)>,
@@ -49,6 +50,9 @@ impl Default for ScopesPanelState {
             config: ScopeConfig::default(),
             data: ScopeData::default(),
             last_eval_time: -1.0,
+            last_refresh_instant: std::time::Instant::now()
+                .checked_sub(std::time::Duration::from_secs(1))
+                .unwrap_or_else(std::time::Instant::now),
             needs_refresh: true,
             active_pixel_sample: None,
             last_frame_rgba: None,
@@ -540,6 +544,10 @@ impl ScopesPanelState {
                         self.reference_stills.remove(del);
                         if self.active_reference_still == Some(del) {
                             self.active_reference_still = None;
+                        } else if let Some(act) = self.active_reference_still {
+                            if act > del {
+                                self.active_reference_still = Some(act - 1);
+                            }
                         }
                     }
                 }

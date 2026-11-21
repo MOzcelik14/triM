@@ -56,6 +56,15 @@ pub fn detect_silence_regions(
         .output()
         .map_err(|e| format!("FFmpeg sessizlik algılama çalıştırılamadı: {}", e))?;
 
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "FFmpeg sessizlik algılama başarısız ({}): {}",
+            output.status,
+            stderr.trim()
+        ));
+    }
+
     let stdout_str = String::from_utf8_lossy(&output.stdout);
     let stderr_str = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{}\n{}", stdout_str, stderr_str);

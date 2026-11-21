@@ -6,9 +6,11 @@ use std::path::PathBuf;
 /// On Windows, checks `%USERPROFILE%`, then `%HOME%`.
 /// On Unix, checks `$HOME`.
 pub fn home_dir() -> PathBuf {
-    if let Ok(userprofile) = std::env::var("USERPROFILE") {
-        if !userprofile.is_empty() {
-            return PathBuf::from(userprofile);
+    if cfg!(windows) {
+        if let Ok(userprofile) = std::env::var("USERPROFILE") {
+            if !userprofile.is_empty() {
+                return PathBuf::from(userprofile);
+            }
         }
     }
     if let Ok(home) = std::env::var("HOME") {
@@ -16,7 +18,7 @@ pub fn home_dir() -> PathBuf {
             return PathBuf::from(home);
         }
     }
-    PathBuf::from(".")
+    std::env::temp_dir().join("trim_home_fallback")
 }
 
 /// Returns the standard configuration & persistent application data directory.
@@ -96,12 +98,55 @@ pub fn normalize_filtergraph_path<P: AsRef<std::path::Path>>(path: P) -> String 
     let mut out = String::with_capacity(forward.len() + 4);
     for ch in forward.chars() {
         match ch {
+            '\0' | '\r' | '\n' => {}
             ':' => out.push_str("\\:"),
             '\'' => out.push_str("\\'"),
             _ => out.push(ch),
         }
     }
     out
+}
+
+/// Escapes an arbitrary string or path for safe embedding inside single quotes (`'...'`)
+/// in an FFmpeg filtergraph option (e.g. `lut3d=file='...'`, `drawtext=textfile='...'`).
+/// FFmpeg's `av_get_token` treats `\` as literal inside single quotes, so `'` must be
+/// escaped as `'\''` (close quote, escaped quote, reopen quote). Control characters
+/// (`\0`, `\r`, `\n`) are stripped to prevent filtergraph line breaks or truncation.
+pub fn escape_ffmpeg_filter_single_quoted(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len() + 8);
+    for ch in raw.chars() {
+        match ch {
+            '\0' | '\r' | '\n' => {}
+            '\'' => out.push_str("'\\''"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// Deterministic 64-bit FNV-1a hash (stable across Rust compiler versions and platforms)
+/// for persistent disk cache keys (thumbnails, waveforms, proxies).
+pub fn stable_hash_64(data: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &b in data {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+/// Returns `(mtime_secs, file_size_bytes)` for cache invalidation when source media changes.
+pub fn file_mtime_and_size(path: &std::path::Path) -> (u64, u64) {
+    let Ok(meta) = std::fs::metadata(path) else {
+        return (0, 0);
+    };
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    (mtime, meta.len())
 }
 
 #[cfg(test)]

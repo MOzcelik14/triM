@@ -453,9 +453,33 @@ do_install() {
             LATEST_TAG="$(curl -sSL -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest" 2>/dev/null | grep '"tag_name":' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)"
 
             if [[ -n "$LATEST_TAG" ]]; then
-                APPIMAGE_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${LATEST_TAG}/triM-${LATEST_TAG#v}-x86_64.AppImage"
+                APPIMAGE_NAME="triM-${LATEST_TAG#v}-x86_64.AppImage"
+                APPIMAGE_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${LATEST_TAG}/${APPIMAGE_NAME}"
+                SUMS_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${LATEST_TAG}/SHA256SUMS.txt"
                 log_info "Resmi AppImage indiriliyor: ${APPIMAGE_URL}"
-                if curl -fL --progress-bar "$APPIMAGE_URL" -o "${TEMP_DIR}/triM.AppImage"; then
+                if curl -fL --proto '=https' --tlsv1.2 --progress-bar "$APPIMAGE_URL" -o "${TEMP_DIR}/triM.AppImage"; then
+                    if curl -fsSL --proto '=https' --tlsv1.2 "$SUMS_URL" -o "${TEMP_DIR}/SHA256SUMS.txt" 2>/dev/null; then
+                        EXPECTED_SHA="$(grep -F " ${APPIMAGE_NAME}" "${TEMP_DIR}/SHA256SUMS.txt" | awk '{print $1}' | head -n 1 || true)"
+                        if [[ -n "$EXPECTED_SHA" ]]; then
+                            if command -v sha256sum &>/dev/null; then
+                                echo "${EXPECTED_SHA}  ${TEMP_DIR}/triM.AppImage" | sha256sum -c - >/dev/null || {
+                                    log_err "AppImage SHA-256 doğrulaması başarısız! İndirilen dosya bozuk veya değiştirilmiş olabilir."
+                                    exit 1
+                                }
+                                log_ok "AppImage SHA-256 bütünlüğü doğrulandı."
+                            elif command -v shasum &>/dev/null; then
+                                echo "${EXPECTED_SHA}  ${TEMP_DIR}/triM.AppImage" | shasum -a 256 -c - >/dev/null || {
+                                    log_err "AppImage SHA-256 doğrulaması başarısız!"
+                                    exit 1
+                                }
+                                log_ok "AppImage SHA-256 bütünlüğü doğrulandı."
+                            fi
+                        else
+                            log_warn "SHA256SUMS.txt içinde ${APPIMAGE_NAME} girdisi bulunamadı; devam ediliyor."
+                        fi
+                    else
+                        log_warn "SHA256SUMS.txt indirilemedi; checksum doğrulaması atlandı."
+                    fi
                     chmod +x "${TEMP_DIR}/triM.AppImage"
                     # Extract the pure ELF binary so user does not need FUSE runtime installed
                     log_info "FUSE bağımlılığını kaldırmak için ikili dosya çıkartılıyor..."

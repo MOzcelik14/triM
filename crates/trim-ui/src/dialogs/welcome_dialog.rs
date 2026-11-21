@@ -81,17 +81,48 @@ const FORMAT_PRESETS: [FormatPreset; 4] = [
     },
 ];
 
+impl WelcomeDialog {
+    fn recent_projects_path() -> std::path::PathBuf {
+        trim_core::paths::config_dir().join("recent_projects.tsv")
+    }
+}
+
 impl Default for WelcomeDialog {
     fn default() -> Self {
-        let home = trim_core::paths::home_dir();
-        let mut recents = Vec::new();
-        let default_proj = home.join("Videos").join("Proje 1.trim");
-        if default_proj.exists() {
-            recents.push(RecentProjectEntry {
-                name: "Proje 1".to_string(),
-                path: default_proj.to_string_lossy().to_string(),
-                last_modified: "Son kullanılan".to_string(),
-            });
+        let mut recents: Vec<RecentProjectEntry> =
+            std::fs::read_to_string(Self::recent_projects_path())
+                .ok()
+                .map(|s| {
+                    s.lines()
+                        .filter_map(|line| {
+                            let mut parts = line.splitn(3, '\t');
+                            let name = parts.next()?.trim();
+                            let path = parts.next()?.trim();
+                            let last_modified = parts.next().unwrap_or("Son kullanılan").trim();
+                            if name.is_empty() || path.is_empty() {
+                                return None;
+                            }
+                            Some(RecentProjectEntry {
+                                name: name.to_string(),
+                                path: path.to_string(),
+                                last_modified: last_modified.to_string(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+        recents.retain(|entry| std::path::Path::new(&entry.path).exists());
+
+        if recents.is_empty() {
+            let home = trim_core::paths::home_dir();
+            let default_proj = home.join("Videos").join("Proje 1.trim");
+            if default_proj.exists() {
+                recents.push(RecentProjectEntry {
+                    name: "Proje 1".to_string(),
+                    path: default_proj.to_string_lossy().to_string(),
+                    last_modified: "Son kullanılan".to_string(),
+                });
+            }
         }
 
         Self {
@@ -117,14 +148,24 @@ impl WelcomeDialog {
         self.recent_projects.insert(
             0,
             RecentProjectEntry {
-                name: name.to_string(),
-                path: path.to_string(),
+                name: name.replace(['\t', '\n', '\r'], " "),
+                path: path.replace(['\t', '\n', '\r'], " "),
                 last_modified: "Şimdi".to_string(),
             },
         );
         if self.recent_projects.len() > 10 {
             self.recent_projects.truncate(10);
         }
+        let rp = Self::recent_projects_path();
+        if let Some(parent) = rp.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let tsv: String = self
+            .recent_projects
+            .iter()
+            .map(|e| format!("{}\t{}\t{}\n", e.name, e.path, e.last_modified))
+            .collect();
+        let _ = std::fs::write(rp, tsv);
     }
 
     pub fn show(&mut self, ctx: &egui::Context) -> Option<WelcomeAction> {

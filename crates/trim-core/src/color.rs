@@ -841,7 +841,7 @@ impl LutPreset {
         match self {
             Self::None => None,
             Self::TealOrange => Some(
-                "colorbalance=rs=0.15:gs=-0.05:bs=-0.25:rh=-0.2:gh=0.05:bh=0.25,eq=contrast=1.15:saturation=1.2",
+                "colorbalance=rs=-0.20:gs=0.06:bs=0.28:rh=0.22:gh=0.06:bh=-0.20,eq=contrast=1.12:saturation=1.10",
             ),
             Self::CinematicWarm => Some(
                 "colorbalance=rm=0.08:gm=0.02:bm=-0.08:rh=0.12:gh=0.04:bh=-0.10,eq=contrast=1.12:saturation=1.08",
@@ -1621,7 +1621,7 @@ pub fn analyze_shot_match_rgba(
     fn frame_stats(rgba: &[u8], w: u32, h: u32) -> (f64, f64, f64, f64, f64) {
         let total = (w as usize) * (h as usize);
         if total == 0 || rgba.len() < total * 4 {
-            return (0.5, 0.2, 0.25, 128.0, 128.0);
+            return (0.5, 0.2, 0.25, 0.5, 0.5);
         }
         let step = (total / 8192).max(1);
         let mut sum_l = 0.0;

@@ -151,6 +151,9 @@ impl RenderQueue {
             }
         }
         self.rx = None;
+        if self.is_active {
+            self.start_next_job();
+        }
     }
 
     /// Cancels a specific job by ID.
@@ -227,18 +230,20 @@ impl RenderQueue {
                     }
                     ExportMessage::Status(st) => {
                         if let Some(ref cur_id) = self.current_job_id {
+                            let mut current_prog = 0.0;
                             if let Some(job) = self.jobs.iter_mut().find(|j| &j.id == cur_id) {
                                 if let RenderJobStatus::InProgress {
+                                    progress,
                                     ref mut status_text,
-                                    ..
                                 } = job.status
                                 {
+                                    current_prog = progress;
                                     *status_text = st.clone();
                                 }
                             }
                             events.push(RenderQueueEvent::JobProgress {
                                 job_id: cur_id.clone(),
-                                progress: 0.0,
+                                progress: current_prog,
                                 status_text: st,
                             });
                         }

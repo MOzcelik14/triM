@@ -153,6 +153,7 @@ pub struct TrimApp {
     pub active_voiceover: Option<ActiveVoiceover>,
     pub use_proxies: bool,
     pub shortcut_profile: ShortcutProfile,
+    pub proxy_tx: std::sync::mpsc::Sender<(String, Result<String, String>)>,
     pub proxy_rx: Option<Receiver<(String, Result<String, String>)>>,
     pub proxy_generating_ids: Vec<String>,
     pub close_confirm_dialog: CloseConfirmDialog,
@@ -200,6 +201,17 @@ pub enum BackgroundTaskMsg {
     TranscribeDone {
         result: Result<Vec<trim_core::subtitles::SubtitleEntry>, String>,
     },
+    BundleDone {
+        target_dir: std::path::PathBuf,
+        result: Result<(usize, u64), String>,
+    },
+    MotionTrackDone {
+        track_id: String,
+        clip_id: String,
+        mask_index: usize,
+        old_masks: Vec<trim_core::mask::Mask>,
+        result: Result<Vec<(f64, f64, f64)>, String>,
+    },
 }
 
 impl Default for TrimApp {
@@ -223,6 +235,7 @@ impl Default for TrimApp {
             .map(|t| t.id.clone())
             .unwrap_or_else(|| "a1".to_string());
         let (bg_task_tx, bg_task_rx) = std::sync::mpsc::channel();
+        let (proxy_tx, proxy_rx) = std::sync::mpsc::channel();
 
         Self {
             project,
@@ -286,7 +299,8 @@ impl Default for TrimApp {
             active_voiceover: None,
             use_proxies: false,
             shortcut_profile: ShortcutProfile::TrimDefault,
-            proxy_rx: None,
+            proxy_tx,
+            proxy_rx: Some(proxy_rx),
             proxy_generating_ids: Vec::new(),
             close_confirm_dialog: CloseConfirmDialog::default(),
             confirmed_exit: false,
@@ -342,6 +356,18 @@ impl TrimApp {
         app.audio_mixer.set_max_cache_bytes(budget_mb * 1024 * 1024);
         app.video_engine
             .set_frame_cache_capacity((budget_mb * 300 / 512).max(50));
+        app.shortcut_profile = match prefs.shortcut_profile.as_str() {
+            "Adobe Premiere Pro" | "Premiere" => ShortcutProfile::PremierePro,
+            "DaVinci Resolve" | "Resolve" => ShortcutProfile::DaVinciResolve,
+            _ => ShortcutProfile::TrimDefault,
+        };
+        app.audio_mixer
+            .limiter
+            .set_ceiling_dbfs(if prefs.master_limiter_enabled {
+                prefs.limiter_ceiling_db
+            } else {
+                0.0
+            });
 
         if !prefs.show_splash_screen {
             app.splash_screen.dismiss();
@@ -986,7 +1012,11 @@ impl eframe::App for TrimApp {
         }
 
         // Autosave check
-        if self.last_autosave.elapsed().as_secs() >= 60 && self.project.is_dirty {
+        let autosave_secs = self.preferences.autosave_interval_secs;
+        if autosave_secs > 0
+            && self.last_autosave.elapsed().as_secs() >= autosave_secs
+            && self.project.is_dirty
+        {
             let _ = self.autosave_mgr.save_snapshot(&self.project);
             self.last_autosave = Instant::now();
         }
@@ -1167,6 +1197,66 @@ impl eframe::App for TrimApp {
                     Err(e) => {
                         self.transcribe_dialog.is_transcribing = false;
                         self.transcribe_dialog.status_message = e;
+                    }
+                },
+                BackgroundTaskMsg::BundleDone { target_dir, result } => match result {
+                    Ok((count, bytes)) => {
+                        let mb = bytes as f64 / (1024.0 * 1024.0);
+                        self.status_message = format!(
+                            "Proje başarıyla paketlendi: {} dosya ({:.1} MB) -> {:?}",
+                            count, mb, target_dir
+                        );
+                    }
+                    Err(e) => {
+                        self.status_message = format!("Paketleme hatası: {}", e);
+                    }
+                },
+                BackgroundTaskMsg::MotionTrackDone {
+                    track_id,
+                    clip_id,
+                    mask_index,
+                    old_masks,
+                    result,
+                } => match result {
+                    Ok(samples) => {
+                        let mut new_masks = old_masks.clone();
+                        if let Some(target_mask) = new_masks.get_mut(mask_index) {
+                            let mut kf_x = Vec::with_capacity(samples.len());
+                            let mut kf_y = Vec::with_capacity(samples.len());
+                            for (t, cx, cy) in &samples {
+                                kf_x.push(trim_core::keyframe::Keyframe::new(
+                                    *t,
+                                    (cx + 0.5).clamp(0.02, 0.98),
+                                    trim_core::keyframe::Interpolation::EaseInOut,
+                                ));
+                                kf_y.push(trim_core::keyframe::Keyframe::new(
+                                    *t,
+                                    (cy + 0.5).clamp(0.02, 0.98),
+                                    trim_core::keyframe::Interpolation::EaseInOut,
+                                ));
+                            }
+                            target_mask.keyframes.insert("pos_x".to_string(), kf_x);
+                            target_mask.keyframes.insert("pos_y".to_string(), kf_y);
+                        }
+                        let cmd = Box::new(trim_commands::SetClipMasksCommand::new(
+                            track_id, clip_id, old_masks, new_masks,
+                        ));
+                        if self
+                            .undo_stack
+                            .push(cmd, &mut self.project.timeline)
+                            .is_ok()
+                        {
+                            self.project.mark_dirty();
+                            self.last_rendered_monitor_frame = None;
+                            self.video_engine.last_rendered_frame = None;
+                            self.status_message = format!(
+                                "🎯 Maske hareket takibi tamamlandı ({} anahtar kare oluşturuldu)",
+                                samples.len()
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        self.status_message = format!("⚠ Hareket takibi başarısız: {}", err);
                     }
                 },
             }
@@ -3701,16 +3791,58 @@ impl eframe::App for TrimApp {
                             .selected_clip_pairs
                             .first()
                             .map(|(_, c)| c.clone());
-                        if let Some(act) = render_inspector_panel(
-                            ui,
-                            &mut self.project,
-                            selected_clip_id.as_deref(),
-                            self.current_time,
-                        ) {
+                        let inspector_before: Option<(String, bool, trim_core::clip::Clip)> =
+                            selected_clip_id.as_deref().and_then(|cid| {
+                                self.project.timeline.tracks.iter().find_map(|t| {
+                                    t.get_clip_by_id(cid)
+                                        .map(|c| (t.id.clone(), t.locked, c.clone()))
+                                })
+                            });
+                        let track_locked = inspector_before.as_ref().is_some_and(|(_, l, _)| *l);
+                        let inspector_action = ui
+                            .add_enabled_ui(!track_locked, |ui| {
+                                render_inspector_panel(
+                                    ui,
+                                    &mut self.project,
+                                    selected_clip_id.as_deref(),
+                                    self.current_time,
+                                )
+                            })
+                            .inner;
+                        if let Some(act) = inspector_action {
                             match act {
                                 InspectorAction::ClipModified => {
+                                    if let Some((tr_id, false, before)) = inspector_before {
+                                        if let Some(after) = self
+                                            .project
+                                            .timeline
+                                            .get_track_by_id(&tr_id)
+                                            .and_then(|t| t.get_clip_by_id(&before.id))
+                                            .cloned()
+                                        {
+                                            if let Some(cl) = self
+                                                .project
+                                                .timeline
+                                                .get_track_by_id_mut(&tr_id)
+                                                .and_then(|t| t.get_clip_by_id_mut(&before.id))
+                                            {
+                                                *cl = before.clone();
+                                            }
+                                            let cmd = Box::new(ModifyClipCommand::new(
+                                                "Denetçi Düzenlemesi",
+                                                tr_id,
+                                                before,
+                                                after,
+                                            ));
+                                            let _ = self
+                                                .undo_stack
+                                                .push(cmd, &mut self.project.timeline);
+                                        }
+                                    }
                                     self.project.mark_dirty();
                                     self.last_rendered_monitor_frame = None;
+                                    self.last_rendered_dirty = true;
+                                    self.scopes_panel.mark_dirty();
                                     self.video_engine.last_rendered_frame = None;
                                 }
                                 InspectorAction::SetTransform {
@@ -3955,20 +4087,39 @@ impl eframe::App for TrimApp {
                                                 rw,
                                                 rh,
                                             );
-                                        if let Some(tr) =
-                                            self.project.timeline.get_track_by_id_mut(&track_id)
-                                        {
-                                            if let Some(cl) = tr.get_clip_by_id_mut(&clip_id) {
-                                                cl.brightness = (cl.brightness + b).clamp(-1.0, 1.0);
-                                                cl.contrast = c.clamp(0.2, 2.5);
-                                                cl.saturation = s.clamp(0.0, 2.5);
-                                                cl.temperature =
-                                                    (cl.temperature + temp).clamp(-100.0, 100.0);
-                                                cl.tint = (cl.tint + tint).clamp(-100.0, 100.0);
-                                            }
+                                        let before_after = self
+                                            .project
+                                            .timeline
+                                            .get_track_by_id(&track_id)
+                                            .filter(|tr| !tr.locked)
+                                            .and_then(|tr| tr.get_clip_by_id(&clip_id))
+                                            .map(|cl| {
+                                                let before = cl.clone();
+                                                let mut after = cl.clone();
+                                                after.brightness =
+                                                    (after.brightness + b).clamp(-1.0, 1.0);
+                                                after.contrast = c.clamp(0.2, 2.5);
+                                                after.saturation = s.clamp(0.0, 2.5);
+                                                after.temperature =
+                                                    (after.temperature + temp).clamp(-100.0, 100.0);
+                                                after.tint = (after.tint + tint).clamp(-100.0, 100.0);
+                                                (before, after)
+                                            });
+                                        if let Some((before, after)) = before_after {
+                                            let cmd = Box::new(ModifyClipCommand::new(
+                                                "Çekim Eşleştirme",
+                                                track_id,
+                                                before,
+                                                after,
+                                            ));
+                                            let _ = self
+                                                .undo_stack
+                                                .push(cmd, &mut self.project.timeline);
                                         }
                                         self.project.mark_dirty();
                                         self.last_rendered_monitor_frame = None;
+                                        self.last_rendered_dirty = true;
+                                        self.scopes_panel.mark_dirty();
                                         self.video_engine.last_rendered_frame = None;
                                         self.scopes_panel.mark_dirty();
                                         self.status_message = format!(
@@ -4106,12 +4257,14 @@ impl eframe::App for TrimApp {
                     } else {
                         p
                     };
-                    #[cfg(target_os = "windows")]
-                    let _ = std::process::Command::new("explorer").arg(folder).spawn();
-                    #[cfg(target_os = "macos")]
-                    let _ = std::process::Command::new("open").arg(folder).spawn();
-                    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-                    let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
+                    if folder.is_dir() {
+                        #[cfg(target_os = "windows")]
+                        let _ = std::process::Command::new("explorer").arg(folder).spawn();
+                        #[cfg(target_os = "macos")]
+                        let _ = std::process::Command::new("open").arg(folder).spawn();
+                        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+                        let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
+                    }
                 }
                 ExportDialogAction::CopyYoutubeChapters => {
                     let chapters = trim_core::interchange::export_youtube_chapters(
@@ -4142,12 +4295,14 @@ impl eframe::App for TrimApp {
                     } else {
                         p
                     };
-                    #[cfg(target_os = "windows")]
-                    let _ = std::process::Command::new("explorer").arg(folder).spawn();
-                    #[cfg(target_os = "macos")]
-                    let _ = std::process::Command::new("open").arg(folder).spawn();
-                    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-                    let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
+                    if folder.is_dir() {
+                        #[cfg(target_os = "windows")]
+                        let _ = std::process::Command::new("explorer").arg(folder).spawn();
+                        #[cfg(target_os = "macos")]
+                        let _ = std::process::Command::new("open").arg(folder).spawn();
+                        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+                        let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
+                    }
                 }
                 RenderQueueDialogAction::NewExportJob => {
                     self.export_dialog.open(&self.project);
@@ -4702,6 +4857,14 @@ impl eframe::App for TrimApp {
                             .set_frame_cache_capacity((mb * 300 / 512).max(50));
                     }
 
+                    self.audio_mixer.limiter.set_ceiling_dbfs(
+                        if new_prefs.master_limiter_enabled {
+                            new_prefs.limiter_ceiling_db
+                        } else {
+                            0.0
+                        },
+                    );
+
                     if let Err(e) = new_prefs.save() {
                         self.status_message = format!("Tercihler kaydedilemedi: {}", e);
                     } else {
@@ -4740,19 +4903,16 @@ impl eframe::App for TrimApp {
                             let media_p = PathBuf::from(&media_path);
                             let res =
                                 match trim_media::extract_audio_for_whisper(&media_p, &temp_wav) {
-                                    Ok(()) => {
-                                        let r = trim_media::run_whisper_transcription(
-                                            &whisper_bin,
-                                            &temp_wav,
-                                            &model_name,
-                                            Some(&language),
-                                        )
-                                        .map_err(|e| format!("Deşifre hatası: {}", e));
-                                        let _ = std::fs::remove_file(&temp_wav);
-                                        r
-                                    }
+                                    Ok(()) => trim_media::run_whisper_transcription(
+                                        &whisper_bin,
+                                        &temp_wav,
+                                        &model_name,
+                                        Some(&language),
+                                    )
+                                    .map_err(|e| format!("Deşifre hatası: {}", e)),
                                     Err(e) => Err(format!("Ses ayıklama hatası: {}", e)),
                                 };
+                            let _ = std::fs::remove_file(&temp_wav);
                             let _ = tx.send(BackgroundTaskMsg::TranscribeDone { result: res });
                         });
                     } else {
@@ -5234,6 +5394,7 @@ impl eframe::App for TrimApp {
                             Language::English => "↺ Check Again",
                         };
                         if ui.button(retry_lbl).clicked() {
+                            trim_media::refresh_ffmpeg_availability();
                             if trim_media::is_ffmpeg_available() && trim_media::is_ffprobe_available() {
                                 self.ffmpeg_missing_alert = false;
                                 self.status_message = match self.lang() {
@@ -5270,6 +5431,12 @@ impl eframe::App for TrimApp {
         self.splash_screen.show(ctx);
 
         suppress_linux_ime_for_text_input(ctx);
+    }
+
+    fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
+        if let (Some(comp), Some(gl_ctx)) = (self.gpu_compositor.as_mut(), gl) {
+            comp.destroy(gl_ctx);
+        }
     }
 }
 

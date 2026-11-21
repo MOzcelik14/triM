@@ -910,61 +910,30 @@ impl TrimApp {
         let sx = mask.scale_x as f32;
         let sy = mask.scale_y as f32;
 
-        match trim_media::video::track_region_motion(
-            &media_path,
-            source_in,
-            duration,
-            speed,
-            init_cx,
-            init_cy,
-            sx,
-            sy,
-        ) {
-            Ok(samples) => {
-                let mut new_masks = old_masks.clone();
-                if let Some(target_mask) = new_masks.get_mut(mask_index) {
-                    let mut kf_x = Vec::with_capacity(samples.len());
-                    let mut kf_y = Vec::with_capacity(samples.len());
-                    for (t, cx, cy) in &samples {
-                        kf_x.push(trim_core::keyframe::Keyframe::new(
-                            *t,
-                            (cx + 0.5).clamp(0.02, 0.98),
-                            trim_core::keyframe::Interpolation::EaseInOut,
-                        ));
-                        kf_y.push(trim_core::keyframe::Keyframe::new(
-                            *t,
-                            (cy + 0.5).clamp(0.02, 0.98),
-                            trim_core::keyframe::Interpolation::EaseInOut,
-                        ));
-                    }
-                    target_mask.keyframes.insert("pos_x".to_string(), kf_x);
-                    target_mask.keyframes.insert("pos_y".to_string(), kf_y);
-                }
-
-                let cmd = Box::new(trim_commands::SetClipMasksCommand::new(
-                    track_id.to_string(),
-                    clip_id.to_string(),
-                    old_masks,
-                    new_masks,
-                ));
-                if self
-                    .undo_stack
-                    .push(cmd, &mut self.project.timeline)
-                    .is_ok()
-                {
-                    self.project.mark_dirty();
-                    self.last_rendered_monitor_frame = None;
-                    self.video_engine.last_rendered_frame = None;
-                    self.status_message = format!(
-                        "🎯 Maske hareket takibi tamamlandı ({} anahtar kare oluşturuldu)",
-                        samples.len()
-                    );
-                }
-            }
-            Err(err) => {
-                self.status_message = format!("⚠ Hareket takibi başarısız: {}", err);
-            }
-        }
+        let tx = self.bg_task_tx.clone();
+        let tid = track_id.to_string();
+        let cid = clip_id.to_string();
+        self.status_message = "🎯 Maske hareket takibi arka planda çalışıyor...".to_string();
+        std::thread::spawn(move || {
+            let res = trim_media::video::track_region_motion(
+                &media_path,
+                source_in,
+                duration,
+                speed,
+                init_cx,
+                init_cy,
+                sx,
+                sy,
+            )
+            .map_err(|e| e.to_string());
+            let _ = tx.send(crate::app::BackgroundTaskMsg::MotionTrackDone {
+                track_id: tid,
+                clip_id: cid,
+                mask_index,
+                old_masks,
+                result: res,
+            });
+        });
     }
 
     pub(crate) fn auto_duck_audio_clip(&mut self, track_id: &str, clip_id: &str) {
@@ -1210,7 +1179,18 @@ impl TrimApp {
             timeline: comp_tl,
         });
 
-        let pairs_to_remove = self.canvas_state.selected_clip_pairs.clone();
+        let pairs_to_remove: Vec<(String, String)> = self
+            .canvas_state
+            .selected_clip_pairs
+            .iter()
+            .filter(|(tr_id, _)| {
+                self.project
+                    .timeline
+                    .get_track_by_id(tr_id)
+                    .is_some_and(|t| !t.locked)
+            })
+            .cloned()
+            .collect();
         let mut cmds: Vec<Box<dyn trim_commands::Command>> =
             vec![Box::new(RemoveMultipleClipsCommand::new(pairs_to_remove))];
 

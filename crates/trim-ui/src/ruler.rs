@@ -247,8 +247,8 @@ pub fn render_time_ruler(
         Stroke::new(1.0_f32, Color32::from_rgb(0x20, 0x20, 0x26)),
     ));
 
-    // Handle click / drag scrub
-    if response.dragged() || response.clicked() {
+    // Handle click / drag scrub (do not overwrite MarkerClicked)
+    if action.is_none() && (response.dragged() || response.clicked()) {
         if let Some(pos) = response.interact_pointer_pos() {
             let t = ((pos.x - rect.left()) / pixels_per_second).max(0.0) as f64;
             action = Some(RulerAction::Seek(t));

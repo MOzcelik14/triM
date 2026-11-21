@@ -35,16 +35,33 @@ pub fn calculate_preview_size(width: u32, height: u32) -> (u32, u32) {
 pub type DecodedFrame = (f64, Arc<RgbaImage>);
 pub type FrameCacheMap = Arc<RwLock<LruCache<(String, u64), Arc<RgbaImage>>>>;
 
-/// Fast, single-frame raw RGBA extraction via ffmpeg pipe.
+/// Fast, single-frame raw RGBA extraction via ffmpeg pipe at 640x360 preview resolution.
 pub fn decode_frame_raw<P: AsRef<Path>>(file_path: P, source_time: f64) -> Option<RgbaImage> {
+    decode_frame_raw_sized(file_path, source_time, PREVIEW_WIDTH, PREVIEW_HEIGHT)
+}
+
+/// Fast, single-frame raw RGBA extraction via ffmpeg pipe at a specified preview resolution.
+pub fn decode_frame_raw_sized<P: AsRef<Path>>(
+    file_path: P,
+    source_time: f64,
+    target_w: u32,
+    target_h: u32,
+) -> Option<RgbaImage> {
     let p = file_path.as_ref();
     let p_str = p.to_string_lossy().to_string();
+    let tw = target_w.max(16);
+    let th = target_h.max(16);
+    let vf = format!(
+        "scale={tw}:{th}:force_original_aspect_ratio=decrease,pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2:black"
+    );
 
     let mut cmd = crate::ffmpeg::ffmpeg_cmd();
     cmd.args([
         "-v",
         "quiet",
         "-y",
+        "-protocol_whitelist",
+        "file",
         "-ss",
         &format!("{:.3}", source_time.max(0.0)),
         "-i",
@@ -52,7 +69,7 @@ pub fn decode_frame_raw<P: AsRef<Path>>(file_path: P, source_time: f64) -> Optio
         "-vframes",
         "1",
         "-vf",
-        "scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black",
+        &vf,
         "-f",
         "rawvideo",
         "-pix_fmt",
@@ -63,9 +80,10 @@ pub fn decode_frame_raw<P: AsRef<Path>>(file_path: P, source_time: f64) -> Optio
     .stderr(Stdio::null());
 
     let mut guard = crate::ffmpeg::ChildGuard::spawn(&mut cmd).ok()?;
-
-    let mut buf = vec![0u8; PREVIEW_FRAME_BYTES];
-    if let Some(mut stdout) = guard.take_stdout() {
+    let frame_bytes = (tw as usize).checked_mul(th as usize)?.checked_mul(4)?;
+    let mut buf = vec![0u8; frame_bytes];
+    {
+        let mut stdout = guard.take_stdout()?;
         if stdout.read_exact(&mut buf).is_err() {
             let _ = guard.kill();
             return None;
@@ -73,7 +91,7 @@ pub fn decode_frame_raw<P: AsRef<Path>>(file_path: P, source_time: f64) -> Optio
     }
     let _ = guard.wait();
 
-    ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(PREVIEW_WIDTH, PREVIEW_HEIGHT, buf)
+    ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(tw, th, buf)
 }
 
 /// Continuous background rawvideo pipe streamer for real-time 140+ FPS playback.
@@ -172,7 +190,35 @@ impl PlaybackStreamer {
         reverse: bool,
         source_in: f64,
     ) {
+        self.start_sized(
+            clip_id,
+            file_path,
+            source_start_time,
+            fps,
+            reverse,
+            source_in,
+            PREVIEW_WIDTH,
+            PREVIEW_HEIGHT,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_sized(
+        &mut self,
+        clip_id: &str,
+        file_path: &str,
+        source_start_time: f64,
+        fps: f64,
+        reverse: bool,
+        source_in: f64,
+        target_w: u32,
+        target_h: u32,
+    ) {
         self.stop();
+
+        let tw = target_w.max(16);
+        let th = target_h.max(16);
+        let frame_bytes = (tw as usize).saturating_mul(th as usize).saturating_mul(4);
 
         let path_str = file_path.to_string();
         let clip_str = clip_id.to_string();
@@ -194,13 +240,14 @@ impl PlaybackStreamer {
 
         let handle = std::thread::spawn(move || {
             let vf_str = format!(
-                "fps=fps={thread_fps:.3},scale=640:360:force_original_aspect_ratio=decrease,pad=640:360:(ow-iw)/2:(oh-ih)/2:black"
+                "fps=fps={thread_fps:.3},scale={tw}:{th}:force_original_aspect_ratio=decrease,pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2:black"
             );
 
             if !reverse {
                 // Forward streaming: continuous single FFmpeg process
                 let mut cmd = crate::ffmpeg::ffmpeg_cmd();
                 cmd.arg("-v").arg("quiet");
+                cmd.args(["-protocol_whitelist", "file"]);
                 cmd.args(["-ss", &format!("{:.3}", source_start_time.max(0.0))]);
                 cmd.args([
                     "-i",
@@ -224,17 +271,23 @@ impl PlaybackStreamer {
                     Some(s) => s,
                     None => {
                         let _ = child.kill();
+                        let _ = child.wait();
                         return;
                     }
                 };
 
                 if let Ok(mut lock) = child_holder.lock() {
+                    if stop_clone.load(Ordering::Acquire) {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        return;
+                    }
                     *lock = Some(child);
                 }
 
                 let mut frame_idx = 0u64;
-                while !stop_clone.load(Ordering::Relaxed) {
-                    let mut buf = vec![0u8; PREVIEW_FRAME_BYTES];
+                while !stop_clone.load(Ordering::Acquire) {
+                    let mut buf = vec![0u8; frame_bytes];
                     if stdout.read_exact(&mut buf).is_err() {
                         break;
                     }
@@ -242,11 +295,7 @@ impl PlaybackStreamer {
                     let pts = source_start_time + (frame_idx as f64 / thread_fps);
                     frame_idx += 1;
 
-                    if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(
-                        PREVIEW_WIDTH,
-                        PREVIEW_HEIGHT,
-                        buf,
-                    ) {
+                    if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(tw, th, buf) {
                         if tx.send((pts, Arc::new(img))).is_err() {
                             break;
                         }
@@ -267,7 +316,7 @@ impl PlaybackStreamer {
                 let chunk_dur = 2.0;
                 let mut curr_end = source_start_time;
 
-                while !stop_clone.load(Ordering::Relaxed) && curr_end > source_in + 0.005 {
+                while !stop_clone.load(Ordering::Acquire) && curr_end > source_in + 0.005 {
                     let curr_start = (curr_end - chunk_dur).max(source_in);
                     let actual_dur = curr_end - curr_start;
                     if actual_dur <= 0.001 {
@@ -276,6 +325,7 @@ impl PlaybackStreamer {
 
                     let mut cmd = crate::ffmpeg::ffmpeg_cmd();
                     cmd.arg("-v").arg("quiet");
+                    cmd.args(["-protocol_whitelist", "file"]);
                     cmd.args([
                         "-ss",
                         &format!("{:.3}", curr_start.max(0.0)),
@@ -304,19 +354,25 @@ impl PlaybackStreamer {
                         Some(s) => s,
                         None => {
                             let _ = child.kill();
+                            let _ = child.wait();
                             break;
                         }
                     };
 
                     if let Ok(mut lock) = child_holder.lock() {
+                        if stop_clone.load(Ordering::Acquire) {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            break;
+                        }
                         *lock = Some(child);
                     }
 
                     let mut chunk_frames = Vec::new();
                     let mut frame_idx = 0u64;
 
-                    while !stop_clone.load(Ordering::Relaxed) {
-                        let mut buf = vec![0u8; PREVIEW_FRAME_BYTES];
+                    while !stop_clone.load(Ordering::Acquire) {
+                        let mut buf = vec![0u8; frame_bytes];
                         if stdout.read_exact(&mut buf).is_err() {
                             break;
                         }
@@ -324,11 +380,7 @@ impl PlaybackStreamer {
                         let pts = curr_start + (frame_idx as f64 / thread_fps);
                         frame_idx += 1;
 
-                        if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(
-                            PREVIEW_WIDTH,
-                            PREVIEW_HEIGHT,
-                            buf,
-                        ) {
+                        if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(tw, th, buf) {
                             chunk_frames.push((pts, Arc::new(img)));
                         } else {
                             break;
@@ -337,11 +389,14 @@ impl PlaybackStreamer {
 
                     if let Ok(mut lock) = child_holder.lock() {
                         if let Some(mut c) = lock.take() {
+                            if stop_clone.load(Ordering::Acquire) {
+                                let _ = c.kill();
+                            }
                             let _ = c.wait();
                         }
                     }
 
-                    if stop_clone.load(Ordering::Relaxed) {
+                    if stop_clone.load(Ordering::Acquire) {
                         break;
                     }
 
@@ -389,10 +444,11 @@ impl PlaybackStreamer {
                 *pts <= target_source_time + 0.005
             };
             if is_due {
-                let (p, frame) = self.pending_future_frame.take().unwrap();
-                self.current_frame = Some(frame);
-                self.last_pts = p;
-                self.frames_delivered += 1;
+                if let Some((p, frame)) = self.pending_future_frame.take() {
+                    self.current_frame = Some(frame);
+                    self.last_pts = p;
+                    self.frames_delivered += 1;
+                }
             }
         }
 
@@ -422,7 +478,7 @@ impl PlaybackStreamer {
     /// Stops the background streaming process and immediately terminates any active FFmpeg child process.
     pub fn stop(&mut self) {
         if let Some(flag) = &self.stop_flag {
-            flag.store(true, Ordering::Relaxed);
+            flag.store(true, Ordering::Release);
         }
         if let Some(child_arc) = &self.active_child {
             if let Ok(mut lock) = child_arc.lock() {
@@ -435,7 +491,9 @@ impl PlaybackStreamer {
         self.active_child = None;
         self.frame_rx = None;
         self.stop_flag = None;
-        self.child_handle = None;
+        if let Some(handle) = self.child_handle.take() {
+            let _ = handle.join();
+        }
         self.active_path = None;
         self.active_clip_id = None;
         self.pending_future_frame = None;
@@ -447,6 +505,8 @@ pub struct SeekCommand {
     pub id: u64,
     pub path: String,
     pub time: f64,
+    pub target_w: u32,
+    pub target_h: u32,
 }
 
 pub struct SeekResult {
@@ -481,7 +541,8 @@ impl AsyncFrameDecoder {
                     cmd = newer;
                 }
 
-                let maybe_img = decode_frame_raw(&cmd.path, cmd.time);
+                let maybe_img =
+                    decode_frame_raw_sized(&cmd.path, cmd.time, cmd.target_w, cmd.target_h);
                 let res = SeekResult {
                     id: cmd.id,
                     path: cmd.path,
@@ -499,14 +560,27 @@ impl AsyncFrameDecoder {
         }
     }
 
-    /// Issues an async seek request for `file_path` at `source_time`.
+    /// Issues an async seek request for `file_path` at `source_time` at default 640x360 resolution.
     pub fn request_seek(&mut self, file_path: &str, source_time: f64) -> u64 {
+        self.request_seek_sized(file_path, source_time, PREVIEW_WIDTH, PREVIEW_HEIGHT)
+    }
+
+    /// Issues an async seek request for `file_path` at `source_time` at a specific preview resolution.
+    pub fn request_seek_sized(
+        &mut self,
+        file_path: &str,
+        source_time: f64,
+        target_w: u32,
+        target_h: u32,
+    ) -> u64 {
         self.latest_req_id += 1;
         let id = self.latest_req_id;
         let _ = self.seek_tx.send(SeekCommand {
             id,
             path: file_path.to_string(),
             time: source_time,
+            target_w,
+            target_h,
         });
         id
     }
@@ -681,8 +755,11 @@ pub fn parse_cube_lut_file<P: AsRef<Path>>(path: P) -> Option<Arc<CubeLut3D>> {
         }
     }
 
-    let parsed = std::fs::read_to_string(&norm)
+    const MAX_CUBE_LUT_BYTES: u64 = 16 * 1024 * 1024;
+    let parsed = std::fs::symlink_metadata(&norm)
         .ok()
+        .filter(|m| !m.file_type().is_symlink() && m.is_file() && m.len() <= MAX_CUBE_LUT_BYTES)
+        .and_then(|_| std::fs::read_to_string(&norm).ok())
         .and_then(|content| parse_cube_lut_str(&content))
         .map(Arc::new);
 
@@ -743,6 +820,7 @@ impl VideoEngine {
         self.is_decoding_seek = false;
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn resolve_layer_source_frame(
         &mut self,
         clip: &trim_core::clip::Clip,
@@ -751,8 +829,10 @@ impl VideoEngine {
         is_playing: bool,
         stream_fps: f64,
         use_primary_streamer: bool,
+        target_w: u32,
+        target_h: u32,
     ) -> Option<Arc<RgbaImage>> {
-        let ts_key = (src_t * 30.0).round() as u64;
+        let ts_key = (src_t * 1000.0).round() as u64;
         let key = (eff_path.to_string(), ts_key);
 
         let streamer_frame = if is_playing {
@@ -763,13 +843,15 @@ impl VideoEngine {
             };
             if target_streamer.active_clip_id() == Some(&clip.id) {
                 if target_streamer.should_restart(src_t, clip.reverse) {
-                    target_streamer.start(
+                    target_streamer.start_sized(
                         &clip.id,
                         eff_path,
                         src_t,
                         stream_fps,
                         clip.reverse,
                         clip.source_in,
+                        target_w,
+                        target_h,
                     );
                 }
                 target_streamer.get_frame_for_time(src_t)
@@ -779,24 +861,28 @@ impl VideoEngine {
                 if extra.active_clip_id() != Some(&clip.id)
                     || extra.should_restart(src_t, clip.reverse)
                 {
-                    extra.start(
+                    extra.start_sized(
                         &clip.id,
                         eff_path,
                         src_t,
                         stream_fps,
                         clip.reverse,
                         clip.source_in,
+                        target_w,
+                        target_h,
                     );
                 }
                 extra.get_frame_for_time(src_t)
             } else {
-                target_streamer.start(
+                target_streamer.start_sized(
                     &clip.id,
                     eff_path,
                     src_t,
                     stream_fps,
                     clip.reverse,
                     clip.source_in,
+                    target_w,
+                    target_h,
                 );
                 target_streamer.get_frame_for_time(src_t)
             }
@@ -835,13 +921,14 @@ impl VideoEngine {
 
         if let Some(prev) = self.clip_last_frames.get(&clip.id).cloned() {
             if !self.is_decoding_seek {
-                self.async_decoder.request_seek(eff_path, src_t);
+                self.async_decoder
+                    .request_seek_sized(eff_path, src_t, target_w, target_h);
                 self.is_decoding_seek = true;
             }
             return Some(prev);
         }
 
-        if let Some(frame) = decode_frame_raw(eff_path, src_t) {
+        if let Some(frame) = decode_frame_raw_sized(eff_path, src_t, target_w, target_h) {
             let arc = Arc::new(frame);
             if let Ok(mut cache) = self.frame_cache.write() {
                 cache.insert(key, arc.clone());
@@ -892,7 +979,7 @@ impl VideoEngine {
                 }
                 let eff_path = media.resolved_playback_path(self.use_proxies).to_string();
                 let src_t = clip.map_timeline_to_source(timeline_time);
-                let ts_key = (src_t * 30.0).round() as u64;
+                let ts_key = (src_t * 1000.0).round() as u64;
                 let hit = cache.peek(&(eff_path.clone(), ts_key)).is_some()
                     || cache
                         .peek(&(eff_path.clone(), ts_key.saturating_sub(1)))
@@ -931,7 +1018,7 @@ impl VideoEngine {
                 }
                 let eff_path = media.resolved_playback_path(self.use_proxies).to_string();
                 let src_t = clip.map_timeline_to_source(timeline_time);
-                let ts_key = (src_t * 30.0).round() as u64;
+                let ts_key = (src_t * 1000.0).round() as u64;
                 let already_cached = self
                     .frame_cache
                     .read()
@@ -948,14 +1035,23 @@ impl VideoEngine {
     }
 
     pub fn get_image<P: AsRef<Path>>(&mut self, path: P) -> Option<Arc<RgbaImage>> {
+        const MAX_IMAGE_CACHE_ENTRIES: usize = 64;
         let p_str = path.as_ref().to_string_lossy().to_string();
         if !self.image_cache.contains_key(&p_str) {
-            if let Ok(dyn_img) = image::open(&p_str) {
-                self.image_cache
-                    .insert(p_str.clone(), Arc::new(dyn_img.to_rgba8()));
-            } else {
-                return None;
+            let mut reader = image::ImageReader::open(&p_str).ok()?;
+            let mut limits = image::Limits::default();
+            limits.max_image_width = Some(16_384);
+            limits.max_image_height = Some(16_384);
+            limits.max_alloc = Some(512 * 1024 * 1024);
+            reader.limits(limits);
+            let dyn_img = reader.decode().ok()?;
+            if self.image_cache.len() >= MAX_IMAGE_CACHE_ENTRIES {
+                if let Some(evict_key) = self.image_cache.keys().next().cloned() {
+                    self.image_cache.remove(&evict_key);
+                }
             }
+            self.image_cache
+                .insert(p_str.clone(), Arc::new(dyn_img.to_rgba8()));
         }
         self.image_cache.get(&p_str).cloned()
     }
@@ -981,7 +1077,7 @@ impl VideoEngine {
         } else {
             let eff_path = media_item.resolved_playback_path(self.use_proxies);
             let src_t = clip.map_timeline_to_source(sample_tl_time);
-            let ts_key = (src_t * 30.0).round() as u64;
+            let ts_key = (src_t * 1000.0).round() as u64;
             let key = (eff_path.to_string(), ts_key);
 
             let cached = self
@@ -1039,7 +1135,7 @@ impl VideoEngine {
             if res.id == self.async_decoder.latest_req_id {
                 self.is_decoding_seek = false;
                 if let Some(frame) = res.frame {
-                    let key = (res.path.clone(), (res.time * 30.0).round() as u64);
+                    let key = (res.path.clone(), (res.time * 1000.0).round() as u64);
                     if let Ok(mut cache) = self.frame_cache.write() {
                         cache.insert(key, frame.clone());
                     }
@@ -1096,6 +1192,8 @@ impl VideoEngine {
                         .resolved_playback_path(self.use_proxies)
                         .to_string();
                     let src_t = clip.map_timeline_to_source(timeline_time);
+                    let (pw, ph) =
+                        calculate_preview_size(project.timeline.width, project.timeline.height);
                     self.resolve_layer_source_frame(
                         clip,
                         &eff_path,
@@ -1103,6 +1201,8 @@ impl VideoEngine {
                         is_playing,
                         project.timeline.fps,
                         layer_idx == 0,
+                        pw,
+                        ph,
                     )
                 }
             };
@@ -1150,7 +1250,7 @@ impl VideoEngine {
             if res.id == self.async_decoder.latest_req_id {
                 self.is_decoding_seek = false;
                 if let Some(frame) = res.frame {
-                    let key = (res.path.clone(), (res.time * 30.0).round() as u64);
+                    let key = (res.path.clone(), (res.time * 1000.0).round() as u64);
                     if let Ok(mut cache) = self.frame_cache.write() {
                         cache.insert(key, frame.clone());
                     }
@@ -1232,13 +1332,15 @@ impl VideoEngine {
                     };
 
                     if needs_restart {
-                        self.streamer.start(
+                        self.streamer.start_sized(
                             &clip.id,
                             eff_path,
                             src_t,
                             project.timeline.fps,
                             clip.reverse,
                             clip.source_in,
+                            canvas_w,
+                            canvas_h,
                         );
                     }
 
@@ -1248,11 +1350,8 @@ impl VideoEngine {
                             self.last_rendered_frame = Some(frame.clone());
                             return Some(frame);
                         } else {
-                            let mut canvas = ImageBuffer::from_pixel(
-                                PREVIEW_WIDTH,
-                                PREVIEW_HEIGHT,
-                                Rgba([0, 0, 0, 255]),
-                            );
+                            let mut canvas =
+                                ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
                             draw_clip_onto_canvas(&mut canvas, clip, &frame, timeline_time);
                             let arc_canvas = Arc::new(canvas);
                             self.last_rendered_frame = Some(arc_canvas.clone());
@@ -1262,11 +1361,8 @@ impl VideoEngine {
                         if is_standard_transform {
                             return Some(last_raw.clone());
                         } else {
-                            let mut canvas = ImageBuffer::from_pixel(
-                                PREVIEW_WIDTH,
-                                PREVIEW_HEIGHT,
-                                Rgba([0, 0, 0, 255]),
-                            );
+                            let mut canvas =
+                                ImageBuffer::from_pixel(canvas_w, canvas_h, Rgba([0, 0, 0, 255]));
                             draw_clip_onto_canvas(&mut canvas, clip, last_raw, timeline_time);
                             let arc_canvas = Arc::new(canvas);
                             self.last_rendered_frame = Some(arc_canvas.clone());
@@ -1279,7 +1375,7 @@ impl VideoEngine {
                         self.streamer.stop();
                     }
 
-                    let ts_key = (src_t * 30.0).round() as u64;
+                    let ts_key = (src_t * 1000.0).round() as u64;
                     let key = (eff_path.to_string(), ts_key);
 
                     if let Ok(mut cache) = self.frame_cache.write() {
@@ -1306,7 +1402,9 @@ impl VideoEngine {
 
                     if self.last_raw_source_frame.is_none() {
                         // Immediate first frame decode so monitor is never blank on initial clip placement
-                        if let Some(frame) = decode_frame_raw(eff_path, src_t) {
+                        if let Some(frame) =
+                            decode_frame_raw_sized(eff_path, src_t, canvas_w, canvas_h)
+                        {
                             let arc = Arc::new(frame);
                             if let Ok(mut cache) = self.frame_cache.write() {
                                 cache.insert(key, arc.clone());
@@ -1332,7 +1430,8 @@ impl VideoEngine {
 
                     // Trigger non-blocking async seek if not already in flight
                     if !self.is_decoding_seek {
-                        self.async_decoder.request_seek(eff_path, src_t);
+                        self.async_decoder
+                            .request_seek_sized(eff_path, src_t, canvas_w, canvas_h);
                         self.is_decoding_seek = true;
                     }
 
@@ -1398,6 +1497,8 @@ impl VideoEngine {
                         is_playing,
                         project.timeline.fps,
                         layer_idx == 0,
+                        canvas_w,
+                        canvas_h,
                     )
                 }
             };
@@ -1452,7 +1553,7 @@ impl VideoFrameDecoder {
     ) -> Option<RgbaImage> {
         let p = file_path.as_ref();
         let p_str = p.to_string_lossy().to_string();
-        let ts_key = (source_time * 30.0).round() as u64;
+        let ts_key = (source_time * 1000.0).round() as u64;
 
         if let Some(cached) = self.frame_cache.get(&(p_str.clone(), ts_key)) {
             return Some(cached.clone());
@@ -1765,21 +1866,20 @@ fn draw_clip_onto_canvas(
     let ca_amt = clip.chromatic_aberration.clamp(0.0, 1.0);
     let active_cp = clip.corner_pin.as_ref().filter(|cp| cp.is_active());
 
-    for y in 0..final_h {
+    let y_start = (-final_y).max(0);
+    let y_end = (ch as i64 - final_y).min(final_h);
+    let x_start = (-final_x).max(0);
+    let x_end = (cw as i64 - final_x).min(final_w);
+
+    for y in y_start..y_end {
         let cy = final_y + y;
-        if cy < 0 || cy >= ch as i64 {
-            continue;
-        }
 
         let norm_y = y as f32 / final_h.max(1) as f32;
         let sy_base = ((y as f64 / final_h as f64) * fh) as u32;
         let sy_base = sy_base.min(fh_u32 - 1);
 
-        for x in 0..final_w {
+        for x in x_start..x_end {
             let cx = final_x + x;
-            if cx < 0 || cx >= cw as i64 {
-                continue;
-            }
 
             let norm_x = x as f64 / final_w.max(1) as f64;
             if wipe_left_active && norm_x > fade_factor {

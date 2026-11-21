@@ -180,9 +180,16 @@ impl TimelineModel {
     }
 
     pub fn effective_in_out(&self) -> (f64, f64) {
-        let total = self.duration();
-        let inp = self.in_point.unwrap_or(0.0).clamp(0.0, total);
-        let out = self.out_point.unwrap_or(total).clamp(inp, total);
+        let raw_total = self.duration();
+        let total = if raw_total.is_finite() && raw_total >= 0.0 {
+            raw_total
+        } else {
+            0.0
+        };
+        let raw_in = self.in_point.filter(|v| v.is_finite()).unwrap_or(0.0);
+        let inp = raw_in.clamp(0.0, total);
+        let raw_out = self.out_point.filter(|v| v.is_finite()).unwrap_or(total);
+        let out = raw_out.clamp(inp, total);
         (inp, out)
     }
 

@@ -54,6 +54,9 @@ install_payload() {
   install -Dm644 "$DESKTOP" "$root/usr/share/applications/trim.desktop"
   install -Dm644 "$METAINFO" "$root/usr/share/metainfo/trim.metainfo.xml"
   install -Dm644 "$ICON" "$root/usr/share/icons/hicolor/scalable/apps/trim.svg"
+  if [[ -f "$ROOT/LICENSE" ]]; then
+    install -Dm644 "$ROOT/LICENSE" "$root/usr/share/licenses/trim/LICENSE"
+  fi
   local size
   for size in 16 32 48 64 128 256 512; do
     local image="$ROOT/resources/icons/trim_${size}x${size}.png"
@@ -215,9 +218,12 @@ build_appimage() {
   write_runtime_launcher "$custom_apprun" "usr/bin/trim"
   local linuxdeploy="$tools/linuxdeploy-x86_64.AppImage"
   if [[ ! -s "$linuxdeploy" ]]; then
-    curl --fail --location --retry 3 --silent --show-error \
+    curl --proto '=https' --tlsv1.2 --fail --location --retry 3 --silent --show-error \
       "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage" \
       --output "$linuxdeploy"
+    if [[ -n "${LINUXDEPLOY_SHA256:-}" ]]; then
+      echo "${LINUXDEPLOY_SHA256}  $linuxdeploy" | sha256sum -c -
+    fi
     chmod +x "$linuxdeploy"
   fi
   (
@@ -248,6 +254,9 @@ build_tarball() {
     cp -r "$ROOT/resources" "$stage/resources"
   fi
   cp "$ROOT/README.md" "$stage/README.md"
+  if [[ -f "$ROOT/LICENSE" ]]; then
+    cp "$ROOT/LICENSE" "$stage/LICENSE"
+  fi
   if [[ -f "$ROOT/install.sh" ]]; then
     install -Dm755 "$ROOT/install.sh" "$stage/install.sh"
   fi

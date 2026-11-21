@@ -23,6 +23,12 @@ pub struct ExportRunner {
     active_job_cancel: std::sync::Mutex<Arc<AtomicBool>>,
 }
 
+impl Drop for ExportRunner {
+    fn drop(&mut self) {
+        self.cancel();
+    }
+}
+
 impl Default for ExportRunner {
     fn default() -> Self {
         Self {
@@ -60,7 +66,7 @@ impl ExportRunner {
         }
 
         thread::spawn(move || {
-            let (mut cmd_args, total_duration) = match TimelineExporter::build_export_pipeline_range(
+            let prepared = match TimelineExporter::build_export_pipeline_prepared(
                 &project,
                 &preset,
                 &output_path,
@@ -72,18 +78,21 @@ impl ExportRunner {
                     return;
                 }
             };
+            let mut cmd_args = prepared.cmd_args;
+            let total_duration = prepared.total_duration;
+            let _temp_dir = prepared.temp_dir;
 
             // Avoid Windows 32KB CreateProcess CLI limit by writing large filtergraphs to a temp script
-            let mut temp_script_path: Option<std::path::PathBuf> = None;
+            // inside our private export TempDir (cleaned up automatically when _temp_dir drops).
             if let Some(fc_idx) = cmd_args.iter().position(|a| a == "-filter_complex") {
                 if let Some(fg) = cmd_args.get(fc_idx + 1) {
                     if fg.len() > 16_000 {
-                        let script_path = std::env::temp_dir()
-                            .join(format!("trim_fg_{}.txt", uuid::Uuid::new_v4()));
-                        if std::fs::write(&script_path, fg).is_ok() {
-                            cmd_args[fc_idx] = "-filter_complex_script".to_string();
-                            cmd_args[fc_idx + 1] = script_path.to_string_lossy().to_string();
-                            temp_script_path = Some(script_path);
+                        if let Some(td) = _temp_dir.as_ref() {
+                            let script_path = td.path().join("filter_complex.txt");
+                            if std::fs::write(&script_path, fg).is_ok() {
+                                cmd_args[fc_idx] = "-filter_complex_script".to_string();
+                                cmd_args[fc_idx + 1] = script_path.to_string_lossy().to_string();
+                            }
                         }
                     }
                 }
@@ -93,9 +102,6 @@ impl ExportRunner {
             log::info!("Executing export pipeline: {}", cmd_args.join(" "));
 
             if cmd_args.is_empty() {
-                if let Some(p) = temp_script_path {
-                    let _ = std::fs::remove_file(p);
-                }
                 let _ = tx.send(ExportMessage::Finished(Err("Boş komut".to_string())));
                 return;
             }
@@ -109,9 +115,6 @@ impl ExportRunner {
             {
                 Ok(c) => c,
                 Err(e) => {
-                    if let Some(p) = temp_script_path {
-                        let _ = std::fs::remove_file(p);
-                    }
                     let _ = tx.send(ExportMessage::Finished(Err(format!(
                         "FFmpeg başlatılamadı: {}",
                         e
@@ -120,13 +123,35 @@ impl ExportRunner {
                 }
             };
 
-            // Concurrently drain stderr (capped at 64KB) to prevent pipe deadlocks and unbounded RAM use
+            // Concurrently drain stderr to EOF in a 64 KiB ring buffer so FFmpeg never hits SIGPIPE
+            // and the final error diagnostics are always preserved.
             let stderr_handle = child.stderr.take().map(|err_pipe| {
                 thread::spawn(move || {
+                    use std::collections::VecDeque;
                     use std::io::Read;
-                    let mut buf = Vec::new();
-                    let _ = err_pipe.take(64 * 1024).read_to_end(&mut buf);
-                    String::from_utf8_lossy(&buf).to_string()
+                    const MAX_STDERR_BYTES: usize = 64 * 1024;
+                    let mut ring: VecDeque<u8> = VecDeque::with_capacity(MAX_STDERR_BYTES);
+                    let mut reader = err_pipe;
+                    let mut chunk = [0u8; 4096];
+                    loop {
+                        match reader.read(&mut chunk) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => {
+                                if n >= MAX_STDERR_BYTES {
+                                    ring.clear();
+                                    ring.extend(&chunk[n - MAX_STDERR_BYTES..n]);
+                                } else {
+                                    let excess = (ring.len() + n).saturating_sub(MAX_STDERR_BYTES);
+                                    for _ in 0..excess {
+                                        ring.pop_front();
+                                    }
+                                    ring.extend(&chunk[..n]);
+                                }
+                            }
+                        }
+                    }
+                    let bytes: Vec<u8> = ring.into_iter().collect();
+                    String::from_utf8_lossy(&bytes).to_string()
                 })
             });
 
@@ -154,9 +179,7 @@ impl ExportRunner {
             }
 
             let status = child.wait();
-            if let Some(p) = temp_script_path {
-                let _ = std::fs::remove_file(p);
-            }
+            drop(_temp_dir);
             let stderr_str = stderr_handle
                 .and_then(|h| h.join().ok())
                 .unwrap_or_default();

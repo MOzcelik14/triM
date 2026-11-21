@@ -168,6 +168,13 @@ impl FileDialogBridge {
         let (tx, rx) = mpsc::sync_channel(1);
         self.pending_rx = Some(rx);
 
+        #[cfg(target_os = "macos")]
+        {
+            let path = runner();
+            let _ = tx.send(FileDialogResponse { request, path });
+        }
+
+        #[cfg(not(target_os = "macos"))]
         std::thread::spawn(move || {
             let path = runner();
             let _ = tx.send(FileDialogResponse { request, path });

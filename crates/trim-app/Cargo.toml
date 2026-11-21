@@ -11,11 +11,6 @@ path = "src/main.rs"
 
 [dependencies]
 trim-core = { path = "../trim-core" }
-trim-commands = { path = "../trim-commands" }
-trim-timeline = { path = "../trim-timeline" }
-trim-project = { path = "../trim-project" }
-trim-media = { path = "../trim-media" }
-trim-export = { path = "../trim-export" }
 trim-ui = { path = "../trim-ui" }
 egui = { workspace = true }
 eframe = { workspace = true }

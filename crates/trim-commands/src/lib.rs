@@ -1193,4 +1193,58 @@ mod tests {
         assert!(stack.redo(&mut tl).unwrap());
         assert_eq!(tl.tracks[0].clips.len(), 1);
     }
+
+    #[test]
+    fn test_move_clip_missing_target_track_preserves_clip_and_modify_clip_undo() {
+        let mut tl = TimelineModel::default();
+        let v1_id = tl.tracks[0].id.clone();
+        let clip = Clip::new("m1", 0.0, 5.0);
+        let cid = clip.id.clone();
+        tl.tracks[0].add_clip(clip.clone());
+
+        let mut stack = UndoStack::new();
+        // Moving to nonexistent track must fail WITHOUT deleting the source clip
+        let err = stack.push(
+            Box::new(MoveClipCommand::new(
+                &cid,
+                &v1_id,
+                "missing_track",
+                0.0,
+                2.0,
+            )),
+            &mut tl,
+        );
+        assert!(err.is_err());
+        assert!(tl.tracks[0].get_clip_by_id(&cid).is_some());
+
+        // ModifyClipCommand roundtrip + locked track rejection
+        let before = tl.tracks[0].get_clip_by_id(&cid).unwrap().clone();
+        let mut after = before.clone();
+        after.brightness = 0.42;
+        stack
+            .push(
+                Box::new(ModifyClipCommand::new("Brightness", &v1_id, before, after)),
+                &mut tl,
+            )
+            .unwrap();
+        assert!((tl.tracks[0].get_clip_by_id(&cid).unwrap().brightness - 0.42).abs() < 1e-6);
+        assert!(stack.undo(&mut tl).unwrap());
+        assert!((tl.tracks[0].get_clip_by_id(&cid).unwrap().brightness - 0.0).abs() < 1e-6);
+
+        tl.tracks[0].locked = true;
+        let locked_before = tl.tracks[0].get_clip_by_id(&cid).unwrap().clone();
+        let mut locked_after = locked_before.clone();
+        locked_after.brightness = 0.9;
+        assert!(stack
+            .push(
+                Box::new(ModifyClipCommand::new(
+                    "Locked",
+                    &v1_id,
+                    locked_before,
+                    locked_after
+                )),
+                &mut tl
+            )
+            .is_err());
+    }
 }

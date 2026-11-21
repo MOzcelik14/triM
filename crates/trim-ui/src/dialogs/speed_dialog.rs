@@ -94,7 +94,7 @@ impl SpeedDialog {
                 ui.checkbox(&mut self.reverse, "Tersine Çevir (Geriye Doğru Oynat)");
 
                 ui.add_space(8.0);
-                let new_dur = (self.original_duration / self.speed).max(0.04);
+                let new_dur = (self.original_duration / self.speed.max(0.1)).max(0.04);
                 ui.label(
                     RichText::new(format!(
                         "Yeni Süre: {:.2}s  (Eski: {:.2}s)",

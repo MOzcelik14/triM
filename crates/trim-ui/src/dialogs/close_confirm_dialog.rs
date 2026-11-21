@@ -38,11 +38,10 @@ impl CloseConfirmDialog {
     }
 
     pub fn show(&mut self, ctx: &egui::Context) -> Option<CloseConfirmAction> {
-        if !self.is_open || self.pending_action.is_none() {
+        if !self.is_open {
             return None;
         }
-
-        let pending = self.pending_action.as_ref().unwrap().clone();
+        let pending = self.pending_action.clone()?;
         let mut result = None;
 
         if ctx.input(|i| i.key_pressed(Key::Escape)) {

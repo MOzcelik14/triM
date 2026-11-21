@@ -105,15 +105,15 @@ pub fn render_color_wheel(
                 let ng = (angle + std::f32::consts::FRAC_PI_6).sin() * norm_len * max_delta;
                 let nb = (-angle + std::f32::consts::FRAC_PI_6).sin() * norm_len * max_delta;
 
-                rgb[0] = (base_val + nr + *lum).clamp(
+                rgb[0] = (base_val + nr).clamp(
                     if is_offset { -1.0 } else { 0.0 },
                     if is_offset { 1.0 } else { 3.0 },
                 );
-                rgb[1] = (base_val + ng + *lum).clamp(
+                rgb[1] = (base_val + ng).clamp(
                     if is_offset { -1.0 } else { 0.0 },
                     if is_offset { 1.0 } else { 3.0 },
                 );
-                rgb[2] = (base_val + nb + *lum).clamp(
+                rgb[2] = (base_val + nb).clamp(
                     if is_offset { -1.0 } else { 0.0 },
                     if is_offset { 1.0 } else { 3.0 },
                 );

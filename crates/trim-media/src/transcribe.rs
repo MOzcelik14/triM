@@ -89,11 +89,11 @@ pub fn run_whisper_transcription(
     model_path: &str,
     language: Option<&str>,
 ) -> Result<Vec<SubtitleEntry>, String> {
-    let temp_dir = std::env::temp_dir().join("trim_transcribe");
-    let _ = std::fs::create_dir_all(&temp_dir);
+    let temp_dir = tempfile::TempDir::new()
+        .map_err(|e| format!("Geçici transkripsiyon klasörü oluşturulamadı: {}", e))?;
 
-    let out_prefix = temp_dir.join("whisper_out");
-    let expected_srt = temp_dir.join("whisper_out.srt");
+    let out_prefix = temp_dir.path().join("whisper_out");
+    let expected_srt = temp_dir.path().join("whisper_out.srt");
 
     let bin_name = whisper_bin
         .file_name()
@@ -121,16 +121,16 @@ pub fn run_whisper_transcription(
         }
     } else {
         // Python openai-whisper syntax:
-        // whisper <audio.wav> --model <model> --output_format srt --output_dir <dir>
-        cmd.arg(audio_wav);
+        // whisper --model <model> --output_format srt --output_dir <dir> -- <audio.wav>
         cmd.arg("--model").arg(model_path);
         cmd.arg("--output_format").arg("srt");
-        cmd.arg("--output_dir").arg(&temp_dir);
+        cmd.arg("--output_dir").arg(temp_dir.path());
         if let Some(lang) = language {
             if !lang.is_empty() && lang != "auto" {
                 cmd.arg("--language").arg(lang);
             }
         }
+        cmd.arg("--").arg(audio_wav);
     }
 
     let output = cmd
@@ -147,7 +147,7 @@ pub fn run_whisper_transcription(
     } else {
         // Fallback: search directory for first generated .srt
         let mut found = None;
-        if let Ok(entries) = std::fs::read_dir(&temp_dir) {
+        if let Ok(entries) = std::fs::read_dir(temp_dir.path()) {
             for entry in entries.flatten() {
                 if entry.path().extension().is_some_and(|ext| ext == "srt") {
                     found = Some(std::fs::read_to_string(entry.path()).map_err(|e| e.to_string())?);

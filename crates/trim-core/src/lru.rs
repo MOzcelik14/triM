@@ -131,12 +131,12 @@ impl<K: Hash + Eq + Clone, V> LruCache<K, V> {
             self.current_bytes = self.current_bytes.saturating_add(size_bytes);
 
             self.move_to_head(idx);
-            let old_node = self.entries[idx].as_mut().expect("Entry exists");
-            let old_val = std::mem::replace(&mut old_node.value, value);
-            old_node.size_bytes = size_bytes;
-
-            self.evict_if_needed();
-            return Some(old_val);
+            if let Some(old_node) = self.entries[idx].as_mut() {
+                let old_val = std::mem::replace(&mut old_node.value, value);
+                old_node.size_bytes = size_bytes;
+                self.evict_if_needed();
+                return Some(old_val);
+            }
         }
 
         // Allocate slot

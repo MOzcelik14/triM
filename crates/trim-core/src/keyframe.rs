@@ -257,8 +257,8 @@ pub fn integrate_keyframes(keyframes: &[Keyframe], t_end: f64, default_value: f6
         &owned_sorted
     };
 
-    // Composite Simpson's / trapezoidal integration with adaptive subdivisions
-    let steps = ((t_end * 60.0).ceil() as usize).clamp(16, 600);
+    // Composite trapezoidal integration with adaptive subdivisions (~60 steps/sec, capped at 60k)
+    let steps = ((t_end * 60.0).ceil() as usize).clamp(16, 60_000);
     let dt = t_end / steps as f64;
     let mut area = 0.0;
     let mut prev_v = interpolate_sorted(sorted, 0.0, default_value).max(0.05);

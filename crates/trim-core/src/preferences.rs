@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 /// Application settings and user preferences.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct UserPreferences {
     /// Interface language ("tr" or "en")
     pub language: String,
@@ -99,14 +100,27 @@ impl UserPreferences {
         Self::default()
     }
 
-    /// Save user preferences to disk as formatted JSON.
+    /// Save user preferences to disk atomically as formatted JSON.
     pub fn save(&self) -> Result<(), std::io::Error> {
         let path = Self::file_path();
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
         }
         let json = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
-        std::fs::write(&path, json)
+        let tmp_path = path.with_extension(format!("json.tmp.{}", std::process::id()));
+        {
+            use std::io::Write;
+            let mut file = std::fs::File::create(&tmp_path)?;
+            file.write_all(json.as_bytes())?;
+            file.sync_all()?;
+        }
+        if let Err(err) = std::fs::rename(&tmp_path, &path) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(err);
+        }
+        Ok(())
     }
 
     /// Calculate total disk cache size in bytes (thumbnails, waveforms, frame cache).
@@ -139,9 +153,29 @@ impl UserPreferences {
     /// Clear all files in the cache directory.
     pub fn clear_cache() -> Result<(), std::io::Error> {
         let cache_dir = crate::paths::cache_dir();
-        if cache_dir.exists() {
-            std::fs::remove_dir_all(&cache_dir)?;
-            std::fs::create_dir_all(&cache_dir)?;
+        let Some(name) = cache_dir.file_name().and_then(|n| n.to_str()) else {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Refusing to clear unsafe cache directory path",
+            ));
+        };
+        if !name.eq_ignore_ascii_case("trim") || cache_dir == std::path::Path::new(".") {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Refusing to clear non-triM cache directory",
+            ));
+        }
+        if let Ok(meta) = std::fs::symlink_metadata(&cache_dir) {
+            if meta.file_type().is_symlink() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "Refusing to clear symlinked cache directory",
+                ));
+            }
+            if meta.is_dir() {
+                std::fs::remove_dir_all(&cache_dir)?;
+                std::fs::create_dir_all(&cache_dir)?;
+            }
         }
         Ok(())
     }

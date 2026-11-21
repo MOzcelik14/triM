@@ -278,19 +278,21 @@ pub fn parse_edl(edl_text: &str, default_fps: Option<f64>) -> Result<Project, St
     project.settings.fps = fps;
     project.timeline.tracks.clear();
 
+    const MAX_TRACKS: usize = 64;
     let max_v_idx = events
         .iter()
         .filter(|e| e.track_type == TrackType::Video)
         .map(|e| e.track_index)
         .max()
-        .unwrap_or(0);
+        .unwrap_or(0)
+        .min(MAX_TRACKS - 1);
     let max_a_idx = events
         .iter()
         .filter(|e| e.track_type == TrackType::Audio)
         .map(|e| e.track_index)
         .max()
         .unwrap_or(0)
-        .max(1);
+        .clamp(1, MAX_TRACKS - 1);
 
     for i in 0..=max_v_idx {
         project
@@ -489,5 +491,22 @@ FCM: NON-DROP FRAME
         let a1 = &proj.timeline.tracks[1];
         assert_eq!(a1.clips.len(), 1);
         assert_eq!(a1.clips[0].name, "Ambience");
+    }
+
+    #[test]
+    fn test_edl_caps_excessive_track_numbers() {
+        let edl_content = "\
+TITLE: HugeTrackTest
+FCM: NON-DROP FRAME
+
+001  AX       V999999999 C        00:00:00:00 00:00:02:00 00:00:00:00 00:00:02:00
+* FROM CLIP NAME: Clip1
+";
+        let proj = parse_edl(edl_content, Some(24.0)).expect("parse capped edl");
+        assert!(
+            proj.timeline.tracks.len() <= 66,
+            "track count should be bounded, got {}",
+            proj.timeline.tracks.len()
+        );
     }
 }

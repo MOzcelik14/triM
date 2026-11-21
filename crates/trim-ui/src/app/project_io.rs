@@ -88,11 +88,13 @@ impl TrimApp {
 
     pub fn save_project_dialog(&mut self) -> bool {
         if let Some(fp) = self.project.file_path.clone() {
-            match save_project(&mut self.project, fp) {
+            match save_project(&mut self.project, fp.clone()) {
                 Ok(()) => {
                     self.last_saved_undo_len = self.undo_stack.len();
                     self.project.is_dirty = false;
                     self.autosave_mgr.cleanup(&self.project);
+                    self.welcome_dialog
+                        .add_recent(&self.project.settings.name, &fp);
                     self.status_message = "Proje kaydedildi".to_string();
                     true
                 }
@@ -417,18 +419,16 @@ impl TrimApp {
                 default_folder_name,
             } => {
                 let target_dir = path.join(&default_folder_name);
-                match bundle_project(&self.project, &target_dir) {
-                    Ok((count, bytes)) => {
-                        let mb = bytes as f64 / (1024.0 * 1024.0);
-                        self.status_message = format!(
-                            "Proje başarıyla paketlendi: {} dosya ({:.1} MB) -> {:?}",
-                            count, mb, target_dir
-                        );
-                    }
-                    Err(e) => {
-                        self.status_message = format!("Paketleme hatası: {}", e);
-                    }
-                }
+                let proj_clone = self.project.clone();
+                let tx = self.bg_task_tx.clone();
+                self.status_message = "Proje arka planda paketleniyor...".to_string();
+                std::thread::spawn(move || {
+                    let res = bundle_project(&proj_clone, &target_dir).map_err(|e| e.to_string());
+                    let _ = tx.send(crate::app::BackgroundTaskMsg::BundleDone {
+                        target_dir,
+                        result: res,
+                    });
+                });
             }
             FileDialogRequest::ImportSubtitles => {
                 self.import_subtitles_from_path(&path);

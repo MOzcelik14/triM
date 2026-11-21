@@ -40,6 +40,16 @@ pub fn flatten_timeline_sequences(
     sequences: &[Sequence],
     max_depth: usize,
 ) -> TimelineModel {
+    let mut visited = std::collections::HashSet::new();
+    flatten_timeline_sequences_inner(timeline, sequences, max_depth, &mut visited)
+}
+
+fn flatten_timeline_sequences_inner(
+    timeline: &TimelineModel,
+    sequences: &[Sequence],
+    max_depth: usize,
+    visited: &mut std::collections::HashSet<String>,
+) -> TimelineModel {
     if max_depth == 0 {
         return timeline.clone();
     }
@@ -50,61 +60,100 @@ pub fn flatten_timeline_sequences(
     for track in &timeline.tracks {
         let mut new_track = track.clone();
         new_track.clips.clear();
+        let mut extra_sub_tracks: Vec<crate::track::Track> = Vec::new();
 
         for clip in &track.clips {
             if let Some(ref seq_id) = clip.nested_sequence_id {
-                if let Some(seq) = sequences.iter().find(|s| &s.id == seq_id) {
-                    let sub_flattened =
-                        flatten_timeline_sequences(&seq.timeline, sequences, max_depth - 1);
-                    for st in sub_flattened
-                        .tracks
-                        .iter()
-                        .filter(|t| t.track_type == track.track_type)
-                    {
+                if !visited.contains(seq_id) {
+                    if let Some(seq) = sequences.iter().find(|s| &s.id == seq_id) {
+                        visited.insert(seq_id.clone());
+                        let sub_flattened = flatten_timeline_sequences_inner(
+                            &seq.timeline,
+                            sequences,
+                            max_depth - 1,
+                            visited,
+                        );
+                        visited.remove(seq_id);
+
                         let clip_src_in = clip.source_in;
                         let clip_src_out = clip.effective_source_out();
-                        let spd = if clip.speed.abs() > 0.001 {
-                            clip.speed
+                        let spd = if clip.speed.is_finite() && clip.speed > 0.0 {
+                            clip.speed.clamp(0.05, 100.0)
                         } else {
                             1.0
                         };
 
-                        for sub_clip in &st.clips {
-                            let s_in = sub_clip.timeline_in.max(clip_src_in);
-                            let s_out = sub_clip.timeline_out.min(clip_src_out);
-                            if s_out > s_in + 0.001 {
-                                let offset_in = (s_in - clip_src_in) / spd;
-                                let offset_dur = (s_out - s_in) / spd;
+                        for (sub_layer_idx, st) in sub_flattened
+                            .tracks
+                            .iter()
+                            .filter(|t| t.track_type == track.track_type)
+                            .enumerate()
+                        {
+                            let mut mapped_list = Vec::new();
+                            for sub_clip in &st.clips {
+                                let s_in = sub_clip.timeline_in.max(clip_src_in);
+                                let s_out = sub_clip.timeline_out.min(clip_src_out);
+                                if s_out > s_in + 0.001 {
+                                    let offset_in = (s_in - clip_src_in) / spd;
+                                    let offset_dur = (s_out - s_in) / spd;
 
-                                let mut mapped_clip = sub_clip.clone();
-                                mapped_clip.timeline_in = clip.timeline_in + offset_in;
-                                mapped_clip.timeline_out = mapped_clip.timeline_in + offset_dur;
-                                mapped_clip.source_in =
-                                    sub_clip.source_in + (s_in - sub_clip.timeline_in);
-                                mapped_clip.source_out =
-                                    Some(mapped_clip.source_in + (s_out - s_in));
-                                mapped_clip.speed = sub_clip.speed * spd;
-                                // Combine opacity and volume
-                                mapped_clip.opacity *= clip.opacity;
-                                mapped_clip.volume *= clip.volume;
+                                    let mut mapped_clip = sub_clip.clone();
+                                    mapped_clip.timeline_in = clip.timeline_in + offset_in;
+                                    mapped_clip.timeline_out = mapped_clip.timeline_in + offset_dur;
+                                    mapped_clip.source_in =
+                                        sub_clip.source_in + (s_in - sub_clip.timeline_in);
+                                    mapped_clip.source_out =
+                                        Some(mapped_clip.source_in + (s_out - s_in));
+                                    mapped_clip.speed = (sub_clip.speed * spd).clamp(0.05, 100.0);
+                                    mapped_clip.opacity *= clip.opacity;
+                                    mapped_clip.volume *= clip.volume;
 
-                                new_track.clips.push(mapped_clip);
+                                    mapped_list.push(mapped_clip);
+                                }
+                            }
+                            if mapped_list.is_empty() {
+                                continue;
+                            }
+                            if sub_layer_idx == 0 {
+                                new_track.clips.extend(mapped_list);
+                            } else {
+                                let idx = sub_layer_idx - 1;
+                                while extra_sub_tracks.len() <= idx {
+                                    extra_sub_tracks.push(crate::track::Track::new(
+                                        format!(
+                                            "{} (Nested {})",
+                                            track.name,
+                                            extra_sub_tracks.len() + 2
+                                        ),
+                                        track.track_type,
+                                    ));
+                                }
+                                extra_sub_tracks[idx].clips.extend(mapped_list);
                             }
                         }
+                        continue;
                     }
-                    continue;
                 }
             }
 
             new_track.clips.push(clip.clone());
         }
 
-        new_track.clips.sort_by(|a, b| {
-            a.timeline_in
-                .partial_cmp(&b.timeline_in)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        let sort_clips = |clips: &mut Vec<crate::clip::Clip>| {
+            clips.sort_by(|a, b| {
+                a.timeline_in
+                    .partial_cmp(&b.timeline_in)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+        };
+        sort_clips(&mut new_track.clips);
         flattened.tracks.push(new_track);
+        for mut extra in extra_sub_tracks {
+            sort_clips(&mut extra.clips);
+            if !extra.clips.is_empty() {
+                flattened.tracks.push(extra);
+            }
+        }
     }
 
     flattened

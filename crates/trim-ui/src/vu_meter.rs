@@ -12,6 +12,7 @@ pub struct VuMeterState {
     pub peak_r: f32,
     pub peak_hold_l: u32,
     pub peak_hold_r: u32,
+    last_decay_at: Option<std::time::Instant>,
 }
 
 impl Default for VuMeterState {
@@ -25,6 +26,7 @@ impl Default for VuMeterState {
             peak_r: -60.0,
             peak_hold_l: 0,
             peak_hold_r: 0,
+            last_decay_at: None,
         }
     }
 }
@@ -33,7 +35,6 @@ impl VuMeterState {
     pub fn set_levels(&mut self, left_db: f32, right_db: f32) {
         self.target_l = left_db.clamp(-60.0, 0.0);
         self.target_r = right_db.clamp(-60.0, 0.0);
-
         if self.target_l > self.peak_l {
             self.peak_l = self.target_l;
             self.peak_hold_l = 30;
@@ -45,7 +46,17 @@ impl VuMeterState {
     }
 
     pub fn tick_decay(&mut self) {
-        let decay = 1.2; // dB per tick
+        let now = std::time::Instant::now();
+        let dt = self.last_decay_at.map_or(1.0 / 60.0, |prev| {
+            now.saturating_duration_since(prev).as_secs_f32()
+        });
+        self.last_decay_at = Some(now);
+        self.tick_decay_dt(dt);
+    }
+
+    pub fn tick_decay_dt(&mut self, dt_secs: f32) {
+        let frames = (dt_secs.clamp(0.001, 0.25)) * 60.0;
+        let decay = 1.2 * frames; // 72 dB/s equivalent at 60 FPS
 
         if self.target_l > self.current_l {
             self.current_l = self.target_l;
@@ -60,13 +71,17 @@ impl VuMeterState {
         }
 
         if self.peak_hold_l > 0 {
-            self.peak_hold_l -= 1;
+            self.peak_hold_l = self
+                .peak_hold_l
+                .saturating_sub(frames.round().max(1.0) as u32);
         } else {
             self.peak_l = (self.peak_l - decay * 0.5).max(-60.0);
         }
 
         if self.peak_hold_r > 0 {
-            self.peak_hold_r -= 1;
+            self.peak_hold_r = self
+                .peak_hold_r
+                .saturating_sub(frames.round().max(1.0) as u32);
         } else {
             self.peak_r = (self.peak_r - decay * 0.5).max(-60.0);
         }

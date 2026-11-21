@@ -70,7 +70,7 @@ pub fn generate_ffmetadata_chapters(
             .replace('=', "\\=")
             .replace(';', "\\;")
             .replace('#', "\\#")
-            .replace('\n', " ")
+            .replace(['\r', '\n'], " ")
     };
 
     let mut out = String::from(";FFMETADATA1\n");
@@ -83,12 +83,25 @@ pub fn generate_ffmetadata_chapters(
         return out;
     }
 
-    let end_ms_total = ((total_duration.max(1.0)) * 1000.0).round() as u64;
+    let safe_total = if total_duration.is_finite() {
+        total_duration.max(1.0)
+    } else {
+        1.0
+    };
+    let end_ms_total = (safe_total * 1000.0).round() as u64;
     for (idx, m) in sorted.iter().enumerate() {
-        let start_ms = ((m.time.max(0.0)) * 1000.0).round() as u64;
+        let m_time = if m.time.is_finite() {
+            m.time.max(0.0)
+        } else {
+            0.0
+        };
+        let start_ms = (m_time * 1000.0).round() as u64;
         let next_ms = sorted
             .get(idx + 1)
-            .map(|nm| ((nm.time.max(m.time + 0.1)) * 1000.0).round() as u64)
+            .map(|nm| {
+                let nm_t = if nm.time.is_finite() { nm.time } else { 0.0 };
+                ((nm_t.max(m_time + 0.1)) * 1000.0).round() as u64
+            })
             .unwrap_or_else(|| end_ms_total.max(start_ms + 1000));
         let title = if m.name.trim().is_empty() {
             format!("Bölüm {}", idx + 1)
@@ -107,12 +120,28 @@ pub fn generate_ffmetadata_chapters(
 
 /// Exports the active timeline to a standard CMX 3600 EDL string compatible with DaVinci Resolve and Premiere Pro.
 pub fn export_cmx3600_edl(project: &Project) -> String {
-    let fps = project.settings.fps.max(1.0);
-    let title = if project.settings.name.trim().is_empty() {
+    let fps = if project.settings.fps.is_finite() {
+        project.settings.fps.max(1.0)
+    } else {
+        30.0
+    };
+    let sanitize_edl_line = |s: &str| -> String {
+        s.chars()
+            .map(|c| {
+                if matches!(c, '\r' | '\n' | '\0') {
+                    ' '
+                } else {
+                    c
+                }
+            })
+            .collect()
+    };
+    let raw_title = if project.settings.name.trim().is_empty() {
         "TRIM_TIMELINE"
     } else {
         project.settings.name.trim()
     };
+    let title = sanitize_edl_line(raw_title);
 
     let mut edl = format!("TITLE: {title}\nFCM: NON-DROP FRAME\n\n");
     let mut event_idx = 1usize;
@@ -127,11 +156,26 @@ pub fn export_cmx3600_edl(project: &Project) -> String {
                 continue;
             }
             let reel = format!("AX{:06}", event_idx.min(999999));
-            let src_in = clip.source_in.max(0.0);
+            let src_in = if clip.source_in.is_finite() {
+                clip.source_in.max(0.0)
+            } else {
+                0.0
+            };
             let dur = clip.duration();
-            let src_out = clip.source_out.unwrap_or(src_in + dur);
-            let rec_in = clip.timeline_in.max(0.0);
-            let rec_out = clip.timeline_out.max(rec_in);
+            let src_out = clip
+                .source_out
+                .filter(|v| v.is_finite())
+                .unwrap_or(src_in + dur);
+            let rec_in = if clip.timeline_in.is_finite() {
+                clip.timeline_in.max(0.0)
+            } else {
+                0.0
+            };
+            let rec_out = if clip.timeline_out.is_finite() {
+                clip.timeline_out.max(rec_in)
+            } else {
+                rec_in
+            };
 
             let tc_src_in = seconds_to_timecode(src_in, fps);
             let tc_src_out = seconds_to_timecode(src_out, fps);
@@ -141,19 +185,38 @@ pub fn export_cmx3600_edl(project: &Project) -> String {
             edl.push_str(&format!(
                 "{event_idx:03}  {reel:<8} {track_code:<5} C        {tc_src_in} {tc_src_out} {tc_rec_in} {tc_rec_out}\n"
             ));
-            let clip_name = if !clip.name.trim().is_empty() {
+            let raw_clip_name = if !clip.name.trim().is_empty() {
                 clip.name.trim().to_string()
             } else if let Some(media) = project.media_pool.get(&clip.media_id) {
                 media.name.clone()
             } else {
                 clip.id.clone()
             };
+            let clip_name = sanitize_edl_line(&raw_clip_name);
             edl.push_str(&format!("* FROM CLIP NAME: {clip_name}\n\n"));
             event_idx += 1;
         }
     }
 
     edl
+}
+
+fn encode_file_uri(path: &str) -> String {
+    let forward = path.replace('\\', "/");
+    let mut uri = String::from("file://");
+    if !forward.starts_with('/') {
+        uri.push('/');
+    }
+    for &b in forward.as_bytes() {
+        let keep =
+            b.is_ascii_alphanumeric() || matches!(b, b'/' | b'-' | b'_' | b'.' | b'~' | b':');
+        if keep {
+            uri.push(b as char);
+        } else {
+            uri.push_str(&format!("%{:02X}", b));
+        }
+    }
+    uri
 }
 
 /// Exports the active project timeline to Final Cut Pro XML v1.9 (`.fcpxml`) compatible with DaVinci Resolve, Premiere Pro, and Final Cut Pro.
@@ -166,7 +229,12 @@ pub fn export_fcpxml(project: &Project) -> String {
             .replace('\'', "&apos;")
     };
 
-    let fps_num = (project.settings.fps.round() as u32).max(1);
+    let fps_safe = if project.settings.fps.is_finite() {
+        project.settings.fps
+    } else {
+        30.0
+    };
+    let fps_num = (fps_safe.round() as u32).max(1);
     let width = project.settings.width.max(1);
     let height = project.settings.height.max(1);
     let total_dur_secs = project.timeline.duration().max(1.0);
@@ -188,14 +256,19 @@ pub fn export_fcpxml(project: &Project) -> String {
         if let Some(item) = project.media_pool.get(media_id) {
             let res_id = format!("r{}", idx + 2);
             asset_map.insert(media_id.clone(), res_id.clone());
-            let dur_frames = ((item.duration.max(1.0)) * fps_num as f64).round() as u64;
+            let dur_safe = if item.duration.is_finite() {
+                item.duration.max(1.0)
+            } else {
+                1.0
+            };
+            let dur_frames = (dur_safe * fps_num as f64).round() as u64;
             let name = xml_escape(&item.name);
-            let path_escaped = xml_escape(&item.file_path);
+            let uri_escaped = xml_escape(&encode_file_uri(&item.file_path));
             xml.push_str(&format!(
                 "    <asset id=\"{res_id}\" name=\"{name}\" start=\"0s\" duration=\"{dur_frames}/{fps_num}s\" hasVideo=\"1\" hasAudio=\"1\">\n"
             ));
             xml.push_str(&format!(
-                "      <media-rep kind=\"original-media\" src=\"file://{path_escaped}\"/>\n"
+                "      <media-rep kind=\"original-media\" src=\"{uri_escaped}\"/>\n"
             ));
             xml.push_str("    </asset>\n");
         }

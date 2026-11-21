@@ -294,9 +294,26 @@ pub fn render_timeline_canvas(
         .collect();
     let track_offsets = state.calculate_track_offsets(&project.timeline.tracks, rect.top());
 
+    let view_clip_rect = ui.clip_rect();
+    let mut linked_group_clips: std::collections::HashMap<&str, Vec<(&str, f64)>> =
+        std::collections::HashMap::new();
+    for t in &project.timeline.tracks {
+        for c in &t.clips {
+            if let Some(ref gid) = c.linked_group_id {
+                linked_group_clips
+                    .entry(gid.as_str())
+                    .or_default()
+                    .push((t.id.as_str(), c.timeline_in));
+            }
+        }
+    }
+
     // 1. Draw track lanes
     for (t_idx, track) in project.timeline.tracks.iter().enumerate() {
         let (ty, track_h) = track_offsets[t_idx];
+        if ty + track_h < view_clip_rect.top() - 32.0 || ty > view_clip_rect.bottom() + 32.0 {
+            continue;
+        }
         let track_rect =
             Rect::from_min_size(Pos2::new(rect.left(), ty), Vec2::new(rect.width(), track_h));
 
@@ -323,6 +340,12 @@ pub fn render_timeline_canvas(
                 let gx = rect.left() + (g_in as f32 * state.pixels_per_second);
                 let gw = ((g_out - g_in) as f32 * state.pixels_per_second).max(2.0);
                 let gap_rect = Rect::from_min_size(Pos2::new(gx, ty), Vec2::new(gw, track_h));
+                if gap_rect.right() < view_clip_rect.left() - 32.0
+                    || gap_rect.left() > view_clip_rect.right() + 32.0
+                {
+                    prev_t = prev_t.max(clip.timeline_out);
+                    continue;
+                }
 
                 let is_gap_sel =
                     state.selected_gap.as_ref() == Some(&(track.id.clone(), g_in, g_out));
@@ -517,8 +540,17 @@ pub fn render_timeline_canvas(
                             .max(0.1);
                         let tile_count = trim_media::thumbnail::FILMSTRIP_TILE_COUNT as f32;
 
-                        let mut frame_x = clip_rect.left() + 2.0;
-                        for i in 0..num_frames {
+                        let start_x = clip_rect.left() + 2.0;
+                        let first_visible = ((view_clip_rect.left() - 32.0 - start_x) / film_w)
+                            .floor()
+                            .max(0.0) as usize;
+                        let max_visible_right =
+                            (clip_rect.right() - 3.0).min(view_clip_rect.right() + 32.0);
+                        let mut frame_x = start_x + (first_visible as f32) * film_w;
+                        for i in first_visible..num_frames {
+                            if frame_x >= max_visible_right {
+                                break;
+                            }
                             let curr_w = if i == num_frames - 1 {
                                 (clip_rect.right() - 2.0 - frame_x).min(film_w).max(2.0)
                             } else {
@@ -563,9 +595,6 @@ pub fn render_timeline_canvas(
                             }
 
                             frame_x += film_w;
-                            if frame_x >= clip_rect.right() - 3.0 {
-                                break;
-                            }
                         }
                     }
                 }
@@ -587,9 +616,9 @@ pub fn render_timeline_canvas(
                             let max_amp = (clip_rect.height() - 16.0) / 2.0;
                             let wf_col = Color32::from_rgba_premultiplied(0x64, 0xe6, 0xa0, 0xb4);
 
-                            let vis_left = (rect.left() - clip_rect.left()).max(0.0);
+                            let vis_left = (view_clip_rect.left() - clip_rect.left()).max(0.0);
                             let vis_right =
-                                (rect.right() - clip_rect.left()).min(clip_rect.width());
+                                (view_clip_rect.right() - clip_rect.left()).min(clip_rect.width());
 
                             if vis_right > vis_left {
                                 let mut px = vis_left;
@@ -993,19 +1022,14 @@ pub fn render_timeline_canvas(
                 }
             }
 
-            // Sync offset badge for linked clips
+            // Sync offset badge for linked clips (O(1) lookup via per-frame map)
             if let Some(ref gid) = clip.linked_group_id {
-                let companion_in = project
-                    .timeline
-                    .tracks
-                    .iter()
-                    .filter(|t| t.id != track.id)
-                    .find_map(|t| {
-                        t.clips
-                            .iter()
-                            .find(|c| c.linked_group_id.as_ref() == Some(gid))
-                    })
-                    .map(|c| c.timeline_in);
+                let companion_in = linked_group_clips.get(gid.as_str()).and_then(|entries| {
+                    entries
+                        .iter()
+                        .find(|(tid, _)| *tid != track.id.as_str())
+                        .map(|(_, t_in)| *t_in)
+                });
 
                 if let Some(comp_in) = companion_in {
                     let sync_diff = clip.timeline_in - comp_in;
@@ -1428,43 +1452,46 @@ pub fn render_timeline_canvas(
                     let hit = find_clip_at_pos(project, state, rect, pos);
                     if let Some((tr_id, cl_id, _)) = hit {
                         if let Some(tr) = project.timeline.get_track_by_id(&tr_id) {
-                            if let Some(cl) = tr.get_clip_by_id(&cl_id) {
-                                let start_t = cl.timeline_in;
-                                let is_shift = ui.input(|i| i.modifiers.shift);
-                                let mut forward_clips = Vec::new();
-                                for t in &project.timeline.tracks {
-                                    if is_shift || t.id == tr_id {
-                                        for c in &t.clips {
-                                            if c.timeline_in >= start_t - 1e-4 {
-                                                forward_clips.push((t.id.clone(), c.id.clone()));
+                            if !tr.locked {
+                                if let Some(cl) = tr.get_clip_by_id(&cl_id) {
+                                    let start_t = cl.timeline_in;
+                                    let is_shift = ui.input(|i| i.modifiers.shift);
+                                    let mut forward_clips = Vec::new();
+                                    for t in &project.timeline.tracks {
+                                        if !t.locked && (is_shift || t.id == tr_id) {
+                                            for c in &t.clips {
+                                                if c.timeline_in >= start_t - 1e-4 {
+                                                    forward_clips
+                                                        .push((t.id.clone(), c.id.clone()));
+                                                }
+                                            }
+                                        }
+                                    }
+                                    state.selected_clip_pairs = forward_clips;
+                                    state.drag_mode = DragMode::Move;
+                                    state.drag_clip_id = Some(cl_id);
+                                    state.drag_track_id = Some(tr_id.clone());
+                                    state.drag_target_track_id = Some(tr_id);
+                                    state.drag_start_x = pos.x;
+                                    state.drag_orig_in = cl.timeline_in;
+                                    state.drag_orig_out = cl.timeline_out;
+                                    state.drag_orig_sin = cl.source_in;
+                                    state.drag_orig_sout = cl.effective_source_out();
+                                    state.batch_orig_ins.clear();
+                                    for (t_id, c_id) in &state.selected_clip_pairs {
+                                        if let Some(tr_c) = project.timeline.get_track_by_id(t_id) {
+                                            if let Some(c) = tr_c.get_clip_by_id(c_id) {
+                                                state.batch_orig_ins.push((
+                                                    t_id.clone(),
+                                                    c_id.clone(),
+                                                    c.timeline_in,
+                                                ));
                                             }
                                         }
                                     }
                                 }
-                                state.selected_clip_pairs = forward_clips;
-                                state.drag_mode = DragMode::Move;
-                                state.drag_clip_id = Some(cl_id);
-                                state.drag_track_id = Some(tr_id.clone());
-                                state.drag_target_track_id = Some(tr_id);
-                                state.drag_start_x = pos.x;
-                                state.drag_orig_in = cl.timeline_in;
-                                state.drag_orig_out = cl.timeline_out;
-                                state.drag_orig_sin = cl.source_in;
-                                state.drag_orig_sout = cl.effective_source_out();
-                                state.batch_orig_ins.clear();
-                                for (t_id, c_id) in &state.selected_clip_pairs {
-                                    if let Some(t) = project.timeline.get_track_by_id(t_id) {
-                                        if let Some(c) = t.get_clip_by_id(c_id) {
-                                            state.batch_orig_ins.push((
-                                                t_id.clone(),
-                                                c_id.clone(),
-                                                c.timeline_in,
-                                            ));
-                                        }
-                                    }
-                                }
-                                return (response, action);
                             }
+                            return (response, action);
                         }
                     }
                     return (response, action);
@@ -1910,10 +1937,11 @@ pub fn render_timeline_canvas(
                         );
                         state.snap_guide_x =
                             snap_pt.map(|pt| rect.left() + (pt as f32 * state.pixels_per_second));
-                        let shift_dt = snapped_in - state.drag_orig_in;
+                        let mut shift_dt = 0.0;
                         if let Some(tr) = project.timeline.get_track_by_id_mut(tr_id) {
                             if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
                                 cl.trim_in(snapped_in);
+                                shift_dt = cl.timeline_in - state.drag_orig_in;
                                 cl.move_to(state.drag_orig_in);
                             }
                         }

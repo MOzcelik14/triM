@@ -712,8 +712,8 @@ pub fn render_media_bin(
                     // Folder name
                     let text_y = thumb_rect.bottom() + 3.0;
                     let mut display_name = folder.name.clone();
-                    if display_name.len() > 16 {
-                        display_name.truncate(14);
+                    if display_name.chars().count() > 16 {
+                        display_name = display_name.chars().take(14).collect();
                         display_name.push('…');
                     }
                     painter.text(
@@ -837,8 +837,8 @@ pub fn render_media_bin(
                     // Sequence name
                     let text_y = thumb_rect.bottom() + 3.0;
                     let mut display_name = seq.name.clone();
-                    if display_name.len() > 16 {
-                        display_name.truncate(14);
+                    if display_name.chars().count() > 16 {
+                        display_name = display_name.chars().take(14).collect();
                         display_name.push('…');
                     }
                     painter.text(
@@ -1031,8 +1031,8 @@ pub fn render_media_bin(
                     // Name label below thumbnail (truncated if needed)
                     let text_y = thumb_rect.bottom() + 3.0;
                     let mut display_name = item.name.clone();
-                    if display_name.len() > 16 {
-                        display_name.truncate(14);
+                    if display_name.chars().count() > 16 {
+                        display_name = display_name.chars().take(14).collect();
                         display_name.push('…');
                     }
                     painter.text(

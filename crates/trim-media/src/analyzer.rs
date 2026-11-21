@@ -32,10 +32,13 @@ impl FFprobeAnalyzer {
             .args([
                 "-v",
                 "error",
+                "-protocol_whitelist",
+                "file",
                 "-print_format",
                 "json",
                 "-show_format",
                 "-show_streams",
+                "-i",
             ])
             .arg(path)
             .output()
@@ -122,17 +125,14 @@ impl FFprobeAnalyzer {
             let r_fps_str = vs.get("r_frame_rate").and_then(|r| r.as_str());
             let avg_fps_str = vs.get("avg_frame_rate").and_then(|r| r.as_str());
 
-            fps = if let Some(r_str) = r_fps_str {
-                let parsed = parse_fps(r_str);
-                if r_str == "0/0" || parsed <= 0.0 {
-                    avg_fps_str.map(parse_fps).unwrap_or(parsed)
-                } else {
-                    parsed
-                }
-            } else if let Some(avg_str) = avg_fps_str {
-                parse_fps(avg_str)
-            } else {
-                30.0
+            let r_fps = r_fps_str.and_then(parse_fps_opt);
+            let avg_fps = avg_fps_str.and_then(parse_fps_opt);
+
+            fps = match (r_fps, avg_fps) {
+                (Some(r), Some(avg)) if r > 120.0 && avg <= 120.0 => avg,
+                (Some(r), _) => r,
+                (None, Some(avg)) => avg,
+                (None, None) => 30.0,
             };
         }
 
@@ -389,26 +389,27 @@ fn extract_duration(
     }
 }
 
-pub fn parse_fps(fps_str: &str) -> f64 {
+pub fn parse_fps_opt(fps_str: &str) -> Option<f64> {
     let s = fps_str.trim();
-    if s.contains('/') {
-        let parts: Vec<&str> = s.split('/').collect();
-        if parts.len() == 2 {
-            if let (Ok(num), Ok(den)) = (parts[0].parse::<f64>(), parts[1].parse::<f64>()) {
-                if den > 0.0 && num > 0.0 {
-                    let val = num / den;
-                    if val > 0.0 && val <= 240.0 {
-                        return val;
-                    }
+    if let Some((num_s, den_s)) = s.split_once('/') {
+        if let (Ok(num), Ok(den)) = (num_s.parse::<f64>(), den_s.parse::<f64>()) {
+            if den > 0.0 && num > 0.0 {
+                let val = num / den;
+                if val.is_finite() && val > 0.0 && val <= 240.0 {
+                    return Some(val);
                 }
             }
         }
     } else if let Ok(val) = s.parse::<f64>() {
-        if val > 0.0 && val <= 240.0 {
-            return val;
+        if val.is_finite() && val > 0.0 && val <= 240.0 {
+            return Some(val);
         }
     }
-    30.0
+    None
+}
+
+pub fn parse_fps(fps_str: &str) -> f64 {
+    parse_fps_opt(fps_str).unwrap_or(30.0)
 }
 
 /// Information about a raw/unrecognized PCM audio stream inside an MP4/MOV container
@@ -606,6 +607,8 @@ pub fn detect_forced_pcm_input_codec(path: &Path) -> Option<ForcedPcmInputInfo> 
         .args([
             "-v",
             "error",
+            "-protocol_whitelist",
+            "file",
             "-select_streams",
             "a:0",
             "-show_entries",
@@ -614,6 +617,7 @@ pub fn detect_forced_pcm_input_codec(path: &Path) -> Option<ForcedPcmInputInfo> 
             "%+#1",
             "-print_format",
             "json",
+            "-i",
         ])
         .arg(path)
         .output()
@@ -870,5 +874,29 @@ mod tests {
         assert!((item.fps - 59.94).abs() < 0.01);
         // 3000 frames at ~59.94006 fps = ~50.05 seconds
         assert!((item.duration - 50.05).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_vfr_parse_fps_opt_and_avg_fallback() {
+        assert_eq!(parse_fps_opt("1000/1"), None);
+        assert_eq!(parse_fps_opt("0/0"), None);
+        assert_eq!(parse_fps_opt("90000/1"), None);
+        let ntsc = parse_fps_opt("60000/1001").unwrap();
+        assert!((ntsc - 59.94006).abs() < 0.01);
+
+        let json_val = serde_json::json!({
+            "streams": [{
+                "codec_type": "video",
+                "codec_name": "h264",
+                "width": 1080,
+                "height": 1920,
+                "r_frame_rate": "1000/1",
+                "avg_frame_rate": "60000/1001",
+                "duration": "10.0"
+            }],
+            "format": { "duration": "10.0", "size": "12345" }
+        });
+        let item = FFprobeAnalyzer::parse_probe_json(&json_val, Path::new("/tmp/vfr.mp4")).unwrap();
+        assert!((item.fps - 59.94).abs() < 0.01);
     }
 }

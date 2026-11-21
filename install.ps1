@@ -271,6 +271,19 @@ function Ensure-FFmpeg-Installed {
 
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $FfTempZip -UseBasicParsing
+            try {
+                $ExpectedFfSha = ((Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip.sha256" -UseBasicParsing).Content.Trim() -split '\s+')[0]
+                if ($ExpectedFfSha -and $ExpectedFfSha.Length -eq 64) {
+                    $ActualFfSha = (Get-FileHash -Path $FfTempZip -Algorithm SHA256).Hash
+                    if ($ActualFfSha -ne $ExpectedFfSha.ToUpperInvariant()) {
+                        throw "FFmpeg SHA-256 doğrulaması başarısız! Beklenen: $ExpectedFfSha, Gerçek: $ActualFfSha"
+                    }
+                    Log-Ok "FFmpeg SHA-256 bütünlüğü doğrulandı."
+                }
+            } catch {
+                if ($_.Exception.Message -like "*SHA-256*") { throw }
+                Log-Warn "FFmpeg .sha256 dosyası alınamadı; doğrulama atlandı."
+            }
 
             Log-Info "FFmpeg paketi açılıyor..."
             Expand-Archive -Path $FfTempZip -DestinationPath $FfTempExtract -Force
@@ -398,6 +411,24 @@ if ($InRepo -and -not $Build -and (Test-Path (Join-Path $RepoRoot "target\releas
                     $ZipDest = Join-Path $TempDir "trim.zip"
                     Log-Info "İndiriliyor: $($ZipAsset.browser_download_url)..."
                     Invoke-WebRequest -Uri $ZipAsset.browser_download_url -OutFile $ZipDest -UseBasicParsing
+
+                    $SumsAsset = $ReleaseJson.assets | Where-Object { $_.name -eq "SHA256SUMS.txt" } | Select-Object -First 1
+                    if (-not $SumsAsset) {
+                        throw "Güvenlik doğrulaması başarısız: Sürümde SHA256SUMS.txt bulunamadı."
+                    }
+                    $SumsPath = Join-Path $TempDir "SHA256SUMS.txt"
+                    Invoke-WebRequest -Uri $SumsAsset.browser_download_url -OutFile $SumsPath -UseBasicParsing
+                    $ExpectedLine = Get-Content -Path $SumsPath | Where-Object { $_ -match ("\s+" + [regex]::Escape($ZipAsset.name) + "$") } | Select-Object -First 1
+                    if (-not $ExpectedLine) {
+                        throw "SHA256SUMS.txt içinde $($ZipAsset.name) için özet bulunamadı."
+                    }
+                    $ExpectedHash = ($ExpectedLine -split "\s+")[0].ToUpper()
+                    $ActualHash = (Get-FileHash -Path $ZipDest -Algorithm SHA256).Hash.ToUpper()
+                    if ($ActualHash -ne $ExpectedHash) {
+                        throw "SHA-256 doğrulama hatası! Beklenen: $ExpectedHash, Gerçek: $ActualHash"
+                    }
+                    Log-Success "Sürüm paketi SHA-256 doğrulandı."
+
                     Expand-Archive -Path $ZipDest -DestinationPath $TempDir -Force
                     $FoundExe = Get-ChildItem -Path $TempDir -Filter "trim.exe" -Recurse | Select-Object -First 1
                     if ($FoundExe) {

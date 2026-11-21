@@ -23,12 +23,17 @@ impl VoiceoverRecorder {
         let out_str = out.to_string_lossy().to_string();
 
         // Cross-platform audio device argument resolution
-        let child = if cfg!(target_os = "windows") {
+        let mut child = if cfg!(target_os = "windows") {
+            let (_, audio_devs) = crate::ffmpeg::list_dshow_devices();
+            let first_audio = audio_devs
+                .first()
+                .ok_or_else(|| "Windows DirectShow mikrofon aygıtı bulunamadı.".to_string())?;
+            let input_spec = format!("audio={first_audio}");
             Self::spawn_ffmpeg(&[
                 "-f",
                 "dshow",
                 "-i",
-                "audio=default",
+                &input_spec,
                 "-ac",
                 "2",
                 "-ar",
@@ -37,22 +42,7 @@ impl VoiceoverRecorder {
                 "pcm_s16le",
                 &out_str,
             ])
-            .or_else(|_| {
-                // Fallback to wavein or direct audio capture if available
-                Self::spawn_ffmpeg(&[
-                    "-f",
-                    "dshow",
-                    "-i",
-                    "audio=Microphone",
-                    "-ac",
-                    "2",
-                    "-ar",
-                    "44100",
-                    "-c:a",
-                    "pcm_s16le",
-                    &out_str,
-                ])
-            })
+            .map_err(|e| format!("Ses kaydı başlatılamadı: {e}"))?
         } else if cfg!(target_os = "macos") {
             Self::spawn_ffmpeg(&[
                 "-f",
@@ -67,9 +57,10 @@ impl VoiceoverRecorder {
                 "pcm_s16le",
                 &out_str,
             ])
+            .map_err(|e| format!("Ses kaydı başlatılamadı: {e}"))?
         } else {
             // Linux: Try PulseAudio/PipeWire default first, then fallback to ALSA default
-            Self::spawn_ffmpeg(&[
+            let pulse_res = Self::spawn_ffmpeg(&[
                 "-f",
                 "pulse",
                 "-i",
@@ -81,8 +72,26 @@ impl VoiceoverRecorder {
                 "-c:a",
                 "pcm_s16le",
                 &out_str,
-            ])
-            .or_else(|_| {
+            ]);
+            let mut try_alsa = false;
+            let chosen = match pulse_res {
+                Ok(mut c) => {
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                    if matches!(c.try_wait(), Ok(Some(_))) {
+                        try_alsa = true;
+                        None
+                    } else {
+                        Some(c)
+                    }
+                }
+                Err(_) => {
+                    try_alsa = true;
+                    None
+                }
+            };
+            if let Some(c) = chosen {
+                c
+            } else if try_alsa {
                 Self::spawn_ffmpeg(&[
                     "-f",
                     "alsa",
@@ -96,20 +105,22 @@ impl VoiceoverRecorder {
                     "pcm_s16le",
                     &out_str,
                 ])
-            })
+                .map_err(|e| format!("Ses kaydı başlatılamadı: {e}"))?
+            } else {
+                return Err("Ses kaydı başlatılamadı".to_string());
+            }
         };
 
-        match child {
-            Ok(mut c) => {
-                crate::ffmpeg::drain_stderr(c.stderr.take(), "trim-voiceover-stderr");
-                Ok(Self {
-                    child: Some(c),
-                    output_path: out,
-                    start_time: Instant::now(),
-                })
-            }
-            Err(e) => Err(format!("Ses kaydı başlatılamadı: {}", e)),
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(format!("Ses kaydı başlatılırken sonlandı ({status})"));
         }
+        crate::ffmpeg::drain_stderr(child.stderr.take(), "trim-voiceover-stderr");
+        Ok(Self {
+            child: Some(child),
+            output_path: out,
+            start_time: Instant::now(),
+        })
     }
 
     fn spawn_ffmpeg(extra_args: &[&str]) -> Result<Child, std::io::Error> {
@@ -193,9 +204,24 @@ impl VoiceoverRecorder {
 impl Drop for VoiceoverRecorder {
     fn drop(&mut self) {
         if let Some(mut c) = self.child.take() {
-            let _ = c.stdin.take();
-            let _ = c.kill();
-            let _ = c.wait();
+            if let Some(mut stdin) = c.stdin.take() {
+                use std::io::Write;
+                let _ = stdin.write_all(b"q\n");
+                let _ = stdin.flush();
+            }
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+            let mut exited = false;
+            while std::time::Instant::now() < deadline {
+                if let Ok(Some(_)) = c.try_wait() {
+                    exited = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            if !exited {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
         }
     }
 }

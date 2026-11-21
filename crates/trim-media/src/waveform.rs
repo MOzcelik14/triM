@@ -1,20 +1,25 @@
 //! Audio waveform peak extraction, background worker pooling, and disk caching.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::mpsc::{channel, Sender};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
+use trim_core::lru::LruCache;
+
+const MAX_WAVEFORM_CACHE_ENTRIES: usize = 64;
+type WaveformPeaks = Arc<Vec<[f32; 2]>>;
 
 #[derive(Clone)]
 pub struct WaveformGenerator {
     pub cache_dir: PathBuf,
     pub points_per_second: u32,
-    memory_cache: Arc<RwLock<HashMap<String, Vec<[f32; 2]>>>>,
+    memory_cache: Arc<Mutex<LruCache<String, WaveformPeaks>>>,
     req_tx: Sender<PathBuf>,
     in_flight: Arc<Mutex<HashSet<String>>>,
+    failed_paths: Arc<Mutex<HashSet<String>>>,
 }
 
 impl std::fmt::Debug for WaveformGenerator {
@@ -36,9 +41,13 @@ impl Default for WaveformGenerator {
 impl WaveformGenerator {
     pub fn new(cache_dir: PathBuf, points_per_second: u32) -> Self {
         let (req_tx, req_rx) = channel::<PathBuf>();
-        let memory_cache = Arc::new(RwLock::new(HashMap::new()));
+        let memory_cache = Arc::new(Mutex::new(LruCache::new(
+            MAX_WAVEFORM_CACHE_ENTRIES,
+            64 * 1024 * 1024,
+        )));
         let req_rx = Arc::new(Mutex::new(req_rx));
         let in_flight = Arc::new(Mutex::new(HashSet::<String>::new()));
+        let failed_paths = Arc::new(Mutex::new(HashSet::<String>::new()));
 
         // Bounded worker pool (2 concurrent workers)
         let num_workers = 2usize;
@@ -46,6 +55,7 @@ impl WaveformGenerator {
             let rx = req_rx.clone();
             let mem_clone = memory_cache.clone();
             let in_flight_worker = in_flight.clone();
+            let failed_worker = failed_paths.clone();
             let cache_dir_clone = cache_dir.clone();
 
             if let Err(e) = std::thread::Builder::new()
@@ -68,9 +78,11 @@ impl WaveformGenerator {
                         points_per_second,
                     );
                     if let Some(peaks) = peaks_opt {
-                        if let Ok(mut mc) = mem_clone.write() {
-                            mc.insert(path_str.clone(), peaks);
+                        if let Ok(mut mc) = mem_clone.lock() {
+                            mc.insert(path_str.clone(), Arc::new(peaks));
                         }
+                    } else if let Ok(mut failed) = failed_worker.lock() {
+                        failed.insert(path_str.clone());
                     }
                     if let Ok(mut set) = in_flight_worker.lock() {
                         set.remove(&path_str);
@@ -87,6 +99,7 @@ impl WaveformGenerator {
             memory_cache,
             req_tx,
             in_flight,
+            failed_paths,
         }
     }
 
@@ -96,14 +109,20 @@ impl WaveformGenerator {
 
     /// Retrieves cached waveform or queues background extraction without blocking the UI thread.
     /// Returns `Some(peaks)` immediately if already in RAM or on disk, or `None` while extracting.
-    pub fn get_waveform<P: AsRef<Path>>(&self, file_path: P) -> Option<Vec<[f32; 2]>> {
+    pub fn get_waveform<P: AsRef<Path>>(&self, file_path: P) -> Option<Arc<Vec<[f32; 2]>>> {
         let path = file_path.as_ref();
         let path_str = path.to_string_lossy().to_string();
 
-        // 1. Instant RAM lookup (0 ms)
-        if let Ok(cache) = self.memory_cache.read() {
+        // 1. Instant RAM lookup (0 ms, O(1) Arc clone)
+        if let Ok(mut cache) = self.memory_cache.lock() {
             if let Some(peaks) = cache.get(&path_str) {
-                return Some(peaks.clone());
+                return Some(Arc::clone(peaks));
+            }
+        }
+
+        if let Ok(failed) = self.failed_paths.lock() {
+            if failed.contains(&path_str) {
+                return None;
             }
         }
 
@@ -118,12 +137,13 @@ impl WaveformGenerator {
                 if data.len() % 8 == 0 && !data.is_empty() {
                     let mut peaks = Vec::with_capacity(data.len() / 8);
                     for chunk in data.as_chunks::<8>().0 {
-                        let min = f32::from_le_bytes(chunk[0..4].try_into().unwrap());
-                        let max = f32::from_le_bytes(chunk[4..8].try_into().unwrap());
+                        let min = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+                        let max = f32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
                         peaks.push([min, max]);
                     }
-                    if let Ok(mut cache) = self.memory_cache.write() {
-                        cache.insert(path_str, peaks.clone());
+                    let peaks = Arc::new(peaks);
+                    if let Ok(mut cache) = self.memory_cache.lock() {
+                        cache.insert(path_str, Arc::clone(&peaks));
                     }
                     return Some(peaks);
                 }
@@ -144,13 +164,14 @@ impl WaveformGenerator {
     }
 
     /// Synchronous extraction fallback for headless export or tests.
-    pub fn generate_sync<P: AsRef<Path>>(&self, file_path: P) -> Option<Vec<[f32; 2]>> {
+    pub fn generate_sync<P: AsRef<Path>>(&self, file_path: P) -> Option<Arc<Vec<[f32; 2]>>> {
         let path = file_path.as_ref();
         let cache_path = self.get_cache_path(path);
         let peaks =
             extract_and_cache_waveform(&self.cache_dir, &cache_path, path, self.points_per_second)?;
-        if let Ok(mut mc) = self.memory_cache.write() {
-            mc.insert(path.to_string_lossy().to_string(), peaks.clone());
+        let peaks = Arc::new(peaks);
+        if let Ok(mut mc) = self.memory_cache.lock() {
+            mc.insert(path.to_string_lossy().to_string(), Arc::clone(&peaks));
         }
         Some(peaks)
     }
@@ -186,6 +207,7 @@ fn run_ffmpeg_waveform_decode(
         "-err_detect",
         "ignore_err",
     ]);
+    cmd.args(["-protocol_whitelist", "file"]);
     if let Some(codec) = forced_input_codec {
         cmd.args(["-c:a", codec]);
     }
@@ -205,11 +227,15 @@ fn run_ffmpeg_waveform_decode(
     .stdout(Stdio::piped())
     .stderr(Stdio::null());
 
+    const MAX_WAVEFORM_PCM_BYTES: u64 = 128 * 1024 * 1024;
     let mut raw_pcm = Vec::new();
     if let Ok(mut guard) = crate::ffmpeg::ChildGuard::spawn(&mut cmd) {
-        if let Some(mut stdout) = guard.take_stdout() {
-            let _ = stdout.read_to_end(&mut raw_pcm);
+        if let Some(stdout) = guard.take_stdout() {
+            let _ = stdout
+                .take(MAX_WAVEFORM_PCM_BYTES)
+                .read_to_end(&mut raw_pcm);
         }
+        let _ = guard.kill();
         let _ = guard.wait();
     }
     raw_pcm
@@ -302,13 +328,10 @@ fn extract_and_cache_waveform(
 }
 
 fn md5_hash(s: &str) -> u128 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h1 = DefaultHasher::new();
-    s.hash(&mut h1);
-    let mut h2 = DefaultHasher::new();
-    s.chars().rev().collect::<String>().hash(&mut h2);
-    ((h1.finish() as u128) << 64) | (h2.finish() as u128)
+    let h1 = trim_core::paths::stable_hash_64(s.as_bytes());
+    let rev: String = s.chars().rev().collect();
+    let h2 = trim_core::paths::stable_hash_64(rev.as_bytes());
+    ((h1 as u128) << 64) | (h2 as u128)
 }
 
 /// Computes the time offset (in seconds) to add to `ref_clip.timeline_in` so that `target_peaks`

@@ -58,12 +58,11 @@ impl RecoveryDialog {
     }
 
     pub fn show(&mut self, ctx: &egui::Context) -> Option<RecoveryAction> {
-        if !self.is_open || self.recovery_path.is_none() {
+        if !self.is_open {
             return None;
         }
-
+        let path = self.recovery_path.clone()?;
         let mut action = None;
-        let path = self.recovery_path.clone().unwrap();
 
         let screen_rect = ctx.screen_rect();
         Area::new(Id::new("recovery_modal_dimmer"))

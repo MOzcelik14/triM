@@ -63,8 +63,11 @@ impl TrimApp {
     }
 
     pub fn stop(&mut self) {
+        let start_t = self.clock_start_time;
         self.pause();
-        self.seek(0.0);
+        if self.preferences.return_playhead_on_stop {
+            self.seek(start_t);
+        }
     }
 
     pub fn seek(&mut self, time: f64) {
@@ -254,19 +257,27 @@ impl TrimApp {
             {
                 self.monitor_gpu_texture_id = Some(tex_id);
                 self.monitor_texture = None;
+                let time_changed =
+                    (self.scopes_panel.last_eval_time - self.current_time).abs() > 1e-4;
+                let throttle_ok = !self.is_playing
+                    || self.scopes_panel.last_refresh_instant.elapsed()
+                        >= std::time::Duration::from_millis(83);
                 if self.scopes_panel.is_open
                     && (self.scopes_panel.needs_refresh
                         || self.scopes_panel.request_grab_still
-                        || (self.scopes_panel.last_eval_time - self.current_time).abs() > 1e-4)
+                        || (time_changed && throttle_ok))
                 {
-                    if let Some((rgba, rw, rh)) = compositor.readback_fbo_rgba() {
+                    if let Some((rgba, rw, rh)) = compositor.readback_fbo_downsampled_rgba() {
                         self.scopes_panel.update_from_rgba(ctx, &rgba, rw, rh);
                         self.scopes_panel.last_eval_time = self.current_time;
-                        if self.scopes_panel.request_grab_still {
-                            self.scopes_panel.request_grab_still = false;
+                        self.scopes_panel.last_refresh_instant = std::time::Instant::now();
+                        self.last_scope_rgba = Some((rgba, rw, rh));
+                    }
+                    if self.scopes_panel.request_grab_still {
+                        self.scopes_panel.request_grab_still = false;
+                        if let Some((rgba, rw, rh)) = compositor.readback_fbo_rgba() {
                             self.capture_reference_still(ctx, &rgba, rw, rh);
                         }
-                        self.last_scope_rgba = Some((rgba, rw, rh));
                     }
                 }
                 return;
@@ -698,6 +709,8 @@ impl TrimApp {
             self.video_engine.clear_cache();
             self.audio_mixer.clear_cache();
             self.last_rendered_monitor_frame = None;
+            self.last_rendered_dirty = true;
+            self.scopes_panel.mark_dirty();
             self.project.mark_dirty();
         }
     }
@@ -717,6 +730,8 @@ impl TrimApp {
             self.video_engine.clear_cache();
             self.audio_mixer.clear_cache();
             self.last_rendered_monitor_frame = None;
+            self.last_rendered_dirty = true;
+            self.scopes_panel.mark_dirty();
             self.project.mark_dirty();
         }
     }

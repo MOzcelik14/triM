@@ -170,10 +170,12 @@ impl ScreenRecordDialog {
                     .fill(Color32::from_rgb(0xd0, 0x40, 0x40));
 
                     if ui.add(start_btn).clicked() {
-                        let temp_dir = std::env::temp_dir().join("trim_captures");
-                        let _ = std::fs::create_dir_all(&temp_dir);
+                        let captures_dir = trim_core::paths::home_dir()
+                            .join("Videos")
+                            .join("triM Captures");
+                        let _ = std::fs::create_dir_all(&captures_dir);
                         let filename = format!("kayit_{}.mp4", chrono_timestamp());
-                        let out_path = temp_dir.join(filename);
+                        let out_path = captures_dir.join(filename);
 
                         match ScreenRecorder::start(&out_path, self.source) {
                             Ok(rec) => {

@@ -1,0 +1,41 @@
+# cargo-deny configuration for triM.
+# See https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+version = 2
+yanked = "warn"
+unmaintained = "workspace"
+ignore = [
+    # Transitive xattr soundness advisory in rustix 1.1.5 (not used by triM; awaiting upstream patch)
+    "RUSTSEC-2026-0486",
+]
+
+[licenses]
+version = 2
+allow = [
+    "GPL-3.0-or-later",
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "OFL-1.1",
+    "BSL-1.0",
+]
+exceptions = [
+    # Ubuntu Font License (bundled by egui/epaint_default_fonts)
+    { allow = ["LicenseRef-UFL-1.0"], crate = "epaint_default_fonts" },
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

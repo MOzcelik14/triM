@@ -177,7 +177,10 @@ pub fn sample_pixel_rgba(
     x_norm: f32,
     y_norm: f32,
 ) -> Option<PixelSampleReadout> {
-    if width == 0 || height == 0 || rgba.len() < (width as usize) * (height as usize) * 4 {
+    let required_len = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|px| px.checked_mul(4))?;
+    if width == 0 || height == 0 || rgba.len() < required_len {
         return None;
     }
     let xn = x_norm.clamp(0.0, 1.0);
@@ -250,7 +253,10 @@ pub fn compute_scopes_rgba(rgba: &[u8], width: u32, height: u32) -> ScopeData {
 
     let w = width as usize;
     let h = height as usize;
-    if w == 0 || h == 0 || rgba.len() < w * h * 4 {
+    let Some(required_len) = w.checked_mul(h).and_then(|px| px.checked_mul(4)) else {
+        return data;
+    };
+    if w == 0 || h == 0 || rgba.len() < required_len {
         return data;
     }
 
@@ -412,7 +418,12 @@ pub fn false_color_map_ire(ire: f32) -> [u8; 3] {
 
 /// Generates an RGBA8 False Color visualization image from source RGBA8 pixels.
 pub fn compute_false_color_rgba(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
-    let len = (width as usize) * (height as usize) * 4;
+    let Some(len) = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|px| px.checked_mul(4))
+    else {
+        return Vec::new();
+    };
     let mut out = vec![0u8; len];
     let n = rgba.len().min(len) / 4;
     for i in 0..n {
@@ -432,7 +443,9 @@ pub fn compute_false_color_rgba(rgba: &[u8], width: u32, height: u32) -> Vec<u8>
 pub fn compute_zebra_rgba(rgba: &[u8], width: u32, height: u32, threshold: f32) -> Vec<u8> {
     let w = width as usize;
     let h = height as usize;
-    let len = w * h * 4;
+    let Some(len) = w.checked_mul(h).and_then(|px| px.checked_mul(4)) else {
+        return Vec::new();
+    };
     let mut out = vec![0u8; len];
     if rgba.len() < len {
         return out;

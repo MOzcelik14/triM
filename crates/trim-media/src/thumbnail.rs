@@ -15,6 +15,7 @@ pub struct ThumbnailGenerator {
     req_tx: Sender<(MediaItem, bool)>,
     res_rx: Arc<Mutex<Receiver<(String, PathBuf)>>>,
     in_flight: Arc<Mutex<HashSet<String>>>,
+    failed_keys: Arc<Mutex<HashSet<String>>>,
 }
 
 impl std::fmt::Debug for ThumbnailGenerator {
@@ -38,6 +39,7 @@ impl ThumbnailGenerator {
         let req_rx = Arc::new(Mutex::new(req_rx));
         let (res_tx, res_rx) = channel::<(String, PathBuf)>();
         let in_flight = Arc::new(Mutex::new(HashSet::<String>::new()));
+        let failed_keys = Arc::new(Mutex::new(HashSet::<String>::new()));
 
         // Bounded worker pool (2 concurrent workers)
         let num_workers = 2usize;
@@ -45,6 +47,7 @@ impl ThumbnailGenerator {
             let rx = req_rx.clone();
             let res_tx = res_tx.clone();
             let in_flight_worker = in_flight.clone();
+            let failed_worker = failed_keys.clone();
             let cache_dir_clone = cache_dir.clone();
 
             if let Err(e) = std::thread::Builder::new()
@@ -79,6 +82,8 @@ impl ThumbnailGenerator {
 
                     if ok {
                         let _ = res_tx.send((key.clone(), target));
+                    } else if let Ok(mut failed) = failed_worker.lock() {
+                        failed.insert(key.clone());
                     }
                     if let Ok(mut set) = in_flight_worker.lock() {
                         set.remove(&key);
@@ -94,6 +99,7 @@ impl ThumbnailGenerator {
             req_tx,
             res_rx: Arc::new(Mutex::new(res_rx)),
             in_flight,
+            failed_keys,
         }
     }
 
@@ -124,6 +130,11 @@ impl ThumbnailGenerator {
         } else {
             item.id.clone()
         };
+        if let Ok(failed) = self.failed_keys.lock() {
+            if failed.contains(&key) {
+                return;
+            }
+        }
         let mut set = match self.in_flight.lock() {
             Ok(s) => s,
             Err(_) => return,
@@ -147,18 +158,20 @@ impl ThumbnailGenerator {
 }
 
 fn get_thumbnail_path_static(cache_dir: &Path, item: &MediaItem) -> PathBuf {
+    let (mtime, size) = trim_core::paths::file_mtime_and_size(Path::new(&item.file_path));
     let key = format!(
-        "{}_{}_{}x{}",
-        item.file_path, item.duration, item.width, item.height
+        "{}_{}_{}x{}_{}_{}",
+        item.file_path, item.duration, item.width, item.height, mtime, size
     );
     let hash = format!("{:x}", simple_hash(&key));
     cache_dir.join(format!("{}.jpg", hash))
 }
 
 fn get_filmstrip_path_static(cache_dir: &Path, item: &MediaItem) -> PathBuf {
+    let (mtime, size) = trim_core::paths::file_mtime_and_size(Path::new(&item.file_path));
     let key = format!(
-        "{}_{}_{}x{}",
-        item.file_path, item.duration, item.width, item.height
+        "{}_{}_{}x{}_{}_{}",
+        item.file_path, item.duration, item.width, item.height, mtime, size
     );
     let hash = format!("{:x}", simple_hash(&key));
     cache_dir.join(format!("{}_strip{}.jpg", hash, FILMSTRIP_TILE_COUNT))
@@ -278,13 +291,10 @@ fn generate_thumbnail_disk(cache_dir: &Path, item: &MediaItem) -> Option<PathBuf
 }
 
 fn simple_hash(s: &str) -> u128 {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    let mut h1 = DefaultHasher::new();
-    s.hash(&mut h1);
-    let mut h2 = DefaultHasher::new();
-    s.chars().rev().collect::<String>().hash(&mut h2);
-    ((h1.finish() as u128) << 64) | (h2.finish() as u128)
+    let h1 = trim_core::paths::stable_hash_64(s.as_bytes());
+    let rev: String = s.chars().rev().collect();
+    let h2 = trim_core::paths::stable_hash_64(rev.as_bytes());
+    ((h1 as u128) << 64) | (h2 as u128)
 }
 
 #[cfg(test)]

@@ -139,6 +139,19 @@ impl Command for MoveClipCommand {
             clip.move_to(self.new_in);
             track.sort_clips();
         } else {
+            let old_locked = timeline
+                .get_track_by_id(&self.old_track_id)
+                .ok_or_else(|| CommandError::TrackNotFound(self.old_track_id.clone()))?
+                .locked;
+            let new_locked = timeline
+                .get_track_by_id(&self.new_track_id)
+                .ok_or_else(|| CommandError::TrackNotFound(self.new_track_id.clone()))?
+                .locked;
+            if old_locked || new_locked {
+                return Err(CommandError::InvalidOperation(
+                    "Kilitli kanaldaki klip taşınamaz".into(),
+                ));
+            }
             let mut clip = {
                 let old_track = timeline
                     .get_track_by_id_mut(&self.old_track_id)
@@ -167,6 +180,9 @@ impl Command for MoveClipCommand {
             clip.move_to(self.old_in);
             track.sort_clips();
         } else {
+            if timeline.get_track_by_id(&self.old_track_id).is_none() {
+                return Err(CommandError::TrackNotFound(self.old_track_id.clone()));
+            }
             let mut clip = {
                 let new_track = timeline
                     .get_track_by_id_mut(&self.new_track_id)
@@ -977,6 +993,7 @@ pub struct DetachAudioCommand {
     pub created_audio_track_id: Option<String>,
     pub created_audio_clip_id: Option<String>,
     pub was_track_created: bool,
+    pub prev_muted: Option<bool>,
 }
 
 impl DetachAudioCommand {
@@ -987,6 +1004,7 @@ impl DetachAudioCommand {
             created_audio_track_id: None,
             created_audio_clip_id: None,
             was_track_created: false,
+            prev_muted: None,
         }
     }
 }
@@ -997,9 +1015,17 @@ impl Command for DetachAudioCommand {
             let track = timeline
                 .get_track_by_id_mut(&self.video_track_id)
                 .ok_or_else(|| CommandError::TrackNotFound(self.video_track_id.clone()))?;
+            if track.locked {
+                return Err(CommandError::InvalidOperation(
+                    "Kilitli kanaldaki klipin sesi ayrılamaz".into(),
+                ));
+            }
             let clip = track
                 .get_clip_by_id_mut(&self.video_clip_id)
                 .ok_or_else(|| CommandError::ClipNotFound(self.video_clip_id.clone()))?;
+            if self.prev_muted.is_none() {
+                self.prev_muted = Some(clip.muted);
+            }
             clip.muted = true;
             (
                 clip.media_id.clone(),
@@ -1035,10 +1061,10 @@ impl Command for DetachAudioCommand {
     }
 
     fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
-        // Unmute video clip
+        // Restore video clip's previous muted state
         if let Some(track) = timeline.get_track_by_id_mut(&self.video_track_id) {
             if let Some(clip) = track.get_clip_by_id_mut(&self.video_clip_id) {
-                clip.muted = false;
+                clip.muted = self.prev_muted.unwrap_or(false);
             }
         }
 
@@ -1075,7 +1101,9 @@ pub struct RippleTrimHeadCommand {
     pub playhead_time: f64,
     pub ripple_all_unlocked: bool,
     pub orig_bounds: Option<(f64, f64, f64, f64)>,
+    pub orig_clip: Option<Clip>,
     pub companion_bounds: Option<(String, String, f64, f64, f64, f64)>,
+    pub orig_companion: Option<(String, Clip)>,
     pub shift_amount: f64,
     pub shifted_clips: Vec<(String, String, f64)>,
 }
@@ -1092,7 +1120,9 @@ impl RippleTrimHeadCommand {
             playhead_time,
             ripple_all_unlocked: true,
             orig_bounds: None,
+            orig_clip: None,
             companion_bounds: None,
+            orig_companion: None,
             shift_amount: 0.0,
             shifted_clips: Vec::new(),
         }
@@ -1109,6 +1139,11 @@ impl Command for RippleTrimHeadCommand {
         let track = timeline
             .get_track_by_id_mut(&self.track_id)
             .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        if track.locked {
+            return Err(CommandError::InvalidOperation(
+                "Kilitli kanaldaki klip kırpılamaz".into(),
+            ));
+        }
         let clip = track
             .get_clip_by_id_mut(&self.clip_id)
             .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
@@ -1118,7 +1153,6 @@ impl Command for RippleTrimHeadCommand {
         let orig_sin = clip.source_in;
         let orig_sout = clip.effective_source_out();
         let linked_gid = clip.linked_group_id.clone();
-        self.orig_bounds = Some((orig_in, orig_out, orig_sin, orig_sout));
 
         let dt = self.playhead_time - orig_in;
         if dt <= 0.04 || dt >= clip.duration() - 0.04 {
@@ -1127,10 +1161,14 @@ impl Command for RippleTrimHeadCommand {
             ));
         }
 
+        self.orig_bounds = Some((orig_in, orig_out, orig_sin, orig_sout));
+        self.orig_clip = Some(clip.clone());
+
         clip.trim_in(self.playhead_time);
         clip.move_to(orig_in); // shorten duration
         self.shift_amount = dt;
         self.shifted_clips.clear();
+        self.orig_companion = None;
 
         // Also trim companion clip if linked
         if let Some(ref gid) = linked_gid {
@@ -1149,6 +1187,7 @@ impl Command for RippleTrimHeadCommand {
                             comp.source_in,
                             comp.effective_source_out(),
                         ));
+                        self.orig_companion = Some((t.id.clone(), comp.clone()));
                         comp.trim_in(self.playhead_time);
                         comp.move_to(orig_in);
                         break;
@@ -1206,27 +1245,23 @@ impl Command for RippleTrimHeadCommand {
             }
         }
 
-        if let Some((comp_tr_id, comp_id, cin, cout, csin, csout)) = self.companion_bounds.take() {
+        if let Some((comp_tr_id, orig_comp)) = self.orig_companion.take() {
+            self.companion_bounds = None;
             if let Some(t) = timeline.get_track_by_id_mut(&comp_tr_id) {
-                if let Some(comp) = t.get_clip_by_id_mut(&comp_id) {
-                    comp.timeline_in = cin;
-                    comp.timeline_out = cout;
-                    comp.source_in = csin;
-                    comp.source_out = Some(csout);
+                if let Some(comp) = t.get_clip_by_id_mut(&orig_comp.id) {
+                    *comp = orig_comp;
                 }
                 t.sort_clips();
             }
         }
 
-        if let Some((oin, oout, osin, osout)) = self.orig_bounds.take() {
+        if let Some(orig_clip) = self.orig_clip.take() {
+            self.orig_bounds = None;
             let track = timeline
                 .get_track_by_id_mut(&self.track_id)
                 .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
             if let Some(clip) = track.get_clip_by_id_mut(&self.clip_id) {
-                clip.timeline_in = oin;
-                clip.timeline_out = oout;
-                clip.source_in = osin;
-                clip.source_out = Some(osout);
+                *clip = orig_clip;
             }
             track.sort_clips();
         }
@@ -1793,6 +1828,7 @@ pub struct CloseGapCommand {
     pub gap_start: f64,
     pub gap_end: f64,
     pub shifted_tracks: Vec<String>,
+    pub shifted_clips: Vec<(String, String, f64)>,
     pub shift_amount: f64,
 }
 
@@ -1803,6 +1839,7 @@ impl CloseGapCommand {
             gap_start,
             gap_end,
             shifted_tracks: Vec::new(),
+            shifted_clips: Vec::new(),
             shift_amount: (gap_end - gap_start).max(0.0),
         }
     }
@@ -1816,13 +1853,21 @@ impl Command for CloseGapCommand {
         }
         self.shift_amount = dur;
         self.shifted_tracks.clear();
+        self.shifted_clips.clear();
 
         if let Some(ref tid) = self.track_id {
             let track = timeline
                 .get_track_by_id_mut(tid)
                 .ok_or_else(|| CommandError::TrackNotFound(tid.clone()))?;
+            if track.locked {
+                return Err(CommandError::InvalidOperation(
+                    "Kilitli kanaldaki boşluk kapatılamaz".into(),
+                ));
+            }
             for c in &mut track.clips {
                 if c.timeline_in >= self.gap_end - 1e-4 {
+                    self.shifted_clips
+                        .push((tid.clone(), c.id.clone(), c.timeline_in));
                     c.move_to((c.timeline_in - dur).max(0.0));
                 }
             }
@@ -1833,6 +1878,11 @@ impl Command for CloseGapCommand {
                 if !track.locked {
                     for c in &mut track.clips {
                         if c.timeline_in >= self.gap_end - 1e-4 {
+                            self.shifted_clips.push((
+                                track.id.clone(),
+                                c.id.clone(),
+                                c.timeline_in,
+                            ));
                             c.move_to((c.timeline_in - dur).max(0.0));
                         }
                     }
@@ -1845,15 +1895,10 @@ impl Command for CloseGapCommand {
     }
 
     fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
-        if self.shift_amount <= 1e-4 {
-            return Ok(());
-        }
-        for tid in &self.shifted_tracks {
+        for (tid, cid, orig_in) in &self.shifted_clips {
             if let Some(track) = timeline.get_track_by_id_mut(tid) {
-                for c in &mut track.clips {
-                    if c.timeline_in >= self.gap_start - 1e-4 {
-                        c.move_to(c.timeline_in + self.shift_amount);
-                    }
+                if let Some(c) = track.get_clip_by_id_mut(cid) {
+                    c.move_to(*orig_in);
                 }
                 track.sort_clips();
             }
@@ -2008,9 +2053,10 @@ impl Command for MacroCommand {
     }
 
     fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let len = self.commands.len();
         for (undid, cmd) in self.commands.iter_mut().rev().enumerate() {
             if let Err(err) = cmd.undo(timeline) {
-                for c in self.commands.iter_mut().rev().take(undid) {
+                for c in self.commands[len - undid..].iter_mut() {
                     let _ = c.execute(timeline);
                 }
                 return Err(err);
@@ -2928,5 +2974,70 @@ impl Command for AddAdjustmentLayerCommand {
 
     fn name(&self) -> &str {
         "Ayar Katmanı Ekle"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// 34. ModifyClipCommand (Generic Before/After Clip Snapshot)
+// -----------------------------------------------------------------------------
+#[derive(Debug, Clone)]
+pub struct ModifyClipCommand {
+    pub label: String,
+    pub track_id: String,
+    pub clip_id: String,
+    pub before: Clip,
+    pub after: Clip,
+}
+
+impl ModifyClipCommand {
+    pub fn new(
+        label: impl Into<String>,
+        track_id: impl Into<String>,
+        before: Clip,
+        after: Clip,
+    ) -> Self {
+        let clip_id = after.id.clone();
+        Self {
+            label: label.into(),
+            track_id: track_id.into(),
+            clip_id,
+            before,
+            after,
+        }
+    }
+}
+
+impl Command for ModifyClipCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        if track.locked {
+            return Err(CommandError::InvalidOperation(
+                "Kilitli kanaldaki klip düzenlenemez".into(),
+            ));
+        }
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        *clip = self.after.clone();
+        track.sort_clips();
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        let clip = track
+            .get_clip_by_id_mut(&self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        *clip = self.before.clone();
+        track.sort_clips();
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        &self.label
     }
 }

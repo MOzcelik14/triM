@@ -60,11 +60,25 @@ impl ScreenRecorder {
                     cmd.args(["-f", "gdigrab", "-framerate", "30", "-i", "desktop"]);
                 }
                 CaptureSource::ScreenAndMic => {
+                    let (_, audio_devs) = crate::ffmpeg::list_dshow_devices();
+                    let first_audio = audio_devs.first().ok_or_else(|| {
+                        "Windows DirectShow mikrofon aygıtı bulunamadı.".to_string()
+                    })?;
+                    let spec = format!("audio={first_audio}");
                     cmd.args(["-f", "gdigrab", "-framerate", "30", "-i", "desktop"]);
-                    cmd.args(["-f", "dshow", "-i", "audio=default"]);
+                    cmd.args(["-f", "dshow", "-i", &spec]);
                 }
                 CaptureSource::WebcamOnly => {
-                    cmd.args(["-f", "dshow", "-i", "video=default:audio=default"]);
+                    let (video_devs, audio_devs) = crate::ffmpeg::list_dshow_devices();
+                    let v = video_devs.first().ok_or_else(|| {
+                        "Windows DirectShow kamera aygıtı bulunamadı.".to_string()
+                    })?;
+                    let spec = if let Some(a) = audio_devs.first() {
+                        format!("video={v}:audio={a}")
+                    } else {
+                        format!("video={v}")
+                    };
+                    cmd.args(["-f", "dshow", "-i", &spec]);
                 }
             }
         } else if cfg!(target_os = "macos") {
@@ -80,14 +94,28 @@ impl ScreenRecorder {
                 }
             }
         } else {
-            // Linux: x11grab + pulse / v4l2
-            let display = std::env::var("DISPLAY").unwrap_or_else(|_| ":0.0".to_string());
+            // Linux: x11grab + pulse / v4l2 (warn clearly on pure Wayland sessions)
+            let is_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some()
+                || std::env::var("XDG_SESSION_TYPE")
+                    .is_ok_and(|v| v.eq_ignore_ascii_case("wayland"));
+            let display = std::env::var("DISPLAY").unwrap_or_default();
+            if is_wayland && display.is_empty() && source != CaptureSource::WebcamOnly {
+                return Err(
+                    "Saf Wayland oturumunda x11grab desteklenmiyor. Lütfen X11/XWayland oturumu kullanın."
+                        .to_string(),
+                );
+            }
+            let eff_display = if display.is_empty() {
+                ":0.0".to_string()
+            } else {
+                display
+            };
             match source {
                 CaptureSource::ScreenOnly => {
-                    cmd.args(["-f", "x11grab", "-framerate", "30", "-i", &display]);
+                    cmd.args(["-f", "x11grab", "-framerate", "30", "-i", &eff_display]);
                 }
                 CaptureSource::ScreenAndMic => {
-                    cmd.args(["-f", "x11grab", "-framerate", "30", "-i", &display]);
+                    cmd.args(["-f", "x11grab", "-framerate", "30", "-i", &eff_display]);
                     cmd.args(["-f", "pulse", "-i", "default"]);
                 }
                 CaptureSource::WebcamOnly => {
@@ -121,6 +149,10 @@ impl ScreenRecorder {
 
         match cmd.spawn() {
             Ok(mut child) => {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                if let Ok(Some(status)) = child.try_wait() {
+                    return Err(format!("Ekran kaydı başlatılırken sonlandı ({status})"));
+                }
                 crate::ffmpeg::drain_stderr(child.stderr.take(), "trim-screenrecord-stderr");
                 Ok(Self {
                     child: Some(child),
@@ -185,9 +217,24 @@ impl ScreenRecorder {
 impl Drop for ScreenRecorder {
     fn drop(&mut self) {
         if let Some(mut c) = self.child.take() {
-            let _ = c.stdin.take();
-            let _ = c.kill();
-            let _ = c.wait();
+            if let Some(mut stdin) = c.stdin.take() {
+                use std::io::Write;
+                let _ = stdin.write_all(b"q\n");
+                let _ = stdin.flush();
+            }
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+            let mut exited = false;
+            while std::time::Instant::now() < deadline {
+                if let Ok(Some(_)) = c.try_wait() {
+                    exited = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            if !exited {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
         }
     }
 }

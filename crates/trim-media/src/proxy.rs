@@ -13,10 +13,18 @@ pub fn generate_proxy<P: AsRef<Path>, Q: AsRef<Path>>(
     }
 
     let src_str = src.to_string_lossy().to_string();
-    let out_str = out.to_string_lossy().to_string();
+    let tmp_out = out.with_extension(format!("tmp.{}.mp4", std::process::id()));
+    let tmp_str = tmp_out.to_string_lossy().to_string();
 
     let mut cmd = crate::ffmpeg::ffmpeg_cmd();
-    cmd.args(["-y", "-v", "error", "-ignore_unknown"]);
+    cmd.args([
+        "-y",
+        "-v",
+        "error",
+        "-ignore_unknown",
+        "-protocol_whitelist",
+        "file",
+    ]);
     if let Some(info) = crate::analyzer::detect_forced_pcm_input_codec(src) {
         cmd.args(["-c:a", info.codec]);
     }
@@ -35,20 +43,25 @@ pub fn generate_proxy<P: AsRef<Path>, Q: AsRef<Path>>(
         "aac",
         "-b:a",
         "128k",
-        &out_str,
+        &tmp_str,
     ]);
 
     let output = cmd
         .output()
         .map_err(|e| format!("FFmpeg proxy başlatılamadı: {}", e))?;
     if !output.status.success() {
+        let _ = std::fs::remove_file(&tmp_out);
         let err = String::from_utf8_lossy(&output.stderr);
         return Err(format!("Proxy oluşturma hatası: {}", err.trim()));
     }
 
-    if !out.exists() {
+    if !tmp_out.exists() {
         return Err("Proxy dosyası oluşturulamadı.".to_string());
     }
+    std::fs::rename(&tmp_out, out).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_out);
+        format!("Proxy dosyası taşınamadı: {}", e)
+    })?;
 
     Ok(())
 }
@@ -66,18 +79,11 @@ pub fn default_proxy_path_for<P: AsRef<Path>>(source_path: P) -> PathBuf {
         .map(|c| if c.is_alphanumeric() { c } else { '_' })
         .collect();
 
-    // Add path hash suffix to prevent filename collisions across different directories
-    let hash = format!("{:08x}", seahash_simple(p.to_string_lossy().as_bytes()));
+    // Include mtime & file size so modified source media automatically invalidates stale proxies.
+    let (mtime, size) = trim_core::paths::file_mtime_and_size(p);
+    let key = format!("{}|{}|{}", p.to_string_lossy(), mtime, size);
+    let hash = format!("{:016x}", trim_core::paths::stable_hash_64(key.as_bytes()));
     cache_dir.join(format!("{}_{}_720p.mp4", clean_stem, hash))
-}
-
-fn seahash_simple(data: &[u8]) -> u32 {
-    let mut h: u32 = 0x811c9dc5;
-    for &b in data {
-        h ^= b as u32;
-        h = h.wrapping_mul(0x01000193);
-    }
-    h
 }
 
 #[cfg(test)]
