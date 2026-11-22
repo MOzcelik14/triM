@@ -425,6 +425,8 @@ impl XmlNode {
                         }
                         idx += end + 3;
                         continue;
+                    } else {
+                        break;
                     }
                 }
                 if xml[idx..].starts_with("<!") || xml[idx..].starts_with("<?") {

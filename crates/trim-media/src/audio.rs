@@ -1475,16 +1475,19 @@ impl AudioPlaybackWorker {
         let (lock, _) = &*self.shared;
         if let Ok(mut st) = lock.lock() {
             if st.active {
-                let current_clock = compute_audio_clock_time(
-                    st.base_time,
-                    st.speed,
-                    st.frames_written,
-                    SAMPLE_RATE,
-                    DEFAULT_SINK_LATENCY_SECS,
-                );
-                st.base_time = current_clock;
-                st.frames_written = 0;
-                st.speed = speed;
+                if (st.speed - speed).abs() > 1e-6 {
+                    let current_clock = compute_audio_clock_time(
+                        st.base_time,
+                        st.speed,
+                        st.frames_written,
+                        SAMPLE_RATE,
+                        DEFAULT_SINK_LATENCY_SECS,
+                    );
+                    st.base_time = current_clock;
+                    st.cursor_time = current_clock;
+                    st.frames_written = 0;
+                    st.speed = speed;
+                }
                 st.master_volume = master_volume;
             }
         }

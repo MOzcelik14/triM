@@ -347,8 +347,14 @@ pub fn render_timeline_canvas(
                     continue;
                 }
 
-                let is_gap_sel =
-                    state.selected_gap.as_ref() == Some(&(track.id.clone(), g_in, g_out));
+                let is_gap_sel = state
+                    .selected_gap
+                    .as_ref()
+                    .is_some_and(|(sid, s_in, s_out)| {
+                        sid == &track.id
+                            && (*s_in - g_in).abs() < 1e-9
+                            && (*s_out - g_out).abs() < 1e-9
+                    });
                 let is_hovered = ui
                     .input(|i| i.pointer.hover_pos())
                     .map(|p| gap_rect.contains(p))

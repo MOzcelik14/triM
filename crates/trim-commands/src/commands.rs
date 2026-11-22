@@ -1616,6 +1616,7 @@ pub struct AutoSilenceCutCommand {
     pub original_clip: Option<Clip>,
     pub generated_clips: Vec<Clip>,
     pub shift_amount: f64,
+    pub shifted_clips: Vec<(String, f64)>,
 }
 
 impl AutoSilenceCutCommand {
@@ -1631,6 +1632,7 @@ impl AutoSilenceCutCommand {
             original_clip: None,
             generated_clips: Vec::new(),
             shift_amount: 0.0,
+            shifted_clips: Vec::new(),
         }
     }
 }
@@ -1640,6 +1642,11 @@ impl Command for AutoSilenceCutCommand {
         let track = timeline
             .get_track_by_id_mut(&self.track_id)
             .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        if track.locked {
+            return Err(CommandError::InvalidOperation(
+                "Kilitli kanal düzenlenemez".into(),
+            ));
+        }
 
         let orig = track
             .remove_clip(&self.original_clip_id)
@@ -1666,10 +1673,12 @@ impl Command for AutoSilenceCutCommand {
         let new_end_tl = current_tl;
         let shift = (old_end_tl - new_end_tl).max(0.0);
         self.shift_amount = shift;
+        self.shifted_clips.clear();
 
         if shift > 1e-4 {
             for c in &mut track.clips {
                 if c.timeline_in >= old_end_tl - 1e-4 {
+                    self.shifted_clips.push((c.id.clone(), c.timeline_in));
                     c.move_to((c.timeline_in - shift).max(0.0));
                 }
             }
@@ -1691,17 +1700,13 @@ impl Command for AutoSilenceCutCommand {
             track.remove_clip(&c.id);
         }
 
-        // Shift subsequent clips back right
-        if self.shift_amount > 1e-4 {
-            if let Some(orig) = &self.original_clip {
-                let shifted_boundary = orig.timeline_out - self.shift_amount;
-                for c in &mut track.clips {
-                    if c.timeline_in >= shifted_boundary - 1e-4 {
-                        c.move_to(c.timeline_in + self.shift_amount);
-                    }
-                }
+        // Restore exact positions of shifted subsequent clips
+        for (cid, orig_in) in &self.shifted_clips {
+            if let Some(c) = track.clips.iter_mut().find(|c| &c.id == cid) {
+                c.move_to(*orig_in);
             }
         }
+        self.shifted_clips.clear();
 
         // Restore original clip
         if let Some(orig) = self.original_clip.take() {

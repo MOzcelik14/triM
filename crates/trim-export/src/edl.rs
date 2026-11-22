@@ -81,17 +81,18 @@ pub fn generate_edl(project: &Project) -> String {
     out.push_str("FCM: NON-DROP FRAME\n\n");
 
     let mut event_idx = 1usize;
+    let mut audio_track_num = 0usize;
 
-    for (track_idx, track) in project.timeline.tracks.iter().enumerate() {
+    for track in &project.timeline.tracks {
         let is_video = track.track_type == TrackType::Video;
         let track_code = if is_video {
             "V".to_string()
         } else {
-            let audio_num = track_idx + 1;
-            if audio_num == 1 {
+            audio_track_num += 1;
+            if audio_track_num == 1 {
                 "A".to_string()
             } else {
-                format!("A{}", audio_num)
+                format!("A{}", audio_track_num)
             }
         };
 

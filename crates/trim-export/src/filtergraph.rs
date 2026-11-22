@@ -770,7 +770,7 @@ impl TimelineExporter {
                                 font_size as f64 * 1.25
                             );
                             f.push(format!(
-                                "drawtext=text='{sub_sanitized}':fontsize={sub_size}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}:expansion=none"
+                                "drawtext=text='{sub_sanitized}'{font_part}:fontsize={sub_size}:fontcolor=0xc8d7e6dc:x={x_expr}:y={sub_y}{shadow_part}:expansion=none"
                             ));
                         }
                     }

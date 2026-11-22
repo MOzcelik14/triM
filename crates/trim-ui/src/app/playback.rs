@@ -262,16 +262,21 @@ impl TrimApp {
         );
 
         if let Some(frame) = frame_opt {
+            let scope_due = !self.is_playing
+                || self.scopes_panel.last_refresh_instant.elapsed()
+                    >= std::time::Duration::from_millis(83);
             if self.scopes_panel.is_open
                 && (self.scopes_panel.needs_refresh
                     || self.scopes_panel.request_grab_still
-                    || (self.scopes_panel.last_eval_time - self.current_time).abs() > 1e-4)
+                    || (scope_due
+                        && (self.scopes_panel.last_eval_time - self.current_time).abs() > 1e-4))
             {
                 let rw = frame.width();
                 let rh = frame.height();
                 self.scopes_panel
                     .update_from_rgba(ctx, frame.as_raw(), rw, rh);
                 self.scopes_panel.last_eval_time = self.current_time;
+                self.scopes_panel.last_refresh_instant = std::time::Instant::now();
                 if self.scopes_panel.request_grab_still {
                     self.scopes_panel.request_grab_still = false;
                     self.capture_reference_still(ctx, frame.as_raw(), rw, rh);
@@ -685,6 +690,14 @@ impl TrimApp {
             self.last_rendered_dirty = true;
             self.scopes_panel.mark_dirty();
             self.project.mark_dirty();
+            if self.is_playing {
+                self.audio_worker.start(
+                    self.project.clone(),
+                    self.current_time,
+                    self.playback_speed,
+                    self.audio_mixer_dialog.master_volume,
+                );
+            }
         }
     }
 
@@ -706,6 +719,14 @@ impl TrimApp {
             self.last_rendered_dirty = true;
             self.scopes_panel.mark_dirty();
             self.project.mark_dirty();
+            if self.is_playing {
+                self.audio_worker.start(
+                    self.project.clone(),
+                    self.current_time,
+                    self.playback_speed,
+                    self.audio_mixer_dialog.master_volume,
+                );
+            }
         }
     }
 }

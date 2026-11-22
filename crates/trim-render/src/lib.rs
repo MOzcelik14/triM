@@ -447,17 +447,19 @@ impl GpuCompositor {
             );
         }
         self.gl.bind_texture(glow::TEXTURE_2D, None);
-        self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(self.fbo));
-        let status = self.gl.check_framebuffer_status(glow::FRAMEBUFFER);
-        self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
-        if status != glow::FRAMEBUFFER_COMPLETE {
-            log::warn!(
-                "GPU Compositor: FBO resize {}x{} incomplete (0x{:X})",
-                clamped_w,
-                clamped_h,
-                status
-            );
+        for (label, fb) in [("fbo", self.fbo), ("backdrop_fbo", self.backdrop_fbo)] {
+            self.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fb));
+            let status = self.gl.check_framebuffer_status(glow::FRAMEBUFFER);
+            if status != glow::FRAMEBUFFER_COMPLETE {
+                log::warn!(
+                    "GPU Compositor: {label} resize {}x{} incomplete (0x{:X})",
+                    clamped_w,
+                    clamped_h,
+                    status
+                );
+            }
         }
+        self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
     }
 
     unsafe fn upload_layer_frame(&mut self, frame: &image::RgbaImage, clip: &Clip) {
@@ -1188,7 +1190,8 @@ impl GpuCompositor {
 impl Drop for GpuCompositor {
     fn drop(&mut self) {
         if !self.gl_destroyed {
-            log::debug!("GpuCompositor dropped without explicit on_exit GL cleanup");
+            let gl = std::sync::Arc::clone(&self.gl);
+            self.destroy(&gl);
         }
     }
 }
