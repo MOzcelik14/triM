@@ -2,6 +2,14 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [2.5.1] - 2026-11-22
+
+### Security, Reliability & Performance Audit Fixes
+- **Symlink, Path & Bounds Hardening**: Rejected symlinks in `resolve_safe_media_path`, added `symlink_metadata` + size caps to `AutosaveManager::list_snapshots` and `LookPresetFile::load_from_file`, sanitized `clip.id` in mask `.pgm` paths, added `-protocol_whitelist file` across all local FFmpeg tools, and enforced `is_finite()` guards in `Clip::new`, `trim_out`, `change_speed`, `RippleTrimHead/Tail`, `parse_timestamp_to_seconds`, and `Mask::eval_at`.
+- **Non-Blocking UI & Bounded Media Subprocesses**: Moved media import/folder `FFprobeAnalyzer::analyze` and project-load audio probing to background tasks; prevented infinite per-frame `image::open` retries in Source Monitor; added `run_command_bounded` (byte cap + timeout) for `ffprobe`/scene/silence/whisper; streamed PCM decode in 64 KiB chunks (halving peak RAM); bounded `AudioPlaybackWorker::drop` join.
+- **Export, Render & Undo Consistency**: Added 50ms instant FFmpeg `kill()` on export cancel, auto-`TempDir` script fallback, `total_duration` zero-division guard, audio-only timeline support, EDL/FCPXML/ChapterCard fixes, `GpuCompositor::drop` GL cleanup, `AutoSilenceCutCommand` exact `shifted_clips` undo + `track.locked`, CPU scope 12Hz throttle, and `audio_worker` refresh on playback Undo/Redo.
+- **UI & Release**: Wired `TitleTemplate::ALL` into `TitleDialog`, mapped `FinalCutPro` shortcut profile, surfaced `undo_stack.push` errors, added Windows FFmpeg Strategy 1 SHA-256 + license copy, and added `dist/sbom-cargo-metadata.json` generation.
+
 ## [2.5.0] - 2026-11-21
 
 ### Fixed & Verified (P0 Reliability)

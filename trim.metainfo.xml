@@ -56,6 +56,16 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2.5.1" date="2026-11-22">
+      <description>
+        <p>triM. v2.5.1 - Teknik Denetim Sonrası Güvenlik, Stabilite ve Performans Güncellemesi:</p>
+        <ul>
+          <li>Güvenlik ve veri bütünlüğü: Symlink/boyut sınırları, maske path sanitizasyonu, NaN/Inf korumaları ve Windows FFmpeg SHA-256 doğrulaması.</li>
+          <li>Donma önleme ve medya motoru: Asenkron medya analizi, timeout + byte sınırlı alt süreçler ve tek tamponlu PCM decode.</li>
+          <li>Export, render ve UI: Anında export iptali, GL kaynak Drop temizliği, kesin AutoSilenceCut geri alma, TitleTemplate ve SBOM üretimi.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.5.0" date="2026-11-21">
       <description>
         <p>triM. v2.5.0 - Güvenilirlik, Ses/Kare Senkronu, Look Kütüphanesi ve Mimari Güncelleme:</p>
