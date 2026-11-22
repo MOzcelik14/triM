@@ -223,7 +223,23 @@ impl KeymapConfig {
         let json = self
             .to_json()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        std::fs::write(path, json)
+        let tmp_name = format!(
+            ".{}.tmp.{}",
+            path.file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("keymap"),
+            uuid::Uuid::new_v4()
+        );
+        let tmp_path = path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(tmp_name);
+        std::fs::write(&tmp_path, json.as_bytes())?;
+        if let Err(e) = std::fs::rename(&tmp_path, path) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(e);
+        }
+        Ok(())
     }
 
     pub fn load_from_path(path: &Path) -> Option<Self> {

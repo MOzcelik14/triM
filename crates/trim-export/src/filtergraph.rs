@@ -1264,8 +1264,19 @@ impl TimelineExporter {
                         let mask_dir = temp_dir
                             .map(|p| p.to_path_buf())
                             .unwrap_or_else(std::env::temp_dir);
+                        let safe_id: String = clip
+                            .id
+                            .chars()
+                            .map(|c| {
+                                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                                    c
+                                } else {
+                                    '_'
+                                }
+                            })
+                            .collect();
                         if has_alpha_mask {
-                            let p = mask_dir.join(format!("trim_mask_alpha_{}.pgm", clip.id));
+                            let p = mask_dir.join(format!("trim_mask_alpha_{safe_id}.pgm"));
                             if Self::write_mask_pgm(&p, out_w, out_h, &mask_rgba, 0).is_ok() {
                                 alpha_mask_idx = Some(inputs.push([
                                     "-protocol_whitelist".into(),
@@ -1282,7 +1293,7 @@ impl TimelineExporter {
                             }
                         }
                         if has_fx_mask {
-                            let p = mask_dir.join(format!("trim_mask_fx_{}.pgm", clip.id));
+                            let p = mask_dir.join(format!("trim_mask_fx_{safe_id}.pgm"));
                             if Self::write_mask_pgm(&p, out_w, out_h, &mask_rgba, 1).is_ok() {
                                 fx_mask_idx = Some(inputs.push([
                                     "-protocol_whitelist".into(),
@@ -1420,7 +1431,18 @@ impl TimelineExporter {
                         let mask_dir = temp_dir
                             .map(|p| p.to_path_buf())
                             .unwrap_or_else(std::env::temp_dir);
-                        let p = mask_dir.join(format!("trim_mask_alpha_{}.pgm", clip.id));
+                        let safe_id: String = clip
+                            .id
+                            .chars()
+                            .map(|c| {
+                                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                                    c
+                                } else {
+                                    '_'
+                                }
+                            })
+                            .collect();
+                        let p = mask_dir.join(format!("trim_mask_alpha_{safe_id}.pgm"));
                         if Self::write_mask_pgm(&p, out_w, out_h, &mask_rgba, 0).is_ok() {
                             alpha_mask_idx = Some(inputs.push([
                                 "-protocol_whitelist".into(),

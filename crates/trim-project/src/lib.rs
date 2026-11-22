@@ -51,9 +51,6 @@ pub fn save_project<P: AsRef<Path>>(
 
 fn resolve_safe_media_path(raw: &str, project_parent: &Path) -> String {
     let norm = trim_core::paths::normalize_path(raw);
-    if !norm.is_relative() {
-        return norm.to_string_lossy().to_string();
-    }
     if norm
         .components()
         .any(|c| matches!(c, std::path::Component::ParentDir))
@@ -61,9 +58,22 @@ fn resolve_safe_media_path(raw: &str, project_parent: &Path) -> String {
         log::warn!("Rejected path traversal in project reference: {:?}", raw);
         return String::new();
     }
+    if !norm.is_relative() {
+        if let Ok(meta) = fs::symlink_metadata(&norm) {
+            if meta.file_type().is_symlink() {
+                log::warn!("Rejected symlink media reference: {:?}", raw);
+                return String::new();
+            }
+        }
+        return norm.to_string_lossy().to_string();
+    }
     let abs_path = project_parent.join(&norm);
     if let Ok(meta) = fs::symlink_metadata(&abs_path) {
-        if !meta.file_type().is_symlink() && meta.is_file() {
+        if meta.file_type().is_symlink() {
+            log::warn!("Rejected symlink media reference: {:?}", raw);
+            return String::new();
+        }
+        if meta.is_file() {
             return abs_path.to_string_lossy().to_string();
         }
     }
@@ -410,16 +420,20 @@ impl AutosaveManager {
         })
     }
 
+    fn is_regular_nonempty_file(path: &Path) -> bool {
+        fs::symlink_metadata(path)
+            .is_ok_and(|m| !m.file_type().is_symlink() && m.is_file() && m.len() > 0)
+    }
+
     pub fn check_recovery(&self, project: &Project) -> Option<PathBuf> {
         let rec_path = self.get_recovery_path(project);
-        if rec_path.is_file() && rec_path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+        if Self::is_regular_nonempty_file(&rec_path) {
             return Some(rec_path);
         }
 
         // Check legacy stem-only recovery path
         if let Some(legacy_path) = self.get_legacy_recovery_path(project) {
-            if legacy_path.is_file() && legacy_path.metadata().map(|m| m.len() > 0).unwrap_or(false)
-            {
+            if Self::is_regular_nonempty_file(&legacy_path) {
                 return Some(legacy_path);
             }
         }
@@ -430,7 +444,7 @@ impl AutosaveManager {
             .join("cutline")
             .join("recovery")
             .join("unsaved_project_recovery.cutline");
-        if leg_path.is_file() && leg_path.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+        if Self::is_regular_nonempty_file(&leg_path) {
             return Some(leg_path);
         }
 
@@ -456,12 +470,18 @@ impl AutosaveManager {
         project: &Project,
         max_versions: usize,
     ) -> Result<(), ProjectError> {
-        self.save_snapshot(project)?;
-        if !project.is_dirty || max_versions == 0 {
+        if !project.is_dirty {
             return Ok(());
         }
-        let stem = self
-            .get_recovery_path(project)
+        let rec_path = self.get_recovery_path(project);
+        let json_data = project.to_json()?;
+        write_atomic(&rec_path, json_data.as_bytes())?;
+        if max_versions == 0 {
+            return Ok(());
+        }
+        static SNAP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let seq = SNAP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let stem = rec_path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("project")
@@ -472,8 +492,7 @@ impl AutosaveManager {
             .unwrap_or(0);
         let versioned = self
             .recovery_dir
-            .join(format!("{stem}.snap.{ts_ms}.autosave.trim"));
-        let json_data = project.to_json()?;
+            .join(format!("{stem}.snap.{ts_ms}.{seq}.autosave.trim"));
         write_atomic(&versioned, json_data.as_bytes())?;
 
         // Prune excess snapshots for this project stem
@@ -508,6 +527,7 @@ impl AutosaveManager {
 
     /// Lists available autosave recovery snapshots sorted newest-first.
     pub fn list_snapshots(&self) -> Vec<AutosaveSnapshotEntry> {
+        use std::io::Read;
         let Ok(entries) = fs::read_dir(&self.recovery_dir) else {
             return Vec::new();
         };
@@ -520,26 +540,46 @@ impl AutosaveManager {
             if !name.ends_with(".autosave.trim") {
                 continue;
             }
-            let modified_epoch_secs = entry
-                .metadata()
+            let Ok(meta) = fs::symlink_metadata(&p) else {
+                continue;
+            };
+            if meta.file_type().is_symlink()
+                || !meta.is_file()
+                || meta.len() > MAX_PROJECT_FILE_BYTES
+            {
+                continue;
+            }
+            let modified_epoch_secs = meta
+                .modified()
                 .ok()
-                .and_then(|m| m.modified().ok())
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            if let Ok(raw) = fs::read_to_string(&p) {
-                if let Ok(proj) = Project::from_json(&raw) {
-                    let clip_count: usize =
-                        proj.timeline.tracks.iter().map(|t| t.clips.len()).sum();
-                    let duration_secs = proj.timeline.duration();
-                    out.push(AutosaveSnapshotEntry {
-                        path: p,
-                        project_name: proj.settings.name,
-                        clip_count,
-                        duration_secs,
-                        modified_epoch_secs,
-                    });
+            let Ok(file) = fs::File::open(&p) else {
+                continue;
+            };
+            let mut raw = String::new();
+            if file
+                .take(MAX_PROJECT_FILE_BYTES + 1)
+                .read_to_string(&mut raw)
+                .is_err()
+                || raw.len() as u64 > MAX_PROJECT_FILE_BYTES
+            {
+                continue;
+            }
+            if let Ok(proj) = Project::from_json(&raw) {
+                if proj.format != "trim" && proj.format != "cutline" {
+                    continue;
                 }
+                let clip_count: usize = proj.timeline.tracks.iter().map(|t| t.clips.len()).sum();
+                let duration_secs = proj.timeline.duration();
+                out.push(AutosaveSnapshotEntry {
+                    path: p,
+                    project_name: proj.settings.name,
+                    clip_count,
+                    duration_secs,
+                    modified_epoch_secs,
+                });
             }
         }
         out.sort_by_key(|a| std::cmp::Reverse(a.modified_epoch_secs));
@@ -548,11 +588,14 @@ impl AutosaveManager {
 
     pub fn cleanup(&self, project: &Project) {
         let rec_path = self.get_recovery_path(project);
-        if rec_path.is_file() {
+        if fs::symlink_metadata(&rec_path).is_ok_and(|m| !m.file_type().is_symlink() && m.is_file())
+        {
             let _ = fs::remove_file(rec_path);
         }
         if let Some(legacy_path) = self.get_legacy_recovery_path(project) {
-            if legacy_path.is_file() {
+            if fs::symlink_metadata(&legacy_path)
+                .is_ok_and(|m| !m.file_type().is_symlink() && m.is_file())
+            {
                 let _ = fs::remove_file(legacy_path);
             }
         }

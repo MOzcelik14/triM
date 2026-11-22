@@ -204,6 +204,8 @@ fn generate_filmstrip_disk(cache_dir: &Path, item: &MediaItem) -> Option<PathBuf
         "-v",
         "quiet",
         "-y",
+        "-protocol_whitelist",
+        "file",
         "-i",
         item.file_path.as_str(),
         "-vf",
@@ -212,8 +214,8 @@ fn generate_filmstrip_disk(cache_dir: &Path, item: &MediaItem) -> Option<PathBuf
         "1",
         "-q:v",
         "4",
-        target.to_str().unwrap_or(""),
-    ]);
+    ])
+    .arg(&target);
     let mut guard = crate::ffmpeg::ChildGuard::spawn(&mut cmd).ok()?;
     let status = guard.wait().ok()?;
     if status.success() && target.is_file() {
@@ -243,14 +245,16 @@ fn generate_thumbnail_disk(cache_dir: &Path, item: &MediaItem) -> Option<PathBuf
                 "-v",
                 "quiet",
                 "-y",
+                "-protocol_whitelist",
+                "file",
                 "-i",
                 item.file_path.as_str(),
                 "-vf",
                 "scale=240:-1",
                 "-q:v",
                 "3",
-                target.to_str().unwrap_or(""),
-            ]);
+            ])
+            .arg(&target);
             let mut guard = crate::ffmpeg::ChildGuard::spawn(&mut cmd).ok()?;
             let status = guard.wait().ok()?;
             if status.success() && target.is_file() {
@@ -266,6 +270,8 @@ fn generate_thumbnail_disk(cache_dir: &Path, item: &MediaItem) -> Option<PathBuf
                 "-v",
                 "quiet",
                 "-y",
+                "-protocol_whitelist",
+                "file",
                 "-ss",
                 &format!("{:.2}", seek_time),
                 "-i",
@@ -276,8 +282,8 @@ fn generate_thumbnail_disk(cache_dir: &Path, item: &MediaItem) -> Option<PathBuf
                 "scale=240:-1",
                 "-q:v",
                 "3",
-                target.to_str().unwrap_or(""),
-            ]);
+            ])
+            .arg(&target);
             let mut guard = crate::ffmpeg::ChildGuard::spawn(&mut cmd).ok()?;
             let status = guard.wait().ok()?;
             if status.success() && target.is_file() {

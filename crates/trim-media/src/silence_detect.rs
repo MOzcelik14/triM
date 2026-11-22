@@ -21,8 +21,7 @@ pub fn detect_silence_regions(
     let min_dur = min_duration.clamp(0.1, 10.0);
 
     let mut cmd = ffmpeg_cmd();
-    cmd.arg("-hide_banner")
-        .arg("-nostats")
+    cmd.args(["-hide_banner", "-nostats", "-protocol_whitelist", "file"])
         .arg("-ss")
         .arg(format!("{:.3}", source_in.max(0.0)));
 

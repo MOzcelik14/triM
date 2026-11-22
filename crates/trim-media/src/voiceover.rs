@@ -28,7 +28,8 @@ impl VoiceoverRecorder {
             let first_audio = audio_devs
                 .first()
                 .ok_or_else(|| "Windows DirectShow mikrofon aygıtı bulunamadı.".to_string())?;
-            let input_spec = format!("audio={first_audio}");
+            let escaped_audio = first_audio.replace(':', "\\:");
+            let input_spec = format!("audio={escaped_audio}");
             Self::spawn_ffmpeg(&[
                 "-f",
                 "dshow",

@@ -16,8 +16,7 @@ pub fn detect_scene_changes(
 
     let thresh = threshold.clamp(0.1, 1.0);
     let mut cmd = ffmpeg_cmd();
-    cmd.arg("-hide_banner")
-        .arg("-nostats")
+    cmd.args(["-hide_banner", "-nostats", "-protocol_whitelist", "file"])
         .arg("-ss")
         .arg(format!("{:.3}", source_in.max(0.0)));
 

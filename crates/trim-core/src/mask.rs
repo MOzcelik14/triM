@@ -200,15 +200,23 @@ impl Mask {
     }
 
     pub fn eval_at(&self, clip_time: f64) -> EvaluatedMaskParams {
+        fn finite_f32(v: f64, fallback: f32) -> f32 {
+            let f = v as f32;
+            if f.is_finite() {
+                f
+            } else {
+                fallback
+            }
+        }
         EvaluatedMaskParams {
-            pos_x: self.get_param_at("pos_x", clip_time) as f32,
-            pos_y: self.get_param_at("pos_y", clip_time) as f32,
-            scale_x: (self.get_param_at("scale_x", clip_time) as f32).max(0.01),
-            scale_y: (self.get_param_at("scale_y", clip_time) as f32).max(0.01),
-            rotation_deg: self.get_param_at("rotation", clip_time) as f32,
-            feather: (self.get_param_at("feather", clip_time) as f32).max(0.0),
-            opacity: (self.get_param_at("opacity", clip_time) as f32).clamp(0.0, 1.0),
-            expansion: (self.get_param_at("expansion", clip_time) as f32).clamp(-0.5, 0.5),
+            pos_x: finite_f32(self.get_param_at("pos_x", clip_time), 0.5),
+            pos_y: finite_f32(self.get_param_at("pos_y", clip_time), 0.5),
+            scale_x: finite_f32(self.get_param_at("scale_x", clip_time), 0.5).max(0.01),
+            scale_y: finite_f32(self.get_param_at("scale_y", clip_time), 0.5).max(0.01),
+            rotation_deg: finite_f32(self.get_param_at("rotation", clip_time), 0.0),
+            feather: finite_f32(self.get_param_at("feather", clip_time), 0.0).max(0.0),
+            opacity: finite_f32(self.get_param_at("opacity", clip_time), 1.0).clamp(0.0, 1.0),
+            expansion: finite_f32(self.get_param_at("expansion", clip_time), 0.0).clamp(-0.5, 0.5),
         }
     }
 

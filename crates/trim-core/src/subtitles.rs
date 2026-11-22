@@ -23,19 +23,24 @@ impl SubtitleEntry {
 pub fn parse_timestamp_to_seconds(ts: &str) -> Option<f64> {
     let clean = ts.trim().replace(',', ".");
     let parts: Vec<&str> = clean.split(':').collect();
-    match parts.len() {
+    let secs = match parts.len() {
         2 => {
             let m: f64 = parts[0].trim().parse().ok()?;
             let s: f64 = parts[1].trim().parse().ok()?;
-            Some(m * 60.0 + s)
+            m * 60.0 + s
         }
         3 => {
             let h: f64 = parts[0].trim().parse().ok()?;
             let m: f64 = parts[1].trim().parse().ok()?;
             let s: f64 = parts[2].trim().parse().ok()?;
-            Some(h * 3600.0 + m * 60.0 + s)
+            h * 3600.0 + m * 60.0 + s
         }
-        _ => None,
+        _ => return None,
+    };
+    if secs.is_finite() && secs >= 0.0 {
+        Some(secs)
+    } else {
+        None
     }
 }
 

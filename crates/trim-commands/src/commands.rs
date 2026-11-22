@@ -1155,7 +1155,7 @@ impl Command for RippleTrimHeadCommand {
         let linked_gid = clip.linked_group_id.clone();
 
         let dt = self.playhead_time - orig_in;
-        if dt <= 0.04 || dt >= clip.duration() - 0.04 {
+        if !dt.is_finite() || dt <= 0.04 || dt >= clip.duration() - 0.04 {
             return Err(CommandError::InvalidOperation(
                 "Geçersiz kırpma konumu".into(),
             ));
@@ -1330,7 +1330,7 @@ impl Command for RippleTrimTailCommand {
         self.orig_bounds = Some((orig_in, orig_out, orig_sin, orig_sout));
 
         let dt = orig_out - self.playhead_time;
-        if dt <= 0.04 || dt >= clip.duration() - 0.04 {
+        if !dt.is_finite() || dt <= 0.04 || dt >= clip.duration() - 0.04 {
             return Err(CommandError::InvalidOperation(
                 "Geçersiz kırpma konumu".into(),
             ));
@@ -1550,7 +1550,11 @@ impl ChangeClipSpeedCommand {
         Self {
             track_id: track_id.into(),
             clip_id: clip_id.into(),
-            new_speed: new_speed.clamp(0.1, 10.0),
+            new_speed: if new_speed.is_finite() {
+                new_speed.clamp(0.1, 10.0)
+            } else {
+                1.0
+            },
             new_reverse,
             old_speed: 1.0,
             old_reverse: false,

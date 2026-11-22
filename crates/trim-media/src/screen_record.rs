@@ -64,7 +64,7 @@ impl ScreenRecorder {
                     let first_audio = audio_devs.first().ok_or_else(|| {
                         "Windows DirectShow mikrofon aygıtı bulunamadı.".to_string()
                     })?;
-                    let spec = format!("audio={first_audio}");
+                    let spec = format!("audio={}", first_audio.replace(':', "\\:"));
                     cmd.args(["-f", "gdigrab", "-framerate", "30", "-i", "desktop"]);
                     cmd.args(["-f", "dshow", "-i", &spec]);
                 }
@@ -73,10 +73,11 @@ impl ScreenRecorder {
                     let v = video_devs.first().ok_or_else(|| {
                         "Windows DirectShow kamera aygıtı bulunamadı.".to_string()
                     })?;
+                    let v_esc = v.replace(':', "\\:");
                     let spec = if let Some(a) = audio_devs.first() {
-                        format!("video={v}:audio={a}")
+                        format!("video={v_esc}:audio={}", a.replace(':', "\\:"))
                     } else {
-                        format!("video={v}")
+                        format!("video={v_esc}")
                     };
                     cmd.args(["-f", "dshow", "-i", &spec]);
                 }

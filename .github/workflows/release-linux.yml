@@ -199,10 +199,18 @@ jobs:
             if (Test-Path $ffExt) { Remove-Item -Recurse -Force $ffExt }
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
             Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $ffZip -UseBasicParsing
+            $ffShaUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip.sha256"
+            $expectedFfSha = ((Invoke-WebRequest -Uri $ffShaUrl -UseBasicParsing).Content.Trim() -split "\s+")[0].ToUpper()
+            $actualFfSha = (Get-FileHash -Path $ffZip -Algorithm SHA256).Hash.ToUpper()
+            if ($actualFfSha -ne $expectedFfSha) {
+              throw "FFmpeg zip SHA-256 mismatch! Expected: $expectedFfSha Actual: $actualFfSha"
+            }
             Expand-Archive -Path $ffZip -DestinationPath $ffExt -Force
             $ff = (Get-ChildItem -Path $ffExt -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1)?.FullName
             $probe = (Get-ChildItem -Path $ffExt -Filter "ffprobe.exe" -Recurse | Select-Object -First 1)?.FullName
             $play = (Get-ChildItem -Path $ffExt -Filter "ffplay.exe" -Recurse | Select-Object -First 1)?.FullName
+            $ffLic = (Get-ChildItem -Path $ffExt -Filter "LICENSE*" -Recurse | Select-Object -First 1)?.FullName
+            if ($ffLic) { Copy-Item -Path $ffLic -Destination (Join-Path $stageBin "FFMPEG-LICENSE.txt") -Force }
             $ready = Test-StagedFfmpeg -FfSrc $ff -ProbeSrc $probe -PlaySrc $play
           } catch {
             Write-Host "Gyan.dev download failed: $_"

@@ -1160,12 +1160,22 @@ impl Clip {
     }
 
     pub fn new(media_id: impl Into<String>, timeline_in: f64, timeline_out: f64) -> Self {
-        let dur = (timeline_out - timeline_in).max(0.04);
+        let safe_in = if timeline_in.is_finite() {
+            timeline_in.max(0.0)
+        } else {
+            0.0
+        };
+        let safe_out = if timeline_out.is_finite() {
+            timeline_out
+        } else {
+            safe_in + 0.04
+        };
+        let dur = (safe_out - safe_in).max(0.04);
         Self {
             id: Uuid::new_v4().to_string(),
             media_id: media_id.into(),
-            timeline_in,
-            timeline_out: timeline_in + dur,
+            timeline_in: safe_in,
+            timeline_out: safe_in + dur,
             source_in: 0.0,
             source_out: Some(dur),
             ..Default::default()
@@ -1405,6 +1415,9 @@ impl Clip {
     }
 
     pub fn trim_out(&mut self, new_out: f64) {
+        if !new_out.is_finite() {
+            return;
+        }
         let clamped_out = new_out.max(self.timeline_in + 0.04);
         let new_source_edge = self.map_timeline_to_source(clamped_out);
         self.timeline_out = clamped_out;
@@ -1418,6 +1431,9 @@ impl Clip {
     /// Changes the playback speed of this clip and proportionally stretches or
     /// shrinks its duration on the timeline, maintaining the same range of source media.
     pub fn change_speed(&mut self, new_speed: f64) {
+        if !new_speed.is_finite() {
+            return;
+        }
         let clamped_speed = new_speed.clamp(0.1, 10.0);
         if (self.speed - clamped_speed).abs() < 1e-6 {
             return;

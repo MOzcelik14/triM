@@ -52,18 +52,32 @@ impl LookPresetFile {
     }
 
     pub fn apply_to_clip(&self, clip: &mut Clip) {
-        clip.brightness = self.brightness;
-        clip.contrast = self.contrast;
-        clip.saturation = self.saturation;
-        clip.gamma = self.gamma;
-        clip.temperature = self.temperature;
-        clip.tint = self.tint;
+        fn clean(val: f64, fallback: f64, min: f64, max: f64) -> f64 {
+            if val.is_finite() {
+                val.clamp(min, max)
+            } else {
+                fallback
+            }
+        }
+        fn clean_f32(val: f32, fallback: f32, min: f32, max: f32) -> f32 {
+            if val.is_finite() {
+                val.clamp(min, max)
+            } else {
+                fallback
+            }
+        }
+        clip.brightness = clean(self.brightness, 0.0, -1.0, 1.0);
+        clip.contrast = clean(self.contrast, 1.0, 0.0, 4.0);
+        clip.saturation = clean(self.saturation, 1.0, 0.0, 4.0);
+        clip.gamma = clean(self.gamma, 1.0, 0.1, 5.0);
+        clip.temperature = clean(self.temperature, 0.0, -100.0, 100.0);
+        clip.tint = clean(self.tint, 0.0, -100.0, 100.0);
         clip.lut_preset = self.lut_preset;
-        clip.film_grain = self.film_grain;
-        clip.vignette = self.vignette;
-        clip.halation = self.halation;
-        clip.bloom = self.bloom;
-        clip.chromatic_aberration = self.chromatic_aberration;
+        clip.film_grain = clean_f32(self.film_grain, 0.0, 0.0, 1.0);
+        clip.vignette = clean_f32(self.vignette, 0.0, 0.0, 1.0);
+        clip.halation = clean_f32(self.halation, 0.0, 0.0, 1.0);
+        clip.bloom = clean_f32(self.bloom, 0.0, 0.0, 1.0);
+        clip.chromatic_aberration = clean_f32(self.chromatic_aberration, 0.0, 0.0, 1.0);
     }
 
     pub fn looks_dir() -> PathBuf {
@@ -76,11 +90,49 @@ impl LookPresetFile {
         }
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        std::fs::write(path, json)
+        let tmp_name = format!(
+            ".{}.tmp.{}",
+            path.file_name().and_then(|s| s.to_str()).unwrap_or("look"),
+            uuid::Uuid::new_v4()
+        );
+        let tmp_path = path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(tmp_name);
+        std::fs::write(&tmp_path, json.as_bytes())?;
+        if let Err(e) = std::fs::rename(&tmp_path, path) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(e);
+        }
+        Ok(())
     }
 
     pub fn load_from_file(path: &Path) -> std::io::Result<Self> {
-        let raw = std::fs::read_to_string(path)?;
+        use std::io::Read;
+        const MAX_LOOK_FILE_BYTES: u64 = 1024 * 1024;
+        let meta = std::fs::symlink_metadata(path)?;
+        if meta.file_type().is_symlink() || !meta.is_file() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Refusing to load non-regular or symlinked look file",
+            ));
+        }
+        if meta.len() > MAX_LOOK_FILE_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Look preset file exceeds 1 MiB limit",
+            ));
+        }
+        let file = std::fs::File::open(path)?;
+        let mut raw = String::new();
+        file.take(MAX_LOOK_FILE_BYTES + 1)
+            .read_to_string(&mut raw)?;
+        if raw.len() as u64 > MAX_LOOK_FILE_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Look preset file exceeds 1 MiB limit",
+            ));
+        }
         serde_json::from_str(&raw)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
