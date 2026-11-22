@@ -70,6 +70,8 @@ jobs:
         run: bash scripts/package-linux.sh appimage
       - name: Build portable Linux tarball
         run: bash scripts/package-linux.sh tarball
+      - name: Generate Cargo SBOM (metadata JSON)
+        run: cargo metadata --locked --format-version 1 > dist/sbom-cargo-metadata.json
       - name: Validate Debian, AppImage, and portable tarball outputs
         run: |
           test "$(find dist -name '*.deb' | wc -l)" -eq 1

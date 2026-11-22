@@ -97,6 +97,34 @@ impl TitleDialog {
             .show(ctx, |ui| {
                 ui.add_space(4.0);
 
+                // 0. Quick Title Templates (trim_core::looks::TitleTemplate)
+                ui.group(|ui| {
+                    ui.strong("Hazır Başlık Şablonları");
+                    ui.horizontal_wrapped(|ui| {
+                        for tpl in trim_core::looks::TitleTemplate::ALL {
+                            let label =
+                                crate::i18n::tr(crate::i18n::Language::Turkish, tpl.i18n_key());
+                            if ui.button(label).clicked() {
+                                let (ov, dur) = tpl.build_overlay("Başlık Metni", "Alt Başlık");
+                                self.text = ov.content;
+                                self.subtitle_text = ov.subtitle_text.unwrap_or_default();
+                                self.font_size = (ov.font_size.round() as u32).max(12);
+                                self.motion_style = ov.motion_style;
+                                self.duration = dur;
+                                self.has_box = ov.bg_color.is_some();
+                                self.has_shadow = true;
+                                self.position = if ov.pos_y > 0.7 {
+                                    TitlePosition::LowerThird
+                                } else {
+                                    TitlePosition::Center
+                                };
+                            }
+                        }
+                    });
+                });
+
+                ui.add_space(4.0);
+
                 // 1. Motion Style / Animation Presets
                 ui.group(|ui| {
                     ui.strong("Animasyon Şablonu (Motion Preset)");

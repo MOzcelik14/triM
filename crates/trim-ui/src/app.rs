@@ -369,6 +369,7 @@ impl TrimApp {
         app.shortcut_profile = match prefs.shortcut_profile.as_str() {
             "Adobe Premiere Pro" | "Premiere" => ShortcutProfile::PremierePro,
             "DaVinci Resolve" | "Resolve" => ShortcutProfile::DaVinciResolve,
+            "Final Cut Pro" | "FCP" => ShortcutProfile::FinalCutPro,
             _ => ShortcutProfile::TrimDefault,
         };
         app.audio_mixer
@@ -568,12 +569,17 @@ impl eframe::App for TrimApp {
                                     &clip_id,
                                     timeline_cuts,
                                 ));
-                                let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                                self.project.mark_dirty();
-                                self.status_message = format!(
-                                    "Akıllı Kesim Tamamlandı: {} yeni sahne algılandı ve bölündü",
-                                    count
-                                );
+                                if let Err(e) =
+                                    self.undo_stack.push(cmd, &mut self.project.timeline)
+                                {
+                                    self.status_message = format!("⚠ Sahne kesimi başarısız: {e}");
+                                } else {
+                                    self.project.mark_dirty();
+                                    self.status_message = format!(
+                                        "Akıllı Kesim Tamamlandı: {} yeni sahne algılandı ve bölündü",
+                                        count
+                                    );
+                                }
                             }
                         }
                     }
@@ -622,12 +628,22 @@ impl eframe::App for TrimApp {
                                 "Otomatik Deşifre Altyazıları",
                                 cmds,
                             ));
-                            let _ = self.undo_stack.push(macro_cmd, &mut self.project.timeline);
-                            self.project.mark_dirty();
+                            if let Err(e) =
+                                self.undo_stack.push(macro_cmd, &mut self.project.timeline)
+                            {
+                                self.status_message = format!("⚠ Altyazı eklenemedi: {e}");
+                            } else {
+                                self.project.mark_dirty();
+                                self.status_message = format!(
+                                    "{} adet altyazı başarıyla oluşturuldu ve eklendi",
+                                    count
+                                );
+                            }
+                        } else {
+                            self.status_message =
+                                format!("{} adet altyazı başarıyla oluşturuldu ve eklendi", count);
                         }
                         self.transcribe_dialog.close();
-                        self.status_message =
-                            format!("{} adet altyazı başarıyla oluşturuldu ve eklendi", count);
                     }
                     Err(e) => {
                         self.transcribe_dialog.is_transcribing = false;
