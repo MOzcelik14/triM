@@ -1,13 +1,14 @@
 //! Live voiceover and timeline dubbing recorder using native audio capture via FFmpeg.
 
+use crate::ffmpeg::ChildGuard;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Stdio};
+use std::process::Stdio;
 use std::time::Instant;
 
 /// Active live voiceover recording session.
 pub struct VoiceoverRecorder {
-    child: Option<Child>,
+    child: Option<ChildGuard>,
     output_path: PathBuf,
     start_time: Instant,
 }
@@ -116,7 +117,7 @@ impl VoiceoverRecorder {
         if let Ok(Some(status)) = child.try_wait() {
             return Err(format!("Ses kaydı başlatılırken sonlandı ({status})"));
         }
-        crate::ffmpeg::drain_stderr(child.stderr.take(), "trim-voiceover-stderr");
+        crate::ffmpeg::drain_stderr(child.take_stderr(), "trim-voiceover-stderr");
         Ok(Self {
             child: Some(child),
             output_path: out,
@@ -124,7 +125,7 @@ impl VoiceoverRecorder {
         })
     }
 
-    fn spawn_ffmpeg(extra_args: &[&str]) -> Result<Child, std::io::Error> {
+    fn spawn_ffmpeg(extra_args: &[&str]) -> Result<ChildGuard, std::io::Error> {
         let mut cmd = crate::ffmpeg::ffmpeg_cmd();
         cmd.arg("-y");
         cmd.arg("-v").arg("error");
@@ -132,7 +133,7 @@ impl VoiceoverRecorder {
         cmd.stdin(Stdio::piped());
         cmd.stdout(Stdio::null());
         cmd.stderr(Stdio::piped());
-        cmd.spawn()
+        ChildGuard::spawn(&mut cmd)
     }
 
     pub fn is_recording(&mut self) -> bool {
@@ -156,7 +157,7 @@ impl VoiceoverRecorder {
         let elapsed = self.elapsed_seconds();
         if let Some(mut c) = self.child.take() {
             // Send 'q' to FFmpeg stdin so it finalizes the WAV header properly
-            if let Some(mut stdin) = c.stdin.take() {
+            if let Some(mut stdin) = c.take_stdin() {
                 let _ = stdin.write_all(b"q\n");
                 let _ = stdin.flush();
             }
@@ -205,7 +206,7 @@ impl VoiceoverRecorder {
 impl Drop for VoiceoverRecorder {
     fn drop(&mut self) {
         if let Some(mut c) = self.child.take() {
-            if let Some(mut stdin) = c.stdin.take() {
+            if let Some(mut stdin) = c.take_stdin() {
                 use std::io::Write;
                 let _ = stdin.write_all(b"q\n");
                 let _ = stdin.flush();
@@ -247,5 +248,46 @@ mod tests {
         };
         assert_eq!(recorder.output_path(), target.as_path());
         assert!(recorder.elapsed_seconds() >= 0.0);
+    }
+
+    #[cfg(target_os = "linux")]
+    fn sleeper_guard() -> (ChildGuard, u32) {
+        let mut cmd = std::process::Command::new("sleep");
+        cmd.arg("60").stdin(Stdio::piped());
+        let guard = ChildGuard::spawn(&mut cmd).expect("spawn sleep");
+        let pid = guard.id().expect("pid");
+        (guard, pid)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn proc_exists(pid: u32) -> bool {
+        Path::new(&format!("/proc/{pid}")).exists()
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_voiceover_recorder_drop_leaves_no_process() {
+        let (guard, pid) = sleeper_guard();
+        let recorder = VoiceoverRecorder {
+            child: Some(guard),
+            output_path: std::env::temp_dir().join("trim_vo_drop_test.wav"),
+            start_time: Instant::now(),
+        };
+        assert!(proc_exists(pid));
+        drop(recorder);
+        assert!(!proc_exists(pid), "recorder drop must reap its child");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn test_voiceover_recorder_cancel_leaves_no_process() {
+        let (guard, pid) = sleeper_guard();
+        let mut recorder = VoiceoverRecorder {
+            child: Some(guard),
+            output_path: std::env::temp_dir().join("trim_vo_cancel_test.wav"),
+            start_time: Instant::now(),
+        };
+        recorder.cancel();
+        assert!(!proc_exists(pid), "cancel must kill and reap its child");
     }
 }

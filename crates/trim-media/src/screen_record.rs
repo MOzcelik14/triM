@@ -6,9 +6,10 @@
 //! - Windows: `gdigrab` / `dshow`
 //! - macOS: `avfoundation`
 
+use crate::ffmpeg::ChildGuard;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Stdio};
+use std::process::Stdio;
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -33,7 +34,7 @@ impl CaptureSource {
 
 /// Active live screen / webcam recording session.
 pub struct ScreenRecorder {
-    child: Option<Child>,
+    child: Option<ChildGuard>,
     output_path: PathBuf,
     start_time: Instant,
     source: CaptureSource,
@@ -148,13 +149,13 @@ impl ScreenRecorder {
         cmd.stdout(Stdio::null());
         cmd.stderr(Stdio::piped());
 
-        match cmd.spawn() {
+        match ChildGuard::spawn(&mut cmd) {
             Ok(mut child) => {
                 std::thread::sleep(std::time::Duration::from_millis(200));
                 if let Ok(Some(status)) = child.try_wait() {
                     return Err(format!("Ekran kaydı başlatılırken sonlandı ({status})"));
                 }
-                crate::ffmpeg::drain_stderr(child.stderr.take(), "trim-screenrecord-stderr");
+                crate::ffmpeg::drain_stderr(child.take_stderr(), "trim-screenrecord-stderr");
                 Ok(Self {
                     child: Some(child),
                     output_path: out,
@@ -190,7 +191,7 @@ impl ScreenRecorder {
     pub fn stop(&mut self) -> Result<f64, String> {
         let elapsed = self.elapsed_seconds();
         if let Some(mut c) = self.child.take() {
-            if let Some(mut stdin) = c.stdin.take() {
+            if let Some(mut stdin) = c.take_stdin() {
                 let _ = stdin.write_all(b"q\n");
                 let _ = stdin.flush();
             }
@@ -218,7 +219,7 @@ impl ScreenRecorder {
 impl Drop for ScreenRecorder {
     fn drop(&mut self) {
         if let Some(mut c) = self.child.take() {
-            if let Some(mut stdin) = c.stdin.take() {
+            if let Some(mut stdin) = c.take_stdin() {
                 use std::io::Write;
                 let _ = stdin.write_all(b"q\n");
                 let _ = stdin.flush();
@@ -237,5 +238,30 @@ impl Drop for ScreenRecorder {
                 let _ = c.wait();
             }
         }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_screen_recorder_drop_leaves_no_process() {
+        let mut cmd = std::process::Command::new("sleep");
+        cmd.arg("60").stdin(Stdio::piped());
+        let guard = ChildGuard::spawn(&mut cmd).expect("spawn sleep");
+        let pid = guard.id().expect("pid");
+        let recorder = ScreenRecorder {
+            child: Some(guard),
+            output_path: std::env::temp_dir().join("trim_sr_drop_test.mp4"),
+            start_time: Instant::now(),
+            source: CaptureSource::ScreenOnly,
+        };
+        assert!(Path::new(&format!("/proc/{pid}")).exists());
+        drop(recorder);
+        assert!(
+            !Path::new(&format!("/proc/{pid}")).exists(),
+            "recorder drop must reap its child"
+        );
     }
 }
