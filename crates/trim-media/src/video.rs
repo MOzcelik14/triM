@@ -502,6 +502,16 @@ impl PlaybackStreamer {
         }
         self.frames_delivered = 0;
     }
+
+    /// Returns the OS process ID of the active FFmpeg child process, if currently running.
+    pub fn child_pid(&self) -> Option<u32> {
+        self.active_child
+            .as_ref()?
+            .lock()
+            .ok()?
+            .as_ref()
+            .and_then(|g| g.id())
+    }
 }
 
 pub struct SeekCommand {

@@ -1,5 +1,16 @@
 # triM. Preview & Media Benchmark Baseline (v2.3.0)
 
+> [!CAUTION]
+> **GEÇERSİZ: YÖNTEM VE METODOLOJİ SORUNLARI NEDENİYLE BU RAPOR GEÇERSİZDİR**  
+> Güncel ve dürüst ölçüm için bkz. [`2026-11-22_honest_benchmark.md`](./2026-11-22_honest_benchmark.md).
+> 
+> **Geçersizlik Nedenleri:**
+> 1. **Sentetik / Gerçek Ayrımı Yoktu:** Kullanılan medya gerçek kamera çekimi değil, 4-5 saniyelik sentetik FFmpeg `testsrc2` üretimiydi; prodüksiyon B-kare, VFR veya yüksek bit hızlı profillerini temsil etmiyordu.
+> 2. **Oynatma Saatine Bağlı Olmayan (Unpaced) İleri Akış:** `bench_forward_stream`, oynatma zaman çizelgesine veya deadline kısıtına bağlı olmadan borudan ne kadar hızlı byte okunduğunu ölçmekteydi. Bu yüzden "0 düşen kare" ve "1619 FPS" gerçekçi bir oynatma metriği değil, sadece serbest decode verimiydi.
+> 3. **Metodolojik Çelişki (634 FPS vs ~130 FPS):** Tablo 1'de 4K H.264 için 634.5 FPS yazılırken Bölüm 3'te CPU decode için ~130 FPS belirtilmiş, bu farkın unpaced pipe boşaltma vs tek komutla toplu decode metodolojisi farkından kaynaklandığı açıklanmamıştı.
+> 4. **Zaman Çizelgesi Önbellek Yanıltması (0.00 ms/frame):** `bench_timeline_tracks` aynı 5 zaman damgasını tekrar tekrar sorguladığı için 1-track senaryosunda bellek önbelleğinden anlık okuma yapılmış ve kompozitör süresi 0.00 ms olarak raporlanmıştır.
+> 5. **Seek Ölçümünde Süreç Maliyeti İzolasyonu Yoktu:** Rastgele seek testi her seferinde yeni bir FFmpeg alt süreci başlatan `decode_frame_raw` fonksiyonunu çağırmış; ölçülen gecikmenin gerçek medya seek'i mi yoksa process spawn + probe maliyeti mi olduğu ayrıştırılmamıştı.
+
 Ölçüm aracı: `cargo run --release -p trim-media --example perf_bench`  
 Tarih: 2026-11-21  
 Tekrar: Her senaryo 5 koşu (medyan ve min..max yayılımı).
