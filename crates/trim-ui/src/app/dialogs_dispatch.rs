@@ -59,12 +59,7 @@ impl TrimApp {
                         p
                     };
                     if folder.is_dir() {
-                        #[cfg(target_os = "windows")]
-                        let _ = std::process::Command::new("explorer").arg(folder).spawn();
-                        #[cfg(target_os = "macos")]
-                        let _ = std::process::Command::new("open").arg(folder).spawn();
-                        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-                        let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
+                        open_folder_detached(folder);
                     }
                 }
                 ExportDialogAction::CopyYoutubeChapters => {
@@ -97,12 +92,7 @@ impl TrimApp {
                         p
                     };
                     if folder.is_dir() {
-                        #[cfg(target_os = "windows")]
-                        let _ = std::process::Command::new("explorer").arg(folder).spawn();
-                        #[cfg(target_os = "macos")]
-                        let _ = std::process::Command::new("open").arg(folder).spawn();
-                        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-                        let _ = std::process::Command::new("xdg-open").arg(folder).spawn();
+                        open_folder_detached(folder);
                     }
                 }
                 RenderQueueDialogAction::NewExportJob => {
@@ -1225,5 +1215,23 @@ impl TrimApp {
                 self.ffmpeg_missing_alert = false;
             }
         }
+    }
+}
+
+/// Opens `folder` in the platform file manager. The short-lived launcher child is reaped on a
+/// tiny helper thread so it never lingers as a zombie process (Linux) after it exits.
+fn open_folder_detached(folder: &std::path::Path) {
+    #[cfg(target_os = "windows")]
+    let program = "explorer";
+    #[cfg(target_os = "macos")]
+    let program = "open";
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let program = "xdg-open";
+    if let Ok(mut child) = std::process::Command::new(program).arg(folder).spawn() {
+        let _ = std::thread::Builder::new()
+            .name("trim-open-folder-reaper".to_string())
+            .spawn(move || {
+                let _ = child.wait();
+            });
     }
 }
