@@ -10,6 +10,54 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::thread;
 use trim_core::project::Project;
+use trim_media::ChildGuard;
+
+/// Background watcher that kills the export child as soon as `cancel` is raised, even while the
+/// export thread is blocked reading FFmpeg's progress pipe.
+///
+/// Its `Drop` always raises the `done` flag and joins the thread, so the watcher terminates on every
+/// exit path of the export thread, including a panic (unwind). Once the watcher has stopped, the
+/// last `Arc` to the `ChildGuard` is released and the guard's `Drop` kills and reaps FFmpeg.
+pub(crate) struct CancelWatcher {
+    done: Arc<AtomicBool>,
+    handle: Option<thread::JoinHandle<()>>,
+}
+
+impl CancelWatcher {
+    pub(crate) fn spawn(
+        child: Arc<std::sync::Mutex<Option<ChildGuard>>>,
+        cancel: Arc<AtomicBool>,
+    ) -> Self {
+        let done = Arc::new(AtomicBool::new(false));
+        let watcher_done = Arc::clone(&done);
+        let handle = thread::spawn(move || {
+            while !watcher_done.load(Ordering::Acquire) {
+                if cancel.load(Ordering::SeqCst) {
+                    if let Ok(mut guard) = child.lock() {
+                        if let Some(ref mut c) = *guard {
+                            let _ = c.kill();
+                        }
+                    }
+                    break;
+                }
+                thread::sleep(std::time::Duration::from_millis(50));
+            }
+        });
+        Self {
+            done,
+            handle: Some(handle),
+        }
+    }
+}
+
+impl Drop for CancelWatcher {
+    fn drop(&mut self) {
+        self.done.store(true, Ordering::Release);
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum ExportMessage {
@@ -115,12 +163,10 @@ impl ExportRunner {
             }
 
             let mut cmd = trim_media::create_command(&cmd_args[0]);
-            let mut child = match cmd
-                .args(&cmd_args[1..])
+            cmd.args(&cmd_args[1..])
                 .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-            {
+                .stderr(Stdio::piped());
+            let mut child = match ChildGuard::spawn(&mut cmd) {
                 Ok(c) => c,
                 Err(e) => {
                     let _ = tx.send(ExportMessage::Finished(Err(format!(
@@ -133,7 +179,7 @@ impl ExportRunner {
 
             // Concurrently drain stderr to EOF in a 64 KiB ring buffer so FFmpeg never hits SIGPIPE
             // and the final error diagnostics are always preserved.
-            let stderr_handle = child.stderr.take().map(|err_pipe| {
+            let stderr_handle = child.take_stderr().map(|err_pipe| {
                 thread::spawn(move || {
                     use std::collections::VecDeque;
                     use std::io::Read;
@@ -163,25 +209,10 @@ impl ExportRunner {
                 })
             });
 
-            let stdout_pipe = child.stdout.take();
+            let stdout_pipe = child.take_stdout();
             let child_arc = Arc::new(std::sync::Mutex::new(Some(child)));
-            let cancel_done = Arc::new(AtomicBool::new(false));
-            let watcher_child = Arc::clone(&child_arc);
-            let watcher_cancel = Arc::clone(&job_cancel);
-            let watcher_done = Arc::clone(&cancel_done);
-            let cancel_watcher = thread::spawn(move || {
-                while !watcher_done.load(Ordering::Acquire) {
-                    if watcher_cancel.load(Ordering::SeqCst) {
-                        if let Ok(mut guard) = watcher_child.lock() {
-                            if let Some(ref mut c) = *guard {
-                                let _ = c.kill();
-                            }
-                        }
-                        break;
-                    }
-                    thread::sleep(std::time::Duration::from_millis(50));
-                }
-            });
+            let cancel_watcher =
+                CancelWatcher::spawn(Arc::clone(&child_arc), Arc::clone(&job_cancel));
 
             let safe_total_duration = if total_duration.is_finite() && total_duration > 0.001 {
                 total_duration
@@ -217,8 +248,7 @@ impl ExportRunner {
                 }
             }
 
-            cancel_done.store(true, Ordering::Release);
-            let _ = cancel_watcher.join();
+            drop(cancel_watcher);
 
             let status = if let Ok(mut guard) = child_arc.lock() {
                 if let Some(mut c) = guard.take() {
@@ -269,5 +299,79 @@ impl ExportRunner {
                 }
             }
         });
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+    use std::process::Command;
+
+    fn proc_exists(pid: u32) -> bool {
+        Path::new(&format!("/proc/{pid}")).exists()
+    }
+
+    fn spawn_sleeper() -> (ChildGuard, u32) {
+        let mut cmd = Command::new("sleep");
+        cmd.arg("60");
+        let guard = ChildGuard::spawn(&mut cmd).expect("spawn sleep");
+        let pid = guard.id().expect("pid");
+        (guard, pid)
+    }
+
+    #[test]
+    fn test_cancel_watcher_kills_child_when_cancel_raised() {
+        let (guard, pid) = spawn_sleeper();
+        let child = Arc::new(std::sync::Mutex::new(Some(guard)));
+        let cancel = Arc::new(AtomicBool::new(false));
+        let watcher = CancelWatcher::spawn(Arc::clone(&child), Arc::clone(&cancel));
+        assert!(proc_exists(pid));
+        cancel.store(true, Ordering::SeqCst);
+        // The watcher (still alive) must kill the child on its own, while the guard is still held.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while proc_exists(pid) && std::time::Instant::now() < deadline {
+            thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(!proc_exists(pid), "watcher must kill child after cancel");
+        drop(watcher);
+        drop(child);
+    }
+
+    #[test]
+    fn test_cancel_watcher_terminates_and_child_dies_when_export_thread_panics() {
+        let (guard, pid) = spawn_sleeper();
+        let flag_done = Arc::new(AtomicBool::new(false));
+        let flag_done_thread = Arc::clone(&flag_done);
+        let handle = thread::spawn(move || {
+            let child = Arc::new(std::sync::Mutex::new(Some(guard)));
+            let cancel = Arc::new(AtomicBool::new(false));
+            let _watcher = CancelWatcher::spawn(Arc::clone(&child), cancel);
+            let _marker = scopeguard_set(flag_done_thread);
+            panic!("simulated export thread panic");
+        });
+        let res = handle.join();
+        assert!(res.is_err(), "export thread must have panicked");
+        assert!(
+            flag_done.load(Ordering::SeqCst),
+            "unwind must have run destructors"
+        );
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while proc_exists(pid) && std::time::Instant::now() < deadline {
+            thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert!(
+            !proc_exists(pid),
+            "child must die after export thread panic"
+        );
+    }
+
+    struct SetFlag(Arc<AtomicBool>);
+    impl Drop for SetFlag {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+    fn scopeguard_set(flag: Arc<AtomicBool>) -> SetFlag {
+        SetFlag(flag)
     }
 }
