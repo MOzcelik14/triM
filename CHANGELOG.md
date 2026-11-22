@@ -2,7 +2,7 @@
 
 All notable changes to **triM.** are documented in this file.
 
-## [2.5.1] - 2026-11-22
+## [2.5.2] - 2026-11-22
 
 ### Process Lifecycle & RAII ChildGuard Hardening (Bölüm A)
 - **Voiceover & Screen Record**: Converted bare `Command::spawn()` calls in `crates/trim-media/src/voiceover.rs` and `screen_record.rs` to RAII `ChildGuard` (`child: Option<ChildGuard>`), adding deterministic process termination and reaping on drop and cancel (`stop()`, `cancel()`, `Drop`). Added Linux unit tests verifying no orphan/zombie processes remain.
@@ -23,6 +23,8 @@ All notable changes to **triM.** are documented in this file.
 - **Persistent Seek Decoder (`PersistentSeekDecoder`)**: Implemented persistent seek stream reuse in `crates/trim-media/src/video.rs` and wired it into `AsyncFrameDecoder`. Sequential scrub steps within reference locality (< 1.5s forward, or within the 30-frame ring buffer) are read directly from the open pipe in < 1 µs instead of spawning a new FFmpeg process (~170 ms cold seek overhead), delivering a >100,000× speedup during timeline scrubbing.
 - **Stale Frame Purge**: Fixed `PlaybackStreamer::start_sized` and `stop()` to clear `current_frame`, preventing stale frames from previous seek positions leaking into subsequent queries.
 - **Unit & Integration Tests**: Added `crates/trim-media/tests/bench_math_test.rs` and `tests/seek_decoder_test.rs` verifying percentile math, rational fps parsing, mock frame drop accounting, and persistent scrub lifecycle.
+
+## [2.5.1] - 2026-11-22
 
 ### Security, Reliability & Performance Audit Fixes
 - **Symlink, Path & Bounds Hardening**: Rejected symlinks in `resolve_safe_media_path`, added `symlink_metadata` + size caps to `AutosaveManager::list_snapshots` and `LookPresetFile::load_from_file`, sanitized `clip.id` in mask `.pgm` paths, added `-protocol_whitelist file` across all local FFmpeg tools, and enforced `is_finite()` guards in `Clip::new`, `trim_out`, `change_speed`, `RippleTrimHead/Tail`, `parse_timestamp_to_seconds`, and `Mask::eval_at`.

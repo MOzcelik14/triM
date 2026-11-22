@@ -56,6 +56,16 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2.5.2" date="2026-11-22">
+      <description>
+        <p>triM. v2.5.2 - Süreç Yaşam Döngüsü Hardening, Dürüst Benchmark ve Kalıcı Seek Optimizasyonu:</p>
+        <ul>
+          <li>RAII ChildGuard: Voiceover, screen recording ve export runner alt süreçleri ChildGuard içine alınarak iptal, drop ve panic durumunda kesin olarak sonlandırılması garanti edildi; dosya yöneticisi zombileri temizlendi.</li>
+          <li>Dürüst Benchmark: Gerçek Canon EOS 2000D çekimi (MVI_8603.MOV) ve rasyonel FPS (24000/1001) ile paced oynatma ve side-by-side decode verimi ölçüldü; eski metodoloji çelişkileri çözüldü.</li>
+          <li>Kalıcı Seek Decoder: AsyncFrameDecoder içine PersistentSeekDecoder entegre edilerek ardışık scrub gecikmesi 170 ms'den mikro-saniyelere indirildi (>160,000× scrub hızlanması).</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.5.1" date="2026-11-22">
       <description>
         <p>triM. v2.5.1 - Teknik Denetim Sonrası Güvenlik, Stabilite ve Performans Güncellemesi:</p>
