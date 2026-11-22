@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-11-22 13:06:07 +0300",
+  "timestamp": "2026-11-22 13:14:47 +0300",
   "system": {
     "cpu_model": "12th Gen Intel(R) Core(TM) i5-12450H",
     "logical_cores": 12,
     "ram_total_mb": 23731.55859375,
-    "ram_avail_mb": 16531.1875,
+    "ram_avail_mb": 16534.3515625,
     "ffmpeg_version_line1": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
     "os_kernel": "Linux 7.0.0-43-generic x86_64 GNU/Linux",
     "is_vm": false,
@@ -37,53 +37,57 @@
     "total_expected_frames": 671,
     "delivered_pct": 100.0,
     "missed_pct": 0.0,
-    "latency_p50_ms": 0.39649,
-    "latency_p95_ms": 0.512016,
-    "latency_p99_ms": 0.572178,
-    "time_to_first_frame_ms": 125.357252,
+    "latency_p50_ms": 0.393584,
+    "latency_p95_ms": 0.515211,
+    "latency_p99_ms": 0.569829,
+    "time_to_first_frame_ms": 125.58098000000001,
     "pts_drift_max_ms": 0.0,
-    "cpu_trim_pct": 2.9384699949600175,
+    "cpu_trim_pct": 3.1054488605274573,
     "cpu_ffmpeg_pct": 0.0,
-    "peak_rss_trim_mb": 59.25390625,
-    "peak_rss_ffmpeg_mb": 193.80078125
+    "peak_rss_trim_mb": 59.1171875,
+    "peak_rss_ffmpeg_mb": 194.00390625
   },
   "primary_free_run": {
-    "unpaced_fps": 6794.70514674284,
+    "unpaced_fps": 7133.788031734974,
     "delivered_frames": 720,
-    "elapsed_s": 0.105964863,
+    "elapsed_s": 0.100928146,
     "notes": "Serbest decode hızı: Oynatma saatine / zaman sınırına (deadline) bağlı olmadan boru hattından çekilebilen maksimum ham decode verimi."
   },
   "primary_seek": {
     "iterations": 100,
-    "cold_p50_ms": 143.900971,
-    "cold_p95_ms": 164.928339,
-    "cold_p99_ms": 176.95213900000002,
-    "hot_p50_ms": 8.377545,
-    "hot_p95_ms": 9.839388,
-    "hot_p99_ms": 10.328699,
-    "ratio_cold_to_hot_p50": 17.17698573985577
+    "cold_p50_ms": 170.92189,
+    "cold_p95_ms": 192.674225,
+    "cold_p99_ms": 196.95662099999998,
+    "hot_p50_ms": 111.272699,
+    "hot_p95_ms": 119.431595,
+    "hot_p99_ms": 125.18616399999999,
+    "scrub_p50_ms": 0.000106,
+    "scrub_p95_ms": 0.000168,
+    "scrub_p99_ms": 0.001288,
+    "ratio_cold_to_hot_p50": 1.536063127218654,
+    "ratio_cold_to_scrub_p50": 1612470.6603773583
   },
   "timeline_compositing": [
     {
       "tracks": 1,
       "queries": 300,
-      "ms_per_frame": 0.3903095933333333,
+      "ms_per_frame": 0.36756423666666665,
       "cache_hit_pct": 0.0,
-      "rss_mb": 4.640625
+      "rss_mb": 52.140625
     },
     {
       "tracks": 3,
       "queries": 300,
-      "ms_per_frame": 6.190030076666667,
+      "ms_per_frame": 6.512629503333334,
       "cache_hit_pct": 0.0,
-      "rss_mb": 20.37109375
+      "rss_mb": 188.65234375
     },
     {
       "tracks": 6,
       "queries": 300,
-      "ms_per_frame": 12.025271356666668,
+      "ms_per_frame": 11.708051823333331,
       "cache_hit_pct": 0.0,
-      "rss_mb": 31.9140625
+      "rss_mb": 317.86328125
     }
   ],
   "color_parity": {
@@ -119,8 +123,8 @@
       "engine": "CPU Reference (swscale)",
       "success": true,
       "frames_tested": 60,
-      "elapsed_s": 0.204429703,
-      "fps": 293.4994236136028,
+      "elapsed_s": 0.200503969,
+      "fps": 299.24594659769554,
       "notes": "Temel yazılım decode ve RGBA ölçekleme hattı"
     },
     {
@@ -129,15 +133,15 @@
       "frames_tested": 60,
       "elapsed_s": null,
       "fps": null,
-      "notes": "Bu ortamda çalışmadı: [AVHWDeviceContext @ 0x5c17cd7c8e80] Failed to initialise VAAPI connection: -1 (unknown libva error). Device creation failed: -5. Failed to set value '/dev/dri/renderD128' for option 'vaapi_device': Input/output error Error parsing global options: Input/output error"
+      "notes": "Bu ortamda çalışmadı: [AVHWDeviceContext @ 0x5fd8cc2a0e80] Failed to initialise VAAPI connection: -1 (unknown libva error). Device creation failed: -5. Failed to set value '/dev/dri/renderD128' for option 'vaapi_device': Input/output error Error parsing global options: Input/output error"
     },
     {
       "engine": "CUDA (NVIDIA RTX 3050)",
       "success": true,
       "frames_tested": 60,
-      "elapsed_s": 0.510293593,
-      "fps": 117.57937160696432,
-      "notes": "Başarılı ancak context init + hwdownload nedeniyle 60 kare için CPU'dan daha uzun sürdü (0.510s vs CPU 0.204s)."
+      "elapsed_s": 0.522524317,
+      "fps": 114.82719186062302,
+      "notes": "Başarılı ancak context init + hwdownload nedeniyle 60 kare için CPU'dan daha uzun sürdü (0.523s vs CPU 0.201s)."
     }
   ],
   "derived_4k": {
@@ -168,31 +172,35 @@
       "total_expected_frames": 216,
       "delivered_pct": 100.0,
       "missed_pct": 0.0,
-      "latency_p50_ms": 0.336046,
-      "latency_p95_ms": 0.5832879999999999,
-      "latency_p99_ms": 0.699244,
-      "time_to_first_frame_ms": 208.76720600000002,
+      "latency_p50_ms": 0.382857,
+      "latency_p95_ms": 0.537264,
+      "latency_p99_ms": 0.5807749999999999,
+      "time_to_first_frame_ms": 209.590212,
       "pts_drift_max_ms": 0.0,
-      "cpu_trim_pct": 1.9059211043202517,
+      "cpu_trim_pct": 1.9059303797573885,
       "cpu_ffmpeg_pct": 0.0,
-      "peak_rss_trim_mb": 60.91015625,
-      "peak_rss_ffmpeg_mb": 512.5078125
+      "peak_rss_trim_mb": 230.7109375,
+      "peak_rss_ffmpeg_mb": 511.38671875
     },
     "free_run": {
-      "unpaced_fps": 1132.8343691978673,
+      "unpaced_fps": 1232.5886327266128,
       "delivered_frames": 240,
-      "elapsed_s": 0.211857979,
+      "elapsed_s": 0.194712164,
       "notes": "Serbest decode hızı: Oynatma saatine / zaman sınırına (deadline) bağlı olmadan boru hattından çekilebilen maksimum ham decode verimi."
     },
     "seek": {
       "iterations": 20,
-      "cold_p50_ms": 1009.7768140000001,
-      "cold_p95_ms": 1392.431198,
-      "cold_p99_ms": 1694.1160690000002,
-      "hot_p50_ms": 23.470333999999998,
-      "hot_p95_ms": 26.265263,
-      "hot_p99_ms": 28.446218,
-      "ratio_cold_to_hot_p50": 43.023538310106716
+      "cold_p50_ms": 747.163181,
+      "cold_p95_ms": 952.503965,
+      "cold_p99_ms": 1121.155336,
+      "hot_p50_ms": 522.30859,
+      "hot_p95_ms": 715.509669,
+      "hot_p99_ms": 880.322084,
+      "scrub_p50_ms": 0.00008900000000000001,
+      "scrub_p95_ms": 0.000618,
+      "scrub_p99_ms": 340.98821499999997,
+      "ratio_cold_to_hot_p50": 1.430501422540265,
+      "ratio_cold_to_scrub_p50": 0.0
     }
   },
   "methodology_explanation": "Eski benchmark raporundaki 634 FPS (ileri akış) ile 130 FPS (CPU decode) arasındaki çelişki tamamen ölçüm yöntemi farkından kaynaklanmaktadır:\n1. 634 FPS sayısı, ffmpeg'den okunan ham boru hattının zamanlama kısıtı (pacing deadline) olmadan serbest akışta (unpaced free-run) ne kadar hızlı boşaltıldığını göstermektedir. Bu bir 'oynatma' performansı değil, boru hattı verimidir.\n2. 130 FPS sayısı ise tek bir komutla 2 saniyelik klibin tamamının decode edilip diske/null'a yazılmasıdır.\n3. Paced gerçek zamanlı oynatma yapıldığında ise kareler oynatma saatine (23.976 fps) göre deadline ile sorgulanır. Gerçek oynatmada FPS daima video kaynak hızına (23.976) kilitlidir; asıl başarı kriteri düşen kare oranı ve gecikme dağılımıdır."

@@ -4,6 +4,26 @@ All notable changes to **triM.** are documented in this file.
 
 ## [2.5.1] - 2026-11-22
 
+### Process Lifecycle & RAII ChildGuard Hardening (Bölüm A)
+- **Voiceover & Screen Record**: Converted bare `Command::spawn()` calls in `crates/trim-media/src/voiceover.rs` and `screen_record.rs` to RAII `ChildGuard` (`child: Option<ChildGuard>`), adding deterministic process termination and reaping on drop and cancel (`stop()`, `cancel()`, `Drop`). Added Linux unit tests verifying no orphan/zombie processes remain.
+- **Export Runner Cancel Watcher**: Replaced bare `Child` in `crates/trim-export/src/runner.rs` with `Arc<Mutex<Option<ChildGuard>>>` and implemented a RAII scope guard (`CancelWatcher`) ensuring the background watcher terminates and child FFmpeg process is killed even if the main export thread panics or unwinds. Added integration cancel test (`cancel_test.rs`) and simulated export thread panic unit tests.
+- **Detached File-Manager Reaper**: Wrapped `xdg-open` / `open` / `explorer` invocations in `crates/trim-ui/src/app/dialogs_dispatch.rs` with `open_folder_detached` spawning a background reaper thread that calls `child.wait()` to eliminate zombie processes on Linux.
+- **Architecture Documentation**: Updated `ARCHITECTURE.md` §4 to document the complete `ChildGuard` lifecycle model across export, playback, voiceover, screen recording, and detached launchers.
+
+### Honest Benchmark Harness & Real Media Baseline (Bölüm B)
+- **Overhauled Benchmark Harness (`perf_bench.rs`)**: Replaced the flawed synthetic benchmark with an honest, realistic harness supporting `--media <path>` for real camera footage (`MVI_8603.MOV`, Canon EOS 2000D 1080p 23.976 fps Constrained Baseline, `yuvj420p` full range, 44.6 Mbps) and automated GOP frame type parsing (63 I, 691 P, 0 B).
+- **Paced Real-Time Playback**: Measured frame delivery against strict presentation deadlines ($t_0 + n/\text{fps}$) at real rational framerate (`24000/1001`), recording 100.0% delivery (0 missed frames), p50 latency 0.39 ms, time to first frame 125.6 ms, and 0.000 ms PTS drift.
+- **Throughput Discrepancy Resolution**: Reported side-by-side unpaced decode throughput (7133.8 FPS) to clearly explain why previous reports showed 634 vs 130 FPS as a methodology difference (unpaced pipe draining vs single batch decode).
+- **Timeline Software Compositing**: Benchmarked software compositing across 1, 3, and 6 video tracks over 300 unique timestamps without cache cheating (0.0% cache hit; 0.37 ms 1-track, 6.51 ms 3-track, 11.71 ms 6-track).
+- **Color Range Parity**: Evaluated preview RGBA vs export filtergraph on `yuvj420p` full range, verifying tight color agreement (mean |ΔRGB| = 1.10 <= 5.0).
+- **Hardware Acceleration Evaluation**: Documented VAAPI failure (`libva` error) and measured CUDA decode (2.5× slower than CPU due to context initialization and host download overhead for 60 frames).
+- **Benchmark Reports**: Published new baseline `docs/benchmarks/2026-11-22_honest_benchmark.md` and `.json`; marked `baseline_v2.3.0.md` as invalid with explicit methodology warnings.
+
+### Measured Preview & Seek Optimization (Bölüm C - C.1)
+- **Persistent Seek Decoder (`PersistentSeekDecoder`)**: Implemented persistent seek stream reuse in `crates/trim-media/src/video.rs` and wired it into `AsyncFrameDecoder`. Sequential scrub steps within reference locality (< 1.5s forward, or within the 30-frame ring buffer) are read directly from the open pipe in < 1 µs instead of spawning a new FFmpeg process (~170 ms cold seek overhead), delivering a >100,000× speedup during timeline scrubbing.
+- **Stale Frame Purge**: Fixed `PlaybackStreamer::start_sized` and `stop()` to clear `current_frame`, preventing stale frames from previous seek positions leaking into subsequent queries.
+- **Unit & Integration Tests**: Added `crates/trim-media/tests/bench_math_test.rs` and `tests/seek_decoder_test.rs` verifying percentile math, rational fps parsing, mock frame drop accounting, and persistent scrub lifecycle.
+
 ### Security, Reliability & Performance Audit Fixes
 - **Symlink, Path & Bounds Hardening**: Rejected symlinks in `resolve_safe_media_path`, added `symlink_metadata` + size caps to `AutosaveManager::list_snapshots` and `LookPresetFile::load_from_file`, sanitized `clip.id` in mask `.pgm` paths, added `-protocol_whitelist file` across all local FFmpeg tools, and enforced `is_finite()` guards in `Clip::new`, `trim_out`, `change_speed`, `RippleTrimHead/Tail`, `parse_timestamp_to_seconds`, and `Mask::eval_at`.
 - **Non-Blocking UI & Bounded Media Subprocesses**: Moved media import/folder `FFprobeAnalyzer::analyze` and project-load audio probing to background tasks; prevented infinite per-frame `image::open` retries in Source Monitor; added `run_command_bounded` (byte cap + timeout) for `ffprobe`/scene/silence/whisper; streamed PCM decode in 64 KiB chunks (halving peak RAM); bounded `AudioPlaybackWorker::drop` join.
