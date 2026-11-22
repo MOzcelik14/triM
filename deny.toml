@@ -6,8 +6,6 @@ version = 2
 yanked = "warn"
 unmaintained = "workspace"
 ignore = [
-    # Transitive xattr soundness advisory in rustix 1.1.5 (not used by triM; awaiting upstream patch)
-    "RUSTSEC-2026-0486",
 ]
 
 [licenses]
