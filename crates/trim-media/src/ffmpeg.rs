@@ -300,6 +300,70 @@ impl Drop for ChildGuard {
     }
 }
 
+/// Runs a subprocess with bounded stdout/stderr capture (`max_bytes` per stream) and a hard timeout.
+/// Prevents OOM and UI/worker hangs on corrupt or adversarial media files.
+pub fn run_command_bounded(
+    cmd: &mut Command,
+    max_bytes: usize,
+    timeout: std::time::Duration,
+) -> std::io::Result<std::process::Output> {
+    use std::io::Read;
+    use std::process::Stdio;
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut guard = ChildGuard::spawn(cmd)?;
+    let stdout_pipe = guard.take_stdout();
+    let stderr_pipe = guard.take_stderr();
+
+    let out_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(out) = stdout_pipe {
+            let _ = out.take(max_bytes as u64).read_to_end(&mut buf);
+        }
+        buf
+    });
+    let err_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(err) = stderr_pipe {
+            let _ = err.take(max_bytes as u64).read_to_end(&mut buf);
+        }
+        buf
+    });
+
+    let start = std::time::Instant::now();
+    let status = loop {
+        if let Some(ref mut child) = guard.child {
+            match child.try_wait() {
+                Ok(Some(st)) => break st,
+                Ok(None) => {
+                    if start.elapsed() >= timeout {
+                        let _ = guard.kill();
+                        let st = guard.wait()?;
+                        let _ = out_handle.join();
+                        let _ = err_handle.join();
+                        return Ok(std::process::Output {
+                            status: st,
+                            stdout: Vec::new(),
+                            stderr: b"Process timed out".to_vec(),
+                        });
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(e) => return Err(e),
+            }
+        } else {
+            return Err(std::io::Error::other("Child missing"));
+        }
+    };
+
+    let stdout = out_handle.join().unwrap_or_default();
+    let stderr = err_handle.join().unwrap_or_default();
+    Ok(std::process::Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
 /// Hardware video encoders detected on the system's FFmpeg installation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct AvailableEncoders {

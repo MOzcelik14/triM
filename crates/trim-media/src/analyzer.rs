@@ -28,21 +28,25 @@ impl FFprobeAnalyzer {
             return Err(ProbeError::FileNotFound(path.to_string_lossy().to_string()));
         }
 
-        let output = crate::ffmpeg::ffprobe_cmd()
-            .args([
-                "-v",
-                "error",
-                "-protocol_whitelist",
-                "file",
-                "-print_format",
-                "json",
-                "-show_format",
-                "-show_streams",
-                "-i",
-            ])
-            .arg(path)
-            .output()
-            .map_err(|e| ProbeError::ProcessFailed(e.to_string()))?;
+        let mut cmd = crate::ffmpeg::ffprobe_cmd();
+        cmd.args([
+            "-v",
+            "error",
+            "-protocol_whitelist",
+            "file",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
+            "-i",
+        ])
+        .arg(path);
+        let output = crate::ffmpeg::run_command_bounded(
+            &mut cmd,
+            16 * 1024 * 1024,
+            std::time::Duration::from_secs(30),
+        )
+        .map_err(|e| ProbeError::ProcessFailed(e.to_string()))?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -603,25 +607,28 @@ pub fn detect_forced_pcm_input_codec(path: &Path) -> Option<ForcedPcmInputInfo> 
     let atom_info = inspect_mp4_pcm_atoms(path);
 
     // Also check first audio packet via ffprobe if available to refine bit depth (e.g. 24-bit vs 16-bit)
-    if let Ok(output) = crate::ffmpeg::ffprobe_cmd()
-        .args([
-            "-v",
-            "error",
-            "-protocol_whitelist",
-            "file",
-            "-select_streams",
-            "a:0",
-            "-show_entries",
-            "stream=codec_name,codec_tag_string,channels,sample_rate,bits_per_sample,bits_per_raw_sample:packet=size,duration",
-            "-read_intervals",
-            "%+#1",
-            "-print_format",
-            "json",
-            "-i",
-        ])
-        .arg(path)
-        .output()
-    {
+    let mut cmd = crate::ffmpeg::ffprobe_cmd();
+    cmd.args([
+        "-v",
+        "error",
+        "-protocol_whitelist",
+        "file",
+        "-select_streams",
+        "a:0",
+        "-show_entries",
+        "stream=codec_name,codec_tag_string,channels,sample_rate,bits_per_sample,bits_per_raw_sample:packet=size,duration",
+        "-read_intervals",
+        "%+#1",
+        "-print_format",
+        "json",
+        "-i",
+    ])
+    .arg(path);
+    if let Ok(output) = crate::ffmpeg::run_command_bounded(
+        &mut cmd,
+        4 * 1024 * 1024,
+        std::time::Duration::from_secs(15),
+    ) {
         if output.status.success() {
             if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
                 if let Some(stream) = val
@@ -645,7 +652,15 @@ pub fn detect_forced_pcm_input_codec(path: &Path) -> Option<ForcedPcmInputInfo> 
                         || codec_name.eq_ignore_ascii_case("none");
                     let is_pcm_tag = matches!(
                         tag_str,
-                        "ipcm" | "lpcm" | "fpcm" | "twos" | "sowt" | "in24" | "in32" | "fl32" | "fl64"
+                        "ipcm"
+                            | "lpcm"
+                            | "fpcm"
+                            | "twos"
+                            | "sowt"
+                            | "in24"
+                            | "in32"
+                            | "fl32"
+                            | "fl64"
                     );
 
                     // If FFmpeg already recognizes a standard compressed codec (e.g. aac, mp3, opus),

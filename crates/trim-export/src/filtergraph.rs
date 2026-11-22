@@ -1171,10 +1171,7 @@ impl TimelineExporter {
             &flattened_tl
         };
 
-        let video_tracks = timeline.get_video_tracks();
-        if video_tracks.is_empty() {
-            return Err("Projede video kanalı bulunamadı".to_string());
-        }
+        let _video_tracks = timeline.get_video_tracks();
 
         let total_duration = eff_duration;
         let has_any_clip = timeline.tracks.iter().any(|t| {

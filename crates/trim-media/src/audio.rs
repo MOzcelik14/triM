@@ -794,7 +794,7 @@ fn run_ffmpeg_pcm_decode(
     path_str: &str,
     forced_input_codec: Option<&str>,
     stream_map: Option<&str>,
-) -> Vec<u8> {
+) -> Vec<[i16; 2]> {
     let mut cmd = crate::ffmpeg::ffmpeg_cmd();
     cmd.args([
         "-v",
@@ -825,17 +825,64 @@ fn run_ffmpeg_pcm_decode(
     .stderr(Stdio::null());
 
     const MAX_PCM_DECODE_BYTES: u64 = 512 * 1024 * 1024;
-    let mut raw_bytes = Vec::new();
+    let mut pcm = Vec::new();
     if let Ok(mut guard) = crate::ffmpeg::ChildGuard::spawn(&mut cmd) {
-        if let Some(stdout) = guard.take_stdout() {
-            let _ = stdout
-                .take(MAX_PCM_DECODE_BYTES)
-                .read_to_end(&mut raw_bytes);
+        if let Some(mut stdout) = guard.take_stdout() {
+            let mut buf = [0u8; 65536];
+            let mut leftover = [0u8; 4];
+            let mut leftover_len = 0usize;
+            let mut total_read = 0u64;
+            while total_read < MAX_PCM_DECODE_BYTES {
+                let to_read = ((MAX_PCM_DECODE_BYTES - total_read) as usize).min(buf.len());
+                match stdout.read(&mut buf[..to_read]) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        total_read += n as u64;
+                        let mut slice = &buf[..n];
+                        if leftover_len > 0 {
+                            let need = 4 - leftover_len;
+                            if slice.len() >= need {
+                                leftover[leftover_len..4].copy_from_slice(&slice[..need]);
+                                let l = i16::from_le_bytes([leftover[0], leftover[1]]);
+                                let r = i16::from_le_bytes([leftover[2], leftover[3]]);
+                                pcm.push([l, r]);
+                                slice = &slice[need..];
+                                leftover_len = 0;
+                            } else {
+                                leftover[leftover_len..leftover_len + slice.len()]
+                                    .copy_from_slice(slice);
+                                leftover_len += slice.len();
+                                continue;
+                            }
+                        }
+                        let (chunks, rem) = slice.as_chunks::<4>();
+                        pcm.reserve(chunks.len());
+                        for c in chunks {
+                            pcm.push([
+                                i16::from_le_bytes([c[0], c[1]]),
+                                i16::from_le_bytes([c[2], c[3]]),
+                            ]);
+                        }
+                        if !rem.is_empty() {
+                            leftover[..rem.len()].copy_from_slice(rem);
+                            leftover_len = rem.len();
+                        }
+                    }
+                }
+            }
         }
         let _ = guard.kill();
         let _ = guard.wait();
     }
-    raw_bytes
+    pcm
+}
+
+fn run_ffmpeg_pcm_decode_ret(
+    path_str: &str,
+    forced_codec: Option<&str>,
+    stream_map: Option<&str>,
+) -> Vec<[i16; 2]> {
+    run_ffmpeg_pcm_decode(path_str, forced_codec, stream_map)
 }
 
 fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
@@ -848,24 +895,33 @@ fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
     // that requires an explicit input decoder on older FFmpeg builds (e.g. Pop!_OS 22.04 FFmpeg 4.4).
     let detected_pcm = crate::analyzer::detect_forced_pcm_input_codec(path);
 
-    let mut raw_bytes = if let Some(info) = detected_pcm {
-        let b = run_ffmpeg_pcm_decode(path_str, Some(info.codec), Some("0:a:0?"));
-        if b.len() >= 4 {
+    let mut pcm = if let Some(info) = detected_pcm {
+        let b = run_ffmpeg_pcm_decode_ret(path_str, Some(info.codec), Some("0:a:0?"));
+        if !b.is_empty() {
             b
         } else {
-            run_ffmpeg_pcm_decode(path_str, None, Some("0:a:0?"))
+            run_ffmpeg_pcm_decode_ret(path_str, None, Some("0:a:0?"))
         }
     } else {
-        run_ffmpeg_pcm_decode(path_str, None, Some("0:a:0?"))
+        run_ffmpeg_pcm_decode_ret(path_str, None, Some("0:a:0?"))
     };
 
-    // 2. Fallback: general audio stream selection without explicit stream map
-    if raw_bytes.len() < 4 {
-        raw_bytes = run_ffmpeg_pcm_decode(path_str, None, None);
+    if !pcm.is_empty() {
+        return Some(pcm);
     }
 
+    // Skip expensive multi-codec fallback when ffprobe confirms there is no audio stream
+    if detected_pcm.is_none()
+        && crate::analyzer::FFprobeAnalyzer::analyze(path).is_ok_and(|info| !info.has_audio())
+    {
+        return None;
+    }
+
+    // 2. Fallback: general audio stream selection without explicit stream map
+    pcm = run_ffmpeg_pcm_decode_ret(path_str, None, None);
+
     // 3. Fallback: iterate over Sony / QuickTime uncompressed PCM input decoders
-    if raw_bytes.len() < 4 {
+    if pcm.is_empty() {
         for &codec in &[
             "pcm_s16be",
             "pcm_s24be",
@@ -875,33 +931,24 @@ fn decode_audio_to_pcm(path: &Path) -> Option<Vec<[i16; 2]>> {
             "pcm_f32be",
         ] {
             if detected_pcm.is_some_and(|d| d.codec == codec) {
-                // Already tried with 0:a:0?, try without stream map
-                raw_bytes = run_ffmpeg_pcm_decode(path_str, Some(codec), None);
+                pcm = run_ffmpeg_pcm_decode_ret(path_str, Some(codec), None);
             } else {
-                raw_bytes = run_ffmpeg_pcm_decode(path_str, Some(codec), Some("0:a:0?"));
-                if raw_bytes.len() < 4 {
-                    raw_bytes = run_ffmpeg_pcm_decode(path_str, Some(codec), None);
+                pcm = run_ffmpeg_pcm_decode_ret(path_str, Some(codec), Some("0:a:0?"));
+                if pcm.is_empty() {
+                    pcm = run_ffmpeg_pcm_decode_ret(path_str, Some(codec), None);
                 }
             }
-            if raw_bytes.len() >= 4 {
+            if !pcm.is_empty() {
                 break;
             }
         }
     }
 
-    if raw_bytes.len() < 4 {
-        return None;
+    if pcm.is_empty() {
+        None
+    } else {
+        Some(pcm)
     }
-
-    let num_pairs = raw_bytes.len() / 4;
-    let mut pcm = Vec::with_capacity(num_pairs);
-    for chunk in raw_bytes.as_chunks::<4>().0 {
-        let left = i16::from_le_bytes([chunk[0], chunk[1]]);
-        let right = i16::from_le_bytes([chunk[2], chunk[3]]);
-        pcm.push([left, right]);
-    }
-
-    Some(pcm)
 }
 
 /// Cross-platform audio stream player writing 48kHz 16-bit stereo PCM.
@@ -1489,7 +1536,16 @@ impl Drop for AudioPlaybackWorker {
             cv.notify_all();
         }
         if let Some(h) = self.handle.take() {
-            let _ = h.join();
+            for _ in 0..25 {
+                if h.is_finished() {
+                    let _ = h.join();
+                    return;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            if h.is_finished() {
+                let _ = h.join();
+            }
         }
     }
 }

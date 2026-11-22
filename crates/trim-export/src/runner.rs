@@ -84,10 +84,18 @@ impl ExportRunner {
 
             // Avoid Windows 32KB CreateProcess CLI limit by writing large filtergraphs to a temp script
             // inside our private export TempDir (cleaned up automatically when _temp_dir drops).
+            let mut _fallback_temp_dir: Option<tempfile::TempDir> = None;
             if let Some(fc_idx) = cmd_args.iter().position(|a| a == "-filter_complex") {
                 if let Some(fg) = cmd_args.get(fc_idx + 1) {
                     if fg.len() > 16_000 {
-                        if let Some(td) = _temp_dir.as_ref() {
+                        let td_ref = match _temp_dir.as_ref() {
+                            Some(td) => Some(td),
+                            None => {
+                                _fallback_temp_dir = tempfile::tempdir().ok();
+                                _fallback_temp_dir.as_ref()
+                            }
+                        };
+                        if let Some(td) = td_ref {
                             let script_path = td.path().join("filter_complex.txt");
                             if std::fs::write(&script_path, fg).is_ok() {
                                 cmd_args[fc_idx] = "-filter_complex_script".to_string();
@@ -155,11 +163,41 @@ impl ExportRunner {
                 })
             });
 
-            if let Some(stdout) = child.stdout.take() {
+            let stdout_pipe = child.stdout.take();
+            let child_arc = Arc::new(std::sync::Mutex::new(Some(child)));
+            let cancel_done = Arc::new(AtomicBool::new(false));
+            let watcher_child = Arc::clone(&child_arc);
+            let watcher_cancel = Arc::clone(&job_cancel);
+            let watcher_done = Arc::clone(&cancel_done);
+            let cancel_watcher = thread::spawn(move || {
+                while !watcher_done.load(Ordering::Acquire) {
+                    if watcher_cancel.load(Ordering::SeqCst) {
+                        if let Ok(mut guard) = watcher_child.lock() {
+                            if let Some(ref mut c) = *guard {
+                                let _ = c.kill();
+                            }
+                        }
+                        break;
+                    }
+                    thread::sleep(std::time::Duration::from_millis(50));
+                }
+            });
+
+            let safe_total_duration = if total_duration.is_finite() && total_duration > 0.001 {
+                total_duration
+            } else {
+                0.001
+            };
+
+            if let Some(stdout) = stdout_pipe {
                 let reader = BufReader::new(stdout);
                 for line in reader.lines().map_while(Result::ok) {
                     if job_cancel.load(Ordering::SeqCst) {
-                        let _ = child.kill();
+                        if let Ok(mut guard) = child_arc.lock() {
+                            if let Some(ref mut c) = *guard {
+                                let _ = c.kill();
+                            }
+                        }
                         break;
                     }
 
@@ -167,7 +205,8 @@ impl ExportRunner {
                     if let Some(val_str) = line_str.strip_prefix("out_time_us=") {
                         if let Ok(us) = val_str.parse::<f64>() {
                             let cur_sec = (us / 1_000_000.0).max(0.0);
-                            let pct = ((cur_sec / total_duration) * 100.0).clamp(0.0, 100.0) as f32;
+                            let pct =
+                                ((cur_sec / safe_total_duration) * 100.0).clamp(0.0, 100.0) as f32;
                             let _ = tx.send(ExportMessage::Progress(pct));
                             let _ = tx.send(ExportMessage::Status(format!(
                                 "Dışa Aktarılıyor: %{:.1} ({:.1}s / {:.1}s)",
@@ -178,7 +217,19 @@ impl ExportRunner {
                 }
             }
 
-            let status = child.wait();
+            cancel_done.store(true, Ordering::Release);
+            let _ = cancel_watcher.join();
+
+            let status = if let Ok(mut guard) = child_arc.lock() {
+                if let Some(mut c) = guard.take() {
+                    c.wait()
+                } else {
+                    Err(std::io::Error::other("Missing child"))
+                }
+            } else {
+                Err(std::io::Error::other("Child mutex poisoned"))
+            };
+            drop(_fallback_temp_dir);
             drop(_temp_dir);
             let stderr_str = stderr_handle
                 .and_then(|h| h.join().ok())

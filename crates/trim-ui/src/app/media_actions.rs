@@ -134,81 +134,97 @@ impl TrimApp {
         }
     }
 
-    pub fn import_media_file<P: AsRef<std::path::Path>>(&mut self, path: P) {
-        match FFprobeAnalyzer::analyze(path) {
-            Ok(mut item) => {
-                let name = item.name.clone();
-                let file_path = item.file_path.clone();
-                let has_audio = item.has_audio();
-                let m_id = item.id.clone();
+    pub fn finish_import_media_item(
+        &mut self,
+        mut item: trim_core::MediaItem,
+        bin_id: Option<String>,
+    ) {
+        let name = item.name.clone();
+        let file_path = item.file_path.clone();
+        let has_audio = item.has_audio();
+        let m_id = item.id.clone();
 
-                let has_any_video_media = self
-                    .project
-                    .media_pool
-                    .values()
-                    .any(|m| m.media_type == MediaType::Video);
-                let timeline_empty = self
-                    .project
-                    .timeline
-                    .tracks
-                    .iter()
-                    .all(|t| t.clips.is_empty());
+        let has_any_video_media = self
+            .project
+            .media_pool
+            .values()
+            .any(|m| m.media_type == MediaType::Video);
+        let timeline_empty = self
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .all(|t| t.clips.is_empty());
 
-                if !has_any_video_media
-                    && timeline_empty
-                    && item.media_type == MediaType::Video
-                    && item.width > 0
-                    && item.height > 0
-                    && self.project.timeline.width == 1920
-                    && self.project.timeline.height == 1080
-                {
-                    self.project.set_resolution(item.width, item.height);
-                    if item.fps > 1.0 {
-                        self.project.set_fps(item.fps);
-                    }
-                }
-
-                let is_video = item.media_type == MediaType::Video;
-                item.bin_id = self.media_bin_current_bin.clone();
-                self.project.add_media(item);
-                if has_audio {
-                    self.audio_mixer.preload_audio_async(&file_path);
-                }
-                // Automatically set as active in Source Monitor
-                self.source_state.media_id = Some(m_id.clone());
-                self.source_state.current_time = 0.0;
-                self.source_state.mark_in = None;
-                self.source_state.mark_out = None;
-                self.source_state.last_decoded_time = None;
-                if is_video && self.preferences.auto_generate_proxies {
-                    self.generate_proxy_for_media(&m_id);
-                    self.status_message = format!(
-                        "Medya içe aktarıldı ve otomatik 720p Proxy başlatıldı: {}",
-                        name
-                    );
-                } else {
-                    self.status_message = format!("Medya içe aktarıldı: {}", name);
-                }
+        if !has_any_video_media
+            && timeline_empty
+            && item.media_type == MediaType::Video
+            && item.width > 0
+            && item.height > 0
+            && self.project.timeline.width == 1920
+            && self.project.timeline.height == 1080
+        {
+            self.project.set_resolution(item.width, item.height);
+            if item.fps > 1.0 {
+                self.project.set_fps(item.fps);
             }
-            Err(e) => {
-                self.status_message = format!("Medya analizi başarısız: {}", e);
-            }
+        }
+
+        let is_video = item.media_type == MediaType::Video;
+        item.bin_id = bin_id;
+        self.project.add_media(item);
+        if has_audio {
+            self.audio_mixer.preload_audio_async(&file_path);
+        }
+        // Automatically set as active in Source Monitor
+        self.source_state.media_id = Some(m_id.clone());
+        self.source_state.current_time = 0.0;
+        self.source_state.mark_in = None;
+        self.source_state.mark_out = None;
+        self.source_state.last_decoded_time = None;
+        if is_video && self.preferences.auto_generate_proxies {
+            self.generate_proxy_for_media(&m_id);
+            self.status_message = format!(
+                "Medya içe aktarıldı ve otomatik 720p Proxy başlatıldı: {}",
+                name
+            );
+        } else {
+            self.status_message = format!("Medya içe aktarıldı: {}", name);
         }
     }
 
+    pub fn import_media_file<P: AsRef<std::path::Path>>(&mut self, path: P) {
+        let p = path.as_ref().to_path_buf();
+        let tx = self.bg_task_tx.clone();
+        let bin_id = self.media_bin_current_bin.clone();
+        self.status_message = format!("Medya analiz ediliyor: {}", p.display());
+        std::thread::spawn(move || {
+            let res = FFprobeAnalyzer::analyze(&p).map_err(|e| e.to_string());
+            let _ = tx.send(crate::app::BackgroundTaskMsg::MediaAnalyzed {
+                bin_id,
+                result: res,
+            });
+        });
+    }
+
     pub fn import_media_path<P: AsRef<std::path::Path>>(&mut self, path: P) {
-        let p = path.as_ref();
+        let p = path.as_ref().to_path_buf();
         if p.is_dir() {
-            let mut files = Vec::new();
-            collect_media_files_recursive(p, 0, &mut files);
-            files.sort();
-            let count = files.len();
-            for f in files {
-                self.import_media_file(&f);
-            }
-            if count > 0 {
-                self.status_message = format!("Klasörden {} medya dosyası içe aktarıldı", count);
-            }
+            let tx = self.bg_task_tx.clone();
+            let bin_id = self.media_bin_current_bin.clone();
+            self.status_message = format!("Klasör taranıyor: {}", p.display());
+            std::thread::spawn(move || {
+                let mut files = Vec::new();
+                collect_media_files_recursive(&p, 0, &mut files);
+                files.sort();
+                for f in files {
+                    let res = FFprobeAnalyzer::analyze(&f).map_err(|e| e.to_string());
+                    let _ = tx.send(crate::app::BackgroundTaskMsg::MediaAnalyzed {
+                        bin_id: bin_id.clone(),
+                        result: res,
+                    });
+                }
+            });
         } else if p.is_file() {
             self.import_media_file(p);
         }

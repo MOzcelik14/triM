@@ -51,9 +51,12 @@ pub fn detect_silence_regions(
         cmd
     );
 
-    let output = cmd
-        .output()
-        .map_err(|e| format!("FFmpeg sessizlik algılama çalıştırılamadı: {}", e))?;
+    let output = crate::ffmpeg::run_command_bounded(
+        &mut cmd,
+        16 * 1024 * 1024,
+        std::time::Duration::from_secs(120),
+    )
+    .map_err(|e| format!("FFmpeg sessizlik algılama çalıştırılamadı: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);

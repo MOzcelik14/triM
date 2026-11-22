@@ -207,6 +207,17 @@ pub enum BackgroundTaskMsg {
         old_masks: Vec<trim_core::mask::Mask>,
         result: Result<Vec<(f64, f64, f64)>, String>,
     },
+    MediaAnalyzed {
+        bin_id: Option<String>,
+        result: Result<trim_core::MediaItem, String>,
+    },
+    ProjectAudioProbed {
+        media_id: String,
+        codec: String,
+        channels: u32,
+        sample_rate: u32,
+        file_path: String,
+    },
 }
 
 impl Default for TrimApp {
@@ -683,6 +694,26 @@ impl eframe::App for TrimApp {
                         self.status_message = format!("⚠ Hareket takibi başarısız: {}", err);
                     }
                 },
+                BackgroundTaskMsg::MediaAnalyzed { bin_id, result } => match result {
+                    Ok(item) => self.finish_import_media_item(item, bin_id),
+                    Err(e) => {
+                        self.status_message = format!("Medya analizi başarısız: {}", e);
+                    }
+                },
+                BackgroundTaskMsg::ProjectAudioProbed {
+                    media_id,
+                    codec,
+                    channels,
+                    sample_rate,
+                    file_path,
+                } => {
+                    if let Some(item) = self.project.media_pool.get_mut(&media_id) {
+                        item.audio_codec = codec;
+                        item.audio_channels = channels;
+                        item.audio_sample_rate = sample_rate;
+                    }
+                    self.audio_mixer.preload_audio_async(&file_path);
+                }
             }
         }
 

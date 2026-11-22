@@ -431,24 +431,29 @@ impl TrimApp {
 
         if needs_decode {
             if media_type == MediaType::Image {
-                if let Ok(dyn_img) = image::open(&media_path) {
-                    let frame = dyn_img.to_rgba8();
-                    let color_image = ColorImage::from_rgba_unmultiplied(
-                        [frame.width() as usize, frame.height() as usize],
-                        frame.as_raw(),
-                    );
-                    if let Some(tex) = &mut self.source_state.texture {
-                        tex.set(color_image, TextureOptions::LINEAR);
-                    } else {
-                        self.source_state.texture = Some(ctx.load_texture(
-                            "source_preview",
-                            color_image,
-                            TextureOptions::LINEAR,
-                        ));
+                match image::open(&media_path) {
+                    Ok(dyn_img) => {
+                        let frame = dyn_img.to_rgba8();
+                        let color_image = ColorImage::from_rgba_unmultiplied(
+                            [frame.width() as usize, frame.height() as usize],
+                            frame.as_raw(),
+                        );
+                        if let Some(tex) = &mut self.source_state.texture {
+                            tex.set(color_image, TextureOptions::LINEAR);
+                        } else {
+                            self.source_state.texture = Some(ctx.load_texture(
+                                "source_preview",
+                                color_image,
+                                TextureOptions::LINEAR,
+                            ));
+                        }
                     }
-                    self.source_state.last_decoded_id = Some(m_id.clone());
-                    self.source_state.last_decoded_time = Some(self.source_state.current_time);
+                    Err(e) => {
+                        log::warn!("Source monitor image decode failed ({media_path}): {e}");
+                    }
                 }
+                self.source_state.last_decoded_id = Some(m_id.clone());
+                self.source_state.last_decoded_time = Some(self.source_state.current_time);
             } else if media_type == MediaType::Video {
                 self.source_state
                     .decoder

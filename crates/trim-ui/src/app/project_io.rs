@@ -40,19 +40,33 @@ impl TrimApp {
                 self.source_state.clock_start = None;
                 self.resolve_default_target_tracks();
                 self.autosave_mgr.cleanup(&self.project);
-                for item in self.project.media_pool.values_mut() {
+                let mut probe_targets = Vec::new();
+                for item in self.project.media_pool.values() {
                     if item.media_type == MediaType::Video && !item.has_audio() {
-                        if let Ok(probed) = FFprobeAnalyzer::analyze(&item.file_path) {
-                            if probed.has_audio() {
-                                item.audio_codec = probed.audio_codec;
-                                item.audio_channels = probed.audio_channels;
-                                item.audio_sample_rate = probed.audio_sample_rate;
-                            }
-                        }
-                    }
-                    if item.has_audio() {
+                        probe_targets.push((item.id.clone(), item.file_path.clone()));
+                    } else if item.has_audio() {
                         self.audio_mixer.preload_audio_async(&item.file_path);
                     }
+                }
+                if !probe_targets.is_empty() {
+                    let tx = self.bg_task_tx.clone();
+                    std::thread::spawn(move || {
+                        for (media_id, file_path) in probe_targets {
+                            if let Ok(probed) = FFprobeAnalyzer::analyze(&file_path) {
+                                if probed.has_audio() {
+                                    let _ = tx.send(
+                                        crate::app::BackgroundTaskMsg::ProjectAudioProbed {
+                                            media_id,
+                                            codec: probed.audio_codec,
+                                            channels: probed.audio_channels,
+                                            sample_rate: probed.audio_sample_rate,
+                                            file_path,
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                    });
                 }
                 self.welcome_dialog.close();
                 let offline = self.project.get_offline_media_ids();
