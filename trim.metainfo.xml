@@ -56,6 +56,16 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2.5.4" date="2026-11-23">
+      <description>
+        <p>triM. v2.5.4 - Proje Dosyası Uzantı ve Güvenli Kayıt Düzeltmesi:</p>
+        <ul>
+          <li>Otomatik .trim Uzantısı: Proje kaydetme diyaloglarında dosya uzantısı yazılmadığında dosya adının sonuna otomatik olarak .trim eklenir; noktalı proje isimleri korunur.</li>
+          <li>Varsayılan Dosya Adı: Kaydetme pencerelerinde varsayılan dosya adı (Adsız Proje.trim) otomatik olarak sunulur.</li>
+          <li>0 Baytlık Yetim Dosya Temizliği: İşletim sistemi portalının uzantısız açtığı 0 baytlık boş dosya otomatik temizlenir; doğrudan yazma fallback'i ile kaydetme işlemi güvenceye alınır.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.5.3" date="2026-11-23">
       <description>
         <p>triM. v2.5.3 - Bağlı Klip Kırpma/Kesme Senkronizasyonu ve Akıllı Medya Kanal Eşleme:</p>

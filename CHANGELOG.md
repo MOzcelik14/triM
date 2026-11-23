@@ -2,6 +2,14 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [2.5.4] - 2026-11-23
+
+### Project File Extension & Atomic Persistence Bugfix
+- **Automatic `.trim` Extension Enforcement**: Fixed project save dialogs (`save_project_dialog`, `save_project_as_dialog`, `save_project_and_proceed`) where files could be saved without the `.trim` extension when the user did not type it manually. Implemented `ensure_project_extension` preserving dotted project names (e.g. `Project 2.0.trim`).
+- **Default Filename Population**: Provided default project filename (e.g. `Adsız Proje.trim`) in native OS file save dialogs.
+- **Orphan 0-Byte File Cleanup**: Automatically detects and purges 0-byte orphan files left behind by OS desktop portals (XDG Desktop Portal / GTK file chooser) when saving to an extensionless target.
+- **Atomic Write Direct Fallback**: Added direct `fs::File::create` + `sync_all` fallback to `write_atomic` with non-empty payload guards, ensuring project serialization never leaves an empty file on disk due to sandbox or cross-filesystem rename restrictions.
+
 ## [2.5.3] - 2026-11-23
 
 ### Synchronized Linked Clip Trimming & Cutting
