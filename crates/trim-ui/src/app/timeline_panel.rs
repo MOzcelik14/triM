@@ -784,9 +784,14 @@ impl TrimApp {
                                             clip_id,
                                             old_bounds,
                                             new_bounds,
+                                            companions,
                                         } => {
-                                            let cmd = Box::new(TrimClipCommand::new(
-                                                track_id, clip_id, old_bounds, new_bounds,
+                                            let cmd = Box::new(TrimClipCommand::with_companions(
+                                                track_id,
+                                                clip_id,
+                                                old_bounds,
+                                                new_bounds,
+                                                companions,
                                             ));
                                             let _ = self
                                                 .undo_stack
@@ -799,14 +804,18 @@ impl TrimApp {
                                             old_bounds,
                                             new_bounds,
                                             shifted_clips,
+                                            companions,
                                         } => {
-                                            let cmd = Box::new(RippleTrimEdgeCommand::new(
-                                                track_id,
-                                                clip_id,
-                                                old_bounds,
-                                                new_bounds,
-                                                shifted_clips,
-                                            ));
+                                            let cmd = Box::new(
+                                                RippleTrimEdgeCommand::with_companions(
+                                                    track_id,
+                                                    clip_id,
+                                                    old_bounds,
+                                                    new_bounds,
+                                                    shifted_clips,
+                                                    companions,
+                                                ),
+                                            );
                                             let _ = self
                                                 .undo_stack
                                                 .push(cmd, &mut self.project.timeline);
@@ -989,7 +998,15 @@ impl TrimApp {
                                                     let dur = seq.timeline.duration().max(0.1);
                                                     let has_audio = seq.timeline.get_audio_tracks().iter().any(|t| !t.clips.is_empty());
 
-                                                    let link_group = if has_audio && is_video_track {
+                                                    let (final_video_tr, final_audio_tr) = if is_video_track {
+                                                        let a_tr = self.project.timeline.find_or_create_corresponding_audio_track(&track_id);
+                                                        (track_id.clone(), a_tr)
+                                                    } else {
+                                                        let v_tr = self.project.timeline.find_or_create_corresponding_video_track(&track_id);
+                                                        (v_tr, track_id.clone())
+                                                    };
+
+                                                    let link_group = if has_audio {
                                                         Some(uuid::Uuid::new_v4().to_string())
                                                     } else {
                                                         None
@@ -997,25 +1014,30 @@ impl TrimApp {
 
                                                     let mut clip = Clip::new_nested_sequence(&seq.id, &seq.name, time, time + dur);
                                                     clip.linked_group_id = link_group.clone();
-                                                    let cmd = Box::new(AddClipCommand::new(track_id.clone(), clip));
+                                                    let clip_id = clip.id.clone();
+                                                    let cmd = Box::new(AddClipCommand::new(final_video_tr.clone(), clip));
 
                                                     if let Some(gid) = link_group {
-                                                        let audio_track_id = self
-                                                            .project
-                                                            .timeline
-                                                            .find_or_create_corresponding_audio_track(&track_id);
                                                         let mut audio_clip = Clip::new_nested_sequence(&seq.id, format!("{} (Ses)", seq.name), time, time + dur);
                                                         audio_clip.linked_group_id = Some(gid);
-                                                        let cmd_a = Box::new(AddClipCommand::new(audio_track_id, audio_clip));
+                                                        let audio_clip_id = audio_clip.id.clone();
+                                                        let cmd_a = Box::new(AddClipCommand::new(final_audio_tr.clone(), audio_clip));
                                                         let macro_cmd = Box::new(MacroCommand::new("İç İçe Sekans ve Ses Ekle", vec![cmd, cmd_a]));
                                                         let _ = self.undo_stack.push(macro_cmd, &mut self.project.timeline);
+                                                        self.canvas_state.selected_clip_pairs = vec![
+                                                            (final_video_tr, clip_id),
+                                                            (final_audio_tr, audio_clip_id),
+                                                        ];
                                                     } else {
                                                         let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                                        self.canvas_state.selected_clip_pairs = vec![
+                                                            (final_video_tr, clip_id),
+                                                        ];
                                                     }
                                                     self.status_message = format!("İç içe sekans eklendi: {}", seq.name);
                                                     self.project.mark_dirty();
                                                 }
-                                            } else if let Some(media) = self.project.get_media(&media_id) {
+                                            } else if let Some(media) = self.project.get_media(&media_id).cloned() {
                                                 let clip_dur =
                                                     if media.media_type == MediaType::Image {
                                                         5.0
@@ -1051,49 +1073,97 @@ impl TrimApp {
                                                     }
                                                 }
 
-                                                let link_group = if has_audio && is_video_track {
-                                                    Some(uuid::Uuid::new_v4().to_string())
-                                                } else {
-                                                    None
-                                                };
+                                                let is_video_media = media.media_type == MediaType::Video
+                                                    || (media.media_type != MediaType::Audio && media.media_type != MediaType::Image);
 
-                                                let mut clip =
-                                                    Clip::new(&media_id, time, time + clip_dur);
-                                                clip.name = media_name.clone();
-                                                clip.linked_group_id = link_group.clone();
-                                                let cmd = Box::new(AddClipCommand::new(
-                                                    track_id.clone(),
-                                                    clip,
-                                                ));
+                                                if is_video_media {
+                                                    let (final_video_tr, final_audio_tr) = if is_video_track {
+                                                        let a_tr = self.project.timeline.find_or_create_corresponding_audio_track(&track_id);
+                                                        (track_id.clone(), a_tr)
+                                                    } else {
+                                                        let v_tr = self.project.timeline.find_or_create_corresponding_video_track(&track_id);
+                                                        (v_tr, track_id.clone())
+                                                    };
 
-                                                if let Some(gid) = link_group {
-                                                    let audio_track_id = self
-                                                        .project
-                                                        .timeline
-                                                        .find_or_create_corresponding_audio_track(
-                                                            &track_id,
+                                                    let link_group = if has_audio {
+                                                        Some(uuid::Uuid::new_v4().to_string())
+                                                    } else {
+                                                        None
+                                                    };
+
+                                                    let mut clip = Clip::new(&media_id, time, time + clip_dur);
+                                                    clip.name = media_name.clone();
+                                                    clip.linked_group_id = link_group.clone();
+                                                    let clip_id = clip.id.clone();
+                                                    let cmd = Box::new(AddClipCommand::new(
+                                                        final_video_tr.clone(),
+                                                        clip,
+                                                    ));
+
+                                                    if let Some(gid) = link_group {
+                                                        let mut audio_clip = Clip::new(&media_id, time, time + clip_dur);
+                                                        audio_clip.name = format!("{} (Ses)", media_name);
+                                                        audio_clip.linked_group_id = Some(gid);
+                                                        let audio_clip_id = audio_clip.id.clone();
+                                                        let cmd_a = Box::new(AddClipCommand::new(
+                                                            final_audio_tr.clone(),
+                                                            audio_clip,
+                                                        ));
+                                                        let macro_cmd = Box::new(MacroCommand::new(
+                                                            "Klip ve Ses Ekle",
+                                                            vec![cmd, cmd_a],
+                                                        ));
+                                                        let _ = self.undo_stack.push(
+                                                            macro_cmd,
+                                                            &mut self.project.timeline,
                                                         );
-                                                    let mut audio_clip =
-                                                        Clip::new(&media_id, time, time + clip_dur);
-                                                    audio_clip.name =
-                                                        format!("{} (Ses)", media_name);
-                                                    audio_clip.linked_group_id = Some(gid);
-                                                    let cmd_a = Box::new(AddClipCommand::new(
-                                                        audio_track_id,
+                                                        self.canvas_state.selected_clip_pairs = vec![
+                                                            (final_video_tr, clip_id),
+                                                            (final_audio_tr, audio_clip_id),
+                                                        ];
+                                                    } else {
+                                                        let _ = self
+                                                            .undo_stack
+                                                            .push(cmd, &mut self.project.timeline);
+                                                        self.canvas_state.selected_clip_pairs = vec![
+                                                            (final_video_tr, clip_id),
+                                                        ];
+                                                    }
+                                                } else if media.media_type == MediaType::Audio {
+                                                    let final_audio_tr = if is_video_track {
+                                                        self.project.timeline.find_or_create_corresponding_audio_track(&track_id)
+                                                    } else {
+                                                        track_id.clone()
+                                                    };
+                                                    let mut audio_clip = Clip::new(&media_id, time, time + clip_dur);
+                                                    audio_clip.name = media_name.clone();
+                                                    let audio_clip_id = audio_clip.id.clone();
+                                                    let cmd = Box::new(AddClipCommand::new(
+                                                        final_audio_tr.clone(),
                                                         audio_clip,
                                                     ));
-                                                    let macro_cmd = Box::new(MacroCommand::new(
-                                                        "Klip ve Ses Ekle",
-                                                        vec![cmd, cmd_a],
-                                                    ));
-                                                    let _ = self.undo_stack.push(
-                                                        macro_cmd,
-                                                        &mut self.project.timeline,
-                                                    );
+                                                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                                    self.canvas_state.selected_clip_pairs = vec![
+                                                        (final_audio_tr, audio_clip_id),
+                                                    ];
                                                 } else {
-                                                    let _ = self
-                                                        .undo_stack
-                                                        .push(cmd, &mut self.project.timeline);
+                                                    // Image or other visual-only media
+                                                    let final_video_tr = if is_video_track {
+                                                        track_id.clone()
+                                                    } else {
+                                                        self.project.timeline.find_or_create_corresponding_video_track(&track_id)
+                                                    };
+                                                    let mut clip = Clip::new(&media_id, time, time + clip_dur);
+                                                    clip.name = media_name.clone();
+                                                    let clip_id = clip.id.clone();
+                                                    let cmd = Box::new(AddClipCommand::new(
+                                                        final_video_tr.clone(),
+                                                        clip,
+                                                    ));
+                                                    let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
+                                                    self.canvas_state.selected_clip_pairs = vec![
+                                                        (final_video_tr, clip_id),
+                                                    ];
                                                 }
 
                                                 self.project.mark_dirty();

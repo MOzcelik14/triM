@@ -920,6 +920,179 @@ mod tests {
     }
 
     #[test]
+    fn test_drop_video_on_audio_track_pairs_and_links() {
+        let mut app = TrimApp::default();
+        let mut video_media = trim_core::media::MediaItem::new("/mock/video.mp4");
+        video_media.id = "vid_drop_test".to_string();
+        video_media.name = "Video Dropped".to_string();
+        video_media.media_type = trim_core::media::MediaType::Video;
+        video_media.audio_channels = 2;
+        video_media.duration = 10.0;
+        app.project.add_media(video_media);
+
+        let v1_id = app
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .find(|t| t.name == "V1")
+            .unwrap()
+            .id
+            .clone();
+        let a1_id = app
+            .project
+            .timeline
+            .tracks
+            .iter()
+            .find(|t| t.name == "A1")
+            .unwrap()
+            .id
+            .clone();
+
+        // Simulate drop onto A1 (audio track)
+        // Dropping video on audio track automatically puts video on V1, audio on A1, and links them
+        let drop_action = crate::canvas::CanvasAction::MediaDropped {
+            media_id: "vid_drop_test".to_string(),
+            track_id: a1_id.clone(),
+            time: 2.0,
+        };
+
+        if let crate::canvas::CanvasAction::MediaDropped {
+            media_id,
+            track_id,
+            time,
+        } = drop_action
+        {
+            let media = app.project.get_media(&media_id).cloned().unwrap();
+            let is_video_track = app
+                .project
+                .timeline
+                .get_track_by_id(&track_id)
+                .map(|t| t.track_type == trim_core::track::TrackType::Video)
+                .unwrap_or(false);
+            let (final_video_tr, final_audio_tr) = if is_video_track {
+                let a_tr = app
+                    .project
+                    .timeline
+                    .find_or_create_corresponding_audio_track(&track_id);
+                (track_id.clone(), a_tr)
+            } else {
+                let v_tr = app
+                    .project
+                    .timeline
+                    .find_or_create_corresponding_video_track(&track_id);
+                (v_tr, track_id.clone())
+            };
+            assert_eq!(final_video_tr, v1_id);
+            assert_eq!(final_audio_tr, a1_id);
+
+            let link_group = Some(uuid::Uuid::new_v4().to_string());
+            let mut clip = trim_core::clip::Clip::new(&media_id, time, time + media.duration);
+            clip.linked_group_id = link_group.clone();
+            let clip_id = clip.id.clone();
+            let cmd = Box::new(trim_commands::AddClipCommand::new(
+                final_video_tr.clone(),
+                clip,
+            ));
+
+            let mut audio_clip = trim_core::clip::Clip::new(&media_id, time, time + media.duration);
+            audio_clip.linked_group_id = link_group.clone();
+            let audio_clip_id = audio_clip.id.clone();
+            let cmd_a = Box::new(trim_commands::AddClipCommand::new(
+                final_audio_tr.clone(),
+                audio_clip,
+            ));
+            let macro_cmd = Box::new(trim_commands::MacroCommand::new(
+                "Klip ve Ses Ekle",
+                vec![cmd, cmd_a],
+            ));
+            app.undo_stack
+                .push(macro_cmd, &mut app.project.timeline)
+                .unwrap();
+            app.canvas_state.selected_clip_pairs = vec![
+                (final_video_tr.clone(), clip_id.clone()),
+                (final_audio_tr.clone(), audio_clip_id.clone()),
+            ];
+
+            // Verify both clips added and linked
+            let v_clip = app
+                .project
+                .timeline
+                .get_track_by_id(&final_video_tr)
+                .unwrap()
+                .get_clip_by_id(&clip_id)
+                .unwrap();
+            let a_clip = app
+                .project
+                .timeline
+                .get_track_by_id(&final_audio_tr)
+                .unwrap()
+                .get_clip_by_id(&audio_clip_id)
+                .unwrap();
+            assert_eq!(v_clip.timeline_in, 2.0);
+            assert_eq!(a_clip.timeline_in, 2.0);
+            assert!(v_clip.linked_group_id.is_some());
+            assert_eq!(v_clip.linked_group_id, a_clip.linked_group_id);
+            assert_eq!(app.canvas_state.selected_clip_pairs.len(), 2);
+
+            // Now test trimming together: TrimClipCommand with companions
+            let companions = vec![(
+                final_audio_tr.clone(),
+                audio_clip_id.clone(),
+                (2.0, 12.0, 0.0, 10.0),
+                (4.0, 12.0, 2.0, 10.0),
+            )];
+            let trim_cmd = Box::new(trim_commands::TrimClipCommand::with_companions(
+                final_video_tr.clone(),
+                clip_id.clone(),
+                (2.0, 12.0, 0.0, 10.0),
+                (4.0, 12.0, 2.0, 10.0),
+                companions,
+            ));
+            app.undo_stack
+                .push(trim_cmd, &mut app.project.timeline)
+                .unwrap();
+
+            // Verify both trimmed together!
+            let v_trimmed = app
+                .project
+                .timeline
+                .get_track_by_id(&final_video_tr)
+                .unwrap()
+                .get_clip_by_id(&clip_id)
+                .unwrap();
+            let a_trimmed = app
+                .project
+                .timeline
+                .get_track_by_id(&final_audio_tr)
+                .unwrap()
+                .get_clip_by_id(&audio_clip_id)
+                .unwrap();
+            assert_eq!(v_trimmed.timeline_in, 4.0);
+            assert_eq!(a_trimmed.timeline_in, 4.0);
+
+            // Undo restores both!
+            assert!(app.undo_stack.undo(&mut app.project.timeline).unwrap());
+            let v_undo = app
+                .project
+                .timeline
+                .get_track_by_id(&final_video_tr)
+                .unwrap()
+                .get_clip_by_id(&clip_id)
+                .unwrap();
+            let a_undo = app
+                .project
+                .timeline
+                .get_track_by_id(&final_audio_tr)
+                .unwrap()
+                .get_clip_by_id(&audio_clip_id)
+                .unwrap();
+            assert_eq!(v_undo.timeline_in, 2.0);
+            assert_eq!(a_undo.timeline_in, 2.0);
+        }
+    }
+
+    #[test]
     fn test_synchronized_follower_scroll() {
         let ctx = egui::Context::default();
         let mut canvas_offset = Vec2::ZERO;
@@ -1323,6 +1496,7 @@ mod tests {
             old_bounds,
             new_bounds,
             shifted_clips: shifted,
+            companions: Vec::new(),
         };
 
         // Dispatch action as in app.rs
@@ -1332,14 +1506,16 @@ mod tests {
             old_bounds,
             new_bounds,
             shifted_clips,
+            companions,
         } = action
         {
-            let cmd = Box::new(trim_commands::RippleTrimEdgeCommand::new(
+            let cmd = Box::new(trim_commands::RippleTrimEdgeCommand::with_companions(
                 track_id,
                 clip_id,
                 old_bounds,
                 new_bounds,
                 shifted_clips,
+                companions,
             ));
             app.undo_stack.push(cmd, &mut app.project.timeline).unwrap();
         }

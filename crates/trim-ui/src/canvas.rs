@@ -30,6 +30,9 @@ pub enum DragMode {
 pub const TRACK_TOP_PADDING: f32 = 0.0;
 pub const SNAP_THRESHOLD_PX: f32 = 10.0;
 
+pub type CompanionDragOrigin = (String, String, f64, f64, f64, f64);
+pub type CompanionTrimBounds = (String, String, (f64, f64, f64, f64), (f64, f64, f64, f64));
+
 #[derive(Debug, Clone)]
 pub struct TimelineCanvasState {
     pub pixels_per_second: f32,
@@ -51,6 +54,7 @@ pub struct TimelineCanvasState {
     pub drag_orig_vol: f64,
     pub drag_orig_fade: f64,
     pub batch_orig_ins: Vec<(String, String, f64)>, // (track_id, clip_id, orig_in)
+    pub drag_companions: Vec<CompanionDragOrigin>, // (track_id, clip_id, orig_in, orig_out, orig_sin, orig_sout)
 
     pub rubberband_start: Option<Pos2>,
     pub rubberband_rect: Option<Rect>,
@@ -87,6 +91,7 @@ impl Default for TimelineCanvasState {
             drag_orig_vol: 1.0,
             drag_orig_fade: 0.0,
             batch_orig_ins: Vec::new(),
+            drag_companions: Vec::new(),
             rubberband_start: None,
             rubberband_rect: None,
             snap_guide_x: None,
@@ -189,6 +194,7 @@ pub enum CanvasAction {
         clip_id: String,
         old_bounds: (f64, f64, f64, f64),
         new_bounds: (f64, f64, f64, f64),
+        companions: Vec<CompanionTrimBounds>,
     },
     ClipRippleTrimmed {
         track_id: String,
@@ -196,6 +202,7 @@ pub enum CanvasAction {
         old_bounds: (f64, f64, f64, f64),
         new_bounds: (f64, f64, f64, f64),
         shifted_clips: Vec<(String, String, f64, f64)>,
+        companions: Vec<CompanionTrimBounds>,
     },
     ClipModified,
     SetClipFade {
@@ -1333,6 +1340,46 @@ pub fn render_timeline_canvas(
                                         [Pos2::new(cx, ty), Pos2::new(cx, ty + track_h)],
                                         Stroke::new(2.0_f32, Color32::from_rgb(0xff, 0x48, 0x48)),
                                     );
+
+                                    // Draw companion cut guides across linked tracks
+                                    let is_alt = ui.input(|i| i.modifiers.alt);
+                                    if !is_alt {
+                                        if let Some(ref gid) = cl.linked_group_id {
+                                            for (other_idx, other_tr) in
+                                                project.timeline.tracks.iter().enumerate()
+                                            {
+                                                if other_tr.id != tr_id && !other_tr.locked {
+                                                    if let Some(comp_c) =
+                                                        other_tr.clips.iter().find(|c| {
+                                                            c.linked_group_id.as_ref() == Some(gid)
+                                                        })
+                                                    {
+                                                        if cut_t > comp_c.timeline_in + 1e-4
+                                                            && cut_t < comp_c.timeline_out - 1e-4
+                                                        {
+                                                            let (comp_ty, comp_th) =
+                                                                track_offsets[other_idx];
+                                                            painter.line_segment(
+                                                                [
+                                                                    Pos2::new(cx, comp_ty),
+                                                                    Pos2::new(
+                                                                        cx,
+                                                                        comp_ty + comp_th,
+                                                                    ),
+                                                                ],
+                                                                Stroke::new(
+                                                                    2.0_f32,
+                                                                    Color32::from_rgb(
+                                                                        0xff, 0x60, 0x60,
+                                                                    ),
+                                                                ),
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
                                     let badge_rect = Rect::from_center_size(
                                         Pos2::new(cx, ty + 10.0),
                                         Vec2::new(36.0, 16.0),
@@ -1713,17 +1760,67 @@ pub fn render_timeline_canvas(
                     }
                 }
 
+                state.drag_companions.clear();
+                let is_alt = ui.input(|i| i.modifiers.alt);
+                if !is_alt
+                    && matches!(
+                        mode,
+                        DragMode::TrimIn
+                            | DragMode::TrimOut
+                            | DragMode::Slip
+                            | DragMode::RippleIn
+                            | DragMode::RippleOut
+                    )
+                {
+                    if let Some(tr) = project.timeline.get_track_by_id(&tr_id) {
+                        if let Some(cl) = tr.get_clip_by_id(&cl_id) {
+                            if let Some(ref gid) = cl.linked_group_id {
+                                for other_tr in &project.timeline.tracks {
+                                    if !other_tr.locked {
+                                        for other_c in &other_tr.clips {
+                                            if (other_tr.id != tr_id || other_c.id != cl_id)
+                                                && other_c.linked_group_id.as_ref() == Some(gid)
+                                            {
+                                                state.drag_companions.push((
+                                                    other_tr.id.clone(),
+                                                    other_c.id.clone(),
+                                                    other_c.timeline_in,
+                                                    other_c.timeline_out,
+                                                    other_c.source_in,
+                                                    other_c.effective_source_out(),
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 state.batch_orig_ins.clear();
                 if mode == DragMode::RippleIn || mode == DragMode::RippleOut {
                     let boundary = state.drag_orig_out - 1e-4;
-                    if let Some(tr) = project.timeline.get_track_by_id(&tr_id) {
-                        for c in &tr.clips {
-                            if c.id != cl_id && c.timeline_in >= boundary {
-                                state.batch_orig_ins.push((
-                                    tr_id.clone(),
-                                    c.id.clone(),
-                                    c.timeline_in,
-                                ));
+                    for tr in &project.timeline.tracks {
+                        if !tr.locked
+                            && (tr.id == tr_id
+                                || state
+                                    .drag_companions
+                                    .iter()
+                                    .any(|(comp_tr, _, _, _, _, _)| comp_tr == &tr.id))
+                        {
+                            for c in &tr.clips {
+                                let is_companion = state
+                                    .drag_companions
+                                    .iter()
+                                    .any(|(_, comp_cl, _, _, _, _)| comp_cl == &c.id);
+                                if c.id != cl_id && !is_companion && c.timeline_in >= boundary {
+                                    state.batch_orig_ins.push((
+                                        tr.id.clone(),
+                                        c.id.clone(),
+                                        c.timeline_in,
+                                    ));
+                                }
                             }
                         }
                     }
@@ -1876,9 +1973,18 @@ pub fn render_timeline_canvas(
                         );
                         state.snap_guide_x =
                             snap_pt.map(|pt| rect.left() + (pt as f32 * state.pixels_per_second));
+                        let actual_dt = snapped_in - state.drag_orig_in;
                         if let Some(tr) = project.timeline.get_track_by_id_mut(tr_id) {
                             if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
                                 cl.trim_in(snapped_in);
+                            }
+                        }
+                        for (comp_tr_id, comp_cl_id, orig_in, _, _, _) in &state.drag_companions {
+                            if let Some(tr) = project.timeline.get_track_by_id_mut(comp_tr_id) {
+                                if let Some(cl) = tr.get_clip_by_id_mut(comp_cl_id) {
+                                    let comp_target_in = (orig_in + actual_dt).max(0.0);
+                                    cl.trim_in(comp_target_in);
+                                }
                             }
                         }
                     }
@@ -1895,9 +2001,19 @@ pub fn render_timeline_canvas(
                         );
                         state.snap_guide_x =
                             snap_pt.map(|pt| rect.left() + (pt as f32 * state.pixels_per_second));
+                        let actual_dt = snapped_out - state.drag_orig_out;
                         if let Some(tr) = project.timeline.get_track_by_id_mut(tr_id) {
                             if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
                                 cl.trim_out(snapped_out);
+                            }
+                        }
+                        for (comp_tr_id, comp_cl_id, _, orig_out, _, _) in &state.drag_companions {
+                            if let Some(tr) = project.timeline.get_track_by_id_mut(comp_tr_id) {
+                                if let Some(cl) = tr.get_clip_by_id_mut(comp_cl_id) {
+                                    let comp_target_out =
+                                        (orig_out + actual_dt).max(cl.timeline_in + 0.04);
+                                    cl.trim_out(comp_target_out);
+                                }
                             }
                         }
                     }
@@ -1918,6 +2034,15 @@ pub fn render_timeline_canvas(
                         if let Some(tr) = project.timeline.get_track_by_id_mut(tr_id) {
                             if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
                                 cl.trim_out(snapped_out);
+                            }
+                        }
+                        for (comp_tr_id, comp_cl_id, _, orig_out, _, _) in &state.drag_companions {
+                            if let Some(tr) = project.timeline.get_track_by_id_mut(comp_tr_id) {
+                                if let Some(cl) = tr.get_clip_by_id_mut(comp_cl_id) {
+                                    let comp_target_out =
+                                        (orig_out + shift_dt).max(cl.timeline_in + 0.04);
+                                    cl.trim_out(comp_target_out);
+                                }
                             }
                         }
                         for (t_id, c_id, orig_in) in &state.batch_orig_ins {
@@ -1951,6 +2076,15 @@ pub fn render_timeline_canvas(
                                 cl.move_to(state.drag_orig_in);
                             }
                         }
+                        for (comp_tr_id, comp_cl_id, orig_in, _, _, _) in &state.drag_companions {
+                            if let Some(tr) = project.timeline.get_track_by_id_mut(comp_tr_id) {
+                                if let Some(cl) = tr.get_clip_by_id_mut(comp_cl_id) {
+                                    let comp_target_in = (orig_in + shift_dt).max(0.0);
+                                    cl.trim_in(comp_target_in);
+                                    cl.move_to(*orig_in);
+                                }
+                            }
+                        }
                         for (t_id, c_id, orig_in) in &state.batch_orig_ins {
                             if let Some(tr) = project.timeline.get_track_by_id_mut(t_id) {
                                 if let Some(c) = tr.get_clip_by_id_mut(c_id) {
@@ -1973,7 +2107,9 @@ pub fn render_timeline_canvas(
                             .and_then(|id| project.get_media(id))
                             .map(|m| m.duration);
 
-                        if let Some(tr) = project.timeline.get_track_by_id_mut(tr_id) {
+                        let (slip_delta, cur_src_in, cur_src_out) = if let Some(tr) =
+                            project.timeline.get_track_by_id_mut(tr_id)
+                        {
                             if let Some(cl) = tr.get_clip_by_id_mut(cl_id) {
                                 let clip_dur = cl.duration();
                                 let max_dur = media_dur
@@ -1982,34 +2118,47 @@ pub fn render_timeline_canvas(
                                 let new_src_in = (state.drag_orig_sin - dt).clamp(0.0, max_src_in);
                                 cl.source_in = new_src_in;
                                 cl.source_out = Some(new_src_in + clip_dur);
+                                (
+                                    new_src_in - state.drag_orig_sin,
+                                    cl.source_in,
+                                    cl.effective_source_out(),
+                                )
+                            } else {
+                                (0.0, 0.0, 0.0)
+                            }
+                        } else {
+                            (0.0, 0.0, 0.0)
+                        };
 
-                                let tip_rect = Rect::from_center_size(
-                                    Pos2::new(pos.x, pos.y - 18.0),
-                                    Vec2::new(140.0, 20.0),
-                                );
-                                painter.rect_filled(
-                                    tip_rect,
-                                    4.0,
-                                    Color32::from_rgb(0x18, 0x18, 0x22),
-                                );
-                                painter.rect_stroke(
-                                    tip_rect,
-                                    4.0,
-                                    Stroke::new(1.0_f32, Color32::from_rgb(0xe0, 0x7a, 0x38)),
-                                );
-                                painter.text(
-                                    tip_rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    format!(
-                                        "Slip: {:.2}s - {:.2}s",
-                                        cl.source_in,
-                                        cl.effective_source_out()
-                                    ),
-                                    egui::FontId::proportional(11.0),
-                                    Color32::WHITE,
-                                );
+                        for (comp_tr_id, comp_cl_id, _, _, orig_sin, _) in &state.drag_companions {
+                            if let Some(comp_tr) = project.timeline.get_track_by_id_mut(comp_tr_id)
+                            {
+                                if let Some(comp_cl) = comp_tr.get_clip_by_id_mut(comp_cl_id) {
+                                    let comp_dur = comp_cl.duration();
+                                    let new_c_sin = (orig_sin + slip_delta).max(0.0);
+                                    comp_cl.source_in = new_c_sin;
+                                    comp_cl.source_out = Some(new_c_sin + comp_dur);
+                                }
                             }
                         }
+
+                        let tip_rect = Rect::from_center_size(
+                            Pos2::new(pos.x, pos.y - 18.0),
+                            Vec2::new(140.0, 20.0),
+                        );
+                        painter.rect_filled(tip_rect, 4.0, Color32::from_rgb(0x18, 0x18, 0x22));
+                        painter.rect_stroke(
+                            tip_rect,
+                            4.0,
+                            Stroke::new(1.0_f32, Color32::from_rgb(0xe0, 0x7a, 0x38)),
+                        );
+                        painter.text(
+                            tip_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            format!("Slip: {:.2}s - {:.2}s", cur_src_in, cur_src_out),
+                            egui::FontId::proportional(11.0),
+                            Color32::WHITE,
+                        );
                     }
                 }
                 DragMode::FadeIn => {
@@ -2247,12 +2396,36 @@ pub fn render_timeline_canvas(
                                 state.drag_orig_sin,
                                 state.drag_orig_sout,
                             );
-                            if new_bounds != old_bounds {
+                            let mut companions = Vec::new();
+                            for (comp_tr_id, comp_cl_id, orig_in, orig_out, orig_sin, orig_sout) in
+                                &state.drag_companions
+                            {
+                                if let Some(comp_tr) = project.timeline.get_track_by_id(comp_tr_id)
+                                {
+                                    if let Some(comp_cl) = comp_tr.get_clip_by_id(comp_cl_id) {
+                                        let comp_old = (*orig_in, *orig_out, *orig_sin, *orig_sout);
+                                        let comp_new = (
+                                            comp_cl.timeline_in,
+                                            comp_cl.timeline_out,
+                                            comp_cl.source_in,
+                                            comp_cl.effective_source_out(),
+                                        );
+                                        companions.push((
+                                            comp_tr_id.clone(),
+                                            comp_cl_id.clone(),
+                                            comp_old,
+                                            comp_new,
+                                        ));
+                                    }
+                                }
+                            }
+                            if new_bounds != old_bounds || !companions.is_empty() {
                                 action = Some(CanvasAction::ClipTrimmed {
                                     track_id: tr_id.clone(),
                                     clip_id: cl_id.clone(),
                                     old_bounds,
                                     new_bounds,
+                                    companions,
                                 });
                             }
                         }
@@ -2275,6 +2448,29 @@ pub fn render_timeline_canvas(
                                 state.drag_orig_sin,
                                 state.drag_orig_sout,
                             );
+                            let mut companions = Vec::new();
+                            for (comp_tr_id, comp_cl_id, orig_in, orig_out, orig_sin, orig_sout) in
+                                &state.drag_companions
+                            {
+                                if let Some(comp_tr) = project.timeline.get_track_by_id(comp_tr_id)
+                                {
+                                    if let Some(comp_cl) = comp_tr.get_clip_by_id(comp_cl_id) {
+                                        let comp_old = (*orig_in, *orig_out, *orig_sin, *orig_sout);
+                                        let comp_new = (
+                                            comp_cl.timeline_in,
+                                            comp_cl.timeline_out,
+                                            comp_cl.source_in,
+                                            comp_cl.effective_source_out(),
+                                        );
+                                        companions.push((
+                                            comp_tr_id.clone(),
+                                            comp_cl_id.clone(),
+                                            comp_old,
+                                            comp_new,
+                                        ));
+                                    }
+                                }
+                            }
                             let mut shifted_clips = Vec::new();
                             for (t_id, c_id, orig_in) in &state.batch_orig_ins {
                                 if let Some(t) = project.timeline.get_track_by_id(t_id) {
@@ -2290,13 +2486,17 @@ pub fn render_timeline_canvas(
                                     }
                                 }
                             }
-                            if new_bounds != old_bounds || !shifted_clips.is_empty() {
+                            if new_bounds != old_bounds
+                                || !shifted_clips.is_empty()
+                                || !companions.is_empty()
+                            {
                                 action = Some(CanvasAction::ClipRippleTrimmed {
                                     track_id: tr_id.clone(),
                                     clip_id: cl_id.clone(),
                                     old_bounds,
                                     new_bounds,
                                     shifted_clips,
+                                    companions,
                                 });
                             }
                         }
@@ -2389,6 +2589,7 @@ pub fn render_timeline_canvas(
         state.snap_guide_x = None;
         state.drag_kf_index = None;
         state.drag_orig_keyframes.clear();
+        state.drag_companions.clear();
     }
 
     // Context Menu on right click
@@ -2631,6 +2832,10 @@ pub(crate) fn find_clip_at_pos(
 
             if clip_rect.contains(pos) {
                 if track.locked {
+                    return Some((track.id.clone(), clip.id.clone(), DragMode::None));
+                }
+
+                if state.active_tool == EditTool::Razor {
                     return Some((track.id.clone(), clip.id.clone(), DragMode::None));
                 }
 

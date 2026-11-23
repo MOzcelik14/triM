@@ -1055,6 +1055,59 @@ mod tests {
     }
 
     #[test]
+    fn test_trim_clip_with_linked_companion_auto() {
+        let mut tl = TimelineModel::default();
+        let v1_id = tl.add_new_video_track();
+        let _a1_id = tl.add_new_audio_track();
+
+        let orig_grp = "grp-sync-trim".to_string();
+        let mut cv = Clip::new("m_video", 2.0, 10.0);
+        cv.linked_group_id = Some(orig_grp.clone());
+        let cv_id = cv.id.clone();
+
+        let mut ca = Clip::new("m_audio", 2.0, 10.0);
+        ca.linked_group_id = Some(orig_grp.clone());
+        let ca_id = ca.id.clone();
+
+        tl.tracks[0].add_clip(cv);
+        tl.tracks[1].add_clip(ca);
+
+        let mut stack = UndoStack::new();
+        // Trim video in from 2.0 to 4.0
+        let trim_cmd = Box::new(TrimClipCommand::new(
+            &v1_id,
+            &cv_id,
+            (2.0, 10.0, 0.0, 8.0),
+            (4.0, 10.0, 2.0, 8.0),
+        ));
+        assert!(stack.push(trim_cmd, &mut tl).is_ok());
+
+        // Both video and audio clips should be trimmed to in=4.0
+        let v_trimmed = tl.tracks[0].get_clip_by_id(&cv_id).unwrap();
+        let a_trimmed = tl.tracks[1].get_clip_by_id(&ca_id).unwrap();
+        assert_eq!(v_trimmed.timeline_in, 4.0);
+        assert_eq!(a_trimmed.timeline_in, 4.0);
+        assert_eq!(v_trimmed.source_in, 2.0);
+        assert_eq!(a_trimmed.source_in, 2.0);
+
+        // Undo should restore both video and audio clips
+        assert!(stack.undo(&mut tl).unwrap());
+        let v_restored = tl.tracks[0].get_clip_by_id(&cv_id).unwrap();
+        let a_restored = tl.tracks[1].get_clip_by_id(&ca_id).unwrap();
+        assert_eq!(v_restored.timeline_in, 2.0);
+        assert_eq!(a_restored.timeline_in, 2.0);
+        assert_eq!(v_restored.source_in, 0.0);
+        assert_eq!(a_restored.source_in, 0.0);
+
+        // Redo trims both again
+        assert!(stack.redo(&mut tl).unwrap());
+        let v_redo = tl.tracks[0].get_clip_by_id(&cv_id).unwrap();
+        let a_redo = tl.tracks[1].get_clip_by_id(&ca_id).unwrap();
+        assert_eq!(v_redo.timeline_in, 4.0);
+        assert_eq!(a_redo.timeline_in, 4.0);
+    }
+
+    #[test]
     fn test_fade_and_text_overlay_commands() {
         let mut tl = TimelineModel::default();
         let v1_id = tl.add_new_video_track();

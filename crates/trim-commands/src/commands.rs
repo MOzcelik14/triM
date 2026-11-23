@@ -288,43 +288,127 @@ impl Command for RemoveTrackCommand {
 // -----------------------------------------------------------------------------
 // 4. TrimClipCommand
 // -----------------------------------------------------------------------------
+pub type ClipBounds = (f64, f64, f64, f64);
+pub type CompanionTrimBounds = (String, String, ClipBounds, ClipBounds);
+
 #[derive(Debug, Clone)]
 pub struct TrimClipCommand {
     pub track_id: String,
     pub clip_id: String,
-    pub old_bounds: (f64, f64, f64, f64), // (tin, tout, sin, sout)
-    pub new_bounds: (f64, f64, f64, f64),
+    pub old_bounds: ClipBounds, // (tin, tout, sin, sout)
+    pub new_bounds: ClipBounds,
+    /// Companion clips that are trimmed along with the primary clip:
+    /// (track_id, clip_id, old_bounds, new_bounds)
+    pub companions: Vec<CompanionTrimBounds>,
+    pub auto_trim_linked: bool,
 }
 
 impl TrimClipCommand {
     pub fn new(
         track_id: impl Into<String>,
         clip_id: impl Into<String>,
-        old_bounds: (f64, f64, f64, f64),
-        new_bounds: (f64, f64, f64, f64),
+        old_bounds: ClipBounds,
+        new_bounds: ClipBounds,
     ) -> Self {
         Self {
             track_id: track_id.into(),
             clip_id: clip_id.into(),
             old_bounds,
             new_bounds,
+            companions: Vec::new(),
+            auto_trim_linked: true,
         }
+    }
+
+    pub fn with_companions(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_bounds: ClipBounds,
+        new_bounds: ClipBounds,
+        companions: Vec<CompanionTrimBounds>,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            old_bounds,
+            new_bounds,
+            companions,
+            auto_trim_linked: false,
+        }
+    }
+
+    pub fn with_auto_trim_linked(mut self, auto_trim_linked: bool) -> Self {
+        self.auto_trim_linked = auto_trim_linked;
+        self
     }
 }
 
 impl Command for TrimClipCommand {
     fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
-        let track = timeline
-            .get_track_by_id_mut(&self.track_id)
-            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
-        let clip = track
-            .get_clip_by_id_mut(&self.clip_id)
-            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
-        clip.timeline_in = self.new_bounds.0;
-        clip.timeline_out = self.new_bounds.1;
-        clip.source_in = self.new_bounds.2;
-        clip.source_out = Some(self.new_bounds.3);
-        track.sort_clips();
+        let link_gid = {
+            let track = timeline
+                .get_track_by_id_mut(&self.track_id)
+                .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+            let clip = track
+                .get_clip_by_id_mut(&self.clip_id)
+                .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+            clip.timeline_in = self.new_bounds.0;
+            clip.timeline_out = self.new_bounds.1;
+            clip.source_in = self.new_bounds.2;
+            clip.source_out = Some(self.new_bounds.3);
+            let gid = clip.linked_group_id.clone();
+            track.sort_clips();
+            gid
+        };
+
+        if self.companions.is_empty() && self.auto_trim_linked {
+            if let Some(ref gid) = link_gid {
+                let dt_in = self.new_bounds.0 - self.old_bounds.0;
+                let dt_out = self.new_bounds.1 - self.old_bounds.1;
+                let mut discovered = Vec::new();
+                for tr in &timeline.tracks {
+                    if !tr.locked {
+                        for c in &tr.clips {
+                            if (tr.id != self.track_id || c.id != self.clip_id)
+                                && c.linked_group_id.as_ref() == Some(gid)
+                            {
+                                let old_b = (
+                                    c.timeline_in,
+                                    c.timeline_out,
+                                    c.source_in,
+                                    c.effective_source_out(),
+                                );
+                                let new_tin = (c.timeline_in + dt_in).max(0.0);
+                                let new_tout = (c.timeline_out + dt_out).max(new_tin + 0.04);
+                                let new_sin = (c.source_in + dt_in).max(0.0);
+                                let new_sout =
+                                    (c.effective_source_out() + dt_out).max(new_sin + 0.04);
+                                discovered.push((
+                                    tr.id.clone(),
+                                    c.id.clone(),
+                                    old_b,
+                                    (new_tin, new_tout, new_sin, new_sout),
+                                ));
+                            }
+                        }
+                    }
+                }
+                self.companions = discovered;
+            }
+        }
+
+        for (comp_tr_id, comp_cl_id, _, new_b) in &self.companions {
+            if let Some(tr) = timeline.get_track_by_id_mut(comp_tr_id) {
+                if let Some(c) = tr.get_clip_by_id_mut(comp_cl_id) {
+                    c.timeline_in = new_b.0;
+                    c.timeline_out = new_b.1;
+                    c.source_in = new_b.2;
+                    c.source_out = Some(new_b.3);
+                    tr.sort_clips();
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -340,6 +424,19 @@ impl Command for TrimClipCommand {
         clip.source_in = self.old_bounds.2;
         clip.source_out = Some(self.old_bounds.3);
         track.sort_clips();
+
+        for (comp_tr_id, comp_cl_id, old_b, _) in &self.companions {
+            if let Some(tr) = timeline.get_track_by_id_mut(comp_tr_id) {
+                if let Some(c) = tr.get_clip_by_id_mut(comp_cl_id) {
+                    c.timeline_in = old_b.0;
+                    c.timeline_out = old_b.1;
+                    c.source_in = old_b.2;
+                    c.source_out = Some(old_b.3);
+                    tr.sort_clips();
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -437,6 +534,8 @@ pub struct SplitClipCommand {
     pub right_clip_id: Option<String>,
     /// Linked companion clips split alongside the target: (track_id, original_clip, right_clip_id)
     pub companions: Vec<(String, Clip, Option<String>)>,
+    pub new_left_group_id: Option<String>,
+    pub new_right_group_id: Option<String>,
 }
 
 impl SplitClipCommand {
@@ -449,6 +548,8 @@ impl SplitClipCommand {
             original_clip: None,
             right_clip_id: None,
             companions: Vec::new(),
+            new_left_group_id: None,
+            new_right_group_id: None,
         }
     }
 
@@ -488,8 +589,8 @@ impl Command for SplitClipCommand {
                         for c in &t.clips {
                             if (t.id != self.track_id || c.id != self.clip_id)
                                 && c.linked_group_id.as_ref() == Some(gid)
-                                && self.split_time > c.timeline_in + 0.02
-                                && self.split_time < c.timeline_out - 0.02
+                                && self.split_time > c.timeline_in + 1e-4
+                                && self.split_time < c.timeline_out - 1e-4
                             {
                                 companion_targets.push((t.id.clone(), c.clone()));
                             }
@@ -499,12 +600,19 @@ impl Command for SplitClipCommand {
             }
         }
 
-        // Generate new link groups if any companion exists
+        // Generate or reuse link groups if any companion exists
         let (new_left_gid, new_right_gid) = if !companion_targets.is_empty() {
-            (
-                Some(uuid::Uuid::new_v4().to_string()),
-                Some(uuid::Uuid::new_v4().to_string()),
-            )
+            let left_g = self
+                .new_left_group_id
+                .clone()
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            let right_g = self
+                .new_right_group_id
+                .clone()
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            self.new_left_group_id = Some(left_g.clone());
+            self.new_right_group_id = Some(right_g.clone());
+            (Some(left_g), Some(right_g))
         } else {
             (orig.linked_group_id.clone(), orig.linked_group_id.clone())
         };
@@ -2337,17 +2445,18 @@ impl Command for SetClipCropCommand {
 pub struct RippleTrimEdgeCommand {
     pub track_id: String,
     pub clip_id: String,
-    pub old_bounds: (f64, f64, f64, f64),
-    pub new_bounds: (f64, f64, f64, f64),
+    pub old_bounds: ClipBounds,
+    pub new_bounds: ClipBounds,
     pub shifted_clips: Vec<(String, String, f64, f64)>, // (track_id, clip_id, old_in, new_in)
+    pub companions: Vec<CompanionTrimBounds>,
 }
 
 impl RippleTrimEdgeCommand {
     pub fn new(
         track_id: impl Into<String>,
         clip_id: impl Into<String>,
-        old_bounds: (f64, f64, f64, f64),
-        new_bounds: (f64, f64, f64, f64),
+        old_bounds: ClipBounds,
+        new_bounds: ClipBounds,
         shifted_clips: Vec<(String, String, f64, f64)>,
     ) -> Self {
         Self {
@@ -2356,6 +2465,25 @@ impl RippleTrimEdgeCommand {
             old_bounds,
             new_bounds,
             shifted_clips,
+            companions: Vec::new(),
+        }
+    }
+
+    pub fn with_companions(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        old_bounds: ClipBounds,
+        new_bounds: ClipBounds,
+        shifted_clips: Vec<(String, String, f64, f64)>,
+        companions: Vec<CompanionTrimBounds>,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            old_bounds,
+            new_bounds,
+            shifted_clips,
+            companions,
         }
     }
 }
@@ -2373,6 +2501,17 @@ impl Command for RippleTrimEdgeCommand {
         clip.timeline_out = self.new_bounds.1;
         clip.source_in = self.new_bounds.2;
         clip.source_out = Some(self.new_bounds.3);
+
+        for (comp_tr_id, comp_cl_id, _, new_b) in &self.companions {
+            if let Some(tr) = timeline.get_track_by_id_mut(comp_tr_id) {
+                if let Some(c) = tr.get_clip_by_id_mut(comp_cl_id) {
+                    c.timeline_in = new_b.0;
+                    c.timeline_out = new_b.1;
+                    c.source_in = new_b.2;
+                    c.source_out = Some(new_b.3);
+                }
+            }
+        }
 
         for (tr_id, cl_id, _, new_in) in &self.shifted_clips {
             if let Some(tr) = timeline.get_track_by_id_mut(tr_id) {
@@ -2399,6 +2538,17 @@ impl Command for RippleTrimEdgeCommand {
         clip.timeline_out = self.old_bounds.1;
         clip.source_in = self.old_bounds.2;
         clip.source_out = Some(self.old_bounds.3);
+
+        for (comp_tr_id, comp_cl_id, old_b, _) in &self.companions {
+            if let Some(tr) = timeline.get_track_by_id_mut(comp_tr_id) {
+                if let Some(c) = tr.get_clip_by_id_mut(comp_cl_id) {
+                    c.timeline_in = old_b.0;
+                    c.timeline_out = old_b.1;
+                    c.source_in = old_b.2;
+                    c.source_out = Some(old_b.3);
+                }
+            }
+        }
 
         for (tr_id, cl_id, old_in, _) in &self.shifted_clips {
             if let Some(tr) = timeline.get_track_by_id_mut(tr_id) {
