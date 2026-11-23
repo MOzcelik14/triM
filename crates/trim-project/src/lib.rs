@@ -20,28 +20,83 @@ pub enum ProjectError {
 
 const MAX_PROJECT_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
+/// Ensures that a project file path has a valid project extension (.trim or .cutline).
+/// If not present, appends `.trim`. Preserves dot-containing project names (e.g. "Project 2.0" -> "Project 2.0.trim").
+pub fn ensure_project_extension<P: AsRef<Path>>(path: P) -> PathBuf {
+    let p = path.as_ref();
+    let s = p.to_string_lossy();
+    if s.to_lowercase().ends_with(".trim") || s.to_lowercase().ends_with(".cutline") {
+        p.to_path_buf()
+    } else {
+        let mut os = p.as_os_str().to_os_string();
+        os.push(".trim");
+        PathBuf::from(os)
+    }
+}
+
 fn write_atomic(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    if bytes.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Cannot write empty project data",
+        ));
+    }
+
     let parent = target
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(parent)?;
+    let _ = fs::create_dir_all(parent);
 
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    tmp.write_all(bytes)?;
-    tmp.as_file().sync_all()?;
-    tmp.persist(target).map_err(|e| e.error)?;
+    let atomic_result = (|| -> std::io::Result<()> {
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        tmp.write_all(bytes)?;
+        tmp.as_file().sync_all()?;
+        tmp.persist(target).map_err(|e| e.error)?;
+        Ok(())
+    })();
+
+    if atomic_result.is_err() {
+        // Fallback: direct write to target in case tempfile creation or atomic rename failed
+        // (e.g. document portal, directory permissions, or cross-filesystem issues)
+        let mut file = fs::File::create(target)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+    }
+
     Ok(())
 }
 
-/// Saves project to disk using atomic temp-file + sync_all + persist.
+/// Saves project to disk using atomic temp-file + sync_all + persist (with fallback to direct write).
+/// Automatically ensures .trim extension is appended if missing and cleans up any 0-byte orphan
+/// created by the OS file picker.
 pub fn save_project<P: AsRef<Path>>(
     project: &mut Project,
     target_path: P,
 ) -> Result<(), ProjectError> {
-    let target = target_path.as_ref();
+    let original_path = target_path.as_ref();
+    let target = ensure_project_extension(original_path);
+
+    // If a different extensionless file was touched (e.g. by an OS file picker / portal) and is 0 bytes, clean it up
+    if original_path != target && original_path.is_file() {
+        if let Ok(meta) = fs::metadata(original_path) {
+            if meta.len() == 0 {
+                let _ = fs::remove_file(original_path);
+            }
+        }
+    }
+
+    if let Some(stem) = target.file_stem().and_then(|s| s.to_str()) {
+        if !stem.is_empty()
+            && (project.settings.name == "Adsız Proje"
+                || project.settings.name == "Untitled Project")
+        {
+            project.settings.name = stem.to_string();
+        }
+    }
+
     let json_data = project.to_json()?;
-    write_atomic(target, json_data.as_bytes())?;
+    write_atomic(&target, json_data.as_bytes())?;
 
     project.file_path = Some(target.to_string_lossy().to_string());
     project.is_dirty = false;
@@ -658,6 +713,63 @@ mod tests {
         assert_eq!(loaded.settings.name, "Test Save");
         assert_eq!(loaded.timeline.tracks[0].clips.len(), 1);
         assert_eq!(loaded.timeline.tracks[0].clips[0].duration(), 5.0);
+    }
+
+    #[test]
+    fn test_ensure_project_extension_behavior() {
+        assert_eq!(
+            ensure_project_extension(Path::new("my_project")),
+            PathBuf::from("my_project.trim")
+        );
+        assert_eq!(
+            ensure_project_extension(Path::new("my_project.trim")),
+            PathBuf::from("my_project.trim")
+        );
+        assert_eq!(
+            ensure_project_extension(Path::new("my_project.TRIM")),
+            PathBuf::from("my_project.TRIM")
+        );
+        assert_eq!(
+            ensure_project_extension(Path::new("my_project.cutline")),
+            PathBuf::from("my_project.cutline")
+        );
+        assert_eq!(
+            ensure_project_extension(Path::new("project.2.0")),
+            PathBuf::from("project.2.0.trim")
+        );
+    }
+
+    #[test]
+    fn test_save_project_without_extension_and_orphan_cleanup() {
+        let dir = tempdir().unwrap();
+        let target_without_ext = dir.path().join("vacation_edit");
+
+        // Simulate OS file dialog touching an empty orphan file
+        fs::write(&target_without_ext, b"").unwrap();
+        assert!(target_without_ext.is_file());
+        assert_eq!(fs::metadata(&target_without_ext).unwrap().len(), 0);
+
+        let mut proj = Project::new("Adsız Proje");
+        proj.timeline.tracks[0].add_clip(Clip::new("m1", 0.0, 3.0));
+
+        save_project(&mut proj, &target_without_ext).unwrap();
+
+        let expected_file = dir.path().join("vacation_edit.trim");
+        assert!(expected_file.is_file());
+        assert!(fs::metadata(&expected_file).unwrap().len() > 50);
+        assert_eq!(
+            proj.file_path,
+            Some(expected_file.to_string_lossy().to_string())
+        );
+        assert_eq!(proj.settings.name, "vacation_edit");
+
+        // Orphan empty file without extension should have been cleaned up
+        assert!(!target_without_ext.exists());
+
+        // Verify loaded project
+        let loaded = load_project(&expected_file).unwrap();
+        assert_eq!(loaded.settings.name, "vacation_edit");
+        assert_eq!(loaded.timeline.tracks[0].clips.len(), 1);
     }
 
     #[test]

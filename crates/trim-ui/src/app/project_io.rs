@@ -7,7 +7,7 @@ use std::path::Path;
 use trim_core::media::MediaType;
 use trim_core::project::Project;
 use trim_media::FFprobeAnalyzer;
-use trim_project::{bundle_project, load_project, save_project};
+use trim_project::{bundle_project, ensure_project_extension, load_project, save_project};
 
 impl TrimApp {
     pub fn open_project_dialog(&mut self) {
@@ -102,14 +102,15 @@ impl TrimApp {
 
     pub fn save_project_dialog(&mut self) -> bool {
         if let Some(fp) = self.project.file_path.clone() {
-            match save_project(&mut self.project, fp.clone()) {
+            let target = ensure_project_extension(fp);
+            match save_project(&mut self.project, target.clone()) {
                 Ok(()) => {
                     self.last_saved_undo_len = self.undo_stack.len();
                     self.project.is_dirty = false;
                     self.autosave_mgr.cleanup(&self.project);
                     self.welcome_dialog
-                        .add_recent(&self.project.settings.name, &fp);
-                    self.status_message = "Proje kaydedildi".to_string();
+                        .add_recent(&self.project.settings.name, &target.to_string_lossy());
+                    self.status_message = format!("Proje kaydedildi: {:?}", target);
                     true
                 }
                 Err(e) => {
@@ -118,7 +119,8 @@ impl TrimApp {
                 }
             }
         } else {
-            let config = FileDialogConfig::save_file("Projeyi Kaydet", None)
+            let default_name = format!("{}.trim", self.project.settings.name);
+            let config = FileDialogConfig::save_file("Projeyi Kaydet", Some(default_name))
                 .add_filter("triM. Projesi (*.trim)", &["trim"]);
             self.file_dialog_bridge
                 .open(FileDialogRequest::SaveProject { after_save: None }, config);
@@ -132,7 +134,8 @@ impl TrimApp {
                 self.execute_pending_close_action(ctx, pending);
             }
         } else {
-            let config = FileDialogConfig::save_file("Projeyi Kaydet", None)
+            let default_name = format!("{}.trim", self.project.settings.name);
+            let config = FileDialogConfig::save_file("Projeyi Kaydet", Some(default_name))
                 .add_filter("triM. Projesi (*.trim)", &["trim"]);
             self.file_dialog_bridge.open(
                 FileDialogRequest::SaveProject {
@@ -160,7 +163,8 @@ impl TrimApp {
     }
 
     pub fn save_project_as_dialog(&mut self) -> bool {
-        let config = FileDialogConfig::save_file("Projeyi Farklı Kaydet", None)
+        let default_name = format!("{}.trim", self.project.settings.name);
+        let config = FileDialogConfig::save_file("Projeyi Farklı Kaydet", Some(default_name))
             .add_filter("triM. Projesi (*.trim)", &["trim"]);
         self.file_dialog_bridge
             .open(FileDialogRequest::SaveProjectAs, config)
@@ -401,12 +405,15 @@ impl TrimApp {
                 self.load_project_from_path(&path);
             }
             FileDialogRequest::SaveProject { after_save } => {
-                match save_project(&mut self.project, path.clone()) {
+                let target = ensure_project_extension(&path);
+                match save_project(&mut self.project, &target) {
                     Ok(()) => {
                         self.last_saved_undo_len = self.undo_stack.len();
                         self.project.is_dirty = false;
                         self.autosave_mgr.cleanup(&self.project);
-                        self.status_message = format!("Proje kaydedildi: {:?}", path);
+                        self.welcome_dialog
+                            .add_recent(&self.project.settings.name, &target.to_string_lossy());
+                        self.status_message = format!("Proje kaydedildi: {:?}", target);
                         if let Some(pending) = after_save {
                             self.execute_pending_close_action(ctx, pending);
                         }
@@ -417,12 +424,15 @@ impl TrimApp {
                 }
             }
             FileDialogRequest::SaveProjectAs => {
-                match save_project(&mut self.project, path.clone()) {
+                let target = ensure_project_extension(&path);
+                match save_project(&mut self.project, &target) {
                     Ok(()) => {
                         self.last_saved_undo_len = self.undo_stack.len();
                         self.project.is_dirty = false;
                         self.autosave_mgr.cleanup(&self.project);
-                        self.status_message = format!("Proje kaydedildi: {:?}", path);
+                        self.welcome_dialog
+                            .add_recent(&self.project.settings.name, &target.to_string_lossy());
+                        self.status_message = format!("Proje kaydedildi: {:?}", target);
                     }
                     Err(e) => {
                         self.status_message = format!("Kayıt hatası: {}", e);
