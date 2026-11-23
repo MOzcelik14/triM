@@ -2,6 +2,15 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [2.5.3] - 2026-11-23
+
+### Synchronized Linked Clip Trimming & Cutting
+- **Linked Edge Trimming (TrimIn, TrimOut, RippleIn, RippleOut, Slip)**: Trimming any linked video clip on the timeline canvas automatically updates all linked companion clips (audio) in sync. Holding `Alt` allows temporary unlinked trimming for single clips.
+- **Smart Drag & Drop Track Routing**: Dropping video media from the media bin onto an audio track automatically routes video to a video track (V1/V2...), pairs audio to the corresponding audio track (A1/A2...), generates a link group, and selects both clips.
+- **Companion-Aware Undo/Redo Commands**: Enhanced `TrimClipCommand` and `RippleTrimEdgeCommand` with `companions` and automatic link discovery for atomic undo/redo across multitrack video/audio pairs.
+- **Razor Multi-Track Hover Guides & Edge Guard**: Razor hover guides now display red cut lines across all tracks containing linked companion clips; edge hit testing prioritizes razor cuts over trim handles when the Razor tool is active.
+- **Unit & Integration Tests**: Added test coverage in `trim-commands` (`test_trim_clip_with_linked_companion_auto`), `trim-core` (`test_find_or_create_corresponding_video_track`), and `trim-ui` (`test_drop_video_on_audio_track_pairs_and_links`).
+
 ## [2.5.2] - 2026-11-22
 
 ### Process Lifecycle & RAII ChildGuard Hardening (Bölüm A)

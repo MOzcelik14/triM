@@ -56,6 +56,16 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2.5.3" date="2026-11-23">
+      <description>
+        <p>triM. v2.5.3 - Bağlı Klip Kırpma/Kesme Senkronizasyonu ve Akıllı Medya Kanal Eşleme:</p>
+        <ul>
+          <li>Bağlı Klip Kırpma (Linked Trimming): Zaman çizelgesinde video klibinin kenarından kırpılması durumunda (TrimIn, TrimOut, RippleTrim, Slip) bağlı ses klibi eşzamanlı kırpılır; Alt tuşu ile tekil bağımsız kırpma desteklenir.</li>
+          <li>Akıllı Medya Kanal Eşleme: Medya havuzundan ses kanalına bırakılan video medyaları otomatik olarak video kanalına yönlendirilir, eşleşen ses kanalı oluşturulur ve her iki klip bağlanarak seçilir.</li>
+          <li>Senkronize Razor ve Gelişmiş Komut Desteği: Razor hover kılavuz çizgisi bağlı kanallarda eşzamanlı gösterilir; TrimClipCommand, SplitClipCommand ve RippleTrimEdgeCommand eşlikçi klipleri atomik olarak günceller ve geri alır.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.5.2" date="2026-11-22">
       <description>
         <p>triM. v2.5.2 - Süreç Yaşam Döngüsü Hardening, Dürüst Benchmark ve Kalıcı Seek Optimizasyonu:</p>
