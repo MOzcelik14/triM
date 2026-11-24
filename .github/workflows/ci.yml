@@ -51,6 +51,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Check workspace crate boundaries
+        run: bash scripts/check-boundaries
+
       - name: Run Clippy linter
         run: cargo clippy --workspace --all-targets -- -D warnings
 
