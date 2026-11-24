@@ -306,7 +306,15 @@ flowchart LR
     Export --> FFmpeg["FFmpeg CLI"]
 ```
 
-For deeper architectural details, see [ARCHITECTURE.md](ARCHITECTURE.md).
+For deeper architectural details, see [ARCHITECTURE.md](ARCHITECTURE.md) and the Architecture Decision Records in [docs/adr/](docs/adr/).
+
+### Documentation Index
+
+- **Feature Matrix**: [docs/FEATURE_MATRIX.md](docs/FEATURE_MATRIX.md)
+- **User Guide (TR)**: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
+- **Benchmark Methodology**: [docs/BENCHMARKS.md](docs/BENCHMARKS.md) & [docs/benchmarks/baseline.md](docs/benchmarks/baseline.md)
+- **Linux Integration & Packaging**: [docs/LINUX_INTEGRATION.md](docs/LINUX_INTEGRATION.md)
+- **Accessibility & Shortcuts**: [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) & [docs/SHORTCUTS.md](docs/SHORTCUTS.md)
 
 ## Roadmap
 
