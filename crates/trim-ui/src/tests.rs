@@ -2016,3 +2016,107 @@ fn test_multicam_timecode_sync_and_undo() {
     let cb_undone = app.project.timeline.tracks[1].get_clip_by_id("cb").unwrap();
     assert!((cb_undone.timeline_in - 0.0).abs() < 1e-6);
 }
+
+#[test]
+fn test_multicam_audio_sync_and_undo() {
+    use trim_core::{Clip, MediaItem, MediaType, Track, TrackType};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path_a = dir.path().join("cam_a.mp4");
+    let path_b = dir.path().join("cam_b.mp4");
+    std::fs::write(&path_a, b"dummy_a").unwrap();
+    std::fs::write(&path_b, b"dummy_b").unwrap();
+
+    let mut app = TrimApp::default();
+    let pps = 50u32;
+    app.waveform_gen = trim_media::WaveformGenerator::new(dir.path().to_path_buf(), pps);
+
+    let write_wf = |media_path: &std::path::Path, impulse_sec: f64| {
+        let total_pts = (6.0 * pps as f64) as usize;
+        let idx = (impulse_sec * pps as f64) as usize;
+        let mut bytes = Vec::with_capacity(total_pts * 8);
+        for i in 0..total_pts {
+            let (mn, mx): (f32, f32) = if i == idx || i == idx + 1 {
+                (-0.95, 0.95)
+            } else {
+                (-0.01, 0.01)
+            };
+            bytes.extend_from_slice(&mn.to_le_bytes());
+            bytes.extend_from_slice(&mx.to_le_bytes());
+        }
+        let cache_path = app.waveform_gen.get_cache_path(media_path);
+        std::fs::write(cache_path, bytes).unwrap();
+    };
+    write_wf(&path_a, 2.5);
+    write_wf(&path_b, 1.0);
+
+    app.project.timeline.tracks.clear();
+    let mut m_a = MediaItem::new(&path_a);
+    m_a.media_type = MediaType::Video;
+    let id_a = m_a.id.clone();
+    app.project.add_media(m_a);
+
+    let mut m_b = MediaItem::new(&path_b);
+    m_b.media_type = MediaType::Video;
+    let id_b = m_b.id.clone();
+    app.project.add_media(m_b);
+
+    let mut v1 = Track::new("V1", TrackType::Video);
+    v1.id = "v1".into();
+    let mut c_a = Clip::new(&id_a, 0.0, 6.0);
+    c_a.id = "ca".into();
+    c_a.timeline_in = 0.0;
+    c_a.timeline_out = 6.0;
+    v1.add_clip(c_a);
+
+    let mut v2 = Track::new("V2", TrackType::Video);
+    v2.id = "v2".into();
+    let mut c_b = Clip::new(&id_b, 0.0, 6.0);
+    c_b.id = "cb".into();
+    c_b.timeline_in = 0.0;
+    c_b.timeline_out = 6.0;
+    v2.add_clip(c_b);
+
+    app.project.timeline.add_track(v1);
+    app.project.timeline.add_track(v2);
+
+    app.canvas_state.selected_clip_pairs =
+        vec![("v1".into(), "ca".into()), ("v2".into(), "cb".into())];
+    app.align_selected_clips_by_audio();
+
+    // Cam A impulse at 2.5s, Cam B impulse at 1.0s => Cam B aligns to 1.5s
+    let cb_after = app.project.timeline.tracks[1].get_clip_by_id("cb").unwrap();
+    assert!((cb_after.timeline_in - 1.5).abs() < 0.05);
+
+    app.perform_undo();
+    let cb_undone = app.project.timeline.tracks[1].get_clip_by_id("cb").unwrap();
+    assert!((cb_undone.timeline_in - 0.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_background_task_cancel_discards_result_and_clears_count() {
+    let mut app = TrimApp {
+        bg_task_active_count: 1,
+        ..Default::default()
+    };
+    app.bg_task_cancel_flag
+        .store(true, std::sync::atomic::Ordering::Release);
+    let _ = app
+        .bg_task_tx
+        .send(crate::app::BackgroundTaskMsg::SceneDetectDone {
+            track_id: "v1".to_string(),
+            clip_id: "c1".to_string(),
+            result: Ok(vec![1.0, 2.0]),
+        });
+
+    let ctx = egui::Context::default();
+    let _ = ctx.run(egui::RawInput::default(), |_ctx| {
+        app.poll_background_work(_ctx);
+    });
+
+    assert_eq!(app.bg_task_active_count, 0);
+    assert!(!app
+        .bg_task_cancel_flag
+        .load(std::sync::atomic::Ordering::Acquire));
+    assert!(app.status_message.contains("iptal") || app.status_message.contains("cancelled"));
+}

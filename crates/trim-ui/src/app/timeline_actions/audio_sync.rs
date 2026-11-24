@@ -165,6 +165,9 @@ impl TrimApp {
         let sx = mask.scale_x as f32;
         let sy = mask.scale_y as f32;
 
+        self.bg_task_active_count += 1;
+        self.bg_task_cancel_flag
+            .store(false, std::sync::atomic::Ordering::Release);
         let tx = self.bg_task_tx.clone();
         let tid = track_id.to_string();
         let cid = clip_id.to_string();

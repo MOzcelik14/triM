@@ -445,6 +445,9 @@ impl TrimApp {
                 let target_dir = path.join(&default_folder_name);
                 let proj_clone = self.project.clone();
                 let tx = self.bg_task_tx.clone();
+                self.bg_task_active_count += 1;
+                self.bg_task_cancel_flag
+                    .store(false, std::sync::atomic::Ordering::Release);
                 self.status_message = "Proje arka planda paketleniyor...".to_string();
                 std::thread::spawn(move || {
                     let res = bundle_project(&proj_clone, &target_dir).map_err(|e| e.to_string());

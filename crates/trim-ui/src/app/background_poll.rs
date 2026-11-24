@@ -6,7 +6,7 @@ use trim_export::queue::RenderQueueEvent;
 use trim_export::runner::ExportMessage;
 
 impl TrimApp {
-    pub(super) fn poll_background_work(&mut self, ctx: &egui::Context) {
+    pub(crate) fn poll_background_work(&mut self, ctx: &egui::Context) {
         // Window drag & drop files from OS file manager
         let dropped_paths: Vec<std::path::PathBuf> = ctx.input(|i| {
             let mut paths = Vec::new();
@@ -118,6 +118,40 @@ impl TrimApp {
         let bg_msgs: Vec<BackgroundTaskMsg> = self.bg_task_rx.try_iter().collect();
         for msg in bg_msgs {
             ctx.request_repaint();
+            let is_cancellable_task = matches!(
+                msg,
+                BackgroundTaskMsg::SceneDetectDone { .. }
+                    | BackgroundTaskMsg::SilenceDetectDone { .. }
+                    | BackgroundTaskMsg::TranscribeDone { .. }
+                    | BackgroundTaskMsg::BundleDone { .. }
+                    | BackgroundTaskMsg::MotionTrackDone { .. }
+            );
+            if is_cancellable_task {
+                self.bg_task_active_count = self.bg_task_active_count.saturating_sub(1);
+                let cancelled = self
+                    .bg_task_cancel_flag
+                    .load(std::sync::atomic::Ordering::Acquire);
+                if self.bg_task_active_count == 0 {
+                    self.bg_task_cancel_flag
+                        .store(false, std::sync::atomic::Ordering::Release);
+                }
+                if cancelled {
+                    match msg {
+                        BackgroundTaskMsg::SilenceDetectDone { .. } => {
+                            self.silence_dialog.is_analyzing = false;
+                        }
+                        BackgroundTaskMsg::TranscribeDone { .. } => {
+                            self.transcribe_dialog.is_transcribing = false;
+                        }
+                        _ => {}
+                    }
+                    self.status_message = match self.lang() {
+                        Language::Turkish => "Arka plan işlemi iptal edildi.".to_string(),
+                        Language::English => "Background task cancelled.".to_string(),
+                    };
+                    continue;
+                }
+            }
             match msg {
                 BackgroundTaskMsg::SceneDetectDone {
                     track_id,

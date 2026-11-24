@@ -606,6 +606,9 @@ impl TrimApp {
         let source_out = clip.effective_source_out();
 
         self.status_message = "Sahneler arka planda taranıyor...".to_string();
+        self.bg_task_active_count += 1;
+        self.bg_task_cancel_flag
+            .store(false, std::sync::atomic::Ordering::Release);
         let tx = self.bg_task_tx.clone();
         std::thread::spawn(move || {
             let result = trim_media::detect_scene_changes(&media_path, source_in, source_out, 0.40);
@@ -680,6 +683,9 @@ impl TrimApp {
         let source_in = clip.source_in;
         let source_out = clip.effective_source_out();
         let padding = self.silence_dialog.padding;
+        self.bg_task_active_count += 1;
+        self.bg_task_cancel_flag
+            .store(false, std::sync::atomic::Ordering::Release);
         let tx = self.bg_task_tx.clone();
         std::thread::spawn(move || {
             let result = trim_media::detect_silence_regions(

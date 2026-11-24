@@ -687,6 +687,9 @@ impl TrimApp {
                         self.transcribe_dialog.is_transcribing = true;
                         self.transcribe_dialog.status_message =
                             "Ses ayıklanıyor ve deşifre ediliyor (arka planda)...".to_string();
+                        self.bg_task_active_count += 1;
+                        self.bg_task_cancel_flag
+                            .store(false, std::sync::atomic::Ordering::Release);
                         let tx = self.bg_task_tx.clone();
                         std::thread::spawn(move || {
                             let temp_wav = std::env::temp_dir()

@@ -181,6 +181,8 @@ pub struct TrimApp {
     pub wb_eyedropper_target: Option<(String, String)>,
     pub bg_task_tx: std::sync::mpsc::Sender<BackgroundTaskMsg>,
     pub bg_task_rx: std::sync::mpsc::Receiver<BackgroundTaskMsg>,
+    pub bg_task_active_count: usize,
+    pub bg_task_cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 pub enum BackgroundTaskMsg {
@@ -339,6 +341,8 @@ impl Default for TrimApp {
             wb_eyedropper_target: None,
             bg_task_tx,
             bg_task_rx,
+            bg_task_active_count: 0,
+            bg_task_cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 }
@@ -474,24 +478,44 @@ impl eframe::App for TrimApp {
                     .color(Color32::from_rgb(0x85, 0x85, 0x95)),
                 );
 
-                if !self.proxy_generating_ids.is_empty() {
+                if !self.proxy_generating_ids.is_empty() || self.bg_task_active_count > 0 {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button(lang.t("btn_cancel")).clicked() {
-                            self.proxy_cancel_flag
-                                .store(true, std::sync::atomic::Ordering::Release);
-                            self.status_message = lang.t("status_cancelling").to_string();
+                        if !self.proxy_generating_ids.is_empty() {
+                            if ui.small_button(lang.t("btn_cancel")).clicked() {
+                                self.proxy_cancel_flag
+                                    .store(true, std::sync::atomic::Ordering::Release);
+                                self.status_message = lang.t("status_cancelling").to_string();
+                            }
+                            let proxy_lbl = format!(
+                                "{} ({})",
+                                lang.t("status_proxy_running"),
+                                self.proxy_generating_ids.len()
+                            );
+                            ui.label(
+                                RichText::new(proxy_lbl)
+                                    .size(10.5)
+                                    .color(Color32::from_rgb(0xC8, 0xB4, 0x64)),
+                            );
+                            ui.spinner();
                         }
-                        let proxy_lbl = format!(
-                            "{} ({})",
-                            lang.t("status_proxy_running"),
-                            self.proxy_generating_ids.len()
-                        );
-                        ui.label(
-                            RichText::new(proxy_lbl)
-                                .size(10.5)
-                                .color(Color32::from_rgb(0xC8, 0xB4, 0x64)),
-                        );
-                        ui.spinner();
+                        if self.bg_task_active_count > 0 {
+                            if ui.small_button(lang.t("btn_cancel")).clicked() {
+                                self.bg_task_cancel_flag
+                                    .store(true, std::sync::atomic::Ordering::Release);
+                                self.status_message = lang.t("status_cancelling").to_string();
+                            }
+                            let bg_lbl = format!(
+                                "{} ({})",
+                                lang.t("status_bg_running"),
+                                self.bg_task_active_count
+                            );
+                            ui.label(
+                                RichText::new(bg_lbl)
+                                    .size(10.5)
+                                    .color(Color32::from_rgb(0x78, 0xB8, 0xE8)),
+                            );
+                            ui.spinner();
+                        }
                     });
                 }
             });
