@@ -29,7 +29,7 @@ pub use ffmpeg::{
     ChildGuard, CREATE_NO_WINDOW,
 };
 pub use frame_pool::FrameBufferPool;
-pub use proxy::{default_proxy_path_for, generate_proxy};
+pub use proxy::{default_proxy_path_for, generate_proxy, generate_proxy_cancellable};
 pub use scene_detect::{detect_scene_changes, parse_scene_cut_timestamps};
 pub use screen_record::{CaptureSource, ScreenRecorder};
 pub use silence_detect::{

@@ -151,6 +151,7 @@ pub struct TrimApp {
     pub proxy_tx: std::sync::mpsc::Sender<(String, Result<String, String>)>,
     pub proxy_rx: Option<Receiver<(String, Result<String, String>)>>,
     pub proxy_generating_ids: Vec<String>,
+    pub proxy_cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub close_confirm_dialog: CloseConfirmDialog,
     pub confirmed_exit: bool,
     pub last_saved_undo_len: usize,
@@ -313,6 +314,7 @@ impl Default for TrimApp {
             proxy_tx,
             proxy_rx: Some(proxy_rx),
             proxy_generating_ids: Vec::new(),
+            proxy_cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             close_confirm_dialog: CloseConfirmDialog::default(),
             confirmed_exit: false,
             last_saved_undo_len: 0,
@@ -1193,6 +1195,39 @@ impl eframe::App for TrimApp {
                     .size(10.5)
                     .color(Color32::from_rgb(0x85, 0x85, 0x95)),
                 );
+
+                if !self.proxy_generating_ids.is_empty() {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let cancel_lbl = match self.lang() {
+                            Language::Turkish => "İptal",
+                            Language::English => "Cancel",
+                        };
+                        if ui.small_button(cancel_lbl).clicked() {
+                            self.proxy_cancel_flag
+                                .store(true, std::sync::atomic::Ordering::Release);
+                            self.status_message = match self.lang() {
+                                Language::Turkish => {
+                                    "Proxy oluşturma iptal ediliyor...".to_string()
+                                }
+                                Language::English => "Cancelling proxy generation...".to_string(),
+                            };
+                        }
+                        let proxy_lbl = match self.lang() {
+                            Language::Turkish => {
+                                format!("Proxy oluşturuluyor ({})", self.proxy_generating_ids.len())
+                            }
+                            Language::English => {
+                                format!("Generating proxy ({})", self.proxy_generating_ids.len())
+                            }
+                        };
+                        ui.label(
+                            RichText::new(proxy_lbl)
+                                .size(10.5)
+                                .color(Color32::from_rgb(0xC8, 0xB4, 0x64)),
+                        );
+                        ui.spinner();
+                    });
+                }
             });
         });
 

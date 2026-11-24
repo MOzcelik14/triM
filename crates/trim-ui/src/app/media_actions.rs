@@ -52,12 +52,17 @@ impl TrimApp {
         if self.proxy_generating_ids.iter().any(|id| id == media_id) {
             return;
         }
+        if self.proxy_generating_ids.is_empty() {
+            self.proxy_cancel_flag
+                .store(false, std::sync::atomic::Ordering::Release);
+        }
         let m_id = media_id.to_string();
         self.proxy_generating_ids.push(m_id.clone());
         let tx = self.proxy_tx.clone();
+        let cancel_flag = self.proxy_cancel_flag.clone();
 
         std::thread::spawn(move || {
-            let res = trim_media::generate_proxy(&src, &out);
+            let res = trim_media::generate_proxy_cancellable(&src, &out, &cancel_flag);
             let payload = res.map(|_| out.to_string_lossy().to_string());
             let _ = tx.send((m_id, payload));
         });

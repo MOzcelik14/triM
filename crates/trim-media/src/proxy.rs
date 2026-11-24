@@ -1,9 +1,20 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Generates a standardized 720p H.264 proxy file for high-resolution 4K/UHD footage.
 pub fn generate_proxy<P: AsRef<Path>, Q: AsRef<Path>>(
     source_path: P,
     output_path: Q,
+) -> Result<(), String> {
+    let never_cancel = AtomicBool::new(false);
+    generate_proxy_cancellable(source_path, output_path, &never_cancel)
+}
+
+/// Generates a standardized 720p H.264 proxy file with cooperative cancellation via `ChildGuard`.
+pub fn generate_proxy_cancellable<P: AsRef<Path>, Q: AsRef<Path>>(
+    source_path: P,
+    output_path: Q,
+    cancel: &AtomicBool,
 ) -> Result<(), String> {
     let src = source_path.as_ref();
     let out = output_path.as_ref();
@@ -45,14 +56,46 @@ pub fn generate_proxy<P: AsRef<Path>, Q: AsRef<Path>>(
         "128k",
         &tmp_str,
     ]);
+    cmd.stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped());
 
-    let output = cmd
-        .output()
-        .map_err(|e| format!("FFmpeg proxy başlatılamadı: {}", e))?;
-    if !output.status.success() {
+    let mut guard = crate::ffmpeg::ChildGuard::spawn(&mut cmd)
+        .map_err(|e| format!("FFmpeg proxy başlatılamadı (FFmpeg kurulu mu?): {}", e))?;
+    let stderr_opt = guard.take_stderr();
+    let stderr_handle = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut buf = Vec::new();
+        if let Some(err) = stderr_opt {
+            let _ = err.take(16 * 1024).read_to_end(&mut buf);
+        }
+        buf
+    });
+
+    let status = loop {
+        if cancel.load(Ordering::Acquire) {
+            let _ = guard.kill();
+            let _ = std::fs::remove_file(&tmp_out);
+            return Err("Proxy oluşturma iptal edildi.".to_string());
+        }
+        match guard.try_wait() {
+            Ok(Some(st)) => break st,
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Err(e) => {
+                let _ = guard.kill();
+                let _ = std::fs::remove_file(&tmp_out);
+                return Err(format!("Proxy süreci izlenemedi: {}", e));
+            }
+        }
+    };
+
+    let stderr_bytes = stderr_handle.join().unwrap_or_default();
+    if !status.success() {
         let _ = std::fs::remove_file(&tmp_out);
-        let err = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Proxy oluşturma hatası: {}", err.trim()));
+        let err = String::from_utf8_lossy(&stderr_bytes);
+        return Err(format!(
+            "Proxy oluşturma hatası (medya bozuk olabilir): {}",
+            err.trim()
+        ));
     }
 
     if !tmp_out.exists() {
@@ -60,7 +103,7 @@ pub fn generate_proxy<P: AsRef<Path>, Q: AsRef<Path>>(
     }
     std::fs::rename(&tmp_out, out).map_err(|e| {
         let _ = std::fs::remove_file(&tmp_out);
-        format!("Proxy dosyası taşınamadı: {}", e)
+        format!("Proxy dosyası taşınamadı (disk dolu veya izin yok?): {}", e)
     })?;
 
     Ok(())
