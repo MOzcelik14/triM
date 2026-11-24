@@ -2048,17 +2048,24 @@ fn draw_clip_onto_canvas(
         let src_raw = frame.as_raw();
         let dst_raw: &mut [u8] = canvas.as_mut();
 
-        for i in (0..src_raw.len()).step_by(4) {
-            let sa = (src_raw[i + 3] as f32 / 255.0) * alpha;
-            let inv_sa = 1.0 - sa;
-            let dr = dst_raw[i] as f32;
-            let dg = dst_raw[i + 1] as f32;
-            let db = dst_raw[i + 2] as f32;
+        if alpha >= 0.999 && src_raw.as_chunks::<4>().0.iter().all(|p| p[3] == 255) {
+            dst_raw.copy_from_slice(src_raw);
+            return;
+        }
 
-            dst_raw[i] = ((src_raw[i] as f32) * sa + dr * inv_sa).round() as u8;
-            dst_raw[i + 1] = ((src_raw[i + 1] as f32) * sa + dg * inv_sa).round() as u8;
-            dst_raw[i + 2] = ((src_raw[i + 2] as f32) * sa + db * inv_sa).round() as u8;
-            dst_raw[i + 3] = 255;
+        let alpha_q8 = (alpha.clamp(0.0, 1.0) * 256.0).round() as u32;
+        for (dst, src) in dst_raw
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(src_raw.as_chunks::<4>().0.iter())
+        {
+            let sa = (src[3] as u32 * alpha_q8) >> 8;
+            let inv_sa = 256 - sa;
+            dst[0] = ((src[0] as u32 * sa + dst[0] as u32 * inv_sa + 128) >> 8) as u8;
+            dst[1] = ((src[1] as u32 * sa + dst[1] as u32 * inv_sa + 128) >> 8) as u8;
+            dst[2] = ((src[2] as u32 * sa + dst[2] as u32 * inv_sa + 128) >> 8) as u8;
+            dst[3] = 255;
         }
         return;
     }

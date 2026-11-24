@@ -348,6 +348,97 @@ impl TrackedChildPool {
     }
 }
 
+/// Hardware decode backend detected via functional runtime probing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HwAccelBackend {
+    None,
+    Vaapi,
+    Cuda,
+    Vulkan,
+}
+
+impl HwAccelBackend {
+    pub fn as_ffmpeg_flag(self) -> Option<&'static str> {
+        match self {
+            Self::None => None,
+            Self::Vaapi => Some("vaapi"),
+            Self::Cuda => Some("cuda"),
+            Self::Vulkan => Some("vulkan"),
+        }
+    }
+}
+
+/// Probes FFmpeg hardware decode backends (`vaapi`, `cuda`, `vulkan`) at runtime using a
+/// short bounded functional decode test. Silently falls back to `HwAccelBackend::None` on
+/// any probe failure and logs the fallback reason.
+pub fn probe_working_hwaccel() -> HwAccelBackend {
+    static CACHED: std::sync::OnceLock<HwAccelBackend> = std::sync::OnceLock::new();
+    *CACHED.get_or_init(probe_working_hwaccel_uncached)
+}
+
+pub fn probe_working_hwaccel_uncached() -> HwAccelBackend {
+    if !is_ffmpeg_available() {
+        return HwAccelBackend::None;
+    }
+    let mut list_cmd = ffmpeg_cmd();
+    list_cmd.args(["-v", "error", "-hwaccels"]);
+    let Ok(list_out) =
+        run_command_bounded(&mut list_cmd, 16 * 1024, std::time::Duration::from_secs(2))
+    else {
+        log::debug!("ffmpeg -hwaccels failed; using software decode");
+        return HwAccelBackend::None;
+    };
+    let supported = String::from_utf8_lossy(&list_out.stdout).to_lowercase();
+
+    for backend in [
+        HwAccelBackend::Vaapi,
+        HwAccelBackend::Cuda,
+        HwAccelBackend::Vulkan,
+    ] {
+        let Some(flag) = backend.as_ffmpeg_flag() else {
+            continue;
+        };
+        if !supported.lines().any(|l| l.trim() == flag) {
+            continue;
+        }
+        let mut probe_cmd = ffmpeg_cmd();
+        probe_cmd.args([
+            "-v",
+            "error",
+            "-hwaccel",
+            flag,
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x64:rate=25:duration=0.1",
+            "-frames:v",
+            "1",
+            "-f",
+            "null",
+            "-",
+        ]);
+        match run_command_bounded(&mut probe_cmd, 8 * 1024, std::time::Duration::from_secs(3)) {
+            Ok(out) if out.status.success() => {
+                log::info!("Runtime hwaccel probe succeeded: {:?}", backend);
+                return backend;
+            }
+            Ok(out) => {
+                log::debug!(
+                    "Runtime hwaccel probe failed for {:?} (falling back to software): {}",
+                    backend,
+                    String::from_utf8_lossy(&out.stderr).trim()
+                );
+            }
+            Err(e) => {
+                log::debug!("Runtime hwaccel probe error for {:?}: {}", backend, e);
+            }
+        }
+    }
+
+    log::info!("No working hwaccel backend found; using software decode");
+    HwAccelBackend::None
+}
+
 /// Runs a subprocess with bounded stdout/stderr capture (`max_bytes` per stream) and a hard timeout.
 /// Prevents OOM and UI/worker hangs on corrupt or adversarial media files.
 pub fn run_command_bounded(
@@ -757,5 +848,12 @@ mod tests {
         }
         #[cfg(not(target_os = "linux"))]
         let _ = pid;
+    }
+
+    #[test]
+    fn test_probe_working_hwaccel_never_panics_and_caches() {
+        let first = probe_working_hwaccel();
+        let second = probe_working_hwaccel();
+        assert_eq!(first, second);
     }
 }

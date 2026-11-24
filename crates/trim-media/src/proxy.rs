@@ -109,6 +109,16 @@ pub fn generate_proxy_cancellable<P: AsRef<Path>, Q: AsRef<Path>>(
     Ok(())
 }
 
+/// Policy deciding whether preview should route through a 720p proxy file.
+/// Uses proxy when `use_proxies` is enabled and a valid proxy exists, or automatically
+/// recommends proxy for UHD (>= 2560x1440) sources when a proxy is available.
+pub fn should_use_proxy(width: u32, height: u32, use_proxies: bool, has_proxy: bool) -> bool {
+    if !has_proxy {
+        return false;
+    }
+    use_proxies || width >= 2560 || height >= 1440
+}
+
 /// Computes the default proxy cache path for a given media file.
 pub fn default_proxy_path_for<P: AsRef<Path>>(source_path: P) -> PathBuf {
     let p = source_path.as_ref();
@@ -140,5 +150,13 @@ mod tests {
         let s = proxy_path.to_string_lossy();
         assert!(s.contains("sample_4k_footage"));
         assert!(s.ends_with("_720p.mp4"));
+    }
+
+    #[test]
+    fn test_should_use_proxy_policy() {
+        assert!(!should_use_proxy(3840, 2160, true, false));
+        assert!(should_use_proxy(1920, 1080, true, true));
+        assert!(!should_use_proxy(1920, 1080, false, true));
+        assert!(should_use_proxy(3840, 2160, false, true));
     }
 }

@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""Compare two perf_bench JSON reports and flag regressions above threshold%."""
+import argparse
+import json
+import sys
+
+
+def load_metrics(path: str) -> dict[str, tuple[float, bool]]:
+    data = json.load(open(path, encoding="utf-8"))
+    out: dict[str, tuple[float, bool]] = {}
+    # (value, higher_is_better)
+    out["spawn_ms"] = (data["spawn_overhead"]["process_spawn_ms"]["median"], False)
+    out["first_frame_ms"] = (data["spawn_overhead"]["first_frame_ms"]["median"], False)
+    out["unpaced_fps"] = (data["unpaced_decode"]["fps"]["median"], True)
+    out["cold_seek_ms"] = (data["seek_comparison"]["cold_seek_miss_ms"]["median"], False)
+    out["hot_seek_ms"] = (data["seek_comparison"]["hot_seek_miss_ms"]["median"], False)
+    out["scrub_miss_ms"] = (data["seek_comparison"]["scrub_forward_miss_ms"]["median"], False)
+    for comp in data.get("compositing", []):
+        out[f"comp_{comp['tracks']}t_ms"] = (comp["ms_per_frame"]["median"], False)
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Compare baseline and candidate perf_bench JSON files")
+    ap.add_argument("baseline", help="Baseline JSON path")
+    ap.add_argument("candidate", help="Candidate JSON path")
+    ap.add_argument("--threshold", type=float, default=20.0, help="Regression threshold %% (default: 20)")
+    args = ap.parse_args()
+
+    base = load_metrics(args.baseline)
+    cand = load_metrics(args.candidate)
+
+    regressions = []
+    print(f"| Metric | Baseline | Candidate | Delta | Status |")
+    print(f"|---|---:|---:|---:|---|")
+    for k, (b_val, higher_better) in base.items():
+        if k not in cand or b_val <= 0:
+            continue
+        c_val = cand[k][0]
+        pct = ((c_val - b_val) / b_val) * 100.0
+        regressed = (pct < -args.threshold) if higher_better else (pct > args.threshold)
+        status = "REGRESSION" if regressed else "OK"
+        if regressed:
+            regressions.append((k, pct))
+        print(f"| {k} | {b_val:.3f} | {c_val:.3f} | {pct:+.1f}% | {status} |")
+
+    if regressions:
+        print(f"\nFAIL: {len(regressions)} regression(s) > {args.threshold:.1f}%", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
