@@ -176,6 +176,20 @@ pub fn is_ffprobe_available() -> bool {
     avail
 }
 
+/// Checks whether the `libx264` encoder is compiled into the active `ffmpeg` binary
+/// (e.g. Fedora's `ffmpeg-free` omits `libx264`).
+pub fn is_libx264_available() -> bool {
+    static LIBX264_AVAIL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *LIBX264_AVAIL.get_or_init(|| {
+        ffmpeg_cmd()
+            .args(["-v", "quiet", "-encoders"])
+            .output()
+            .is_ok_and(|o| {
+                o.status.success() && String::from_utf8_lossy(&o.stdout).contains("libx264")
+            })
+    })
+}
+
 /// Continuously drains a child process's stderr in a dedicated background worker
 /// to prevent OS pipe buffer exhaustion (e.g. 64KB Linux default) and avoid process deadlocks.
 pub fn drain_stderr(stderr: Option<std::process::ChildStderr>, thread_name: &'static str) {

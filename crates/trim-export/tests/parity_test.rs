@@ -4,7 +4,7 @@ use trim_media::ffmpeg::{ffmpeg_cmd, is_ffmpeg_available};
 
 #[test]
 fn test_preview_export_color_parity_within_measured_threshold() {
-    if !is_ffmpeg_available() {
+    if !is_ffmpeg_available() || !trim_media::ffmpeg::is_libx264_available() {
         return;
     }
 
@@ -128,7 +128,7 @@ fn test_preview_export_color_parity_within_measured_threshold() {
 
 #[test]
 fn test_roll_and_slide_trim_export_parity() {
-    if !is_ffmpeg_available() {
+    if !is_ffmpeg_available() || !trim_media::ffmpeg::is_libx264_available() {
         return;
     }
 

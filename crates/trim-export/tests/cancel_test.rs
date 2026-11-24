@@ -29,7 +29,7 @@ fn processes_mentioning(needle: &str) -> Vec<u32> {
 
 #[test]
 fn test_export_cancel_kills_ffmpeg_and_removes_partial_output() {
-    if !is_ffmpeg_available() {
+    if !is_ffmpeg_available() || !trim_media::ffmpeg::is_libx264_available() {
         return;
     }
     let tmp = tempfile::tempdir().expect("tempdir");

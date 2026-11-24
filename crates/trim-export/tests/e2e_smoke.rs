@@ -4,7 +4,10 @@ use trim_media::ffmpeg::{ffmpeg_cmd, ffprobe_cmd, is_ffmpeg_available, is_ffprob
 
 #[test]
 fn test_headless_e2e_two_clips_transition_and_audio_smoke() {
-    if !is_ffmpeg_available() || !is_ffprobe_available() {
+    if !is_ffmpeg_available()
+        || !is_ffprobe_available()
+        || !trim_media::ffmpeg::is_libx264_available()
+    {
         return;
     }
 

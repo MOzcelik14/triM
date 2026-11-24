@@ -612,7 +612,7 @@ fn test_cpu_blend_modes_masks_and_adjustment_layer() {
 #[cfg(target_os = "linux")]
 #[test]
 fn test_playback_streamer_panic_cleans_up_ffmpeg_child() {
-    if !crate::ffmpeg::is_ffmpeg_available() {
+    if !crate::ffmpeg::is_ffmpeg_available() || !crate::ffmpeg::is_libx264_available() {
         return;
     }
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -717,7 +717,7 @@ fn test_select_closest_frame_24_30_60_fps_no_adjacent_mismatch() {
 
 #[test]
 fn test_persistent_seek_decoder_no_stale_frame_on_forward_scrub() {
-    if !crate::ffmpeg::is_ffmpeg_available() {
+    if !crate::ffmpeg::is_ffmpeg_available() || !crate::ffmpeg::is_libx264_available() {
         return;
     }
     let tmp = tempfile::tempdir().expect("tempdir");
