@@ -477,6 +477,21 @@ impl PlaybackStreamer {
         self.current_frame.clone()
     }
 
+    /// Returns the current frame alongside its decoded presentation timestamp (PTS).
+    /// Shares the underlying `Arc<RgbaImage>` without copying pixel buffers.
+    pub fn get_frame_for_time_with_pts(
+        &mut self,
+        target_source_time: f64,
+    ) -> Option<(f64, Arc<RgbaImage>)> {
+        let frame = self.get_frame_for_time(target_source_time)?;
+        Some((self.last_pts, frame))
+    }
+
+    /// Returns the PTS of the currently held frame.
+    pub fn current_frame_pts(&self) -> f64 {
+        self.last_pts
+    }
+
     /// Stops the background streaming process and immediately terminates any active FFmpeg child process.
     pub fn stop(&mut self) {
         if let Some(flag) = &self.stop_flag {
@@ -533,6 +548,37 @@ pub struct SeekResult {
     pub frame: Option<Arc<RgbaImage>>,
 }
 
+/// Computes frame matching tolerance based on frame duration (`0.5 / fps`),
+/// clamped to `[0.004, 0.030]` seconds so high-FPS streams never accept adjacent frames
+/// and low-FPS/VFR streams remain safely bounded.
+pub fn frame_tolerance_for_fps(fps: f64) -> f64 {
+    let safe_fps = if fps.is_finite() && fps > 0.0 {
+        fps
+    } else {
+        30.0
+    };
+    (0.5 / safe_fps).clamp(0.004, 0.030)
+}
+
+/// Selects the frame whose PTS is closest to `target_time` within `tolerance`.
+pub fn select_closest_frame_within_tolerance<'a, T>(
+    frames: impl Iterator<Item = &'a (f64, T)>,
+    target_time: f64,
+    tolerance: f64,
+) -> Option<(f64, &'a T)> {
+    let mut best: Option<(f64, f64, &'a T)> = None;
+    for (pts, item) in frames {
+        let diff = (*pts - target_time).abs();
+        if diff <= tolerance {
+            match best {
+                Some((best_diff, _, _)) if diff >= best_diff => {}
+                _ => best = Some((diff, *pts, item)),
+            }
+        }
+    }
+    best.map(|(_, pts, item)| (pts, item))
+}
+
 /// Persistent single-stream seek decoder maintaining temporal locality during timeline scrubbing.
 ///
 /// Instead of spawning a brand-new FFmpeg process for every scrub tick (cold seek ~140ms overhead),
@@ -544,6 +590,7 @@ pub struct PersistentSeekDecoder {
     active_path: String,
     active_w: u32,
     active_h: u32,
+    active_fps: f64,
     last_requested_time: f64,
     recent_frames: std::collections::VecDeque<(f64, Arc<RgbaImage>)>,
 }
@@ -561,16 +608,17 @@ impl PersistentSeekDecoder {
             active_path: String::new(),
             active_w: 0,
             active_h: 0,
+            active_fps: 30.0,
             last_requested_time: -1.0,
             recent_frames: std::collections::VecDeque::with_capacity(32),
         }
     }
 
-    fn push_recent(&mut self, time: f64, frame: Arc<RgbaImage>) {
+    fn push_recent(&mut self, pts: f64, frame: Arc<RgbaImage>) {
         if self.recent_frames.len() >= 30 {
             self.recent_frames.pop_front();
         }
-        self.recent_frames.push_back((time, frame));
+        self.recent_frames.push_back((pts, frame));
     }
 
     pub fn seek(
@@ -580,9 +628,34 @@ impl PersistentSeekDecoder {
         target_w: u32,
         target_h: u32,
     ) -> Option<Arc<RgbaImage>> {
-        // 1. Check recent ring buffer for backward seeks or exact cache hit (tolerance ~1.5 frames)
-        for (pts, frame) in self.recent_frames.iter().rev() {
-            if (*pts - time).abs() <= 0.045 {
+        let fps = if self.active_path == path && self.active_fps > 0.0 {
+            self.active_fps
+        } else {
+            30.0
+        };
+        self.seek_with_fps(path, time, fps, target_w, target_h)
+    }
+
+    pub fn seek_with_fps(
+        &mut self,
+        path: &str,
+        time: f64,
+        fps: f64,
+        target_w: u32,
+        target_h: u32,
+    ) -> Option<Arc<RgbaImage>> {
+        let effective_fps = if fps.is_finite() && fps > 0.0 {
+            fps
+        } else {
+            30.0
+        };
+        let tol = frame_tolerance_for_fps(effective_fps);
+
+        // 1. Check recent ring buffer for closest frame within FPS-scaled tolerance
+        if self.active_path == path && self.active_w == target_w && self.active_h == target_h {
+            if let Some((_, frame)) =
+                select_closest_frame_within_tolerance(self.recent_frames.iter(), time, tol)
+            {
                 self.last_requested_time = time;
                 return Some(frame.clone());
             }
@@ -593,16 +666,19 @@ impl PersistentSeekDecoder {
 
         // 2. Check forward reference locality: if same clip and advancing within 1.5s forward,
         // read forward from the existing pipe without restarting FFmpeg.
+        // Only return once the stream actually reaches `time` within `tol` (never return stale previous frame).
         if is_same_clip
             && time >= self.last_requested_time
             && (time - self.last_requested_time) <= 1.5
         {
             let deadline = std::time::Instant::now() + std::time::Duration::from_millis(60);
             while std::time::Instant::now() < deadline {
-                if let Some(frame) = self.streamer.get_frame_for_time(time) {
-                    self.last_requested_time = time;
-                    self.push_recent(time, frame.clone());
-                    return Some(frame);
+                if let Some((pts, frame)) = self.streamer.get_frame_for_time_with_pts(time) {
+                    if (pts - time).abs() <= tol || pts >= time - tol {
+                        self.last_requested_time = time;
+                        self.push_recent(pts, frame.clone());
+                        return Some(frame);
+                    }
                 }
                 std::thread::sleep(std::time::Duration::from_millis(1));
             }
@@ -614,7 +690,7 @@ impl PersistentSeekDecoder {
             "seek_stream",
             path,
             time,
-            30.0,
+            effective_fps,
             false,
             0.0,
             target_w,
@@ -623,13 +699,14 @@ impl PersistentSeekDecoder {
         self.active_path = path.to_string();
         self.active_w = target_w;
         self.active_h = target_h;
+        self.active_fps = effective_fps;
         self.recent_frames.clear();
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_millis(350);
         while std::time::Instant::now() < deadline {
-            if let Some(frame) = self.streamer.get_frame_for_time(time) {
+            if let Some((pts, frame)) = self.streamer.get_frame_for_time_with_pts(time) {
                 self.last_requested_time = time;
-                self.push_recent(time, frame.clone());
+                self.push_recent(pts, frame.clone());
                 return Some(frame);
             }
             std::thread::sleep(std::time::Duration::from_millis(2));
@@ -3201,5 +3278,91 @@ LUT_3D_SIZE 2
                 "FFmpeg child PID {pid} survived panic/unwind!"
             );
         }
+    }
+
+    #[test]
+    fn test_frame_tolerance_scales_with_fps_and_bounds_vfr() {
+        let tol_24 = frame_tolerance_for_fps(24.0);
+        let tol_30 = frame_tolerance_for_fps(30.0);
+        let tol_60 = frame_tolerance_for_fps(60.0);
+        assert!((tol_24 - 0.5 / 24.0).abs() < 1e-6);
+        assert!((tol_30 - 0.5 / 30.0).abs() < 1e-6);
+        assert!((tol_60 - 0.5 / 60.0).abs() < 1e-6);
+        // Must always be strictly smaller than 1 frame period
+        assert!(tol_24 < 1.0 / 24.0);
+        assert!(tol_30 < 1.0 / 30.0);
+        assert!(tol_60 < 1.0 / 60.0);
+        // VFR / extreme bounds
+        assert!((frame_tolerance_for_fps(5.0) - 0.030).abs() < 1e-6);
+        assert!((frame_tolerance_for_fps(240.0) - 0.004).abs() < 1e-6);
+        assert!((frame_tolerance_for_fps(f64::NAN) - 0.5 / 30.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_select_closest_frame_24_30_60_fps_no_adjacent_mismatch() {
+        for fps in [24.0_f64, 30.0_f64, 60.0_f64] {
+            let step = 1.0 / fps;
+            let tol = frame_tolerance_for_fps(fps);
+            let frames: Vec<(f64, usize)> = (0..10).map(|i| (i as f64 * step, i)).collect();
+
+            // Exact and near-exact requests select the closest frame
+            let target_3 = 3.0 * step + 0.2 * step;
+            let (pts, idx) =
+                select_closest_frame_within_tolerance(frames.iter(), target_3, tol).unwrap();
+            assert_eq!(*idx, 3, "fps={fps} should pick frame 3");
+            assert!((pts - 3.0 * step).abs() < 1e-9);
+
+            // Requesting 1 full frame step away from frame 0 must NOT pick frame 0
+            let only_frame_0 = [(0.0, 0usize)];
+            assert!(
+                select_closest_frame_within_tolerance(only_frame_0.iter(), step, tol).is_none(),
+                "fps={fps}: adjacent frame at +1 frame period must not match frame 0"
+            );
+        }
+    }
+
+    #[test]
+    fn test_persistent_seek_decoder_no_stale_frame_on_forward_scrub() {
+        if !crate::ffmpeg::is_ffmpeg_available() {
+            return;
+        }
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let vid_path = tmp.path().join("scrub_distinct.mp4");
+        let gen = crate::ffmpeg::ffmpeg_cmd()
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=duration=3:size=160x90:rate=30",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&vid_path)
+            .output()
+            .expect("spawn ffmpeg testsrc");
+        assert!(gen.status.success(), "testsrc generation failed");
+
+        let vid_str = vid_path.to_string_lossy().to_string();
+        let mut decoder = PersistentSeekDecoder::new();
+        let f0 = decoder
+            .seek_with_fps(&vid_str, 0.2, 30.0, 160, 90)
+            .expect("frame at 0.2s");
+        let f1 = decoder
+            .seek_with_fps(&vid_str, 0.8, 30.0, 160, 90)
+            .expect("frame at 0.8s");
+        // Verify Arc sharing (zero-copy) on cached re-query at 0.8s
+        let f1_cached = decoder
+            .seek_with_fps(&vid_str, 0.8, 30.0, 160, 90)
+            .expect("cached frame at 0.8s");
+        assert!(Arc::ptr_eq(&f1, &f1_cached));
+        // testsrc counter changes visually across 0.6s, so f0 and f1 must differ
+        assert_ne!(
+            f0.as_raw(),
+            f1.as_raw(),
+            "forward scrub returned stale frame!"
+        );
     }
 }
