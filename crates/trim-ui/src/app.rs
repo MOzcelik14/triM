@@ -28,6 +28,7 @@ use trim_media::{
 use trim_project::AutosaveManager;
 
 pub mod background_poll;
+pub mod canvas_dispatch;
 pub mod dialogs_dispatch;
 pub mod media_actions;
 pub mod monitors;
@@ -36,8 +37,10 @@ pub mod project_io;
 pub mod shortcuts;
 pub mod side_panels;
 pub mod timeline_actions;
+pub mod timeline_header;
 pub mod timeline_panel;
 pub mod top_header;
+pub mod track_headers;
 
 pub struct ActiveVoiceover {
     pub track_id: String,
