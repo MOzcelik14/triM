@@ -11,9 +11,9 @@ use trim_core::media::MediaType;
 use trim_core::project::Project;
 use trim_core::track::TrackType;
 
-#[path = "inspector/color_card.rs"]
+#[path = "inspector/color_card/mod.rs"]
 mod color_card;
-#[path = "inspector/media_cards.rs"]
+#[path = "inspector/media_cards/mod.rs"]
 mod media_cards;
 #[path = "inspector/transform_cards.rs"]
 mod transform_cards;
