@@ -11,6 +11,28 @@ use trim_core::time::seconds_to_timecode;
 use super::TrimApp;
 
 impl TrimApp {
+    pub fn create_subclip_from_source_monitor(&mut self) {
+        let Some(media_id) = self.source_state.media_id.clone() else {
+            return;
+        };
+        let Some(media) = self.project.get_media(&media_id).cloned() else {
+            return;
+        };
+        let sin = self.source_state.mark_in.unwrap_or(0.0);
+        let sout = self.source_state.mark_out.unwrap_or(media.duration);
+        let idx = self.project.subclips.len() + 1;
+        let name = format!("{} [Alt-Klip {}]", media.name, idx);
+        if let Some(sub) = self
+            .project
+            .create_subclip_from_range(&media_id, name, sin, sout)
+        {
+            self.status_message = format!(
+                "✂ Alt-Klip oluşturuldu: {} ({:.2}s – {:.2}s)",
+                sub.name, sub.source_in, sub.source_out
+            );
+        }
+    }
+
     pub fn render_source_monitor(&mut self, source_ui: &mut egui::Ui) {
         let source_media = self
             .source_state
@@ -112,6 +134,7 @@ impl TrimApp {
                 }
                 MonitorAction::InsertToTimeline => self.insert_source_to_timeline(false),
                 MonitorAction::OverwriteToTimeline => self.insert_source_to_timeline(true),
+                MonitorAction::CreateSubclip => self.create_subclip_from_source_monitor(),
                 MonitorAction::Seek(t) => {
                     if self.source_state.is_playing {
                         self.source_state.is_playing = false;

@@ -59,6 +59,45 @@ pub struct MediaItem {
     pub proxy_path: Option<String>,
     #[serde(default)]
     pub bin_id: Option<String>,
+    /// Optional SMPTE timecode start string (e.g. "01:00:05:12") from container metadata.
+    #[serde(default)]
+    pub timecode_start: Option<String>,
+}
+
+/// Independent trimmed subclip stored in the project's Media Pool referencing a parent `MediaItem`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Subclip {
+    pub id: String,
+    pub name: String,
+    pub parent_media_id: String,
+    pub source_in: f64,
+    pub source_out: f64,
+    #[serde(default)]
+    pub bin_id: Option<String>,
+}
+
+impl Subclip {
+    pub fn new(
+        name: impl Into<String>,
+        parent_media_id: impl Into<String>,
+        source_in: f64,
+        source_out: f64,
+    ) -> Self {
+        let sin = source_in.max(0.0);
+        let sout = source_out.max(sin + 0.04);
+        Self {
+            id: Uuid::new_v4().to_string(),
+            name: name.into(),
+            parent_media_id: parent_media_id.into(),
+            source_in: sin,
+            source_out: sout,
+            bin_id: None,
+        }
+    }
+
+    pub fn duration(&self) -> f64 {
+        (self.source_out - self.source_in).max(0.0)
+    }
 }
 
 impl Default for MediaItem {
@@ -80,6 +119,7 @@ impl Default for MediaItem {
             date_added: 0.0,
             proxy_path: None,
             bin_id: None,
+            timecode_start: None,
         }
     }
 }

@@ -41,7 +41,7 @@ pub use keyframe::{interpolate_keyframes, Interpolation, Keyframe};
 pub use lru::LruCache;
 pub use marker::Marker;
 pub use mask::{Mask, MaskShape, MaskTarget, MaskVertex};
-pub use media::{MediaItem, MediaType};
+pub use media::{MediaItem, MediaType, Subclip};
 pub use preferences::UserPreferences;
 pub use project::{Project, ProjectSettings};
 pub use scopes::{

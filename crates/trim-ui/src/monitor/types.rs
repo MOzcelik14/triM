@@ -18,6 +18,7 @@ pub enum MonitorAction {
     GoToOut,
     InsertToTimeline,
     OverwriteToTimeline,
+    CreateSubclip,
     ExportFrame,
     Seek(f64),
     ToggleSafeZones,

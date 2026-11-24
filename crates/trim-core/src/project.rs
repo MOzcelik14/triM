@@ -76,6 +76,8 @@ pub struct Project {
     #[serde(default)]
     pub media_pool: HashMap<String, MediaItem>,
     #[serde(default)]
+    pub subclips: HashMap<String, crate::media::Subclip>,
+    #[serde(default)]
     pub bins: Vec<MediaBinFolder>,
     #[serde(default)]
     pub timeline: TimelineModel,
@@ -103,6 +105,7 @@ impl Default for Project {
             version: 1,
             settings: ProjectSettings::default(),
             media_pool: HashMap::new(),
+            subclips: HashMap::new(),
             bins: Vec::new(),
             timeline: TimelineModel::default(),
             sequences: Vec::new(),
@@ -216,6 +219,35 @@ impl Project {
             seq.name = new_name.into();
             self.mark_dirty();
         }
+    }
+
+    /// Creates a new `Subclip` in `self.subclips` referencing `media_id`, clamping `[source_in, source_out]`
+    /// to the parent media's duration and enforcing a minimum 0.04s span.
+    pub fn create_subclip_from_range(
+        &mut self,
+        media_id: &str,
+        name: impl Into<String>,
+        source_in: f64,
+        source_out: f64,
+    ) -> Option<crate::media::Subclip> {
+        let media = self.media_pool.get(media_id)?;
+        let max_dur = media.duration.max(0.04);
+        let sin = source_in.clamp(0.0, (max_dur - 0.04).max(0.0));
+        let sout = source_out.clamp(sin + 0.04, max_dur);
+        let mut sub = crate::media::Subclip::new(name, media_id, sin, sout);
+        sub.bin_id = media.bin_id.clone();
+        self.subclips.insert(sub.id.clone(), sub.clone());
+        self.mark_dirty();
+        Some(sub)
+    }
+
+    /// Removes a subclip by ID.
+    pub fn remove_subclip(&mut self, id: &str) -> Option<crate::media::Subclip> {
+        let removed = self.subclips.remove(id);
+        if removed.is_some() {
+            self.mark_dirty();
+        }
+        removed
     }
 
     /// Duplicates a sequence with a new ID.
@@ -745,5 +777,35 @@ mod tests {
 
         let future_v99 = r#"{"format":"trim","version":99,"settings":{"name":"Future"}}"#;
         assert!(Project::from_json(future_v99).is_err());
+    }
+
+    #[test]
+    fn test_subclip_creation_clamping_and_legacy_json_compat() {
+        let mut proj = Project::new("SubclipTest");
+        let mut media = MediaItem::new("/tmp/clip.mp4");
+        media.duration = 10.0;
+        let mid = media.id.clone();
+        proj.add_media(media);
+
+        // Out-of-bounds range is clamped cleanly to [0.0, 10.0]
+        let sub = proj
+            .create_subclip_from_range(&mid, "Intro Bite", -2.0, 15.0)
+            .expect("create subclip");
+        assert!((sub.source_in - 0.0).abs() < 1e-6);
+        assert!((sub.source_out - 10.0).abs() < 1e-6);
+        assert_eq!(proj.subclips.len(), 1);
+
+        // Unknown media_id returns None
+        assert!(proj
+            .create_subclip_from_range("missing", "Bad", 0.0, 1.0)
+            .is_none());
+
+        // JSON round-trip preserves subclips and timecode_start
+        let json = proj.to_json().expect("serialize");
+        let restored = Project::from_json(&json).expect("deserialize");
+        assert_eq!(restored.subclips.len(), 1);
+        let r_sub = restored.subclips.get(&sub.id).unwrap();
+        assert_eq!(r_sub.name, "Intro Bite");
+        assert_eq!(r_sub.parent_media_id, mid);
     }
 }

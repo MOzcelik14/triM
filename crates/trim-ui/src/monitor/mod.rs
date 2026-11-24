@@ -1187,6 +1187,21 @@ impl<'a> MonitorWidget<'a> {
                         {
                             action = Some(MonitorAction::OverwriteToTimeline);
                         }
+
+                        let btn_subclip = Button::new(
+                            RichText::new("✂ Alt-Klip")
+                                .size(11.0)
+                                .color(Color32::from_rgb(0xe8, 0xb8, 0x58)),
+                        )
+                        .min_size(Vec2::new(28.0, 24.0))
+                        .fill(Color32::from_rgb(0x2a, 0x24, 0x18));
+                        if ui
+                            .add(btn_subclip)
+                            .on_hover_text("In/Out aralığından Medya Havuzuna Alt-Klip (Subclip) oluştur")
+                            .clicked()
+                        {
+                            action = Some(MonitorAction::CreateSubclip);
+                        }
                     }
                     MonitorMode::Program => {
                         // Export Frame camera icon

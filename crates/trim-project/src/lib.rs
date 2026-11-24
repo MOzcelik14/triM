@@ -773,6 +773,39 @@ mod tests {
     }
 
     #[test]
+    fn test_subclip_and_timecode_project_roundtrip() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("subclip_tc.trim");
+        let mut proj = Project::new("Subclip Roundtrip");
+        let mut media = trim_core::MediaItem::new("/tmp/cam_a.mov");
+        media.duration = 20.0;
+        media.timecode_start = Some("01:12:00:00".to_string());
+        let mid = media.id.clone();
+        proj.add_media(media);
+
+        let sub = proj
+            .create_subclip_from_range(&mid, "Take 1", 3.5, 9.5)
+            .expect("create subclip");
+        save_project(&mut proj, &path).unwrap();
+
+        let loaded = load_project(&path).unwrap();
+        assert_eq!(loaded.subclips.len(), 1);
+        let r_sub = loaded.subclips.get(&sub.id).unwrap();
+        assert_eq!(r_sub.name, "Take 1");
+        assert!((r_sub.source_in - 3.5).abs() < 1e-6);
+        assert!((r_sub.source_out - 9.5).abs() < 1e-6);
+        assert_eq!(
+            loaded
+                .media_pool
+                .get(&mid)
+                .unwrap()
+                .timecode_start
+                .as_deref(),
+            Some("01:12:00:00")
+        );
+    }
+
+    #[test]
     fn test_autosave_lifecycle() {
         let dir = tempdir().unwrap();
         let mgr = AutosaveManager::new(dir.path().to_path_buf());
@@ -945,6 +978,7 @@ mod tests {
             date_added: 0.0,
             proxy_path: None,
             bin_id: None,
+            timecode_start: None,
         };
         let m2 = MediaItem {
             id: "m_cam_b".into(),
@@ -963,6 +997,7 @@ mod tests {
             date_added: 0.0,
             proxy_path: None,
             bin_id: None,
+            timecode_start: None,
         };
         let m3 = MediaItem {
             id: "m_audio".into(),
@@ -981,6 +1016,7 @@ mod tests {
             date_added: 0.0,
             proxy_path: None,
             bin_id: None,
+            timecode_start: None,
         };
 
         proj.media_pool.insert(m1.id.clone(), m1);
@@ -1061,6 +1097,7 @@ mod tests {
             date_added: 0.0,
             proxy_path: None,
             bin_id: None,
+            timecode_start: None,
         };
         proj_vert.media_pool.insert(m_v.id.clone(), m_v);
         let mut clip_reel = Clip::new("m_reel", 0.0, 8.0);
