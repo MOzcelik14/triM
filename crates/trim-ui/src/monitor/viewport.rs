@@ -1,7 +1,7 @@
-use super::overlays::{
-    draw_button, draw_corner_guides, draw_safe_zones, draw_text_overlays_on_rect, fit_aspect,
-    handle_mask_overlay_interaction,
+use super::guides_and_masks::{
+    draw_button, draw_corner_guides, draw_safe_zones, fit_aspect, handle_mask_overlay_interaction,
 };
+use super::overlays::draw_text_overlays_on_rect;
 use super::{overlay_hit_rect, ActiveTextOverlay, MonitorAction, MonitorMode, MonitorWidget};
 use egui::{Color32, Pos2, Rect, Response, Stroke, Ui, Vec2};
 

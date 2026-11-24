@@ -3,6 +3,7 @@
 
 use egui::{Color32, Pos2, Rect, Response, Sense, Stroke, TextureHandle, Ui, Vec2};
 
+mod guides_and_masks;
 mod overlays;
 mod transport;
 mod types;

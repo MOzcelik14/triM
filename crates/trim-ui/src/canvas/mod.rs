@@ -1,5 +1,6 @@
 //! Interactive timeline canvas rendering tracks, clips, waveforms, fades, keyframes, playhead and editing gestures.
 
+mod gaps;
 mod geometry;
 mod input_drag;
 mod input_press;
