@@ -602,7 +602,7 @@ fn test_adversarial_drawtext_and_path_escaping_with_ffmpeg() {
     )
     .expect("build adversarial filtergraph");
 
-    if trim_media::is_ffmpeg_available() {
+    if trim_media::is_ffmpeg_available() && super::has_libx264() {
         let fg_idx = cmd_args
             .iter()
             .position(|a| a == "-filter_complex")

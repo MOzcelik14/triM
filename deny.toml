@@ -8,6 +8,7 @@ unmaintained = "workspace"
 ignore = [
     # quick-xml 0.30.0 pinned by zbus_xml 4.0.0 (via accesskit_unix -> atspi-common);
     # only parses local D-Bus AT-SPI2 introspection XML, not untrusted external XML.
+    "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
 ]
 
