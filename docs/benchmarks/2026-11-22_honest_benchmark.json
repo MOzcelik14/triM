@@ -1,207 +1,185 @@
 {
-  "timestamp": "2026-11-22 13:14:47 +0300",
+  "timestamp": "2026-11-24 15:29:15 +0300",
   "system": {
     "cpu_model": "12th Gen Intel(R) Core(TM) i5-12450H",
     "logical_cores": 12,
     "ram_total_mb": 23731.55859375,
-    "ram_avail_mb": 16534.3515625,
-    "ffmpeg_version_line1": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+    "ram_avail_mb": 15925.40625,
+    "ffmpeg_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
     "os_kernel": "Linux 7.0.0-43-generic x86_64 GNU/Linux",
-    "is_vm": false,
-    "vm_description": "Bare Metal (none)"
+    "command_line": "cargo run --release -p trim-media --example perf_bench -- /home/mozcelik/İndirilenler/MVI_8603.MOV"
   },
-  "primary_media": {
+  "media": {
+    "label": "KULLANICI KLİBİ",
     "path": "/home/mozcelik/İndirilenler/MVI_8603.MOV",
-    "label": "GERÇEK",
     "codec": "h264",
-    "profile": "Constrained Baseline",
     "width": 1920,
     "height": 1080,
-    "fps_rational_str": "24000/1001",
+    "fps_rational": "24000/1001",
     "fps": 23.976023976023978,
     "bitrate_kbps": 44646.97,
     "pix_fmt": "yuvj420p",
-    "duration_s": 31.448083,
-    "i_frames": 63,
-    "p_frames": 691,
-    "b_frames": 0,
-    "warning": null
+    "duration_s": 31.448083
   },
-  "primary_paced": {
-    "warmup_duration_s": 2.0,
-    "warmup_delivered": 45,
-    "warmup_missed": 3,
-    "measured_duration_s": 28.0,
-    "delivered_frames": 671,
-    "missed_frames": 0,
-    "total_expected_frames": 671,
-    "delivered_pct": 100.0,
-    "missed_pct": 0.0,
-    "latency_p50_ms": 0.393584,
-    "latency_p95_ms": 0.515211,
-    "latency_p99_ms": 0.569829,
-    "time_to_first_frame_ms": 125.58098000000001,
-    "pts_drift_max_ms": 0.0,
-    "cpu_trim_pct": 3.1054488605274573,
-    "cpu_ffmpeg_pct": 0.0,
-    "peak_rss_trim_mb": 59.1171875,
-    "peak_rss_ffmpeg_mb": 194.00390625
+  "spawn_overhead": {
+    "process_spawn_ms": {
+      "samples": 5,
+      "median": 1.097625,
+      "p95": 1.1374440000000001,
+      "min": 1.0775439999999998,
+      "max": 1.1374440000000001
+    },
+    "first_frame_ms": {
+      "samples": 5,
+      "median": 107.197703,
+      "p95": 118.56850800000001,
+      "min": 102.865376,
+      "max": 118.56850800000001
+    }
   },
-  "primary_free_run": {
-    "unpaced_fps": 7133.788031734974,
-    "delivered_frames": 720,
-    "elapsed_s": 0.100928146,
-    "notes": "Serbest decode hızı: Oynatma saatine / zaman sınırına (deadline) bağlı olmadan boru hattından çekilebilen maksimum ham decode verimi."
+  "paced_playback": {
+    "repeats": 5,
+    "fps_locked": 23.976023976023978,
+    "tolerance_ms": 20.854166666666668,
+    "delivered_pct": {
+      "samples": 5,
+      "median": 100.0,
+      "p95": 100.0,
+      "min": 100.0,
+      "max": 100.0
+    },
+    "dropped_pct": {
+      "samples": 5,
+      "median": 0.0,
+      "p95": 0.0,
+      "min": 0.0,
+      "max": 0.0
+    },
+    "latency_p95_ms": {
+      "samples": 5,
+      "median": 0.432785,
+      "p95": 0.443332,
+      "min": 0.344333,
+      "max": 0.443332
+    },
+    "pts_drift_max_ms": {
+      "samples": 5,
+      "median": 0.0,
+      "p95": 0.0,
+      "min": 0.0,
+      "max": 0.0
+    },
+    "cpu_trim_pct": {
+      "samples": 5,
+      "median": 3.714254855002215,
+      "p95": 3.714407426541096,
+      "min": 3.3765758093528464,
+      "max": 3.714407426541096
+    },
+    "cpu_ffmpeg_pct": {
+      "samples": 5,
+      "median": 104.67445500460788,
+      "p95": 107.71322058161243,
+      "min": 95.21943782375027,
+      "max": 107.71322058161243
+    },
+    "peak_rss_trim_mb": {
+      "samples": 5,
+      "median": 58.9453125,
+      "p95": 59.82421875,
+      "min": 58.9375,
+      "max": 59.82421875
+    },
+    "peak_rss_ffmpeg_mb": {
+      "samples": 5,
+      "median": 180.21875,
+      "p95": 181.671875,
+      "min": 180.1015625,
+      "max": 181.671875
+    }
   },
-  "primary_seek": {
-    "iterations": 100,
-    "cold_p50_ms": 170.92189,
-    "cold_p95_ms": 192.674225,
-    "cold_p99_ms": 196.95662099999998,
-    "hot_p50_ms": 111.272699,
-    "hot_p95_ms": 119.431595,
-    "hot_p99_ms": 125.18616399999999,
-    "scrub_p50_ms": 0.000106,
-    "scrub_p95_ms": 0.000168,
-    "scrub_p99_ms": 0.001288,
-    "ratio_cold_to_hot_p50": 1.536063127218654,
-    "ratio_cold_to_scrub_p50": 1612470.6603773583
+  "unpaced_decode": {
+    "repeats": 5,
+    "fps": {
+      "samples": 5,
+      "median": 591.289783171772,
+      "p95": 636.1889735727101,
+      "min": 308.3055764292279,
+      "max": 636.1889735727101
+    },
+    "unique_frames_per_run": 47
   },
-  "timeline_compositing": [
+  "seek_comparison": {
+    "cold_seek_miss_ms": {
+      "samples": 15,
+      "median": 181.42134,
+      "p95": 192.077486,
+      "min": 141.488144,
+      "max": 194.367629
+    },
+    "hot_seek_miss_ms": {
+      "samples": 15,
+      "median": 116.10466899999999,
+      "p95": 121.77442099999999,
+      "min": 103.168379,
+      "max": 121.80059299999999
+    },
+    "scrub_forward_miss_ms": {
+      "samples": 15,
+      "median": 1.063912,
+      "p95": 2.277931,
+      "min": 0.000833,
+      "max": 2.32994
+    },
+    "scrub_cache_hit_ms": {
+      "samples": 15,
+      "median": 0.000583,
+      "p95": 0.002128,
+      "min": 0.000093,
+      "max": 0.002191
+    },
+    "p02_false_hit_comparison": {
+      "old_fixed_45ms_false_hits_at_24fps": 100,
+      "old_fixed_45ms_false_hits_at_30fps": 100,
+      "old_fixed_45ms_false_hits_at_60fps": 100,
+      "new_scaled_false_hits_at_24fps": 0,
+      "new_scaled_false_hits_at_30fps": 0,
+      "new_scaled_false_hits_at_60fps": 0
+    }
+  },
+  "compositing": [
     {
       "tracks": 1,
-      "queries": 300,
-      "ms_per_frame": 0.36756423666666665,
-      "cache_hit_pct": 0.0,
-      "rss_mb": 52.140625
+      "ms_per_frame": {
+        "samples": 5,
+        "median": 2.588587533333333,
+        "p95": 2.6896245833333334,
+        "min": 2.1794192333333333,
+        "max": 2.6896245833333334
+      },
+      "rss_mb": 78.48046875
     },
     {
       "tracks": 3,
-      "queries": 300,
-      "ms_per_frame": 6.512629503333334,
-      "cache_hit_pct": 0.0,
-      "rss_mb": 188.65234375
+      "ms_per_frame": {
+        "samples": 5,
+        "median": 9.691720383333335,
+        "p95": 10.298990883333333,
+        "min": 9.193905449999999,
+        "max": 10.298990883333333
+      },
+      "rss_mb": 64.56640625
     },
     {
       "tracks": 6,
-      "queries": 300,
-      "ms_per_frame": 11.708051823333331,
-      "cache_hit_pct": 0.0,
-      "rss_mb": 317.86328125
+      "ms_per_frame": {
+        "samples": 5,
+        "median": 17.516933466666668,
+        "p95": 17.651689166666664,
+        "min": 17.146699533333333,
+        "max": 17.651689166666664
+      },
+      "rss_mb": 127.84765625
     }
-  ],
-  "color_parity": {
-    "mean_abs_diff_rgb": 1.102612847222222,
-    "mean_abs_diff_r": 1.0678645833333333,
-    "mean_abs_diff_g": 0.9264930555555555,
-    "mean_abs_diff_b": 1.3134809027777778,
-    "preview_black_rgb": [
-      0,
-      0,
-      0
-    ],
-    "preview_white_rgb": [
-      182,
-      177,
-      183
-    ],
-    "export_black_rgb": [
-      0,
-      0,
-      0
-    ],
-    "export_white_rgb": [
-      181,
-      178,
-      184
-    ],
-    "source_pix_fmt": "yuvj420p (full range pc, smpte170m/bt709)",
-    "assessment": "YÜKSEK UYUM (mean |ΔRGB| <= 5.0): Preview ve export renk aralığı kabul edilebilir sınırlar içinde."
-  },
-  "hw_decode_experiments": [
-    {
-      "engine": "CPU Reference (swscale)",
-      "success": true,
-      "frames_tested": 60,
-      "elapsed_s": 0.200503969,
-      "fps": 299.24594659769554,
-      "notes": "Temel yazılım decode ve RGBA ölçekleme hattı"
-    },
-    {
-      "engine": "VAAPI (Intel iHD)",
-      "success": false,
-      "frames_tested": 60,
-      "elapsed_s": null,
-      "fps": null,
-      "notes": "Bu ortamda çalışmadı: [AVHWDeviceContext @ 0x5fd8cc2a0e80] Failed to initialise VAAPI connection: -1 (unknown libva error). Device creation failed: -5. Failed to set value '/dev/dri/renderD128' for option 'vaapi_device': Input/output error Error parsing global options: Input/output error"
-    },
-    {
-      "engine": "CUDA (NVIDIA RTX 3050)",
-      "success": true,
-      "frames_tested": 60,
-      "elapsed_s": 0.522524317,
-      "fps": 114.82719186062302,
-      "notes": "Başarılı ancak context init + hwdownload nedeniyle 60 kare için CPU'dan daha uzun sürdü (0.523s vs CPU 0.201s)."
-    }
-  ],
-  "derived_4k": {
-    "media": {
-      "path": "/tmp/mvi_4k_hevc.mp4",
-      "label": "TÜRETİLMİŞ",
-      "codec": "hevc",
-      "profile": "Main",
-      "width": 3840,
-      "height": 2160,
-      "fps_rational_str": "24000/1001",
-      "fps": 23.976023976023978,
-      "bitrate_kbps": 4919.941,
-      "pix_fmt": "yuv420p",
-      "duration_s": 10.01,
-      "i_frames": 0,
-      "p_frames": 63,
-      "b_frames": 176,
-      "warning": "TÜRETİLMİŞ MEDYA: Orijinal 1080p klipten yukarı ölçeklenmiş 4K HEVC'dir, gerçek 4K kamera çekimi değildir."
-    },
-    "paced": {
-      "warmup_duration_s": 1.0,
-      "warmup_delivered": 19,
-      "warmup_missed": 5,
-      "measured_duration_s": 9.0,
-      "delivered_frames": 216,
-      "missed_frames": 0,
-      "total_expected_frames": 216,
-      "delivered_pct": 100.0,
-      "missed_pct": 0.0,
-      "latency_p50_ms": 0.382857,
-      "latency_p95_ms": 0.537264,
-      "latency_p99_ms": 0.5807749999999999,
-      "time_to_first_frame_ms": 209.590212,
-      "pts_drift_max_ms": 0.0,
-      "cpu_trim_pct": 1.9059303797573885,
-      "cpu_ffmpeg_pct": 0.0,
-      "peak_rss_trim_mb": 230.7109375,
-      "peak_rss_ffmpeg_mb": 511.38671875
-    },
-    "free_run": {
-      "unpaced_fps": 1232.5886327266128,
-      "delivered_frames": 240,
-      "elapsed_s": 0.194712164,
-      "notes": "Serbest decode hızı: Oynatma saatine / zaman sınırına (deadline) bağlı olmadan boru hattından çekilebilen maksimum ham decode verimi."
-    },
-    "seek": {
-      "iterations": 20,
-      "cold_p50_ms": 747.163181,
-      "cold_p95_ms": 952.503965,
-      "cold_p99_ms": 1121.155336,
-      "hot_p50_ms": 522.30859,
-      "hot_p95_ms": 715.509669,
-      "hot_p99_ms": 880.322084,
-      "scrub_p50_ms": 0.00008900000000000001,
-      "scrub_p95_ms": 0.000618,
-      "scrub_p99_ms": 340.98821499999997,
-      "ratio_cold_to_hot_p50": 1.430501422540265,
-      "ratio_cold_to_scrub_p50": 0.0
-    }
-  },
-  "methodology_explanation": "Eski benchmark raporundaki 634 FPS (ileri akış) ile 130 FPS (CPU decode) arasındaki çelişki tamamen ölçüm yöntemi farkından kaynaklanmaktadır:\n1. 634 FPS sayısı, ffmpeg'den okunan ham boru hattının zamanlama kısıtı (pacing deadline) olmadan serbest akışta (unpaced free-run) ne kadar hızlı boşaltıldığını göstermektedir. Bu bir 'oynatma' performansı değil, boru hattı verimidir.\n2. 130 FPS sayısı ise tek bir komutla 2 saniyelik klibin tamamının decode edilip diske/null'a yazılmasıdır.\n3. Paced gerçek zamanlı oynatma yapıldığında ise kareler oynatma saatine (23.976 fps) göre deadline ile sorgulanır. Gerçek oynatmada FPS daima video kaynak hızına (23.976) kilitlidir; asıl başarı kriteri düşen kare oranı ve gecikme dağılımıdır."
+  ]
 }
