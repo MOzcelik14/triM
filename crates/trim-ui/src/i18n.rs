@@ -263,6 +263,18 @@ fn translate(lang: Language, key: &str) -> &str {
         (Language::English, "title_tpl_ticker") => "News Ticker",
         (Language::Turkish, "autosave_snapshots") => "Otomatik Yedek Sürümleri",
         (Language::English, "autosave_snapshots") => "Autosave Snapshots",
+        (Language::Turkish, "status_project") => "Proje",
+        (Language::English, "status_project") => "Project",
+        (Language::Turkish, "status_sequence") => "Sekans",
+        (Language::English, "status_sequence") => "Sequence",
+        (Language::Turkish, "status_proxy_running") => "Proxy oluşturuluyor",
+        (Language::English, "status_proxy_running") => "Generating proxy",
+        (Language::Turkish, "status_bg_running") => "Arka plan işlemi",
+        (Language::English, "status_bg_running") => "Background task",
+        (Language::Turkish, "btn_cancel") => "İptal",
+        (Language::English, "btn_cancel") => "Cancel",
+        (Language::Turkish, "status_cancelling") => "İşlem iptal ediliyor...",
+        (Language::English, "status_cancelling") => "Cancelling operation...",
 
         // Fallback: return key verbatim if not found
         (_, other) => other,
@@ -281,6 +293,10 @@ mod tests {
         assert_eq!(Language::English.t("menu_edit"), "Edit");
         assert_eq!(Language::Turkish.t("btn_settings"), "Ayarlar");
         assert_eq!(Language::English.t("btn_settings"), "Settings");
+        assert_eq!(Language::Turkish.t("btn_cancel"), "İptal");
+        assert_eq!(Language::English.t("btn_cancel"), "Cancel");
+        assert_eq!(Language::Turkish.t("status_project"), "Proje");
+        assert_eq!(Language::English.t("status_project"), "Project");
     }
 
     #[test]

@@ -485,7 +485,18 @@ impl eframe::App for TrimApp {
                             Ok(p) => {
                                 self.status_message = format!("Dışa aktarma tamamlandı: {}", p)
                             }
-                            Err(e) => self.status_message = format!("Dışa aktarma hatası: {}", e),
+                            Err(e) => {
+                                self.status_message = match self.lang() {
+                                    Language::Turkish => format!(
+                                        "Dışa aktarma hatası: {} (FFmpeg kurulumunu, medya dosyalarını ve hedef disk alanı/izinlerini kontrol edin)",
+                                        e
+                                    ),
+                                    Language::English => format!(
+                                        "Export failed: {} (check FFmpeg installation, source media, and target disk space/permissions)",
+                                        e
+                                    ),
+                                };
+                            }
                         }
                     }
                 }
@@ -589,7 +600,16 @@ impl eframe::App for TrimApp {
                         }
                     }
                     Err(e) => {
-                        self.status_message = format!("Sahne algılama başarısız: {}", e);
+                        self.status_message = match self.lang() {
+                            Language::Turkish => format!(
+                                "Sahne algılama başarısız: {} (FFmpeg ve medya dosyasının okunabilirliğini kontrol edin)",
+                                e
+                            ),
+                            Language::English => format!(
+                                "Scene detection failed: {} (check FFmpeg and media file readability)",
+                                e
+                            ),
+                        };
                     }
                 },
                 BackgroundTaskMsg::SilenceDetectDone {
@@ -664,7 +684,16 @@ impl eframe::App for TrimApp {
                         );
                     }
                     Err(e) => {
-                        self.status_message = format!("Paketleme hatası: {}", e);
+                        self.status_message = match self.lang() {
+                            Language::Turkish => format!(
+                                "Paketleme hatası: {} (hedef klasör izinlerini ve boş disk alanını kontrol edin)",
+                                e
+                            ),
+                            Language::English => format!(
+                                "Bundle failed: {} (check target folder permissions and available disk space)",
+                                e
+                            ),
+                        };
                     }
                 },
                 BackgroundTaskMsg::MotionTrackDone {
@@ -1188,13 +1217,16 @@ impl eframe::App for TrimApp {
         // Bottom Status Bar
         // -------------------------------------------------------------
         egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+            let lang = self.lang();
             ui.horizontal(|ui| {
                 let dirty = if self.has_unsaved_changes() { " *" } else { "" };
                 ui.label(
                     RichText::new(format!(
-                        "Proje: {}{} | Sekans: {}x{} @ {:.0}fps | {}",
+                        "{}: {}{} | {}: {}x{} @ {:.0}fps | {}",
+                        lang.t("status_project"),
                         self.project.settings.name,
                         dirty,
+                        lang.t("status_sequence"),
                         self.project.timeline.width,
                         self.project.timeline.height,
                         self.project.timeline.fps,
@@ -1206,28 +1238,16 @@ impl eframe::App for TrimApp {
 
                 if !self.proxy_generating_ids.is_empty() {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let cancel_lbl = match self.lang() {
-                            Language::Turkish => "İptal",
-                            Language::English => "Cancel",
-                        };
-                        if ui.small_button(cancel_lbl).clicked() {
+                        if ui.small_button(lang.t("btn_cancel")).clicked() {
                             self.proxy_cancel_flag
                                 .store(true, std::sync::atomic::Ordering::Release);
-                            self.status_message = match self.lang() {
-                                Language::Turkish => {
-                                    "Proxy oluşturma iptal ediliyor...".to_string()
-                                }
-                                Language::English => "Cancelling proxy generation...".to_string(),
-                            };
+                            self.status_message = lang.t("status_cancelling").to_string();
                         }
-                        let proxy_lbl = match self.lang() {
-                            Language::Turkish => {
-                                format!("Proxy oluşturuluyor ({})", self.proxy_generating_ids.len())
-                            }
-                            Language::English => {
-                                format!("Generating proxy ({})", self.proxy_generating_ids.len())
-                            }
-                        };
+                        let proxy_lbl = format!(
+                            "{} ({})",
+                            lang.t("status_proxy_running"),
+                            self.proxy_generating_ids.len()
+                        );
                         ui.label(
                             RichText::new(proxy_lbl)
                                 .size(10.5)
