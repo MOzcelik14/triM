@@ -66,6 +66,9 @@ jobs:
       - name: Build release binaries
         run: cargo build --workspace --release --locked
 
+      - name: Build perf_bench example (compile check only)
+        run: cargo build --release -p trim-media --example perf_bench --locked
+
       - name: Validate Linux packaging script syntax
         run: bash -n scripts/package-linux.sh
 
