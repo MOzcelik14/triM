@@ -1226,6 +1226,54 @@ impl TrimApp {
                                         CanvasAction::OpenPasteAttributesDialog => {
                                             self.paste_attrs_dialog_open = true;
                                         }
+                                        CanvasAction::ClipRollTrimmed {
+                                            track_id,
+                                            left_clip_id,
+                                            right_clip_id,
+                                            delta_secs,
+                                        } => {
+                                            let cmd = Box::new(trim_commands::RollTrimCommand::new(
+                                                track_id,
+                                                left_clip_id,
+                                                right_clip_id,
+                                                delta_secs,
+                                            ));
+                                            if self
+                                                .undo_stack
+                                                .push(cmd, &mut self.project.timeline)
+                                                .is_ok()
+                                            {
+                                                self.project.mark_dirty();
+                                                self.last_rendered_dirty = true;
+                                                self.status_message =
+                                                    format!("Roll Trim uygulandı ({:+.2}s)", delta_secs);
+                                            }
+                                        }
+                                        CanvasAction::ClipSlideTrimmed {
+                                            track_id,
+                                            clip_id,
+                                            left_clip_id,
+                                            right_clip_id,
+                                            delta_secs,
+                                        } => {
+                                            let cmd = Box::new(trim_commands::SlideTrimCommand::new(
+                                                track_id,
+                                                clip_id,
+                                                left_clip_id,
+                                                right_clip_id,
+                                                delta_secs,
+                                            ));
+                                            if self
+                                                .undo_stack
+                                                .push(cmd, &mut self.project.timeline)
+                                                .is_ok()
+                                            {
+                                                self.project.mark_dirty();
+                                                self.last_rendered_dirty = true;
+                                                self.status_message =
+                                                    format!("Slide Trim uygulandı ({:+.2}s)", delta_secs);
+                                            }
+                                        }
                                     }
                                 }
                             });

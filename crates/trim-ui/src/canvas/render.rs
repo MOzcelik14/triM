@@ -1024,7 +1024,7 @@ pub fn render_timeline_canvas(
         EditTool::Type => {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
         }
-        EditTool::Slip => {
+        EditTool::Slip | EditTool::Roll | EditTool::Slide => {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
         }
         EditTool::Ripple => {
@@ -1038,6 +1038,8 @@ pub fn render_timeline_canvas(
                     | DragMode::TrimIn
                     | DragMode::TrimOut
                     | DragMode::Slip
+                    | DragMode::Roll
+                    | DragMode::Slide
                     | DragMode::RippleIn
                     | DragMode::RippleOut
             ) {
@@ -2127,6 +2129,57 @@ pub fn render_timeline_canvas(
                 }
                 state.drag_target_track_id = None;
             }
+            DragMode::Roll => {
+                if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id) {
+                    if let Some(pos) = response.interact_pointer_pos() {
+                        let dt = ((pos.x - state.drag_start_x) / state.pixels_per_second) as f64;
+                        if dt.abs() > 0.005 {
+                            if let Some(tr) = project.timeline.get_track_by_id(tr_id) {
+                                if let Some(idx) = tr.clips.iter().position(|c| &c.id == cl_id) {
+                                    if idx + 1 < tr.clips.len() {
+                                        action = Some(CanvasAction::ClipRollTrimmed {
+                                            track_id: tr_id.clone(),
+                                            left_clip_id: cl_id.clone(),
+                                            right_clip_id: tr.clips[idx + 1].id.clone(),
+                                            delta_secs: dt,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            DragMode::Slide => {
+                if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id) {
+                    if let Some(pos) = response.interact_pointer_pos() {
+                        let dt = ((pos.x - state.drag_start_x) / state.pixels_per_second) as f64;
+                        if dt.abs() > 0.005 {
+                            if let Some(tr) = project.timeline.get_track_by_id(tr_id) {
+                                if let Some(idx) = tr.clips.iter().position(|c| &c.id == cl_id) {
+                                    let left_clip_id = if idx > 0 {
+                                        Some(tr.clips[idx - 1].id.clone())
+                                    } else {
+                                        None
+                                    };
+                                    let right_clip_id = if idx + 1 < tr.clips.len() {
+                                        Some(tr.clips[idx + 1].id.clone())
+                                    } else {
+                                        None
+                                    };
+                                    action = Some(CanvasAction::ClipSlideTrimmed {
+                                        track_id: tr_id.clone(),
+                                        clip_id: cl_id.clone(),
+                                        left_clip_id,
+                                        right_clip_id,
+                                        delta_secs: dt,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             DragMode::TrimIn | DragMode::TrimOut | DragMode::Slip => {
                 if let (Some(tr_id), Some(cl_id)) = (&state.drag_track_id, &state.drag_clip_id) {
                     if let Some(tr) = project.timeline.get_track_by_id(tr_id) {
@@ -2588,6 +2641,12 @@ pub(crate) fn find_clip_at_pos(
 
                 if state.active_tool == EditTool::Slip {
                     return Some((track.id.clone(), clip.id.clone(), DragMode::Slip));
+                }
+                if state.active_tool == EditTool::Roll {
+                    return Some((track.id.clone(), clip.id.clone(), DragMode::Roll));
+                }
+                if state.active_tool == EditTool::Slide {
+                    return Some((track.id.clone(), clip.id.clone(), DragMode::Slide));
                 }
 
                 if state.active_tool == EditTool::Ripple {

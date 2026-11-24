@@ -14,6 +14,8 @@ pub enum DragMode {
     Rubberband,
     HandPan,
     Slip,
+    Slide,
+    Roll,
     RippleIn,
     RippleOut,
 }
@@ -226,4 +228,17 @@ pub enum CanvasAction {
     CreateCompoundClip,
     JoinThroughEdits,
     OpenPasteAttributesDialog,
+    ClipRollTrimmed {
+        track_id: String,
+        left_clip_id: String,
+        right_clip_id: String,
+        delta_secs: f64,
+    },
+    ClipSlideTrimmed {
+        track_id: String,
+        clip_id: String,
+        left_clip_id: Option<String>,
+        right_clip_id: Option<String>,
+        delta_secs: f64,
+    },
 }

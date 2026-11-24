@@ -901,6 +901,14 @@ impl eframe::App for TrimApp {
                     self.current_edit_tool = EditTool::Slip;
                     self.canvas_state.active_tool = EditTool::Slip;
                     self.status_message = "Kaydırma Aracı (Slip - Y) etkin".to_string();
+                } else if i.key_pressed(Key::R) && !i.modifiers.ctrl {
+                    self.current_edit_tool = EditTool::Roll;
+                    self.canvas_state.active_tool = EditTool::Roll;
+                    self.status_message = "Yuvarlama Aracı (Roll - R) etkin".to_string();
+                } else if i.key_pressed(Key::U) && !i.modifiers.ctrl {
+                    self.current_edit_tool = EditTool::Slide;
+                    self.canvas_state.active_tool = EditTool::Slide;
+                    self.status_message = "Sürükleme Aracı (Slide - U) etkin".to_string();
                 } else if i.key_pressed(Key::P) && !i.modifiers.ctrl {
                     self.current_edit_tool = EditTool::Pen;
                     self.canvas_state.active_tool = EditTool::Pen;

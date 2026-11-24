@@ -8,8 +8,10 @@ pub enum EditTool {
     Select, // V
     TrackSelect, // A
     Ripple,      // B
+    Roll,        // R
     Razor,       // C
     Slip,        // Y
+    Slide,       // U
     Pen,         // P
     Hand,        // H
     Type,        // T
@@ -21,8 +23,10 @@ impl EditTool {
             EditTool::Select => "↖",
             EditTool::TrackSelect => "⇥",
             EditTool::Ripple => "◀▶",
+            EditTool::Roll => "⇄",
             EditTool::Razor => "✂",
             EditTool::Slip => "↔",
+            EditTool::Slide => "⇔",
             EditTool::Pen => "✎",
             EditTool::Hand => "✋",
             EditTool::Type => "T",
@@ -34,8 +38,10 @@ impl EditTool {
             EditTool::Select => "Seçim Aracı (V)\nKlipleri seçin, taşıyın ve kırpın",
             EditTool::TrackSelect => "İleri İz Seçme Aracı (A)\nTıklanan klip ve sonrasındaki tüm klipleri seçin",
             EditTool::Ripple => "Dalgalanma Düzenleme (B)\nKlipleri diğer kliplerin yerini kaydırarak düzenleyin",
+            EditTool::Roll => "Yuvarlama Düzenleme (Roll - R)\nİki bitişik klibin ortak kesim noktasını birlikte kaydırın",
             EditTool::Razor => "Jilet / Kesme Aracı (C)\nKlipleri tıkladığınız noktadan ikiye bölün",
-            EditTool::Slip => "Kaydırma Aracı (Y)\nKlibin zaman çizgisindeki yeri sabitken kaynak içeriğini kaydırın",
+            EditTool::Slip => "Kaydırma Aracı (Slip - Y)\nKlibin zaman çizgisindeki yeri sabitken kaynak içeriğini kaydırın",
+            EditTool::Slide => "Sürükleme Düzenleme (Slide - U)\nKlibi komşuları arasında kaydırarak komşu kesimlerini ayarlayın",
             EditTool::Pen => "Kalem / Anahtar Kare Aracı (P)\nKlip özelliklerine anahtar kare noktaları ekleyin",
             EditTool::Hand => "El Aracı (H)\nZaman çizgisinde tutup sürükleyerek gezinin",
             EditTool::Type => "Metin Aracı (T)\nZaman çizgisine doğrudan başlık/yazı ekleyin",
@@ -51,8 +57,10 @@ pub fn render_vertical_toolbar(ui: &mut Ui, current_tool: &mut EditTool) {
             EditTool::Select,
             EditTool::TrackSelect,
             EditTool::Ripple,
+            EditTool::Roll,
             EditTool::Razor,
             EditTool::Slip,
+            EditTool::Slide,
             EditTool::Pen,
             EditTool::Hand,
             EditTool::Type,
@@ -203,6 +211,44 @@ pub fn render_vertical_toolbar(ui: &mut Ui, current_tool: &mut EditTool) {
                     );
                     painter.line_segment(
                         [center + Vec2::new(6.0, 0.0), center + Vec2::new(3.0, 3.0)],
+                        stroke,
+                    );
+                }
+                EditTool::Roll => {
+                    // Center vertical edit line with opposing horizontal arrows
+                    painter.line_segment(
+                        [center + Vec2::new(0.0, -6.0), center + Vec2::new(0.0, 6.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(-6.0, 0.0), center + Vec2::new(6.0, 0.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [
+                            center + Vec2::new(-6.0, 0.0),
+                            center + Vec2::new(-3.0, -3.0),
+                        ],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(6.0, 0.0), center + Vec2::new(3.0, 3.0)],
+                        stroke,
+                    );
+                }
+                EditTool::Slide => {
+                    // Center clip rect with slide arrows
+                    painter.rect_stroke(
+                        egui::Rect::from_center_size(center, Vec2::new(6.0, 10.0)),
+                        1.0,
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(-7.0, 0.0), center + Vec2::new(-3.0, 0.0)],
+                        stroke,
+                    );
+                    painter.line_segment(
+                        [center + Vec2::new(3.0, 0.0), center + Vec2::new(7.0, 0.0)],
                         stroke,
                     );
                 }

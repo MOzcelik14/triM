@@ -3200,3 +3200,279 @@ impl Command for ModifyClipCommand {
         &self.label
     }
 }
+
+// ---------------------------------------------------------------------------
+// 32. RollTrimCommand (adjecent edit-point roll)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct RollTrimCommand {
+    pub track_id: String,
+    pub left_clip_id: String,
+    pub right_clip_id: String,
+    pub delta_secs: f64,
+    prev_left: Option<(f64, f64, f64, Option<f64>)>,
+    prev_right: Option<(f64, f64, f64, Option<f64>)>,
+}
+
+impl RollTrimCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        left_clip_id: impl Into<String>,
+        right_clip_id: impl Into<String>,
+        delta_secs: f64,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            left_clip_id: left_clip_id.into(),
+            right_clip_id: right_clip_id.into(),
+            delta_secs,
+            prev_left: None,
+            prev_right: None,
+        }
+    }
+
+    /// Computes the clamped roll delta so neither clip shrinks below `0.04s` or goes negative in source/timeline.
+    pub fn clamp_delta(
+        l_in: f64,
+        l_out: f64,
+        r_in: f64,
+        r_out: f64,
+        rs_in: f64,
+        r_speed: f64,
+        delta: f64,
+    ) -> f64 {
+        const MIN_DUR: f64 = 0.04;
+        let r_spd = r_speed.max(0.05);
+        let min_d_left = -(l_out - l_in - MIN_DUR).max(0.0);
+        let min_d_right_src = -(rs_in / r_spd).max(0.0);
+        let min_d_right_tl = -r_in.max(0.0);
+        let min_d = min_d_left.max(min_d_right_src).max(min_d_right_tl);
+
+        let max_d_right = (r_out - r_in - MIN_DUR).max(0.0);
+        delta.clamp(min_d, max_d_right)
+    }
+}
+
+impl Command for RollTrimCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        if track.locked {
+            return Err(CommandError::InvalidOperation(
+                "Kilitli kanaldaki klip kırpılamaz".into(),
+            ));
+        }
+        let l_idx = track
+            .clips
+            .iter()
+            .position(|c| c.id == self.left_clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.left_clip_id.clone()))?;
+        let r_idx = track
+            .clips
+            .iter()
+            .position(|c| c.id == self.right_clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.right_clip_id.clone()))?;
+
+        let l = &track.clips[l_idx];
+        let r = &track.clips[r_idx];
+        self.prev_left = Some((l.timeline_in, l.timeline_out, l.source_in, l.source_out));
+        self.prev_right = Some((r.timeline_in, r.timeline_out, r.source_in, r.source_out));
+
+        let d = Self::clamp_delta(
+            l.timeline_in,
+            l.timeline_out,
+            r.timeline_in,
+            r.timeline_out,
+            r.source_in,
+            r.speed,
+            self.delta_secs,
+        );
+        let l_spd = l.speed.max(0.05);
+        let r_spd = r.speed.max(0.05);
+
+        let left = &mut track.clips[l_idx];
+        left.timeline_out += d;
+        if let Some(ref mut so) = left.source_out {
+            *so += d * l_spd;
+        }
+        let right = &mut track.clips[r_idx];
+        right.timeline_in += d;
+        right.source_in = (right.source_in + d * r_spd).max(0.0);
+        track.sort_clips();
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        if let Some((ti, to, si, so)) = self.prev_left {
+            if let Some(c) = track.get_clip_by_id_mut(&self.left_clip_id) {
+                c.timeline_in = ti;
+                c.timeline_out = to;
+                c.source_in = si;
+                c.source_out = so;
+            }
+        }
+        if let Some((ti, to, si, so)) = self.prev_right {
+            if let Some(c) = track.get_clip_by_id_mut(&self.right_clip_id) {
+                c.timeline_in = ti;
+                c.timeline_out = to;
+                c.source_in = si;
+                c.source_out = so;
+            }
+        }
+        track.sort_clips();
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Roll Trim"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 33. SlideTrimCommand (slides middle clip while adjusting adjoining clips)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct SlideTrimCommand {
+    pub track_id: String,
+    pub clip_id: String,
+    pub left_clip_id: Option<String>,
+    pub right_clip_id: Option<String>,
+    pub delta_secs: f64,
+    prev_mid: Option<(f64, f64, f64, Option<f64>)>,
+    prev_left: Option<(f64, f64, f64, Option<f64>)>,
+    prev_right: Option<(f64, f64, f64, Option<f64>)>,
+}
+
+impl SlideTrimCommand {
+    pub fn new(
+        track_id: impl Into<String>,
+        clip_id: impl Into<String>,
+        left_clip_id: Option<String>,
+        right_clip_id: Option<String>,
+        delta_secs: f64,
+    ) -> Self {
+        Self {
+            track_id: track_id.into(),
+            clip_id: clip_id.into(),
+            left_clip_id,
+            right_clip_id,
+            delta_secs,
+            prev_mid: None,
+            prev_left: None,
+            prev_right: None,
+        }
+    }
+}
+
+impl Command for SlideTrimCommand {
+    fn execute(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        const MIN_DUR: f64 = 0.04;
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        if track.locked {
+            return Err(CommandError::InvalidOperation(
+                "Kilitli kanaldaki klip kaydırılamaz".into(),
+            ));
+        }
+
+        let mid_idx = track
+            .clips
+            .iter()
+            .position(|c| c.id == self.clip_id)
+            .ok_or_else(|| CommandError::ClipNotFound(self.clip_id.clone()))?;
+        let left_idx = self
+            .left_clip_id
+            .as_ref()
+            .and_then(|id| track.clips.iter().position(|c| &c.id == id));
+        let right_idx = self
+            .right_clip_id
+            .as_ref()
+            .and_then(|id| track.clips.iter().position(|c| &c.id == id));
+
+        let mid = &track.clips[mid_idx];
+        self.prev_mid = Some((
+            mid.timeline_in,
+            mid.timeline_out,
+            mid.source_in,
+            mid.source_out,
+        ));
+
+        let mut min_d = -mid.timeline_in.max(0.0);
+        let mut max_d = f64::INFINITY;
+
+        if let Some(li) = left_idx {
+            let l = &track.clips[li];
+            self.prev_left = Some((l.timeline_in, l.timeline_out, l.source_in, l.source_out));
+            min_d = min_d.max(-(l.timeline_out - l.timeline_in - MIN_DUR).max(0.0));
+        }
+        if let Some(ri) = right_idx {
+            let r = &track.clips[ri];
+            self.prev_right = Some((r.timeline_in, r.timeline_out, r.source_in, r.source_out));
+            let r_spd = r.speed.max(0.05);
+            min_d = min_d.max(-(r.source_in / r_spd).max(0.0));
+            max_d = max_d.min((r.timeline_out - r.timeline_in - MIN_DUR).max(0.0));
+        }
+
+        let d = self.delta_secs.clamp(min_d, max_d);
+
+        track.clips[mid_idx].timeline_in += d;
+        track.clips[mid_idx].timeline_out += d;
+        if let Some(li) = left_idx {
+            let l_spd = track.clips[li].speed.max(0.05);
+            track.clips[li].timeline_out += d;
+            if let Some(ref mut so) = track.clips[li].source_out {
+                *so += d * l_spd;
+            }
+        }
+        if let Some(ri) = right_idx {
+            let r_spd = track.clips[ri].speed.max(0.05);
+            track.clips[ri].timeline_in += d;
+            track.clips[ri].source_in = (track.clips[ri].source_in + d * r_spd).max(0.0);
+        }
+        track.sort_clips();
+        Ok(())
+    }
+
+    fn undo(&mut self, timeline: &mut TimelineModel) -> Result<(), CommandError> {
+        let track = timeline
+            .get_track_by_id_mut(&self.track_id)
+            .ok_or_else(|| CommandError::TrackNotFound(self.track_id.clone()))?;
+        if let Some((ti, to, si, so)) = self.prev_mid {
+            if let Some(c) = track.get_clip_by_id_mut(&self.clip_id) {
+                c.timeline_in = ti;
+                c.timeline_out = to;
+                c.source_in = si;
+                c.source_out = so;
+            }
+        }
+        if let (Some(ref lid), Some((ti, to, si, so))) = (&self.left_clip_id, self.prev_left) {
+            if let Some(c) = track.get_clip_by_id_mut(lid) {
+                c.timeline_in = ti;
+                c.timeline_out = to;
+                c.source_in = si;
+                c.source_out = so;
+            }
+        }
+        if let (Some(ref rid), Some((ti, to, si, so))) = (&self.right_clip_id, self.prev_right) {
+            if let Some(c) = track.get_clip_by_id_mut(rid) {
+                c.timeline_in = ti;
+                c.timeline_out = to;
+                c.source_in = si;
+                c.source_out = so;
+            }
+        }
+        track.sort_clips();
+        Ok(())
+    }
+
+    fn name(&self) -> &str {
+        "Slide Trim"
+    }
+}

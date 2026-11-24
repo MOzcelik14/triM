@@ -1300,4 +1300,72 @@ mod tests {
             )
             .is_err());
     }
+
+    #[test]
+    fn test_roll_trim_and_slide_trim_commands_undo_redo() {
+        let mut tl = TimelineModel::default();
+        let v1_id = tl.tracks[0].id.clone();
+
+        let mut c1 = Clip::new("m1", 0.0, 4.0);
+        c1.timeline_in = 0.0;
+        c1.timeline_out = 4.0;
+        let mut c2 = Clip::new("m2", 4.0, 8.0);
+        c2.source_in = 1.0;
+        c2.source_out = Some(5.0);
+        let mut c3 = Clip::new("m3", 8.0, 12.0);
+        c3.source_in = 2.0;
+        c3.source_out = Some(6.0);
+
+        let c1_id = c1.id.clone();
+        let c2_id = c2.id.clone();
+        let c3_id = c3.id.clone();
+        tl.tracks[0].add_clip(c1);
+        tl.tracks[0].add_clip(c2);
+        tl.tracks[0].add_clip(c3);
+
+        let mut stack = UndoStack::new();
+        // Roll edit point between c1 and c2 forward by +1.5s -> cut moves from 4.0 to 5.5
+        stack
+            .push(
+                Box::new(RollTrimCommand::new(&v1_id, &c1_id, &c2_id, 1.5)),
+                &mut tl,
+            )
+            .unwrap();
+        assert!((tl.tracks[0].get_clip_by_id(&c1_id).unwrap().timeline_out - 5.5).abs() < 1e-6);
+        assert!((tl.tracks[0].get_clip_by_id(&c2_id).unwrap().timeline_in - 5.5).abs() < 1e-6);
+        assert!((tl.tracks[0].get_clip_by_id(&c2_id).unwrap().source_in - 2.5).abs() < 1e-6);
+        // Total duration unchanged (12.0)
+        assert!((tl.duration() - 12.0).abs() < 1e-6);
+
+        // Undo roll
+        assert!(stack.undo(&mut tl).unwrap());
+        assert!((tl.tracks[0].get_clip_by_id(&c1_id).unwrap().timeline_out - 4.0).abs() < 1e-6);
+        assert!((tl.tracks[0].get_clip_by_id(&c2_id).unwrap().timeline_in - 4.0).abs() < 1e-6);
+
+        // Slide c2 by +1.0s (4..8 -> 5..9), c1 extends to 5, c3 starts at 9
+        stack
+            .push(
+                Box::new(SlideTrimCommand::new(
+                    &v1_id,
+                    &c2_id,
+                    Some(c1_id.clone()),
+                    Some(c3_id.clone()),
+                    1.0,
+                )),
+                &mut tl,
+            )
+            .unwrap();
+        let c2_after = tl.tracks[0].get_clip_by_id(&c2_id).unwrap();
+        assert!((c2_after.timeline_in - 5.0).abs() < 1e-6);
+        assert!((c2_after.timeline_out - 9.0).abs() < 1e-6);
+        assert!((c2_after.source_in - 1.0).abs() < 1e-6);
+        assert!((c2_after.source_out.unwrap_or(0.0) - 5.0).abs() < 1e-6);
+        assert!((tl.tracks[0].get_clip_by_id(&c1_id).unwrap().timeline_out - 5.0).abs() < 1e-6);
+        assert!((tl.tracks[0].get_clip_by_id(&c3_id).unwrap().timeline_in - 9.0).abs() < 1e-6);
+
+        // Undo slide
+        assert!(stack.undo(&mut tl).unwrap());
+        assert!((tl.tracks[0].get_clip_by_id(&c2_id).unwrap().timeline_in - 4.0).abs() < 1e-6);
+        assert!((tl.tracks[0].get_clip_by_id(&c3_id).unwrap().timeline_in - 8.0).abs() < 1e-6);
+    }
 }
