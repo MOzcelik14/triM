@@ -1959,3 +1959,60 @@ fn test_keyboard_shortcut_mapping_and_headless_egui_shortcuts_dialog() {
         app.shortcuts_dialog.show(ctx, &mut app.shortcut_profile);
     });
 }
+
+#[test]
+fn test_multicam_timecode_sync_and_undo() {
+    use trim_core::{Clip, MediaItem, MediaType, Track, TrackType};
+
+    let mut app = TrimApp::default();
+    app.project.timeline.tracks.clear();
+
+    let mut m_a = MediaItem::new("/tmp/cam_a.mov");
+    m_a.media_type = MediaType::Video;
+    m_a.duration = 20.0;
+    m_a.fps = 25.0;
+    m_a.timecode_start = Some("01:00:00:00".to_string()); // 3600.0s
+    let id_a = m_a.id.clone();
+
+    let mut m_b = MediaItem::new("/tmp/cam_b.mov");
+    m_b.media_type = MediaType::Video;
+    m_b.duration = 20.0;
+    m_b.fps = 25.0;
+    m_b.timecode_start = Some("01:00:04:00".to_string()); // 3604.0s (+4s after Cam A)
+    let id_b = m_b.id.clone();
+
+    app.project.add_media(m_a);
+    app.project.add_media(m_b);
+
+    let mut v1 = Track::new("V1", TrackType::Video);
+    v1.id = "v1".into();
+    let mut c_a = Clip::new(&id_a, 0.0, 10.0);
+    c_a.id = "ca".into();
+    c_a.timeline_in = 1.0;
+    c_a.timeline_out = 11.0;
+    v1.add_clip(c_a);
+
+    let mut v2 = Track::new("V2", TrackType::Video);
+    v2.id = "v2".into();
+    let mut c_b = Clip::new(&id_b, 0.0, 10.0);
+    c_b.id = "cb".into();
+    c_b.timeline_in = 0.0;
+    c_b.timeline_out = 10.0;
+    v2.add_clip(c_b);
+
+    app.project.timeline.add_track(v1);
+    app.project.timeline.add_track(v2);
+
+    app.canvas_state.selected_clip_pairs =
+        vec![("v1".into(), "ca".into()), ("v2".into(), "cb".into())];
+    app.align_selected_clips_by_timecode();
+
+    // Cam A starts at 1.0s (TC 01:00:00:00); Cam B (TC 01:00:04:00) must align to 1.0 + 4.0 = 5.0s!
+    let cb_after = app.project.timeline.tracks[1].get_clip_by_id("cb").unwrap();
+    assert!((cb_after.timeline_in - 5.0).abs() < 1e-6);
+
+    // Undo restores Cam B to 0.0s
+    app.perform_undo();
+    let cb_undone = app.project.timeline.tracks[1].get_clip_by_id("cb").unwrap();
+    assert!((cb_undone.timeline_in - 0.0).abs() < 1e-6);
+}

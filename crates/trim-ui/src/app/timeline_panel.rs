@@ -1209,6 +1209,9 @@ impl TrimApp {
                                         CanvasAction::AlignSelectedByAudio => {
                                             self.align_selected_clips_by_audio();
                                         }
+                                        CanvasAction::AlignSelectedByTimecode => {
+                                            self.align_selected_clips_by_timecode();
+                                        }
                                         CanvasAction::OpenSequence(seq_id) => {
                                             self.project.switch_sequence(&seq_id);
                                             self.video_engine.clear_cache();

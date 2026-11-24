@@ -325,4 +325,88 @@ impl TrimApp {
             );
         }
     }
+
+    /// Aligns selected clips across different tracks using their media container's SMPTE `timecode_start`.
+    pub fn align_selected_clips_by_timecode(&mut self) {
+        if self.canvas_state.selected_clip_pairs.len() < 2 {
+            self.status_message = "Timecode ile hizalamak için en az 2 klip seçin".to_string();
+            return;
+        }
+
+        let mut items: Vec<(String, String, f64, f64)> = Vec::new();
+        for (tr_id, cl_id) in &self.canvas_state.selected_clip_pairs {
+            let Some(tr) = self.project.timeline.get_track_by_id(tr_id) else {
+                continue;
+            };
+            if tr.locked {
+                continue;
+            }
+            let Some(cl) = tr.get_clip_by_id(cl_id) else {
+                continue;
+            };
+            let Some(media) = self.project.get_media(&cl.media_id) else {
+                continue;
+            };
+            let Some(ref tc_str) = media.timecode_start else {
+                continue;
+            };
+            let fps = if media.fps > 0.0 {
+                media.fps
+            } else {
+                self.project.timeline.fps.max(1.0)
+            };
+            if let Some(base_tc_secs) = trim_core::time::timecode_to_seconds(tc_str, fps) {
+                let clip_tc_secs = base_tc_secs + cl.source_in;
+                items.push((tr_id.clone(), cl_id.clone(), cl.timeline_in, clip_tc_secs));
+            }
+        }
+
+        if items.len() < 2 {
+            self.status_message =
+                "Seçili kliplerden en az 2'sinde geçerli SMPTE timecode bulunamadı".to_string();
+            return;
+        }
+
+        let Some(&(_, _, anchor_tl, anchor_tc)) = items.iter().min_by(|a, b| a.3.total_cmp(&b.3))
+        else {
+            return;
+        };
+
+        let mut cmds: Vec<Box<dyn trim_commands::Command>> = Vec::new();
+        for (tr_id, cl_id, old_in, clip_tc) in items {
+            let new_in = (anchor_tl + (clip_tc - anchor_tc)).max(0.0);
+            if (new_in - old_in).abs() > 1e-4 {
+                cmds.push(Box::new(trim_commands::MoveClipCommand::new(
+                    tr_id.clone(),
+                    tr_id,
+                    cl_id,
+                    old_in,
+                    new_in,
+                )));
+            }
+        }
+
+        if cmds.is_empty() {
+            self.status_message = "Klipler zaten timecode'a göre hizalı".to_string();
+            return;
+        }
+
+        let count = cmds.len();
+        let macro_cmd = Box::new(trim_commands::MacroCommand::new(
+            "Multicam Timecode Sync",
+            cmds,
+        ));
+        if self
+            .undo_stack
+            .push(macro_cmd, &mut self.project.timeline)
+            .is_ok()
+        {
+            self.video_engine.clear_cache();
+            self.audio_mixer.clear_cache();
+            self.project.mark_dirty();
+            self.last_rendered_dirty = true;
+            self.status_message =
+                format!("⏱ {} klip SMPTE Timecode ile senkronize edildi", count + 1);
+        }
+    }
 }

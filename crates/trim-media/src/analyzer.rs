@@ -253,6 +253,26 @@ impl FFprobeAnalyzer {
         item.height = height;
         item.fps = fps;
         item.video_codec = video_codec;
+        item.timecode_start = video_stream
+            .and_then(|s| s.get("tags"))
+            .and_then(|t| t.get("timecode"))
+            .and_then(|v| v.as_str())
+            .or_else(|| {
+                streams.iter().find_map(|s| {
+                    s.get("tags")
+                        .and_then(|t| t.get("timecode"))
+                        .and_then(|v| v.as_str())
+                })
+            })
+            .or_else(|| {
+                format
+                    .and_then(|f| f.get("tags"))
+                    .and_then(|t| t.get("timecode"))
+                    .and_then(|v| v.as_str())
+            })
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
         item.audio_codec = audio_codec;
         item.audio_channels = audio_channels;
         item.audio_sample_rate = audio_sample_rate;

@@ -2554,6 +2554,15 @@ pub fn render_timeline_canvas(
                     ui.close_menu();
                 }
 
+                if state.selected_clip_pairs.len() >= 2
+                    && ui
+                        .button("⏱ Timecode ile Hizala (Multicam Timecode Sync)")
+                        .clicked()
+                {
+                    action = Some(CanvasAction::AlignSelectedByTimecode);
+                    ui.close_menu();
+                }
+
                 if ui
                     .button("⊞ Bileşik Klip Oluştur (Compound Clip / Nest)")
                     .clicked()

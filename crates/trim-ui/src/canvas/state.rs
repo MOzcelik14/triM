@@ -224,6 +224,7 @@ pub enum CanvasAction {
     },
     ToggleLinkSelected,
     AlignSelectedByAudio,
+    AlignSelectedByTimecode,
     OpenSequence(String),
     CreateCompoundClip,
     JoinThroughEdits,
