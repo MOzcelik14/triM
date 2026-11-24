@@ -23,7 +23,7 @@ fn test_long_session_frame_pool_and_lru_rss_bounded() {
             buf[FRAME_BYTES - 1] = ((idx >> 8) & 0xff) as u8;
             // Half go into bounded LRU cache, half are returned directly to the pool
             if idx % 2 == 0 {
-                cache.insert(idx, buf);
+                cache.insert_with_size(idx, buf, FRAME_BYTES);
             } else {
                 pool.checkin(buf);
             }
@@ -32,12 +32,14 @@ fn test_long_session_frame_pool_and_lru_rss_bounded() {
 
     // Warmup 100 frames (~829 MB total frame traffic)
     run_frames(0, 100, &mut cache);
+    assert!(cache.total_bytes() <= 64 * 1024 * 1024);
 
     #[cfg(target_os = "linux")]
     let rss_after_warmup_kb = read_rss_kb().expect("Failed to read /proc/self/statm");
 
     // Simulate 900 more frames (~7.46 GB cumulative frame traffic)
     run_frames(100, 1000, &mut cache);
+    assert!(cache.total_bytes() <= 64 * 1024 * 1024);
 
     #[cfg(target_os = "linux")]
     {

@@ -35,31 +35,27 @@ pub fn decode_frame_raw<P: AsRef<Path>>(file_path: P, source_time: f64) -> Optio
 }
 
 /// Fast, single-frame raw RGBA extraction via ffmpeg pipe at a specified preview resolution.
-pub fn decode_frame_raw_sized<P: AsRef<Path>>(
-    file_path: P,
+fn decode_frame_raw_sized_with_hwaccel(
+    p_str: &str,
     source_time: f64,
-    target_w: u32,
-    target_h: u32,
+    tw: u32,
+    th: u32,
+    hwaccel: Option<&str>,
 ) -> Option<RgbaImage> {
-    let p = file_path.as_ref();
-    let p_str = p.to_string_lossy().to_string();
-    let tw = target_w.max(16);
-    let th = target_h.max(16);
     let vf = format!(
         "scale={tw}:{th}:force_original_aspect_ratio=decrease,pad={tw}:{th}:(ow-iw)/2:(oh-ih)/2:black"
     );
 
     let mut cmd = crate::ffmpeg::ffmpeg_cmd();
+    cmd.args(["-v", "quiet", "-y", "-protocol_whitelist", "file"]);
+    if let Some(hw) = hwaccel {
+        cmd.args(["-hwaccel", hw]);
+    }
     cmd.args([
-        "-v",
-        "quiet",
-        "-y",
-        "-protocol_whitelist",
-        "file",
         "-ss",
         &format!("{:.3}", source_time.max(0.0)),
         "-i",
-        &p_str,
+        p_str,
         "-vframes",
         "1",
         "-vf",
@@ -86,6 +82,30 @@ pub fn decode_frame_raw_sized<P: AsRef<Path>>(
     let _ = guard.wait();
 
     ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(tw, th, buf)
+}
+
+pub fn decode_frame_raw_sized<P: AsRef<Path>>(
+    file_path: P,
+    source_time: f64,
+    target_w: u32,
+    target_h: u32,
+) -> Option<RgbaImage> {
+    let p_str = file_path.as_ref().to_string_lossy().to_string();
+    let tw = target_w.max(16);
+    let th = target_h.max(16);
+    if let Some(hw) = crate::ffmpeg::probe_working_hwaccel().as_ffmpeg_flag() {
+        if let Some(img) =
+            decode_frame_raw_sized_with_hwaccel(&p_str, source_time, tw, th, Some(hw))
+        {
+            return Some(img);
+        }
+        log::warn!(
+            "hwaccel '{}' single-frame decode failed for {}; falling back to software decode",
+            hw,
+            p_str
+        );
+    }
+    decode_frame_raw_sized_with_hwaccel(&p_str, source_time, tw, th, None)
 }
 
 /// Continuous background rawvideo pipe streamer for real-time preview playback
@@ -244,65 +264,94 @@ impl PlaybackStreamer {
             );
 
             if !reverse {
-                // Forward streaming: continuous single FFmpeg process
-                let mut cmd = crate::ffmpeg::ffmpeg_cmd();
-                cmd.arg("-v").arg("quiet");
-                cmd.args(["-protocol_whitelist", "file"]);
-                cmd.args(["-ss", &format!("{:.3}", source_start_time.max(0.0))]);
-                cmd.args([
-                    "-i",
-                    &thread_path,
-                    "-vf",
-                    &vf_str,
-                    "-f",
-                    "rawvideo",
-                    "-pix_fmt",
-                    "rgba",
-                    "-",
-                ]);
-                cmd.stdout(Stdio::piped()).stderr(Stdio::null());
-
-                let mut guard = match crate::ffmpeg::ChildGuard::spawn(&mut cmd) {
-                    Ok(g) => g,
-                    Err(_) => return,
-                };
-
-                let mut stdout = match guard.take_stdout() {
-                    Some(s) => s,
-                    None => {
-                        return;
-                    }
-                };
-
-                if let Ok(mut lock) = child_holder.lock() {
+                // Forward streaming: continuous single FFmpeg process (hwaccel with software fallback)
+                let hw_flag = crate::ffmpeg::probe_working_hwaccel().as_ffmpeg_flag();
+                for hw_opt in if hw_flag.is_some() {
+                    [hw_flag, None]
+                } else {
+                    [None, None]
+                } {
                     if stop_clone.load(Ordering::Acquire) {
-                        return;
-                    }
-                    *lock = Some(guard);
-                }
-
-                let mut frame_idx = 0u64;
-                while !stop_clone.load(Ordering::Acquire) {
-                    let mut buf = pool.checkout(frame_bytes);
-                    if stdout.read_exact(&mut buf).is_err() {
-                        pool.checkin(buf);
                         break;
                     }
+                    let mut cmd = crate::ffmpeg::ffmpeg_cmd();
+                    cmd.arg("-v").arg("quiet");
+                    cmd.args(["-protocol_whitelist", "file"]);
+                    if let Some(hw) = hw_opt {
+                        cmd.args(["-hwaccel", hw]);
+                    }
+                    cmd.args(["-ss", &format!("{:.3}", source_start_time.max(0.0))]);
+                    cmd.args([
+                        "-i",
+                        &thread_path,
+                        "-vf",
+                        &vf_str,
+                        "-f",
+                        "rawvideo",
+                        "-pix_fmt",
+                        "rgba",
+                        "-",
+                    ]);
+                    cmd.stdout(Stdio::piped()).stderr(Stdio::null());
 
-                    let pts = source_start_time + (frame_idx as f64 / thread_fps);
-                    frame_idx += 1;
+                    let mut guard = match crate::ffmpeg::ChildGuard::spawn(&mut cmd) {
+                        Ok(g) => g,
+                        Err(_) => {
+                            if hw_opt.is_some() {
+                                log::warn!("hwaccel stream spawn failed; falling back to software");
+                                continue;
+                            }
+                            return;
+                        }
+                    };
 
-                    if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(tw, th, buf) {
-                        if tx.send((pts, Arc::new(img))).is_err() {
+                    let mut stdout = match guard.take_stdout() {
+                        Some(s) => s,
+                        None => return,
+                    };
+
+                    if let Ok(mut lock) = child_holder.lock() {
+                        if stop_clone.load(Ordering::Acquire) {
+                            return;
+                        }
+                        *lock = Some(guard);
+                    }
+
+                    let mut frame_idx = 0u64;
+                    while !stop_clone.load(Ordering::Acquire) {
+                        let mut buf = pool.checkout(frame_bytes);
+                        if stdout.read_exact(&mut buf).is_err() {
+                            pool.checkin(buf);
                             break;
                         }
-                    } else {
+
+                        let pts = source_start_time + (frame_idx as f64 / thread_fps);
+                        frame_idx += 1;
+
+                        if let Some(img) = ImageBuffer::<Rgba<u8>, Vec<u8>>::from_raw(tw, th, buf) {
+                            if tx.send((pts, Arc::new(img))).is_err() {
+                                if let Ok(mut lock) = child_holder.lock() {
+                                    drop(lock.take());
+                                }
+                                return;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if let Ok(mut lock) = child_holder.lock() {
+                        drop(lock.take());
+                    }
+
+                    if frame_idx > 0 || hw_opt.is_none() || stop_clone.load(Ordering::Acquire) {
                         break;
                     }
-                }
-
-                if let Ok(mut lock) = child_holder.lock() {
-                    drop(lock.take());
+                    log::warn!(
+                        "hwaccel '{}' stream produced 0 frames for {}; falling back to software decode",
+                        hw_opt.unwrap_or(""),
+                        thread_path
+                    );
                 }
             } else {
                 // Reverse streaming: chunked forward decode in 2.0s segments, reversed in memory.

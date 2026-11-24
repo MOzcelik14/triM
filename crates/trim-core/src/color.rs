@@ -1041,7 +1041,7 @@ pub fn analyze_auto_white_balance_rgba(rgba: &[u8], width: u32, height: u32) -> 
         let max_c = r.max(g).max(b);
         let min_c = r.min(g).min(b);
         // Exclude clipped highlights and deep shadow noise
-        if max_c > 246.0 || max_c < 16.0 {
+        if !(16.0..=246.0).contains(&max_c) {
             continue;
         }
 
