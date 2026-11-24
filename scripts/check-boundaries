@@ -46,8 +46,18 @@ while IFS= read -r hit; do
   fi
 done < <(grep -rn 'std::process::Command' crates/trim-ui/src/ 2>/dev/null || true)
 
+# 4. Subprocess hygiene: non-test production code must not call cmd.spawn()
+#    directly outside ChildGuard::spawn in crates/trim-media/src/ffmpeg.rs.
+while IFS= read -r hit; do
+  file="${hit%%:*}"
+  if [[ "$file" != "crates/trim-media/src/ffmpeg.rs" ]]; then
+    echo "HYGIENE ERROR: raw cmd.spawn() outside ChildGuard::spawn: $hit" >&2
+    fail=1
+  fi
+done < <(grep -rn 'cmd\.spawn(' crates/*/src/ --include="*.rs" 2>/dev/null || true)
+
 if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi
 
-echo "Boundary check passed: workspace DAG and trim-ui isolation are intact."
+echo "Boundary check passed: workspace DAG, trim-ui isolation, and ChildGuard hygiene are intact."

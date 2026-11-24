@@ -934,4 +934,76 @@ mod tests {
         let item = FFprobeAnalyzer::parse_probe_json(&json_val, Path::new("/tmp/vfr.mp4")).unwrap();
         assert!((item.fps - 59.94).abs() < 0.01);
     }
+
+    #[test]
+    fn test_fuzz_probe_and_atom_parsers_no_panic() {
+        let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
+        let mut next_u64 = || -> u64 {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+
+        let edge_strings = [
+            "",
+            "0",
+            "-1",
+            "NaN",
+            "inf",
+            "0/0",
+            "9999999999999999999/1",
+            "00:00:00.000",
+            "99:99:99.999999",
+            ":::",
+            "abc/def",
+            "24000/1001",
+            "\0\u{ffff}",
+        ];
+        for s in edge_strings {
+            let _ = parse_time_string(s);
+            let _ = parse_fps_opt(s);
+            let _ = parse_fps(s);
+        }
+
+        let mut buf = vec![0u8; 256];
+        for i in 0..2000 {
+            let len = (next_u64() as usize) % buf.len();
+            for b in &mut buf[..len] {
+                *b = (next_u64() & 0xff) as u8;
+            }
+            if len >= 8 && i % 5 == 0 {
+                // Inject valid-looking atom tags with adversarial sizes
+                buf[4..8].copy_from_slice(b"moov");
+            }
+            let _ = parse_pcm_atoms_from_slice(&buf[..len]);
+
+            let s = String::from_utf8_lossy(&buf[..len.min(64)]);
+            let _ = parse_time_string(&s);
+            let _ = parse_fps_opt(&s);
+
+            if i % 4 == 0 {
+                let json_val = serde_json::json!({
+                    "streams": [
+                        {
+                            "codec_type": if i % 8 == 0 { "video" } else { "audio" },
+                            "codec_name": s.as_ref(),
+                            "width": next_u64() % 100_000,
+                            "height": next_u64() % 100_000,
+                            "r_frame_rate": if i % 3 == 0 { "0/0" } else { s.as_ref() },
+                            "avg_frame_rate": s.as_ref(),
+                            "duration": s.as_ref(),
+                            "channels": next_u64() % 64,
+                            "sample_rate": s.as_ref(),
+                        }
+                    ],
+                    "format": {
+                        "duration": s.as_ref(),
+                        "size": s.as_ref(),
+                    }
+                });
+                let _ = FFprobeAnalyzer::parse_probe_json(&json_val, Path::new("/tmp/fuzz.mov"));
+            }
+        }
+    }
 }

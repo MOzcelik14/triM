@@ -1147,4 +1147,85 @@ mod tests {
         std::os::unix::fs::symlink(&real_path, &link_path).unwrap();
         assert!(load_project(&link_path).is_err());
     }
+
+    #[test]
+    fn test_fuzz_project_load_no_panic() {
+        let dir = tempdir().unwrap();
+        let proj_path = dir.path().join("fuzz.trim");
+
+        let mut base = Project::new("FuzzBase");
+        let base_json = base.to_json().unwrap();
+        let base_bytes = base_json.as_bytes();
+
+        let mut seed: u64 = 0x517c_c1b7_2722_0a95;
+        let mut next_u64 = || -> u64 {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+
+        // Empty, truncated, and arbitrary binary payloads
+        for payload in [b"".as_slice(), b"{}", b"null", b"[]", b"\xff\x00\xfe\x01"] {
+            std::fs::write(&proj_path, payload).unwrap();
+            let _ = load_project(&proj_path);
+        }
+
+        // 300 deterministic mutations of a valid project JSON
+        for i in 0..300 {
+            let mut mutated = base_bytes.to_vec();
+            if i % 3 == 0 && !mutated.is_empty() {
+                let cut = (next_u64() as usize) % mutated.len();
+                mutated.truncate(cut);
+            } else {
+                let flips = 1 + (next_u64() as usize % 8);
+                for _ in 0..flips {
+                    let idx = (next_u64() as usize) % mutated.len();
+                    mutated[idx] = (next_u64() & 0xff) as u8;
+                }
+            }
+            std::fs::write(&proj_path, &mut mutated).unwrap();
+            let _ = load_project(&proj_path);
+            let _ = save_project(&mut base, dir.path().join("saved_check.trim"));
+        }
+    }
+
+    #[test]
+    fn test_crash_recovery_autosave_flow() {
+        let dir = tempdir().unwrap();
+        let proj_path = dir.path().join("crash_case.trim");
+        let recovery_dir = dir.path().join("recovery");
+        let mgr = AutosaveManager::new(&recovery_dir);
+
+        // 1. Initial save of v1 project (0 clips)
+        let mut proj = Project::new("CrashRecovery");
+        save_project(&mut proj, &proj_path).unwrap();
+        assert_eq!(proj.timeline.tracks[0].clips.len(), 0);
+
+        // 2. User edits timeline after saving, autosave captures snapshot, then "crashes" (no main save)
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let mut item = trim_core::media::MediaItem::new("/tmp/sample.mp4");
+        item.media_type = trim_core::media::MediaType::Video;
+        let m_id = item.id.clone();
+        proj.add_media(item);
+        let clip = trim_core::clip::Clip::new(&m_id, 0.0, 5.0);
+        let clip_id = clip.id.clone();
+        proj.timeline.tracks[0].add_clip(clip);
+        mgr.save_snapshot(&proj).unwrap();
+        drop(proj);
+
+        // 3. Reopen main project -> detects newer autosave recovery -> recover -> cleanup
+        let reopened = load_project(&proj_path).unwrap();
+        assert_eq!(reopened.timeline.tracks[0].clips.len(), 0);
+
+        let recovery_path = mgr
+            .check_recovery(&reopened)
+            .expect("Expected newer autosave recovery snapshot");
+        let recovered = load_project(&recovery_path).unwrap();
+        assert_eq!(recovered.timeline.tracks[0].clips.len(), 1);
+        assert_eq!(recovered.timeline.tracks[0].clips[0].id, clip_id);
+
+        mgr.cleanup(&recovered);
+        assert!(mgr.check_recovery(&recovered).is_none());
+    }
 }

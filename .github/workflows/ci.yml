@@ -63,6 +63,10 @@ jobs:
       - name: Run workspace unit and integration tests
         run: cargo test --workspace --locked
 
+      - name: Measure test coverage with cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - run: cargo llvm-cov --workspace --locked --summary-only
+
       - name: Security audit and license check
         uses: embarkstudios/cargo-deny-action@v2
 
