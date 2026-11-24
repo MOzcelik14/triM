@@ -65,7 +65,7 @@ jobs:
 
       - name: Measure test coverage with cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - run: cargo llvm-cov --workspace --locked --summary-only
+      - run: cargo llvm-cov --workspace --locked --summary-only --fail-under-lines 38
 
       - name: Security audit and license check
         uses: embarkstudios/cargo-deny-action@v2

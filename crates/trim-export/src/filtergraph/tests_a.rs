@@ -219,8 +219,8 @@ fn test_keyframe_expression_matches_interpolation() {
 /// available on the machine.
 #[test]
 fn test_ffmpeg_end_to_end_render() {
-    if trim_media::ffmpeg_cmd().arg("-version").output().is_err() {
-        eprintln!("ffmpeg not available, skipping");
+    if trim_media::ffmpeg_cmd().arg("-version").output().is_err() || !super::has_libx264() {
+        eprintln!("ffmpeg or libx264 not available, skipping");
         return;
     }
     let dir = tempfile::tempdir().unwrap();

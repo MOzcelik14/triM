@@ -1,6 +1,6 @@
 use super::*;
 use image::{ImageBuffer, Rgba, RgbaImage};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use trim_core::media::MediaType;
 use trim_core::project::Project;
 
@@ -635,7 +635,7 @@ fn test_playback_streamer_panic_cleans_up_ffmpeg_child() {
     assert!(gen.status.success(), "testsrc generation failed");
 
     let vid_str = vid_path.to_string_lossy().to_string();
-    let pid_slot = Arc::new(Mutex::new(None::<u32>));
+    let pid_slot = Arc::new(std::sync::Mutex::new(None::<u32>));
     let pid_capture = pid_slot.clone();
 
     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {

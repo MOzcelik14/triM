@@ -415,7 +415,7 @@ fn test_k11_mask_plus_blend_and_adjustment_layer_split_valid_with_ffmpeg() {
     let out_video = temp_dir.path().join("out.mp4");
 
     // Create a real tiny 1-second test clip if FFmpeg is installed
-    let has_ffmpeg = trim_media::is_ffmpeg_available();
+    let has_ffmpeg = trim_media::is_ffmpeg_available() && super::has_libx264();
     if has_ffmpeg {
         let gen = trim_media::ffmpeg_cmd()
             .args([
@@ -544,7 +544,7 @@ fn test_k11_mask_plus_blend_and_adjustment_layer_split_valid_with_ffmpeg() {
 fn test_adversarial_drawtext_and_path_escaping_with_ffmpeg() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let vid_path = tmp.path().join("adv_base.mp4");
-    if trim_media::is_ffmpeg_available() {
+    if trim_media::is_ffmpeg_available() && super::has_libx264() {
         let gen = trim_media::ffmpeg_cmd()
             .args([
                 "-y",

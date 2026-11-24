@@ -24,6 +24,14 @@ mod tests_b;
 pub(super) const PREVIEW_W: f64 = 640.0;
 pub(super) const PREVIEW_H: f64 = 360.0;
 
+#[cfg(test)]
+pub(super) fn has_libx264() -> bool {
+    trim_media::ffmpeg_cmd()
+        .args(["-v", "quiet", "-encoders"])
+        .output()
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).contains("libx264"))
+}
+
 pub struct TimelineExporter;
 
 /// Prepared FFmpeg export invocation along with a private RAII temporary directory
