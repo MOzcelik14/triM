@@ -2,6 +2,15 @@
 
 All notable changes to **triM.** are documented in this file.
 
+## [2.5.5] - 2026-11-24
+
+### Media Accuracy, Process Ownership, Honest Benchmarking & UI Polish
+- **FPS-Scaled Seek Tolerance & Stale-Frame Guard**: Replaced fixed 45 ms ring-buffer tolerance in `PersistentSeekDecoder` with `frame_tolerance_for_fps` (`0.5 / fps`, clamped to `[4 ms, 30 ms]`), closest-PTS matching, and forward-scrub PTS verification so stale frames are never cached or returned.
+- **Tracked Child Process Ownership**: Replaced detached folder-opener reaper thread in `trim-ui` with `ChildGuard`-backed `TrackedChildPool` (`poll_reap()` + `Drop` kill/wait), eliminating orphan/zombie launcher processes.
+- **Cancellable Proxy Generation & Status Bar UX**: Added `generate_proxy_cancellable` with `ChildGuard` + `AtomicBool` cooperative cancellation and visible spinner + Cancel button in the bottom status bar.
+- **Honest Repeatable Benchmark Suite**: Rewrote `perf_bench.rs` and updated `docs/benchmarks/2026-11-22_honest_benchmark.md` with 5-repeat median/p95/min/max statistics, separated spawn overhead, separated cache-miss vs cache-hit seeks, PTS-verified playback delivery, and live `/proc/<pid>/stat` FFmpeg CPU measurements.
+- **UI Unit Test Coverage & CI**: Added pure logic tests in `trim-ui` (`canvas.rs`, `timeline_actions`, keymap/shortcuts, headless `egui::Context`) and added `perf_bench` release compile verification to `.github/workflows/ci.yml`.
+
 ## [2.5.4] - 2026-11-23
 
 ### Project File Extension & Atomic Persistence Bugfix

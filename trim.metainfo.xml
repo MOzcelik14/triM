@@ -56,6 +56,17 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2.5.5" date="2026-11-24">
+      <description>
+        <p>triM. v2.5.5 - Seek Doğruluğu, Süreç Sahipliği, Dürüst Benchmark ve Proxy İptal Desteği:</p>
+        <ul>
+          <li>FPS'e Bağlı Seek Toleransı: Sabit 45 ms yerine kare süresine bağlı (0.5 / fps) tolerans ve ileri scrub'da bayat kare koruması eklendi.</li>
+          <li>Süreç Sahipliği (TrackedChildPool): Klasör açıcı alt süreçler ChildGuard tabanlı havuza alındı.</li>
+          <li>İptal Edilebilir Proxy Oluşturma: Arka plan proxy işlemi için durum çubuğunda dönen gösterge ve İptal düğmesi eklendi.</li>
+          <li>Dürüst Benchmark &amp; UI Testleri: perf_bench PTS doğrulamalı 5 tekrarlı istatistiklerle yenilendi; trim-ui için yeni birim testler eklendi.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2.5.4" date="2026-11-23">
       <description>
         <p>triM. v2.5.4 - Proje Dosyası Uzantı ve Güvenli Kayıt Düzeltmesi:</p>
