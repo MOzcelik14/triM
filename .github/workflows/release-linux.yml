@@ -420,7 +420,7 @@ jobs:
           (cd dist && sha256sum -- *.deb *.rpm *.AppImage *.dmg *.tar.gz *.zip > SHA256SUMS.txt)
           cat dist/SHA256SUMS.txt
       - name: Create or update release with all packages
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/*.deb
