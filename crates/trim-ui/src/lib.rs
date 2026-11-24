@@ -1873,4 +1873,129 @@ mod tests {
         assert_eq!(dlg.font_family, "Montserrat");
         assert!(dlg.bold);
     }
+
+    #[test]
+    fn test_timeline_actions_split_marker_gap_and_undo() {
+        use trim_core::clip::ColorLabel;
+        use trim_core::{Clip, Track, TrackType};
+
+        let mut app = TrimApp::default();
+        app.project.timeline.tracks.clear();
+        let mut v1 = Track::new("V1", TrackType::Video);
+        v1.id = "v1".into();
+        let mut c1 = Clip::new("m1", 0.0, 4.0);
+        c1.id = "c1".into();
+        c1.timeline_in = 0.0;
+        c1.timeline_out = 4.0;
+        let mut c2 = Clip::new("m2", 0.0, 3.0);
+        c2.id = "c2".into();
+        c2.timeline_in = 7.0;
+        c2.timeline_out = 10.0;
+        v1.add_clip(c1);
+        v1.add_clip(c2);
+        app.project.timeline.add_track(v1);
+
+        // 1. select_all_clips selects both
+        app.select_all_clips();
+        assert_eq!(app.canvas_state.selected_clip_pairs.len(), 2);
+
+        // 2. split_at_playhead_command at t=2.0 splits c1 into 2 clips -> 3 clips total
+        app.canvas_state.selected_clip_pairs = vec![("v1".into(), "c1".into())];
+        app.current_time = 2.0;
+        app.split_at_playhead_command();
+        assert_eq!(app.project.timeline.tracks[0].clips.len(), 3);
+        app.perform_undo();
+        assert_eq!(app.project.timeline.tracks[0].clips.len(), 2);
+
+        // 3. add_or_toggle_marker adds at 2.0 and removes when toggled again at 2.0
+        app.current_time = 2.0;
+        app.add_or_toggle_marker();
+        assert_eq!(app.project.timeline.markers.len(), 1);
+        app.add_or_toggle_marker();
+        assert_eq!(app.project.timeline.markers.len(), 0);
+
+        // 4. close_selected_gap closes [4.0, 7.0] gap on v1 and shifts c2 to 4.0..7.0
+        app.canvas_state.selected_gap = Some(("v1".into(), 4.0, 7.0));
+        app.close_selected_gap(false);
+        assert!((app.project.timeline.tracks[0].clips[1].timeline_in - 4.0).abs() < 1e-6);
+        assert!(app.canvas_state.selected_gap.is_none());
+        app.perform_undo();
+        assert!((app.project.timeline.tracks[0].clips[1].timeline_in - 7.0).abs() < 1e-6);
+
+        // 5. set_selected_clips_color updates color label
+        app.canvas_state.selected_clip_pairs = vec![("v1".into(), "c1".into())];
+        app.set_selected_clips_color(ColorLabel::Cyan);
+        assert_eq!(
+            app.project.timeline.tracks[0].clips[0].color_label,
+            ColorLabel::Cyan
+        );
+    }
+
+    #[test]
+    fn test_timeline_actions_locked_track_delete_guard_and_zoom_bounds() {
+        use trim_core::{Clip, Track, TrackType};
+
+        let mut app = TrimApp::default();
+        app.project.timeline.tracks.clear();
+
+        let mut v1 = Track::new("V1", TrackType::Video);
+        v1.id = "v1".into();
+        v1.locked = true;
+        let mut c1 = Clip::new("m1", 0.0, 2.0);
+        c1.id = "c1".into();
+        v1.add_clip(c1);
+
+        let mut v2 = Track::new("V2", TrackType::Video);
+        v2.id = "v2".into();
+        let mut c2 = Clip::new("m2", 0.0, 2.0);
+        c2.id = "c2".into();
+        v2.add_clip(c2);
+
+        app.project.timeline.add_track(v1);
+        app.project.timeline.add_track(v2);
+
+        app.select_all_clips();
+        app.delete_selected_clips();
+        // Locked v1 keeps c1; unlocked v2 loses c2
+        assert_eq!(app.project.timeline.tracks[0].clips.len(), 1);
+        assert_eq!(app.project.timeline.tracks[1].clips.len(), 0);
+
+        // Zoom bounds clamped to [10.0, 400.0]
+        app.zoom_timeline(100.0, None, None);
+        assert!(app.canvas_state.pixels_per_second <= 400.0);
+        app.zoom_timeline(0.001, None, None);
+        assert!(app.canvas_state.pixels_per_second >= 10.0);
+    }
+
+    #[test]
+    fn test_keyboard_shortcut_mapping_and_headless_egui_shortcuts_dialog() {
+        use trim_core::keymap::{KeyBinding, KeymapConfig, ShortcutAction, ShortcutProfile};
+
+        let trim_map = KeymapConfig::for_profile(ShortcutProfile::TrimDefault);
+        assert_eq!(
+            trim_map.bindings.get(&ShortcutAction::PlayPause),
+            Some(&KeyBinding::plain("Space"))
+        );
+        assert_eq!(
+            trim_map.bindings.get(&ShortcutAction::Undo),
+            Some(&KeyBinding::ctrl("Z"))
+        );
+        assert_eq!(
+            trim_map.bindings.get(&ShortcutAction::RazorTool),
+            Some(&KeyBinding::plain("C"))
+        );
+
+        let davinci_map = KeymapConfig::for_profile(ShortcutProfile::DaVinciResolve);
+        assert_eq!(
+            davinci_map.bindings.get(&ShortcutAction::RazorTool),
+            Some(&KeyBinding::plain("B"))
+        );
+
+        let mut app = TrimApp::default();
+        app.shortcuts_dialog.open();
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |ctx| {
+            app.shortcuts_dialog.show(ctx, &mut app.shortcut_profile);
+        });
+    }
 }
