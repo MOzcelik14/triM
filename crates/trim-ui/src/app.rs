@@ -155,6 +155,7 @@ pub struct TrimApp {
     pub confirmed_exit: bool,
     pub last_saved_undo_len: usize,
     pub file_dialog_bridge: FileDialogBridge,
+    pub helper_processes: trim_media::ffmpeg::TrackedChildPool,
     pub clipboard_clips: Vec<(
         trim_core::track::TrackType,
         usize,
@@ -316,6 +317,7 @@ impl Default for TrimApp {
             confirmed_exit: false,
             last_saved_undo_len: 0,
             file_dialog_bridge: FileDialogBridge::default(),
+            helper_processes: trim_media::ffmpeg::TrackedChildPool::default(),
             clipboard_clips: Vec::new(),
             ffmpeg_missing_alert: false,
             is_monitor_fullscreen: false,
@@ -457,8 +459,9 @@ impl eframe::App for TrimApp {
             self.last_autosave = Instant::now();
         }
 
-        // Poll background OS file dialogs non-blockingly
+        // Poll background OS file dialogs non-blockingly and reap finished helper processes
         self.poll_file_dialogs(ctx);
+        self.helper_processes.poll_reap();
 
         // Check background export messages
         let mut export_finished = false;

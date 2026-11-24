@@ -300,6 +300,54 @@ impl Drop for ChildGuard {
     }
 }
 
+/// Owns short-lived helper child processes (e.g. platform file manager launchers) via `ChildGuard`.
+/// Reaps finished processes non-blockingly on `poll_reap()` and guarantees kill+wait on `Drop`
+/// so no detached threads or zombie/orphan processes can survive application shutdown or cancellation.
+#[derive(Default)]
+pub struct TrackedChildPool {
+    children: Vec<ChildGuard>,
+}
+
+impl std::fmt::Debug for TrackedChildPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TrackedChildPool")
+            .field("active_count", &self.children.len())
+            .finish()
+    }
+}
+
+impl TrackedChildPool {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Reaps any children that have already exited without blocking.
+    pub fn poll_reap(&mut self) {
+        self.children
+            .retain_mut(|guard| matches!(guard.try_wait(), Ok(None)));
+    }
+
+    /// Spawns `cmd` wrapped in `ChildGuard` and tracks it until exit or pool drop.
+    pub fn spawn(&mut self, cmd: &mut Command) -> std::io::Result<Option<u32>> {
+        self.poll_reap();
+        let guard = ChildGuard::spawn(cmd)?;
+        let pid = guard.id();
+        self.children.push(guard);
+        Ok(pid)
+    }
+
+    /// Returns the number of currently tracked active child processes (after non-blocking reap).
+    pub fn active_count(&mut self) -> usize {
+        self.poll_reap();
+        self.children.len()
+    }
+
+    /// Immediately terminates and reaps all tracked child processes.
+    pub fn kill_all(&mut self) {
+        self.children.clear();
+    }
+}
+
 /// Runs a subprocess with bounded stdout/stderr capture (`max_bytes` per stream) and a hard timeout.
 /// Prevents OOM and UI/worker hangs on corrupt or adversarial media files.
 pub fn run_command_bounded(
@@ -671,5 +719,43 @@ mod tests {
                 "Stereo Mix (Realtek(R) Audio)"
             ]
         );
+    }
+
+    #[test]
+    fn test_tracked_child_pool_cancel_and_drop_kills_without_zombie() {
+        let mut pool = TrackedChildPool::new();
+        #[cfg(target_os = "windows")]
+        let mut cmd = {
+            let mut c = Command::new("ping");
+            c.args(["-n", "30", "127.0.0.1"]);
+            c
+        };
+        #[cfg(not(target_os = "windows"))]
+        let mut cmd = {
+            let mut c = Command::new("sleep");
+            c.arg("30");
+            c
+        };
+
+        let pid = pool
+            .spawn(&mut cmd)
+            .expect("spawn sleep")
+            .expect("child pid");
+        assert_eq!(pool.active_count(), 1);
+
+        // Cancel/drop must kill and wait immediately so no process or zombie remains
+        pool.kill_all();
+        assert_eq!(pool.active_count(), 0);
+
+        #[cfg(target_os = "linux")]
+        {
+            let proc_path = std::path::PathBuf::from(format!("/proc/{pid}"));
+            assert!(
+                !proc_path.exists(),
+                "Tracked child PID {pid} or zombie still exists in /proc after kill_all!"
+            );
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = pid;
     }
 }

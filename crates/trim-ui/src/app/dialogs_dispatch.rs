@@ -59,7 +59,7 @@ impl TrimApp {
                         p
                     };
                     if folder.is_dir() {
-                        open_folder_detached(folder);
+                        self.open_folder_tracked(folder);
                     }
                 }
                 ExportDialogAction::CopyYoutubeChapters => {
@@ -92,7 +92,7 @@ impl TrimApp {
                         p
                     };
                     if folder.is_dir() {
-                        open_folder_detached(folder);
+                        self.open_folder_tracked(folder);
                     }
                 }
                 RenderQueueDialogAction::NewExportJob => {
@@ -1216,22 +1216,17 @@ impl TrimApp {
             }
         }
     }
-}
-
-/// Opens `folder` in the platform file manager. The short-lived launcher child is reaped on a
-/// tiny helper thread so it never lingers as a zombie process (Linux) after it exits.
-fn open_folder_detached(folder: &std::path::Path) {
-    #[cfg(target_os = "windows")]
-    let program = "explorer";
-    #[cfg(target_os = "macos")]
-    let program = "open";
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let program = "xdg-open";
-    if let Ok(mut child) = std::process::Command::new(program).arg(folder).spawn() {
-        let _ = std::thread::Builder::new()
-            .name("trim-open-folder-reaper".to_string())
-            .spawn(move || {
-                let _ = child.wait();
-            });
+    /// Opens `folder` in the platform file manager via `ChildGuard`-backed `TrackedChildPool`
+    /// so finished launchers are reaped non-blockingly and any still-running process is killed on Drop.
+    fn open_folder_tracked(&mut self, folder: &std::path::Path) {
+        #[cfg(target_os = "windows")]
+        let program = "explorer";
+        #[cfg(target_os = "macos")]
+        let program = "open";
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        let program = "xdg-open";
+        let mut cmd = std::process::Command::new(program);
+        cmd.arg(folder);
+        let _ = self.helper_processes.spawn(&mut cmd);
     }
 }
