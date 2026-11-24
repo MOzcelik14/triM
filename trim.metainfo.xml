@@ -19,7 +19,7 @@
       <li>High-performance FFmpeg rendering pipeline</li>
     </ul>
   </description>
-  <developer id="mozcelik14">
+  <developer id="com.mozcelik14">
     <name>Murat Özçelik</name>
   </developer>
   <launchable type="desktop-id">trim.desktop</launchable>

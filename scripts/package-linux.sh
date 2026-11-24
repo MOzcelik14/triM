@@ -53,6 +53,9 @@ install_payload() {
   install -Dm755 "$BIN" "$root/usr/bin/trim"
   install -Dm644 "$DESKTOP" "$root/usr/share/applications/trim.desktop"
   install -Dm644 "$METAINFO" "$root/usr/share/metainfo/trim.metainfo.xml"
+  if [[ -f "$ROOT/resources/mime/trim.xml" ]]; then
+    install -Dm644 "$ROOT/resources/mime/trim.xml" "$root/usr/share/mime/packages/trim.xml"
+  fi
   install -Dm644 "$ICON" "$root/usr/share/icons/hicolor/scalable/apps/trim.svg"
   if [[ -f "$ROOT/LICENSE" ]]; then
     install -Dm644 "$ROOT/LICENSE" "$root/usr/share/licenses/trim/LICENSE"
@@ -155,6 +158,9 @@ build_rpm() {
   sed -i 's|^Exec=trim |Exec=/usr/bin/trim |' "$top/SOURCES/trim.desktop"
   cp "$METAINFO" "$top/SOURCES/trim.metainfo.xml"
   cp "$ICON" "$top/SOURCES/trim.svg"
+  if [[ -f "$ROOT/resources/mime/trim.xml" ]]; then
+    cp "$ROOT/resources/mime/trim.xml" "$top/SOURCES/trim.xml"
+  fi
   local size
   for size in 16 32 48 64 128 256 512; do
     local image="$ROOT/resources/icons/trim_${size}x${size}.png"
@@ -183,6 +189,9 @@ install -Dm644 %{_sourcedir}/trim.desktop %{buildroot}%{_datadir}/applications/t
 install -Dm644 %{_sourcedir}/trim.metainfo.xml %{buildroot}%{_datadir}/metainfo/trim.metainfo.xml
 install -Dm644 %{_sourcedir}/trim.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/trim.svg
 EOF
+  if [[ -f "$top/SOURCES/trim.xml" ]]; then
+    echo "install -Dm644 %{_sourcedir}/trim.xml %{buildroot}%{_datadir}/mime/packages/trim.xml" >> "$top/SPECS/trim.spec"
+  fi
   for size in 16 32 48 64 128 256 512; do
     if [[ -f "$top/SOURCES/trim_${size}.png" ]]; then
       echo "install -Dm644 %{_sourcedir}/trim_${size}.png %{buildroot}%{_datadir}/icons/hicolor/${size}x${size}/apps/trim.png" >> "$top/SPECS/trim.spec"
@@ -194,6 +203,7 @@ EOF
 %{_bindir}/trim
 %{_datadir}/applications/trim.desktop
 %{_datadir}/metainfo/trim.metainfo.xml
+%{_datadir}/mime/packages/trim.xml
 %{_datadir}/icons/hicolor/
 
 %changelog

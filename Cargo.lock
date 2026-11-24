@@ -3105,6 +3105,7 @@ dependencies = [
  "log",
  "serde",
  "tempfile",
+ "trim-commands",
  "trim-core",
  "trim-media",
  "uuid",

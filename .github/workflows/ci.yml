@@ -72,6 +72,30 @@ jobs:
       - name: Validate Linux packaging script syntax
         run: bash -n scripts/package-linux.sh
 
+      - name: Validate desktop entry and AppStream metainfo
+        run: |
+          sudo apt-get install -y --no-install-recommends desktop-file-utils appstream
+          desktop-file-validate trim.desktop
+          appstreamcli validate trim.metainfo.xml
+
+  fedora-ci:
+    name: Fedora 41 Check and Test
+    runs-on: ubuntu-latest
+    container: fedora:41
+    steps:
+      - name: Install Fedora system dependencies
+        run: |
+          dnf install -y git gcc gcc-c++ make pkgconf-pkg-config alsa-lib-devel pipewire-devel libX11-devel mesa-libGL-devel libxkbcommon-devel wayland-devel ffmpeg-free rust cargo desktop-file-utils appstream
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run workspace unit and integration tests on Fedora
+        run: cargo test --workspace --locked
+      - name: Validate desktop and metainfo on Fedora
+        run: |
+          desktop-file-validate trim.desktop
+          appstreamcli validate trim.metainfo.xml
+
   windows-ci:
     name: Windows MSVC Check, Test, and Release Build
     runs-on: windows-latest

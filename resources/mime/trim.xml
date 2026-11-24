@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-trim-project">
+    <comment>triM. Video Project</comment>
+    <comment xml:lang="tr">triM. Video Projesi</comment>
+    <glob pattern="*.trim"/>
+  </mime-type>
+  <mime-type type="application/x-cutline-project">
+    <comment>Cutline Legacy Video Project</comment>
+    <comment xml:lang="tr">Cutline Eski Video Projesi</comment>
+    <glob pattern="*.cutline"/>
+  </mime-type>
+</mime-info>
