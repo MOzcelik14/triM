@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    ignore:
+      # egui/eframe 0.30+ breaks glow/egui APIs and requires newer rustc than Fedora CI
+      - dependency-name: "egui"
+        versions: [">= 0.30.0"]
+      - dependency-name: "eframe"
+        versions: [">= 0.30.0"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
