@@ -56,6 +56,11 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2026.11.0" date="2026-11-25">
+      <description>
+        <p>triM. 2026.11.0: CalVer sürümlendirme sistemine geçiş.</p>
+      </description>
+    </release>
     <release version="2.5.5" date="2026-11-24">
       <description>
         <p>triM. v2.5.5 - Seek Doğruluğu, Süreç Sahipliği, Dürüst Benchmark ve Proxy İptal Desteği:</p>
