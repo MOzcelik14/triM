@@ -30,7 +30,7 @@ jobs:
     name: Rust workspace tests
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Install Linux build dependencies
@@ -50,7 +50,7 @@ jobs:
     needs: rust-tests
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Install packaging requirements
@@ -119,7 +119,7 @@ jobs:
       - name: Install native build and packaging tools
         run: |
           dnf install -y git gcc gcc-c++ make pkgconf-pkg-config alsa-lib-devel pipewire-devel libX11-devel mesa-libGL-devel libxkbcommon-devel wayland-devel ffmpeg-free rpm-build curl ca-certificates python3 rust cargo
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Build Rust binary on Fedora
@@ -142,7 +142,7 @@ jobs:
     needs: rust-tests
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Install stable Rust toolchain
@@ -329,7 +329,7 @@ jobs:
     needs: rust-tests
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Install stable Rust toolchain
@@ -402,7 +402,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: trim-*-package*
           merge-multiple: true
@@ -420,7 +420,7 @@ jobs:
           (cd dist && sha256sum -- *.deb *.rpm *.AppImage *.dmg *.tar.gz *.zip > SHA256SUMS.txt)
           cat dist/SHA256SUMS.txt
       - name: Create or update release with all packages
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/*.deb
