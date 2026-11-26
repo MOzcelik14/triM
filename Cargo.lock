@@ -3330,7 +3330,7 @@ version = "2026.11.0"
 dependencies = [
  "log",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.21",
  "trim-core",
  "uuid",
 ]
@@ -3343,7 +3343,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.21",
  "uuid",
 ]
 
@@ -3369,7 +3369,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.21",
  "trim-core",
  "uuid",
 ]
@@ -3382,7 +3382,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.21",
  "trim-core",
 ]
 
