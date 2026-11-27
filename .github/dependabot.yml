@@ -15,6 +15,9 @@ updates:
         versions: [">= 0.30.0"]
       - dependency-name: "eframe"
         versions: [">= 0.30.0"]
+      # rfd 0.18+ requires rustc 1.92+, Fedora 41 CI has rustc 1.91.1
+      - dependency-name: "rfd"
+        versions: [">= 0.18.0"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
