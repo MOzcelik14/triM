@@ -100,7 +100,7 @@ jobs:
             echo "GUI failed or exited early (status $status)" >&2
             exit 1
           fi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: trim-ubuntu-packages
           path: |
@@ -130,7 +130,7 @@ jobs:
         run: |
           test "$(find dist -name '*.rpm' | wc -l)" -eq 1
           rpm -qpl dist/*.rpm | grep -E '/usr/bin/trim$'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: trim-fedora-package
           path: dist/*.rpm
@@ -317,7 +317,7 @@ jobs:
           Set-Content -Path (Join-Path $stage "WINDOWS_RUNTIME.txt") -Value $runtimeNotes -Encoding UTF8
           Compress-Archive -Path "$stage\*" -DestinationPath "dist\triM-$ver-windows-x86_64.zip" -Force
           Remove-Item -Recurse -Force $stage
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: trim-windows-package
           path: dist/*.zip
@@ -385,7 +385,7 @@ jobs:
           ln -s /Applications "${DMG_STAGE}/Applications"
           hdiutil create -volname "triM. ${VER}" -srcfolder "${DMG_STAGE}" -ov -format UDZO "dist/triM-${VER}-macos-arm64.dmg"
           rm -rf "${DMG_STAGE}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: trim-macos-package
           path: |
