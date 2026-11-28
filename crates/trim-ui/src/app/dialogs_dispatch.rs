@@ -636,6 +636,7 @@ impl TrimApp {
         // -------------------------------------------------------------
         // Keyboard Shortcuts Modal (F1)
         // -------------------------------------------------------------
+        self.shortcuts_dialog.lang = self.lang();
         self.shortcuts_dialog
             .show(ctx, &mut self.shortcut_profile, &mut self.keymap_config);
 
@@ -680,9 +681,12 @@ impl TrimApp {
                     if self.shortcut_profile != old_profile {
                         self.keymap_config =
                             crate::shortcuts::KeymapConfig::for_profile(self.shortcut_profile);
-                        let _ = self
+                        if let Err(e) = self
                             .keymap_config
-                            .save_to_path(&crate::shortcuts::KeymapConfig::config_path());
+                            .save_to_path(&crate::shortcuts::KeymapConfig::config_path())
+                        {
+                            log::warn!("Failed to save keybindings: {}", e);
+                        }
                     }
 
                     if self.preferences.max_memory_budget_mb != new_prefs.max_memory_budget_mb {
@@ -771,6 +775,7 @@ impl TrimApp {
         // -------------------------------------------------------------
         // Screen & Webcam Recorder Modal
         // -------------------------------------------------------------
+        self.screen_record_dialog.lang = self.lang();
         if let Some(act) = self.screen_record_dialog.ui(ctx) {
             match act {
                 ScreenRecordAction::RecordingSaved {

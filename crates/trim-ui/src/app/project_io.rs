@@ -498,10 +498,20 @@ impl TrimApp {
                         self.autosave_mgr.cleanup(&self.project);
                         self.welcome_dialog
                             .add_recent(&self.project.settings.name, &target.to_string_lossy());
-                        self.status_message = format!("Proje kaydedildi: {:?}", target);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("Proje kaydedildi: {:?}", target)
+                            }
+                            crate::i18n::Language::English => {
+                                format!("Project saved: {:?}", target)
+                            }
+                        };
                     }
                     Err(e) => {
-                        self.status_message = format!("Kayıt hatası: {}", e);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => format!("Kayıt hatası: {}", e),
+                            crate::i18n::Language::English => format!("Save error: {}", e),
+                        };
                     }
                 }
             }
@@ -534,27 +544,60 @@ impl TrimApp {
                 entry_count,
             } => match std::fs::write(&path, srt_text) {
                 Ok(()) => {
-                    self.status_message =
-                        format!("{} adet altyazı dışa aktarıldı: {:?}", entry_count, path);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => {
+                            format!("{} adet altyazı dışa aktarıldı: {:?}", entry_count, path)
+                        }
+                        crate::i18n::Language::English => {
+                            format!("Exported {} subtitle(s): {:?}", entry_count, path)
+                        }
+                    };
                 }
                 Err(e) => {
-                    self.status_message = format!("Altyazı kayıt hatası: {}", e);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => {
+                            format!("Altyazı kayıt hatası: {}", e)
+                        }
+                        crate::i18n::Language::English => {
+                            format!("Subtitle save error: {}", e)
+                        }
+                    };
                 }
             },
             FileDialogRequest::ExportEdl { edl_text } => match std::fs::write(&path, edl_text) {
                 Ok(()) => {
-                    self.status_message = format!("EDL başarıyla dışa aktarıldı: {:?}", path);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => {
+                            format!("EDL başarıyla dışa aktarıldı: {:?}", path)
+                        }
+                        crate::i18n::Language::English => {
+                            format!("EDL exported successfully: {:?}", path)
+                        }
+                    };
                 }
                 Err(e) => {
-                    self.status_message = format!("EDL kayıt hatası: {}", e);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => format!("EDL kayıt hatası: {}", e),
+                        crate::i18n::Language::English => format!("EDL save error: {}", e),
+                    };
                 }
             },
             FileDialogRequest::ExportFcpxml { xml_text } => match std::fs::write(&path, xml_text) {
                 Ok(()) => {
-                    self.status_message = format!("FCPXML başarıyla dışa aktarıldı: {:?}", path);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => {
+                            format!("FCPXML başarıyla dışa aktarıldı: {:?}", path)
+                        }
+                        crate::i18n::Language::English => {
+                            format!("FCPXML exported successfully: {:?}", path)
+                        }
+                    };
                 }
                 Err(e) => {
-                    self.status_message = format!("FCPXML kayıt hatası: {}", e);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => format!("FCPXML kayıt hatası: {}", e),
+                        crate::i18n::Language::English => format!("FCPXML save error: {}", e),
+                    };
                 }
             },
             FileDialogRequest::ImportInterchange => {
@@ -613,14 +656,28 @@ impl TrimApp {
                 }
                 match std::fs::write(&target, cube_text) {
                     Ok(()) => {
-                        self.status_message = format!(
-                            "💾 '{}' renk ayarı 3D .cube LUT olarak kaydedildi: {}",
-                            clip_name,
-                            target.display()
-                        );
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => format!(
+                                "💾 '{}' renk ayarı 3D .cube LUT olarak kaydedildi: {}",
+                                clip_name,
+                                target.display()
+                            ),
+                            crate::i18n::Language::English => format!(
+                                "💾 '{}' color grade exported as 3D .cube LUT: {}",
+                                clip_name,
+                                target.display()
+                            ),
+                        };
                     }
                     Err(e) => {
-                        self.status_message = format!("⚠ .cube LUT dosyası kaydedilemedi: {e}");
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("⚠ .cube LUT dosyası kaydedilemedi: {e}")
+                            }
+                            crate::i18n::Language::English => {
+                                format!("⚠ Failed to save .cube LUT file: {e}")
+                            }
+                        };
                     }
                 }
             }

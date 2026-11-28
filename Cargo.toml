@@ -13,7 +13,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "2026.11.1"
+version = "2026.11.2"
 edition = "2021"
 authors = ["triM. contributors"]
 license = "GPL-3.0-or-later"

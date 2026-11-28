@@ -6,7 +6,7 @@ This document defines the upcoming engineering milestones and issue specificatio
 
 | ISSUE | Durum | Kanıt (`dosya:satır`) |
 |---|---|---|
-| `ISSUE-001` (Custom Keybindings) | Implemented | `crates/trim-core/src/keymap.rs`, `crates/trim-ui/src/dialogs/shortcuts_dialog.rs`, `crates/trim-ui/src/app/shortcuts.rs` |
+| `ISSUE-001` (Custom Keybindings) | Partial (12 eylem: `ShortcutAction::ALL`; J/K/L, M, ok tuşları vb. hâlâ sabit) | `crates/trim-core/src/keymap.rs`, `crates/trim-ui/src/dialogs/shortcuts_dialog.rs`, `crates/trim-ui/src/app/shortcuts.rs` |
 | `ISSUE-002` (Wayland Fractional Scaling) | Partial | `crates/trim-ui/src/app.rs:326` (`set_pixels_per_point`), per-widget pixel snapping missing |
 | `ISSUE-003` (Brickwall Limiter) | **Done** | `crates/trim-media/src/dsp/limiter.rs:37-220`, `crates/trim-media/src/audio.rs:641-675`, `crates/trim-ui/src/vu_meter.rs` |
 | `ISSUE-004` (Async File Dialogs) | **Done** | `crates/trim-ui/src/file_dialog.rs:138-184` (background thread + `mpsc`; main-thread on macOS AppKit) |

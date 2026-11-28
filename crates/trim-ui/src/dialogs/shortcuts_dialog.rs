@@ -8,6 +8,13 @@ pub struct ShortcutsDialog {
     pub is_open: bool,
     pub capturing_action: Option<ShortcutAction>,
     pub status_hint: Option<String>,
+    pub lang: crate::i18n::Language,
+}
+
+fn save_keymap(keymap: &KeymapConfig) {
+    if let Err(e) = keymap.save_to_path(&KeymapConfig::config_path()) {
+        log::warn!("Failed to save keybindings: {}", e);
+    }
 }
 
 fn egui_key_to_name(key: Key) -> Option<&'static str> {
@@ -120,17 +127,30 @@ impl ShortcutsDialog {
                 }
                 Some(Ok(binding)) => {
                     let display = binding.display();
+                    let action_label = self.lang.t(action.i18n_key());
                     let conflicts = keymap.rebind(action, binding, true);
-                    let _ = keymap.save_to_path(&KeymapConfig::config_path());
+                    save_keymap(keymap);
                     self.capturing_action = None;
                     self.status_hint = Some(if conflicts.is_empty() {
-                        format!("{} -> {} olarak kaydedildi.", action.label(), display)
+                        match self.lang {
+                            crate::i18n::Language::Turkish => {
+                                format!("{} -> {} olarak kaydedildi.", action_label, display)
+                            }
+                            crate::i18n::Language::English => {
+                                format!("{} -> {} saved.", action_label, display)
+                            }
+                        }
                     } else {
-                        format!(
-                            "{} -> {} atandı (çakışan eski atama kaldırıldı).",
-                            action.label(),
-                            display
-                        )
+                        match self.lang {
+                            crate::i18n::Language::Turkish => format!(
+                                "{} -> {} atandı (çakışan eski atama kaldırıldı).",
+                                action_label, display
+                            ),
+                            crate::i18n::Language::English => format!(
+                                "{} -> {} assigned (previous conflicting binding removed).",
+                                action_label, display
+                            ),
+                        }
                     });
                 }
                 None => {}
@@ -170,7 +190,7 @@ impl ShortcutsDialog {
                         });
                     if ui.button("Varsayılana Sıfırla").clicked() {
                         *keymap = KeymapConfig::for_profile(*profile);
-                        let _ = keymap.save_to_path(&KeymapConfig::config_path());
+                        save_keymap(keymap);
                         self.capturing_action = None;
                         self.status_hint = Some(format!(
                             "{} profilinin varsayılanları geri yüklendi.",
@@ -180,7 +200,7 @@ impl ShortcutsDialog {
                 });
                 if *profile != prev_profile {
                     *keymap = KeymapConfig::for_profile(*profile);
-                    let _ = keymap.save_to_path(&KeymapConfig::config_path());
+                    save_keymap(keymap);
                     self.capturing_action = None;
                     self.status_hint =
                         Some(format!("Profil {} olarak güncellendi.", profile.label()));
@@ -350,7 +370,7 @@ impl ShortcutsDialog {
                                         if is_capturing { None } else { Some(action) };
                                 }
                                 ui.label(
-                                    RichText::new(action.label())
+                                    RichText::new(self.lang.t(action.i18n_key()))
                                         .size(11.5)
                                         .color(Color32::from_rgb(0xd0, 0xd0, 0xdc)),
                                 );

@@ -18,6 +18,7 @@ pub struct ScreenRecordDialog {
     pub recorder: Option<ScreenRecorder>,
     pub auto_add_to_timeline: bool,
     pub status_message: String,
+    pub lang: crate::i18n::Language,
 }
 
 impl Default for ScreenRecordDialog {
@@ -28,6 +29,7 @@ impl Default for ScreenRecordDialog {
             recorder: None,
             auto_add_to_timeline: true,
             status_message: "Kayıt kaynağını seçip 'Kaydı Başlat' butonuna tıklayın.".to_string(),
+            lang: crate::i18n::Language::default(),
         }
     }
 }
@@ -36,7 +38,12 @@ impl ScreenRecordDialog {
     pub fn open(&mut self) {
         self.is_open = true;
         self.recorder = None;
-        self.status_message = "Kayıt başlatmaya hazır.".to_string();
+        self.status_message = crate::i18n::pick(
+            self.lang,
+            "Kayıt başlatmaya hazır.",
+            "Ready to start recording.",
+        )
+        .to_string();
     }
 
     pub fn close(&mut self) {
@@ -146,8 +153,15 @@ impl ScreenRecordDialog {
                             match rec.stop() {
                                 Ok(_) => {
                                     let file_path = rec.output_path().to_path_buf();
-                                    self.status_message =
-                                        format!("Kayıt tamamlandı: {:?}", file_path.file_name());
+                                    self.status_message = match self.lang {
+                                        crate::i18n::Language::Turkish => {
+                                            format!("Kayıt tamamlandı: {:?}", file_path.file_name())
+                                        }
+                                        crate::i18n::Language::English => format!(
+                                            "Recording complete: {:?}",
+                                            file_path.file_name()
+                                        ),
+                                    };
                                     action = Some(ScreenRecordAction::RecordingSaved {
                                         file_path,
                                         auto_add_to_timeline: self.auto_add_to_timeline,
@@ -155,8 +169,14 @@ impl ScreenRecordDialog {
                                     self.is_open = false;
                                 }
                                 Err(e) => {
-                                    self.status_message =
-                                        format!("Kayıt sonlandırma hatası: {}", e);
+                                    self.status_message = match self.lang {
+                                        crate::i18n::Language::Turkish => {
+                                            format!("Kayıt sonlandırma hatası: {}", e)
+                                        }
+                                        crate::i18n::Language::English => {
+                                            format!("Recording stop error: {}", e)
+                                        }
+                                    };
                                 }
                             }
                         }
@@ -180,10 +200,22 @@ impl ScreenRecordDialog {
                         match ScreenRecorder::start(&out_path, self.source) {
                             Ok(rec) => {
                                 self.recorder = Some(rec);
-                                self.status_message = "Kayıt devam ediyor...".to_string();
+                                self.status_message = crate::i18n::pick(
+                                    self.lang,
+                                    "Kayıt devam ediyor...",
+                                    "Recording in progress...",
+                                )
+                                .to_string();
                             }
                             Err(e) => {
-                                self.status_message = format!("Başlatma hatası: {}", e);
+                                self.status_message = match self.lang {
+                                    crate::i18n::Language::Turkish => {
+                                        format!("Başlatma hatası: {}", e)
+                                    }
+                                    crate::i18n::Language::English => {
+                                        format!("Failed to start recording: {}", e)
+                                    }
+                                };
                             }
                         }
                     }

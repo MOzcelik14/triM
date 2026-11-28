@@ -56,12 +56,22 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2026.11.2" date="2026-11-28">
+      <description>
+        <p>triM. 2026.11.2 - Kısayol Editörü Sağlamlaştırma ve Durum Çubuğu i18n Tamamlama:</p>
+        <ul>
+          <li>Kalan tüm dinamik formatlı durum çubuğu mesajları ve ekran kayıt diyaloğu TR/EN olarak yerelleştirildi.</li>
+          <li>KeymapConfig bozuk/boş dosya fallback testi, save_to_path hata loglaması ve i18n eylem etiketleri eklendi.</li>
+          <li>ROADMAP.md, ROADMAP_GAPS.md ve AppStream sürüm notları mevcut kapsama göre güncellendi.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2026.11.1" date="2026-11-28">
       <description>
         <p>triM. 2026.11.1 - Kısayol Editörü, Tam Durum Çubuğu i18n ve Doküman Tutarlılığı:</p>
         <ul>
           <li>KeymapConfig UI ve Çalışma Zamanı Bağlantısı: F1 Kısayol penceresinden etkileşimli tuş atama, çakışma çözümü ve keybindings.json kalıcılığı eklendi.</li>
-          <li>TR/EN Durum Çubuğu i18n: Tüm UI durum mesajları Türkçe ve İngilizce olarak yerelleştirildi.</li>
+          <li>TR/EN Durum Çubuğu i18n: Durum çubuğu mesajlarının büyük bölümü Türkçe ve İngilizce olarak yerelleştirildi.</li>
           <li>Doküman Tutarlılığı: ROADMAP_GAPS, ROADMAP ve docs/ bağlantıları güncellendi.</li>
         </ul>
       </description>

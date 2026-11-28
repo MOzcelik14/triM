@@ -59,7 +59,7 @@ Toplam `crates/` altında 68.557 satır Rust kodu içinde 800 satırı aşan **2
 
 ### C. UX ve Erişilebilirlik (Faz 3)
 1. **Uzun İşlem İptal Tutarlılığı (`Tamamlandı`):** Export, Proxy ve arka plan `bg_task_cancel_flag` iptal desteği eklendi.
-2. **Çift Dilli (TR/EN) Arayüz & Kısayol Özelleştirme (`Tamamlandı`):** `status_message` atamaları `i18n` katmanına taşındı; `KeymapConfig` ve `ShortcutsDialog` üzerinden etkileşimli kısayol atama/kalıcılık (`keybindings.json`) bağlandı.
+2. **Çift Dilli (TR/EN) Arayüz & Kısayol Özelleştirme (`Kısmi`):** Durum çubuğu (`status_message`) atamaları `i18n` katmanına taşındı ve 12 temel `ShortcutAction` için `KeymapConfig`/`ShortcutsDialog` bağlantısı kuruldu; ancak `inspector` (~197) ve `canvas` (~26) metinleri hâlâ sabit Türkçe ve J/K/L, M, ok tuşları vb. sabit kısayol olarak kalıyor.
 3. **Erişilebilirlik (`accesskit` / HiDPI / Klavye Navigasyonu):** `egui` accesskit desteği değerlendirilip etkinleştirilmeli ve IME/ekran okuyucu sınırları belgelenmeli.
 4. **Onboarding / Boş Proje Durumu:** İlk açılışta örnek proje veya hızlı başlangıç rehberi akışı cilalanmalı.
 

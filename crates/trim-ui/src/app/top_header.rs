@@ -209,9 +209,12 @@ impl TrimApp {
                                 self.shortcut_profile = *p;
                                 self.keymap_config =
                                     crate::shortcuts::KeymapConfig::for_profile(*p);
-                                let _ = self
+                                if let Err(e) = self
                                     .keymap_config
-                                    .save_to_path(&crate::shortcuts::KeymapConfig::config_path());
+                                    .save_to_path(&crate::shortcuts::KeymapConfig::config_path())
+                                {
+                                    log::warn!("Failed to save keybindings: {}", e);
+                                }
                                 self.status_message = match self.lang() {
                                     crate::i18n::Language::Turkish => {
                                         format!("Kısayol Profili: {}", p.label())
@@ -322,7 +325,11 @@ impl TrimApp {
                                 }
                             }
                         };
-                        self.status_message = format!("⚡ Proxy: {}", state_str);
+                        self.status_message = match self.lang() {
+                            Language::Turkish | Language::English => {
+                                format!("⚡ Proxy: {}", state_str)
+                            }
+                        };
                         ui.close_menu();
                     }
                     ui.separator();

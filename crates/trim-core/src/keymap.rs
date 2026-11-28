@@ -90,6 +90,23 @@ impl ShortcutAction {
             Self::RippleDelete => "Boşluğu Kapatarak Sil (Ripple Delete)",
         }
     }
+
+    pub fn i18n_key(&self) -> &'static str {
+        match self {
+            Self::PlayPause => "action_play_pause",
+            Self::SelectTool => "action_select_tool",
+            Self::RazorTool => "action_razor_tool",
+            Self::RippleTool => "action_ripple_tool",
+            Self::SplitAtPlayhead => "action_split_at_playhead",
+            Self::RippleTrimHead => "action_ripple_trim_head",
+            Self::RippleTrimTail => "action_ripple_trim_tail",
+            Self::ToggleSnap => "action_toggle_snap",
+            Self::Undo => "action_undo",
+            Self::Redo => "action_redo",
+            Self::DeleteSelected => "action_delete_selected",
+            Self::RippleDelete => "action_ripple_delete",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -361,5 +378,25 @@ mod tests {
             Some(&KeyBinding::plain("C"))
         );
         assert!(cfg.find_conflicts().is_empty());
+    }
+
+    #[test]
+    fn test_keymap_load_corrupt_or_empty_falls_back_to_profile() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let empty_path = dir.path().join("empty_keybindings.json");
+        std::fs::write(&empty_path, "").expect("write empty");
+        assert!(KeymapConfig::load_from_path(&empty_path).is_none());
+
+        let corrupt_path = dir.path().join("corrupt_keybindings.json");
+        std::fs::write(&corrupt_path, "{ not valid json !!!").expect("write corrupt");
+        assert!(KeymapConfig::load_from_path(&corrupt_path).is_none());
+
+        let resolved = KeymapConfig::load_from_path(&corrupt_path)
+            .unwrap_or_else(|| KeymapConfig::for_profile(ShortcutProfile::PremierePro));
+        assert_eq!(
+            resolved,
+            KeymapConfig::for_profile(ShortcutProfile::PremierePro)
+        );
     }
 }
