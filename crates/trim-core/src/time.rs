@@ -275,4 +275,35 @@ mod tests {
         let parsed = timecode_to_seconds("00:01:00;02", 29.97).unwrap();
         assert_eq!(RationalTime::from_seconds(parsed, rate_2997).frames, 1800);
     }
+
+    proptest::proptest! {
+        #[test]
+        fn proptest_rational_time_and_broadcast_timecode_roundtrip(
+            fps_idx in 0usize..8usize,
+            frames in 0i64..200_000i64,
+        ) {
+            let rates = [23.976, 24.0, 25.0, 29.97, 30.0, 50.0, 59.94, 60.0];
+            let fps = rates[fps_idx];
+            let fr = FrameRate::from_fps(fps);
+            let rt = RationalTime::from_frames(frames, fr);
+            let secs = rt.to_seconds();
+            let rt_back = RationalTime::from_seconds(secs, fr);
+            proptest::prop_assert_eq!(rt_back.frames, frames);
+
+            // Drop-Frame SMPTE round-trip for 29.97 and 59.94
+            if (fps - 29.97).abs() < 0.01 || (fps - 59.94).abs() < 0.01 {
+                let tc = seconds_to_drop_frame_timecode(secs, fps);
+                let parsed_secs = timecode_to_seconds(&tc, fps)
+                    .expect("valid DF timecode");
+                let parsed_frames = RationalTime::from_seconds(parsed_secs, fr).frames;
+                proptest::prop_assert_eq!(parsed_frames, frames);
+            } else {
+                let tc = seconds_to_timecode(secs, fps);
+                let parsed_secs = timecode_to_seconds(&tc, fps)
+                    .expect("valid NDF timecode");
+                let parsed_frames = RationalTime::from_seconds(parsed_secs, fr).frames;
+                proptest::prop_assert_eq!(parsed_frames, frames);
+            }
+        }
+    }
 }

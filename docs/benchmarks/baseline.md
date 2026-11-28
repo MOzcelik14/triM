@@ -23,6 +23,8 @@
 | **Yazılım Kompozisyonu (640×360, Cache-Miss)** | 6 Video Track | 15.80 ms/kare | 16.85 ms | — | — |
 | **4K Decode (`2026.11.2`, 3840×2160 → 720p)** | Tek Kare Decode (`decode_frame_raw_sized`) | 585.24 ms | 640.84 ms | — | — |
 | **Ses Mikseri (`2026.11.2`, 6 Kanal)** | `AudioMixer::mix_timeline_chunk` (100ms) | 0.429 ms/chunk | 0.960 ms | — | — |
+| **GPU Pipeline (`2026.11.3`, `gpu_bench`)** | `LayerUniforms::from_clip` (4 katman/kare) | 0.20 µs/kare | — | — | — |
+| **GPU Pipeline (`2026.11.3`, `gpu_bench`)** | `bake_adjustment_curves_lut` (17×17×17 LUT) | 0.207 ms/bake | — | — | — |
 
 Ayrıntılı çıktı ve P0-2 önce/sonra tolerans karşılaştırması için bkz. [`2026-11-22_honest_benchmark.md`](./2026-11-22_honest_benchmark.md) ve [`2026-11-22_honest_benchmark.json`](./2026-11-22_honest_benchmark.json).
 

@@ -1336,7 +1336,11 @@ impl Drop for GpuCompositor {
     }
 }
 
-fn bake_adjustment_curves_lut(clip: &Clip, base_lut: Option<&CubeLut3D>, size: u32) -> CubeLut3D {
+pub fn bake_adjustment_curves_lut(
+    clip: &Clip,
+    base_lut: Option<&CubeLut3D>,
+    size: u32,
+) -> CubeLut3D {
     let n = size.max(2) as usize;
     let denom = (n - 1) as f32;
     let mut rgba_strip = vec![0u8; n * n * n * 4];
