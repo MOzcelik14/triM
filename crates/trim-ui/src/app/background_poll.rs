@@ -51,7 +51,10 @@ impl TrimApp {
                         export_finished = true;
                         match res {
                             Ok(p) => {
-                                self.status_message = format!("Dışa aktarma tamamlandı: {}", p)
+                                self.status_message = match self.lang() {
+                                    Language::Turkish => format!("Dışa aktarma tamamlandı: {}", p),
+                                    Language::English => format!("Export complete: {}", p),
+                                }
                             }
                             Err(e) => {
                                 self.status_message = match self.lang() {
@@ -82,15 +85,24 @@ impl TrimApp {
                     ctx.request_repaint();
                 }
                 RenderQueueEvent::JobCompleted { output_path, .. } => {
-                    self.status_message = format!("Kuyruk işi tamamlandı: {}", output_path);
+                    self.status_message = match self.lang() {
+                        Language::Turkish => format!("Kuyruk işi tamamlandı: {}", output_path),
+                        Language::English => format!("Queue job completed: {}", output_path),
+                    };
                     ctx.request_repaint();
                 }
                 RenderQueueEvent::JobFailed { error, .. } => {
-                    self.status_message = format!("Kuyruk işinde hata: {}", error);
+                    self.status_message = match self.lang() {
+                        Language::Turkish => format!("Kuyruk işinde hata: {}", error),
+                        Language::English => format!("Queue job failed: {}", error),
+                    };
                     ctx.request_repaint();
                 }
                 RenderQueueEvent::QueueFinished => {
-                    self.status_message = "Tüm render kuyruğu tamamlandı!".to_string();
+                    self.set_status(
+                        "Tüm render kuyruğu tamamlandı!",
+                        "All render queue jobs completed!",
+                    );
                     ctx.request_repaint();
                 }
             }
@@ -105,10 +117,18 @@ impl TrimApp {
                         if let Some(m) = self.project.get_media_mut(&m_id) {
                             m.proxy_path = Some(p_path);
                         }
-                        self.status_message = "⚡ 720p Proxy başarıyla oluşturuldu!".to_string();
+                        self.status_message = crate::i18n::pick(
+                            Language::from_code(&self.preferences.language),
+                            "⚡ 720p Proxy başarıyla oluşturuldu!",
+                            "⚡ 720p Proxy generated successfully!",
+                        )
+                        .to_string();
                     }
                     Err(e) => {
-                        self.status_message = format!("Proxy hatası: {}", e);
+                        self.status_message = match self.lang() {
+                            Language::Turkish => format!("Proxy hatası: {}", e),
+                            Language::English => format!("Proxy error: {}", e),
+                        };
                     }
                 }
             }
@@ -160,8 +180,10 @@ impl TrimApp {
                 } => match result {
                     Ok(source_cuts) => {
                         if source_cuts.is_empty() {
-                            self.status_message =
-                                "Klipte belirgin sahne geçişi algılanmadı (Eşik: 0.40)".to_string();
+                            self.set_status(
+                                "Klipte belirgin sahne geçişi algılanmadı (Eşik: 0.40)",
+                                "No significant scene cuts detected in clip (Threshold: 0.40)",
+                            );
                         } else if let Some(clip) = self
                             .project
                             .timeline
@@ -178,9 +200,10 @@ impl TrimApp {
                                 .collect();
                             let count = timeline_cuts.len();
                             if count == 0 {
-                                self.status_message =
-                                    "Klip sınırları içinde yeni sahne kesimi bulunamadı"
-                                        .to_string();
+                                self.set_status(
+                                    "Klip sınırları içinde yeni sahne kesimi bulunamadı",
+                                    "No new scene cuts found within clip bounds",
+                                );
                             } else {
                                 let cmd = Box::new(trim_commands::BatchSplitClipCommand::new(
                                     &track_id,
@@ -190,13 +213,24 @@ impl TrimApp {
                                 if let Err(e) =
                                     self.undo_stack.push(cmd, &mut self.project.timeline)
                                 {
-                                    self.status_message = format!("⚠ Sahne kesimi başarısız: {e}");
+                                    self.status_message = match self.lang() {
+                                        Language::Turkish => {
+                                            format!("⚠ Sahne kesimi başarısız: {e}")
+                                        }
+                                        Language::English => format!("⚠ Scene cut failed: {e}"),
+                                    };
                                 } else {
                                     self.project.mark_dirty();
-                                    self.status_message = format!(
-                                        "Akıllı Kesim Tamamlandı: {} yeni sahne algılandı ve bölündü",
-                                        count
-                                    );
+                                    self.status_message = match self.lang() {
+                                        Language::Turkish => format!(
+                                            "Akıllı Kesim Tamamlandı: {} yeni sahne algılandı ve bölündü",
+                                            count
+                                        ),
+                                        Language::English => format!(
+                                            "Smart Cut Complete: {} new scene(s) detected and split",
+                                            count
+                                        ),
+                                    };
                                 }
                             }
                         }
@@ -258,17 +292,32 @@ impl TrimApp {
                             if let Err(e) =
                                 self.undo_stack.push(macro_cmd, &mut self.project.timeline)
                             {
-                                self.status_message = format!("⚠ Altyazı eklenemedi: {e}");
+                                self.status_message = match self.lang() {
+                                    Language::Turkish => format!("⚠ Altyazı eklenemedi: {e}"),
+                                    Language::English => format!("⚠ Failed to add subtitles: {e}"),
+                                };
                             } else {
                                 self.project.mark_dirty();
-                                self.status_message = format!(
-                                    "{} adet altyazı başarıyla oluşturuldu ve eklendi",
-                                    count
-                                );
+                                self.status_message = match self.lang() {
+                                    Language::Turkish => format!(
+                                        "{} adet altyazı başarıyla oluşturuldu ve eklendi",
+                                        count
+                                    ),
+                                    Language::English => {
+                                        format!("Generated and added {} subtitle(s)", count)
+                                    }
+                                };
                             }
                         } else {
-                            self.status_message =
-                                format!("{} adet altyazı başarıyla oluşturuldu ve eklendi", count);
+                            self.status_message = match self.lang() {
+                                Language::Turkish => format!(
+                                    "{} adet altyazı başarıyla oluşturuldu ve eklendi",
+                                    count
+                                ),
+                                Language::English => {
+                                    format!("Generated and added {} subtitle(s)", count)
+                                }
+                            };
                         }
                         self.transcribe_dialog.close();
                     }
@@ -280,10 +329,16 @@ impl TrimApp {
                 BackgroundTaskMsg::BundleDone { target_dir, result } => match result {
                     Ok((count, bytes)) => {
                         let mb = bytes as f64 / (1024.0 * 1024.0);
-                        self.status_message = format!(
-                            "Proje başarıyla paketlendi: {} dosya ({:.1} MB) -> {:?}",
-                            count, mb, target_dir
-                        );
+                        self.status_message = match self.lang() {
+                            Language::Turkish => format!(
+                                "Proje başarıyla paketlendi: {} dosya ({:.1} MB) -> {:?}",
+                                count, mb, target_dir
+                            ),
+                            Language::English => format!(
+                                "Project bundled successfully: {} file(s) ({:.1} MB) -> {:?}",
+                                count, mb, target_dir
+                            ),
+                        };
                     }
                     Err(e) => {
                         self.status_message = match self.lang() {
@@ -336,20 +391,32 @@ impl TrimApp {
                             self.project.mark_dirty();
                             self.last_rendered_monitor_frame = None;
                             self.video_engine.last_rendered_frame = None;
-                            self.status_message = format!(
-                                "🎯 Maske hareket takibi tamamlandı ({} anahtar kare oluşturuldu)",
-                                samples.len()
-                            );
+                            self.status_message = match self.lang() {
+                                Language::Turkish => format!(
+                                    "🎯 Maske hareket takibi tamamlandı ({} anahtar kare oluşturuldu)",
+                                    samples.len()
+                                ),
+                                Language::English => format!(
+                                    "🎯 Mask motion tracking complete ({} keyframe(s) created)",
+                                    samples.len()
+                                ),
+                            };
                         }
                     }
                     Err(err) => {
-                        self.status_message = format!("⚠ Hareket takibi başarısız: {}", err);
+                        self.status_message = match self.lang() {
+                            Language::Turkish => format!("⚠ Hareket takibi başarısız: {}", err),
+                            Language::English => format!("⚠ Motion tracking failed: {}", err),
+                        };
                     }
                 },
                 BackgroundTaskMsg::MediaAnalyzed { bin_id, result } => match result {
                     Ok(item) => self.finish_import_media_item(item, bin_id),
                     Err(e) => {
-                        self.status_message = format!("Medya analizi başarısız: {}", e);
+                        self.status_message = match self.lang() {
+                            Language::Turkish => format!("Medya analizi başarısız: {}", e),
+                            Language::English => format!("Media analysis failed: {}", e),
+                        };
                     }
                 },
                 BackgroundTaskMsg::ProjectAudioProbed {

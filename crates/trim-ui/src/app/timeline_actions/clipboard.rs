@@ -5,7 +5,7 @@ impl TrimApp {
     /// Copies currently selected timeline clips into the internal clipboard preserving relative track hierarchy.
     pub fn copy_selected_clips(&mut self) {
         if self.canvas_state.selected_clip_pairs.is_empty() {
-            self.status_message = "Kopyalanacak klip seçilmedi".to_string();
+            self.set_status("Kopyalanacak klip seçilmedi", "No clip selected to copy");
             return;
         }
 
@@ -78,13 +78,23 @@ impl TrimApp {
             })
             .collect();
 
-        self.status_message = format!("📋 Kopyalandı: {} klip", self.clipboard_clips.len());
+        self.status_message = match self.lang() {
+            crate::i18n::Language::Turkish => {
+                format!("📋 Kopyalandı: {} klip", self.clipboard_clips.len())
+            }
+            crate::i18n::Language::English => {
+                format!("📋 Copied: {} clip(s)", self.clipboard_clips.len())
+            }
+        };
     }
 
     /// Pastes clips from the clipboard starting at the playhead (`current_time`) preserving track hierarchy.
     pub fn paste_clipboard_clips(&mut self) {
         if self.clipboard_clips.is_empty() {
-            self.status_message = "Panoda yapıştırılacak klip yok".to_string();
+            self.set_status(
+                "Panoda yapıştırılacak klip yok",
+                "No clips in clipboard to paste",
+            );
             return;
         }
 
@@ -219,10 +229,16 @@ impl TrimApp {
             self.video_engine.clear_cache();
             self.audio_mixer.clear_cache();
             self.project.mark_dirty();
-            self.status_message = format!(
-                "📋 Yapıştırıldı: {} klip ({:.2}s -> {:.2}s)",
-                count, paste_time, max_out
-            );
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => format!(
+                    "📋 Yapıştırıldı: {} klip ({:.2}s -> {:.2}s)",
+                    count, paste_time, max_out
+                ),
+                crate::i18n::Language::English => format!(
+                    "📋 Pasted: {} clip(s) ({:.2}s -> {:.2}s)",
+                    count, paste_time, max_out
+                ),
+            };
         }
     }
 

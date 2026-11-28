@@ -4,7 +4,7 @@ Bu doküman, `triM.` uygulamasının Linux masaüstü entegrasyonu, paketleme bi
 
 ## 1. Paketleme Biçimleri
 
-Paketleme [scripts/package-linux.sh](file:///home/mozcelik/Projeler/triM/scripts/package-linux.sh) ve [.github/workflows/release-linux.yml](file:///home/mozcelik/Projeler/triM/.github/workflows/release-linux.yml) üzerinden yönetilir:
+Paketleme [scripts/package-linux.sh](../scripts/package-linux.sh) ve [.github/workflows/release-linux.yml](../.github/workflows/release-linux.yml) üzerinden yönetilir:
 
 - **Debian/Ubuntu (`.deb`)**: `dpkg-deb` ile üretilir; `ffmpeg`, `libc6`, `libx11-6`, `libgl1`, `libasound2 | libasound2t64` bağımlılıklarını ve `pipewire-bin | pulseaudio-utils | alsa-utils` önerilerini içerir.
 - **Fedora/RHEL (`.rpm`)**: `fedora:41` konteynerinde `rpmbuild` ile üretilir (`ffmpeg-free` / `/usr/bin/ffmpeg` gereksinimiyle).
@@ -14,9 +14,9 @@ Paketleme [scripts/package-linux.sh](file:///home/mozcelik/Projeler/triM/scripts
 
 ## 2. Masaüstü, MIME, İkonlar ve AppStream
 
-- **Masaüstü girdisi**: [trim.desktop](file:///home/mozcelik/Projeler/triM/trim.desktop) (`desktop-file-validate trim.desktop` ile doğrulandı).
-- **AppStream metainfo**: [trim.metainfo.xml](file:///home/mozcelik/Projeler/triM/trim.metainfo.xml) (`appstreamcli validate trim.metainfo.xml` ile doğrulandı; `<developer id="com.mozcelik14">` düzeltildi).
-- **MIME ilişkilendirmesi**: [resources/mime/trim.xml](file:///home/mozcelik/Projeler/triM/resources/mime/trim.xml) (`application/x-trim-project` → `*.trim`, `application/x-cutline-project` → `*.cutline`) paketlerde `/usr/share/mime/packages/trim.xml` altına kurulur.
+- **Masaüstü girdisi**: [trim.desktop](../trim.desktop) (`desktop-file-validate trim.desktop` ile doğrulandı).
+- **AppStream metainfo**: [trim.metainfo.xml](../trim.metainfo.xml) (`appstreamcli validate trim.metainfo.xml` ile doğrulandı; `<developer id="com.mozcelik14">` düzeltildi).
+- **MIME ilişkilendirmesi**: [resources/mime/trim.xml](../resources/mime/trim.xml) (`application/x-trim-project` → `*.trim`, `application/x-cutline-project` → `*.cutline`) paketlerde `/usr/share/mime/packages/trim.xml` altına kurulur.
 - **İkon seti**: `trim.svg` (`hicolor/scalable/apps/trim.svg`) ve `resources/icons/trim_{16,32,48,64,128,256,512}x*.png` (`hicolor/<boyut>/apps/trim.png`).
 
 ## 3. Wayland, X11, XDG Portalları, Ses ve Fontlar
@@ -28,7 +28,7 @@ Paketleme [scripts/package-linux.sh](file:///home/mozcelik/Projeler/triM/scripts
 
 ## 4. CI Kapsamı
 
-[.github/workflows/ci.yml](file:///home/mozcelik/Projeler/triM/.github/workflows/ci.yml):
+[.github/workflows/ci.yml](../.github/workflows/ci.yml):
 - `ubuntu-24.04`: `fmt`, `clippy`, strict panic-free `clippy`, `cargo test --workspace --locked`, `cargo-deny`, `release` derleme, `desktop-file-validate`, `appstreamcli validate`.
 - `fedora:41` konteyneri: `cargo test --workspace --locked`, `desktop-file-validate`, `appstreamcli validate`.
 - `windows-latest`: MSVC derleme, `clippy` ve `cargo test --workspace --locked`.

@@ -4,8 +4,10 @@ impl TrimApp {
     /// Aligns selected clips across different tracks using cross-correlation of their audio waveforms.
     pub fn align_selected_clips_by_audio(&mut self) {
         if self.canvas_state.selected_clip_pairs.len() < 2 {
-            self.status_message =
-                "Ses ile hizalamak için farklı kanallarda en az 2 klip seçin".to_string();
+            self.set_status(
+                "Ses ile hizalamak için farklı kanallarda en az 2 klip seçin",
+                "Select at least 2 clips on different tracks to sync by audio",
+            );
             return;
         }
 
@@ -21,7 +23,10 @@ impl TrimApp {
         };
 
         let Some(ref_media) = self.project.get_media(&ref_clip.media_id).cloned() else {
-            self.status_message = "Referans klibin medya dosyası bulunamadı".to_string();
+            self.set_status(
+                "Referans klibin medya dosyası bulunamadı",
+                "Reference clip media file not found",
+            );
             return;
         };
 
@@ -31,7 +36,10 @@ impl TrimApp {
             .get_waveform(&ref_media.file_path)
             .or_else(|| self.waveform_gen.generate_sync(&ref_media.file_path));
         let Some(ref_full_wf) = ref_wf else {
-            self.status_message = "Referans klibin ses dalga formu çıkarılamadı".to_string();
+            self.set_status(
+                "Referans klibin ses dalga formu çıkarılamadı",
+                "Could not extract reference clip audio waveform",
+            );
             return;
         };
 
@@ -39,7 +47,10 @@ impl TrimApp {
         let ref_s_out =
             ((ref_clip.effective_source_out() * pps as f64) as usize).min(ref_full_wf.len());
         if ref_s_out <= ref_s_in + 4 {
-            self.status_message = "Referans klipte yeterli ses verisi yok".to_string();
+            self.set_status(
+                "Referans klipte yeterli ses verisi yok",
+                "Reference clip does not have enough audio data",
+            );
             return;
         }
         let ref_slice = &ref_full_wf[ref_s_in..ref_s_out];
@@ -88,7 +99,10 @@ impl TrimApp {
         }
 
         if moves.is_empty() {
-            self.status_message = "🎙️ Klipler zaten ses dalga formuna göre hizalı".to_string();
+            self.set_status(
+                "🎙️ Klipler zaten ses dalga formuna göre hizalı",
+                "🎙️ Clips are already aligned by audio waveform",
+            );
             return;
         }
 
@@ -117,10 +131,15 @@ impl TrimApp {
             self.video_engine.clear_cache();
             self.audio_mixer.clear_cache();
             self.project.mark_dirty();
-            self.status_message = format!(
-                "🎙️ {} klip ses dalga formuna göre otomatik senkronize edildi",
-                count
-            );
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => format!(
+                    "🎙️ {} klip ses dalga formuna göre otomatik senkronize edildi",
+                    count
+                ),
+                crate::i18n::Language::English => {
+                    format!("🎙️ Auto-synced {} clip(s) by audio waveform", count)
+                }
+            };
         }
     }
 
@@ -156,7 +175,10 @@ impl TrimApp {
             .get_media(&media_id)
             .map(|m| m.file_path.clone())
         else {
-            self.status_message = "⚠ Hareket takibi için medya kaynağı bulunamadı".to_string();
+            self.set_status(
+                "⚠ Hareket takibi için medya kaynağı bulunamadı",
+                "⚠ Media source not found for motion tracking",
+            );
             return;
         };
 
@@ -171,7 +193,10 @@ impl TrimApp {
         let tx = self.bg_task_tx.clone();
         let tid = track_id.to_string();
         let cid = clip_id.to_string();
-        self.status_message = "🎯 Maske hareket takibi arka planda çalışıyor...".to_string();
+        self.set_status(
+            "🎯 Maske hareket takibi arka planda çalışıyor...",
+            "🎯 Mask motion tracking running in background...",
+        );
         std::thread::spawn(move || {
             let res = trim_media::video::track_region_motion(
                 &media_path,
@@ -254,9 +279,10 @@ impl TrimApp {
         }
 
         if raw_intervals.is_empty() {
-            self.status_message =
-                "ℹ Diğer kanallarda veya altyazılarda çakışan konuşma bölgesi bulunamadı"
-                    .to_string();
+            self.set_status(
+                "ℹ Diğer kanallarda veya altyazılarda çakışan konuşma bölgesi bulunamadı",
+                "ℹ No overlapping speech regions found on other tracks or subtitles",
+            );
             return;
         }
 
@@ -322,17 +348,26 @@ impl TrimApp {
         {
             self.audio_mixer.clear_cache();
             self.project.mark_dirty();
-            self.status_message = format!(
-                "🔉 {} konuşma bölgesi için otomatik ses kısma (Auto-Ducking) uygulandı",
-                merged.len()
-            );
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => format!(
+                    "🔉 {} konuşma bölgesi için otomatik ses kısma (Auto-Ducking) uygulandı",
+                    merged.len()
+                ),
+                crate::i18n::Language::English => format!(
+                    "🔉 Applied Auto-Ducking for {} speech region(s)",
+                    merged.len()
+                ),
+            };
         }
     }
 
     /// Aligns selected clips across different tracks using their media container's SMPTE `timecode_start`.
     pub fn align_selected_clips_by_timecode(&mut self) {
         if self.canvas_state.selected_clip_pairs.len() < 2 {
-            self.status_message = "Timecode ile hizalamak için en az 2 klip seçin".to_string();
+            self.set_status(
+                "Timecode ile hizalamak için en az 2 klip seçin",
+                "Select at least 2 clips to sync by timecode",
+            );
             return;
         }
 
@@ -365,8 +400,10 @@ impl TrimApp {
         }
 
         if items.len() < 2 {
-            self.status_message =
-                "Seçili kliplerden en az 2'sinde geçerli SMPTE timecode bulunamadı".to_string();
+            self.set_status(
+                "Seçili kliplerden en az 2'sinde geçerli SMPTE timecode bulunamadı",
+                "Could not find valid SMPTE timecode on at least 2 selected clips",
+            );
             return;
         }
 
@@ -390,7 +427,10 @@ impl TrimApp {
         }
 
         if cmds.is_empty() {
-            self.status_message = "Klipler zaten timecode'a göre hizalı".to_string();
+            self.set_status(
+                "Klipler zaten timecode'a göre hizalı",
+                "Clips are already aligned by timecode",
+            );
             return;
         }
 
@@ -408,8 +448,14 @@ impl TrimApp {
             self.audio_mixer.clear_cache();
             self.project.mark_dirty();
             self.last_rendered_dirty = true;
-            self.status_message =
-                format!("⏱ {} klip SMPTE Timecode ile senkronize edildi", count + 1);
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => {
+                    format!("⏱ {} klip SMPTE Timecode ile senkronize edildi", count + 1)
+                }
+                crate::i18n::Language::English => {
+                    format!("⏱ Synced {} clips via SMPTE Timecode", count + 1)
+                }
+            };
         }
     }
 }

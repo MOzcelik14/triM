@@ -6,8 +6,10 @@ impl TrimApp {
     /// Nests all currently selected clips into a new Compound Clip (sub-sequence) and replaces them on the timeline.
     pub fn create_compound_clip_from_selected(&mut self) {
         if self.canvas_state.selected_clip_pairs.is_empty() {
-            self.status_message =
-                "Bileşik klip (Compound Clip) oluşturmak için en az 1 klip seçin".to_string();
+            self.set_status(
+                "Bileşik klip (Compound Clip) oluşturmak için en az 1 klip seçin",
+                "Select at least 1 clip to create a Compound Clip",
+            );
             return;
         }
 
@@ -41,7 +43,10 @@ impl TrimApp {
         }
 
         if (v_clips.is_empty() && a_clips.is_empty()) || max_out <= min_in {
-            self.status_message = "Seçili kliplerden bileşik klip oluşturulamadı".to_string();
+            self.set_status(
+                "Seçili kliplerden bileşik klip oluşturulamadı",
+                "Could not create compound clip from selected clips",
+            );
             return;
         }
 
@@ -162,7 +167,14 @@ impl TrimApp {
             self.video_engine.clear_cache();
             self.audio_mixer.clear_cache();
             self.project.mark_dirty();
-            self.status_message = format!("📦 Bileşik klip oluşturuldu: {}", seq_name);
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => {
+                    format!("📦 Bileşik klip oluşturuldu: {}", seq_name)
+                }
+                crate::i18n::Language::English => {
+                    format!("📦 Compound clip created: {}", seq_name)
+                }
+            };
         }
     }
 
@@ -226,9 +238,10 @@ impl TrimApp {
         }
 
         if joins.is_empty() {
-            self.status_message =
-                "Birleştirilecek kesik klip (Through-Edit) bulunamadı (Aynı kaynaktan ardışık iki kesik klip seçin)"
-                    .to_string();
+            self.set_status(
+                "Birleştirilecek kesik klip (Through-Edit) bulunamadı (Aynı kaynaktan ardışık iki kesik klip seçin)",
+                "No through-edit cut found to join (select two consecutive clips from the same source)",
+            );
             return;
         }
 
@@ -262,7 +275,14 @@ impl TrimApp {
             self.video_engine.clear_cache();
             self.audio_mixer.clear_cache();
             self.project.mark_dirty();
-            self.status_message = format!("🔗 {} kesik nokta tek klipte birleştirildi", count);
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => {
+                    format!("🔗 {} kesik nokta tek klipte birleştirildi", count)
+                }
+                crate::i18n::Language::English => {
+                    format!("🔗 Joined {} through-edit cut(s) into one clip", count)
+                }
+            };
         }
     }
 
@@ -275,12 +295,17 @@ impl TrimApp {
         copy_speed: bool,
     ) {
         let Some((_, _, _, src)) = self.clipboard_clips.first().cloned() else {
-            self.status_message =
-                "Panoda özellikleri kopyalanmış klip yok (Önce Ctrl+C yapın)".to_string();
+            self.set_status(
+                "Panoda özellikleri kopyalanmış klip yok (Önce Ctrl+C yapın)",
+                "No clip attributes in clipboard (press Ctrl+C first)",
+            );
             return;
         };
         if self.canvas_state.selected_clip_pairs.is_empty() {
-            self.status_message = "Özelliklerin uygulanacağı hedef klip(leri) seçin".to_string();
+            self.set_status(
+                "Özelliklerin uygulanacağı hedef klip(leri) seçin",
+                "Select target clip(s) to paste attributes",
+            );
             return;
         }
 
@@ -357,8 +382,14 @@ impl TrimApp {
             self.last_rendered_monitor_frame = None;
             self.scopes_panel.mark_dirty();
             self.project.mark_dirty();
-            self.status_message =
-                format!("📋 Seçili özellikler {} klibe yapıştırıldı", applied_count);
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => {
+                    format!("📋 Seçili özellikler {} klibe yapıştırıldı", applied_count)
+                }
+                crate::i18n::Language::English => {
+                    format!("📋 Pasted selected attributes to {} clip(s)", applied_count)
+                }
+            };
         }
     }
 
@@ -434,10 +465,17 @@ impl TrimApp {
         self.last_rendered_monitor_frame = None;
         self.scopes_panel.mark_dirty();
         self.project.mark_dirty();
-        self.status_message = format!(
-            "🎥 Multicam Kamera {} seçildi ({:.2}s)",
-            angle_idx + 1,
-            cut_t
-        );
+        self.status_message = match self.lang() {
+            crate::i18n::Language::Turkish => format!(
+                "🎥 Multicam Kamera {} seçildi ({:.2}s)",
+                angle_idx + 1,
+                cut_t
+            ),
+            crate::i18n::Language::English => format!(
+                "🎥 Multicam Camera {} selected ({:.2}s)",
+                angle_idx + 1,
+                cut_t
+            ),
+        };
     }
 }

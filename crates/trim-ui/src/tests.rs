@@ -1956,8 +1956,27 @@ fn test_keyboard_shortcut_mapping_and_headless_egui_shortcuts_dialog() {
     app.shortcuts_dialog.open();
     let ctx = egui::Context::default();
     let _ = ctx.run(Default::default(), |ctx| {
-        app.shortcuts_dialog.show(ctx, &mut app.shortcut_profile);
+        app.shortcuts_dialog
+            .show(ctx, &mut app.shortcut_profile, &mut app.keymap_config);
     });
+
+    // Custom rebind via KeymapConfig works in TrimApp
+    app.keymap_config
+        .rebind(ShortcutAction::RazorTool, KeyBinding::plain("X"), true);
+    app.splash_screen.dismiss();
+    app.welcome_dialog.close();
+    let mut raw_input = egui::RawInput::default();
+    raw_input.events.push(egui::Event::Key {
+        key: egui::Key::X,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    let _ = ctx.run(raw_input, |ctx| {
+        app.handle_global_shortcuts(ctx);
+    });
+    assert_eq!(app.current_edit_tool, crate::toolbar::EditTool::Razor);
 }
 
 #[test]

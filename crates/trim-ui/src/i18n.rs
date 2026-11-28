@@ -46,6 +46,14 @@ pub fn tr(lang: Language, key: &str) -> &str {
     translate(lang, key)
 }
 
+/// Pick between Turkish and English inline strings for dynamic/status messages.
+pub fn pick<'a>(lang: Language, tr_text: &'a str, en_text: &'a str) -> &'a str {
+    match lang {
+        Language::Turkish => tr_text,
+        Language::English => en_text,
+    }
+}
+
 fn translate(lang: Language, key: &str) -> &str {
     match (lang, key) {
         // --- Top Menu Bar ---

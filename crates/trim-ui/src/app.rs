@@ -6,7 +6,7 @@ use crate::file_dialog::FileDialogBridge;
 use crate::i18n::Language;
 use crate::media_bin::{LeftPanelTab, MediaFilterType};
 use crate::scopes_panel::ScopesPanelState;
-use crate::shortcuts::ShortcutProfile;
+use crate::shortcuts::{KeymapConfig, ShortcutProfile};
 use crate::theme::*;
 use crate::toolbar::EditTool;
 use crate::vu_meter::VuMeterState;
@@ -148,6 +148,7 @@ pub struct TrimApp {
     pub active_voiceover: Option<ActiveVoiceover>,
     pub use_proxies: bool,
     pub shortcut_profile: ShortcutProfile,
+    pub keymap_config: KeymapConfig,
     pub proxy_tx: std::sync::mpsc::Sender<(String, Result<String, String>)>,
     pub proxy_rx: Option<Receiver<(String, Result<String, String>)>>,
     pub proxy_generating_ids: Vec<String>,
@@ -313,6 +314,7 @@ impl Default for TrimApp {
             active_voiceover: None,
             use_proxies: false,
             shortcut_profile: ShortcutProfile::TrimDefault,
+            keymap_config: KeymapConfig::for_profile(ShortcutProfile::TrimDefault),
             proxy_tx,
             proxy_rx: Some(proxy_rx),
             proxy_generating_ids: Vec::new(),
@@ -380,6 +382,8 @@ impl TrimApp {
             "Final Cut Pro" | "FCP" => ShortcutProfile::FinalCutPro,
             _ => ShortcutProfile::TrimDefault,
         };
+        app.keymap_config = KeymapConfig::load_from_path(&KeymapConfig::config_path())
+            .unwrap_or_else(|| KeymapConfig::for_profile(app.shortcut_profile));
         app.audio_mixer
             .limiter
             .set_ceiling_dbfs(if prefs.master_limiter_enabled {
@@ -408,6 +412,10 @@ impl TrimApp {
         }
 
         app
+    }
+
+    pub(crate) fn set_status(&mut self, tr_text: &str, en_text: &str) {
+        self.status_message = crate::i18n::pick(self.lang(), tr_text, en_text).to_string();
     }
 
     /// Returns active UI language from user preferences.

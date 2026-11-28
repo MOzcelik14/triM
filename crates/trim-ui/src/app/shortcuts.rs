@@ -1,6 +1,6 @@
 use super::TrimApp;
 use crate::dialogs::PendingCloseAction;
-use crate::shortcuts::ShortcutProfile;
+use crate::shortcuts::{KeyBinding, KeymapConfig, ShortcutAction, ShortcutProfile};
 use crate::toolbar::EditTool;
 use egui::Key;
 use trim_commands::commands::*;
@@ -9,8 +9,87 @@ use trim_timeline::{
     split_at_playhead,
 };
 
+fn key_name_to_egui(name: &str) -> Option<Key> {
+    match name {
+        "Space" => Some(Key::Space),
+        "Delete" => Some(Key::Delete),
+        "Backspace" => Some(Key::Backspace),
+        "OpenBracket" => Some(Key::OpenBracket),
+        "CloseBracket" => Some(Key::CloseBracket),
+        "Backslash" => Some(Key::Backslash),
+        "Comma" => Some(Key::Comma),
+        "Period" => Some(Key::Period),
+        "Minus" => Some(Key::Minus),
+        "Equals" => Some(Key::Equals),
+        "Plus" => Some(Key::Plus),
+        "Enter" => Some(Key::Enter),
+        "Tab" => Some(Key::Tab),
+        "Home" => Some(Key::Home),
+        "End" => Some(Key::End),
+        "ArrowLeft" => Some(Key::ArrowLeft),
+        "ArrowRight" => Some(Key::ArrowRight),
+        "ArrowUp" => Some(Key::ArrowUp),
+        "ArrowDown" => Some(Key::ArrowDown),
+        "A" => Some(Key::A),
+        "B" => Some(Key::B),
+        "C" => Some(Key::C),
+        "D" => Some(Key::D),
+        "E" => Some(Key::E),
+        "F" => Some(Key::F),
+        "G" => Some(Key::G),
+        "H" => Some(Key::H),
+        "I" => Some(Key::I),
+        "J" => Some(Key::J),
+        "K" => Some(Key::K),
+        "L" => Some(Key::L),
+        "M" => Some(Key::M),
+        "N" => Some(Key::N),
+        "O" => Some(Key::O),
+        "P" => Some(Key::P),
+        "Q" => Some(Key::Q),
+        "R" => Some(Key::R),
+        "S" => Some(Key::S),
+        "T" => Some(Key::T),
+        "U" => Some(Key::U),
+        "V" => Some(Key::V),
+        "W" => Some(Key::W),
+        "X" => Some(Key::X),
+        "Y" => Some(Key::Y),
+        "Z" => Some(Key::Z),
+        "0" => Some(Key::Num0),
+        "1" => Some(Key::Num1),
+        "2" => Some(Key::Num2),
+        "3" => Some(Key::Num3),
+        "4" => Some(Key::Num4),
+        "5" => Some(Key::Num5),
+        "6" => Some(Key::Num6),
+        "7" => Some(Key::Num7),
+        "8" => Some(Key::Num8),
+        "9" => Some(Key::Num9),
+        _ => None,
+    }
+}
+
+fn binding_pressed(i: &egui::InputState, binding: &KeyBinding) -> bool {
+    let Some(key) = key_name_to_egui(&binding.key) else {
+        return false;
+    };
+    let ctrl_down = i.modifiers.ctrl || i.modifiers.command;
+    ctrl_down == binding.ctrl
+        && i.modifiers.shift == binding.shift
+        && i.modifiers.alt == binding.alt
+        && i.key_pressed(key)
+}
+
+fn action_pressed(i: &egui::InputState, keymap: &KeymapConfig, action: ShortcutAction) -> bool {
+    keymap
+        .bindings
+        .get(&action)
+        .is_some_and(|b| binding_pressed(i, b))
+}
+
 impl TrimApp {
-    pub(super) fn handle_global_shortcuts(&mut self, ctx: &egui::Context) {
+    pub(crate) fn handle_global_shortcuts(&mut self, ctx: &egui::Context) {
         // -------------------------------------------------------------
         // Global Keyboard Shortcuts
         // -------------------------------------------------------------
@@ -22,7 +101,9 @@ impl TrimApp {
         if !ctx.wants_keyboard_input()
             && !self.welcome_dialog.is_open
             && !self.splash_screen.is_active
+            && self.shortcuts_dialog.capturing_action.is_none()
         {
+            let keymap = self.keymap_config.clone();
             ctx.input(|i| {
                 let is_paste_attrs = (i.modifiers.ctrl || i.modifiers.command)
                     && i.modifiers.alt
@@ -61,7 +142,7 @@ impl TrimApp {
                     do_paste = true;
                 } else if is_cut {
                     do_cut = true;
-                } else if i.key_pressed(Key::Space) {
+                } else if action_pressed(i, &keymap, ShortcutAction::PlayPause) {
                     self.toggle_play();
                 } else if i.key_pressed(Key::Comma) {
                     self.insert_source_to_timeline(false);
@@ -70,32 +151,57 @@ impl TrimApp {
                 } else if i.modifiers.alt && i.key_pressed(Key::X) {
                     self.project.timeline.clear_in_out();
                     self.project.mark_dirty();
-                    self.status_message = "Giriş/Çıkış Noktaları Temizlendi".to_string();
+                    self.set_status("Giriş/Çıkış Noktaları Temizlendi", "In/Out Points Cleared");
                 } else if i.key_pressed(Key::I) && !i.modifiers.ctrl {
                     if self.source_state.media_id.is_some() {
                         self.source_state.mark_in = Some(self.source_state.current_time);
-                        self.status_message =
-                            format!("Kaynak Giriş: {:.2}s", self.source_state.current_time);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("Kaynak Giriş: {:.2}s", self.source_state.current_time)
+                            }
+                            crate::i18n::Language::English => {
+                                format!("Source In: {:.2}s", self.source_state.current_time)
+                            }
+                        };
                     } else {
                         self.project.timeline.set_in_point(self.current_time);
                         self.project.mark_dirty();
-                        self.status_message =
-                            format!("Giriş Noktası (In): {:.2}s", self.current_time);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("Giriş Noktası (In): {:.2}s", self.current_time)
+                            }
+                            crate::i18n::Language::English => {
+                                format!("In Point: {:.2}s", self.current_time)
+                            }
+                        };
                     }
                 } else if i.key_pressed(Key::O) && !i.modifiers.ctrl {
                     if self.source_state.media_id.is_some() {
                         self.source_state.mark_out = Some(self.source_state.current_time);
-                        self.status_message =
-                            format!("Kaynak Çıkış: {:.2}s", self.source_state.current_time);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("Kaynak Çıkış: {:.2}s", self.source_state.current_time)
+                            }
+                            crate::i18n::Language::English => {
+                                format!("Source Out: {:.2}s", self.source_state.current_time)
+                            }
+                        };
                     } else {
                         self.project.timeline.set_out_point(self.current_time);
                         self.project.mark_dirty();
-                        self.status_message =
-                            format!("Çıkış Noktası (Out): {:.2}s", self.current_time);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("Çıkış Noktası (Out): {:.2}s", self.current_time)
+                            }
+                            crate::i18n::Language::English => {
+                                format!("Out Point: {:.2}s", self.current_time)
+                            }
+                        };
                     }
-                } else if i.modifiers.ctrl
-                    && i.key_pressed(Key::K)
-                    && self.shortcut_profile == ShortcutProfile::PremierePro
+                } else if action_pressed(i, &keymap, ShortcutAction::SplitAtPlayhead)
+                    || (i.modifiers.ctrl
+                        && i.key_pressed(Key::B)
+                        && self.shortcut_profile == ShortcutProfile::DaVinciResolve)
                 {
                     let preferred_track = self
                         .canvas_state
@@ -115,106 +221,56 @@ impl TrimApp {
                         self.current_time,
                     );
                     self.project.mark_dirty();
-                } else if i.modifiers.ctrl
-                    && (i.key_pressed(Key::Backslash) || i.key_pressed(Key::B))
-                    && self.shortcut_profile == ShortcutProfile::DaVinciResolve
-                {
-                    let preferred_track = self
-                        .canvas_state
-                        .selected_clip_pairs
-                        .first()
-                        .map(|(t, _)| t.as_str());
-                    let preferred_clip = self
-                        .canvas_state
-                        .selected_clip_pairs
-                        .first()
-                        .map(|(_, c)| c.as_str());
-                    split_at_playhead(
-                        &mut self.project.timeline,
-                        &mut self.undo_stack,
-                        preferred_track,
-                        preferred_clip,
-                        self.current_time,
-                    );
-                    self.project.mark_dirty();
-                } else if i.key_pressed(Key::V)
-                    && !i.modifiers.ctrl
-                    && self.shortcut_profile != ShortcutProfile::DaVinciResolve
-                {
+                } else if action_pressed(i, &keymap, ShortcutAction::SelectTool) {
                     self.current_edit_tool = EditTool::Select;
                     self.canvas_state.active_tool = EditTool::Select;
-                    self.status_message = "Seçim Aracı (V) etkin".to_string();
-                } else if i.key_pressed(Key::A) && !i.modifiers.ctrl {
-                    if self.shortcut_profile == ShortcutProfile::DaVinciResolve {
-                        self.current_edit_tool = EditTool::Select;
-                        self.status_message = "Seçim Aracı (A) etkin".to_string();
-                    } else {
-                        self.current_edit_tool = EditTool::TrackSelect;
-                        self.status_message = "İz Seçme Aracı (A) etkin".to_string();
-                    }
-                    self.canvas_state.active_tool = self.current_edit_tool;
-                } else if i.key_pressed(Key::B) && !i.modifiers.ctrl {
-                    if self.shortcut_profile == ShortcutProfile::DaVinciResolve {
-                        self.current_edit_tool = EditTool::Razor;
-                        self.status_message = "Jilet / Kesme Aracı (Blade - B) etkin".to_string();
-                    } else {
-                        self.current_edit_tool = EditTool::Ripple;
-                        self.status_message = "Dalgalanma Düzenleme (Ripple - B) etkin".to_string();
-                    }
-                    self.canvas_state.active_tool = self.current_edit_tool;
-                } else if i.key_pressed(Key::C) && !i.modifiers.ctrl {
+                    self.set_status("Seçim Aracı etkin", "Selection Tool active");
+                } else if action_pressed(i, &keymap, ShortcutAction::RazorTool) {
                     self.current_edit_tool = EditTool::Razor;
                     self.canvas_state.active_tool = EditTool::Razor;
-                    self.status_message = "Jilet / Kesme Aracı (Razor - C) etkin".to_string();
+                    self.set_status("Jilet / Kesme Aracı etkin", "Razor Tool active");
+                } else if action_pressed(i, &keymap, ShortcutAction::RippleTool) {
+                    self.current_edit_tool = EditTool::Ripple;
+                    self.canvas_state.active_tool = EditTool::Ripple;
+                    self.set_status(
+                        "Dalgalanma Düzenleme (Ripple) etkin",
+                        "Ripple Edit Tool active",
+                    );
+                } else if i.key_pressed(Key::A) && !i.modifiers.ctrl {
+                    self.current_edit_tool = EditTool::TrackSelect;
+                    self.canvas_state.active_tool = EditTool::TrackSelect;
+                    self.set_status("İz Seçme Aracı (A) etkin", "Track Select Tool (A) active");
                 } else if i.key_pressed(Key::Y) && !i.modifiers.ctrl {
                     self.current_edit_tool = EditTool::Slip;
                     self.canvas_state.active_tool = EditTool::Slip;
-                    self.status_message = "Kaydırma Aracı (Slip - Y) etkin".to_string();
+                    self.set_status("Kaydırma Aracı (Slip - Y) etkin", "Slip Tool (Y) active");
                 } else if i.key_pressed(Key::R) && !i.modifiers.ctrl {
                     self.current_edit_tool = EditTool::Roll;
                     self.canvas_state.active_tool = EditTool::Roll;
-                    self.status_message = "Yuvarlama Aracı (Roll - R) etkin".to_string();
+                    self.set_status("Yuvarlama Aracı (Roll - R) etkin", "Roll Tool (R) active");
                 } else if i.key_pressed(Key::U) && !i.modifiers.ctrl {
                     self.current_edit_tool = EditTool::Slide;
                     self.canvas_state.active_tool = EditTool::Slide;
-                    self.status_message = "Sürükleme Aracı (Slide - U) etkin".to_string();
+                    self.set_status("Sürükleme Aracı (Slide - U) etkin", "Slide Tool (U) active");
                 } else if i.key_pressed(Key::P) && !i.modifiers.ctrl {
                     self.current_edit_tool = EditTool::Pen;
                     self.canvas_state.active_tool = EditTool::Pen;
-                    self.status_message = "Kalem / Anahtar Kare Aracı (Pen - P) etkin".to_string();
+                    self.set_status(
+                        "Kalem / Anahtar Kare Aracı (Pen - P) etkin",
+                        "Pen / Keyframe Tool (P) active",
+                    );
                 } else if i.key_pressed(Key::H) && !i.modifiers.ctrl {
                     self.current_edit_tool = EditTool::Hand;
                     self.canvas_state.active_tool = EditTool::Hand;
-                    self.status_message = "El Aracı (Hand - H) etkin".to_string();
+                    self.set_status("El Aracı (Hand - H) etkin", "Hand Tool (H) active");
                 } else if i.key_pressed(Key::T) && !i.modifiers.ctrl {
                     self.current_edit_tool = EditTool::Type;
                     self.canvas_state.active_tool = EditTool::Type;
-                    self.status_message =
-                        "Metin Aracı (Type - T) etkin: Video ekranına tıklayarak yazı ekleyin"
-                            .to_string();
-                } else if i.key_pressed(Key::S)
-                    && !i.modifiers.ctrl
-                    && self.shortcut_profile == ShortcutProfile::TrimDefault
-                {
-                    let preferred_track = self
-                        .canvas_state
-                        .selected_clip_pairs
-                        .first()
-                        .map(|(t, _)| t.as_str());
-                    let preferred_clip = self
-                        .canvas_state
-                        .selected_clip_pairs
-                        .first()
-                        .map(|(_, c)| c.as_str());
-                    split_at_playhead(
-                        &mut self.project.timeline,
-                        &mut self.undo_stack,
-                        preferred_track,
-                        preferred_clip,
-                        self.current_time,
+                    self.set_status(
+                        "Metin Aracı (Type - T) etkin: Video ekranına tıklayarak yazı ekleyin",
+                        "Type Tool (T) active: Click video monitor to add text",
                     );
-                    self.project.mark_dirty();
-                } else if i.key_pressed(Key::Q) && !i.modifiers.ctrl {
+                } else if action_pressed(i, &keymap, ShortcutAction::RippleTrimHead) {
                     let preferred_track = self
                         .canvas_state
                         .selected_clip_pairs
@@ -233,7 +289,7 @@ impl TrimApp {
                         self.current_time,
                     );
                     self.project.mark_dirty();
-                } else if i.key_pressed(Key::W) && !i.modifiers.ctrl {
+                } else if action_pressed(i, &keymap, ShortcutAction::RippleTrimTail) {
                     let preferred_track = self
                         .canvas_state
                         .selected_clip_pairs
@@ -254,8 +310,11 @@ impl TrimApp {
                     self.project.mark_dirty();
                 } else if i.key_pressed(Key::M) && !i.modifiers.ctrl {
                     self.add_or_toggle_marker();
-                } else if i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace) {
-                    let is_ripple = i.modifiers.shift
+                } else if action_pressed(i, &keymap, ShortcutAction::RippleDelete)
+                    || action_pressed(i, &keymap, ShortcutAction::DeleteSelected)
+                    || i.key_pressed(Key::Backspace)
+                {
+                    let is_ripple = action_pressed(i, &keymap, ShortcutAction::RippleDelete)
                         || (self.shortcut_profile == ShortcutProfile::DaVinciResolve
                             && i.key_pressed(Key::Delete));
                     if self.canvas_state.selected_gap.is_some() {
@@ -276,8 +335,10 @@ impl TrimApp {
                                 self.canvas_state.selected_clip_pairs.clear();
                                 self.project.mark_dirty();
                             } else {
-                                self.status_message =
-                                    "Kilitli kanaldaki klip silinemez".to_string();
+                                self.set_status(
+                                    "Kilitli kanaldaki klip silinemez",
+                                    "Cannot delete clip on locked track",
+                                );
                             }
                         }
                     } else if !self.canvas_state.selected_clip_pairs.is_empty() {
@@ -301,7 +362,10 @@ impl TrimApp {
                             self.canvas_state.selected_clip_pairs.clear();
                             self.project.mark_dirty();
                         } else {
-                            self.status_message = "Kilitli kanaldaki klipler silinemez".to_string();
+                            self.set_status(
+                                "Kilitli kanaldaki klipler silinemez",
+                                "Cannot delete clips on locked tracks",
+                            );
                         }
                     }
                 } else if i.key_pressed(Key::ArrowLeft) {
@@ -341,10 +405,10 @@ impl TrimApp {
                         && i.key_pressed(Key::Minus))
                 {
                     self.zoom_timeline(0.8, None, None);
-                } else if !i.modifiers.ctrl
-                    && (i.key_pressed(Key::N)
-                        || (i.key_pressed(Key::S)
-                            && self.shortcut_profile != ShortcutProfile::TrimDefault))
+                } else if action_pressed(i, &keymap, ShortcutAction::ToggleSnap)
+                    || (!i.modifiers.ctrl
+                        && i.key_pressed(Key::S)
+                        && self.shortcut_profile != ShortcutProfile::TrimDefault)
                 {
                     self.toggle_snap();
                 } else if i.key_pressed(Key::J) && !i.modifiers.ctrl {
@@ -353,11 +417,11 @@ impl TrimApp {
                     self.shuttle_stop();
                 } else if i.key_pressed(Key::L) && !i.modifiers.ctrl {
                     self.shuttle_forward();
-                } else if (i.modifiers.ctrl && i.modifiers.shift && i.key_pressed(Key::Z))
+                } else if action_pressed(i, &keymap, ShortcutAction::Redo)
                     || (i.modifiers.ctrl && i.key_pressed(Key::Y))
                 {
                     self.perform_redo();
-                } else if i.modifiers.ctrl && !i.modifiers.shift && i.key_pressed(Key::Z) {
+                } else if action_pressed(i, &keymap, ShortcutAction::Undo) {
                     self.perform_undo();
                 } else if i.key_pressed(Key::F1) {
                     self.shortcuts_dialog.toggle();
@@ -417,8 +481,10 @@ impl TrimApp {
                             );
                         }
                     } else {
-                        self.status_message =
-                            "Hız değiştirmek için önce bir klip seçin".to_string();
+                        self.set_status(
+                            "Hız değiştirmek için önce bir klip seçin",
+                            "Select a clip first to change speed",
+                        );
                     }
                 }
             });

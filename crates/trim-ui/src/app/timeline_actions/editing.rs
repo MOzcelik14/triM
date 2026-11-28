@@ -113,8 +113,14 @@ impl TrimApp {
                     Box::new(AddTrackCommand::new(new_track, 0)),
                     &mut self.project.timeline,
                 );
-                self.status_message =
-                    format!("Üst video kanalı otomatik oluşturuldu: {}", new_track_name);
+                self.status_message = match self.lang() {
+                    crate::i18n::Language::Turkish => {
+                        format!("Üst video kanalı otomatik oluşturuldu: {}", new_track_name)
+                    }
+                    crate::i18n::Language::English => {
+                        format!("Upper video track auto-created: {}", new_track_name)
+                    }
+                };
                 new_id
             }
         } else if self
@@ -174,7 +180,7 @@ impl TrimApp {
         if let Some((tr_id, cl_id)) = hit_text_clip {
             // User clicked on an existing text overlay: select it for editing / dragging
             self.canvas_state.selected_clip_pairs = vec![(tr_id, cl_id)];
-            self.status_message = "Mevcut Metin Klibi Seçildi".to_string();
+            self.set_status("Mevcut Metin Klibi Seçildi", "Existing Text Clip Selected");
         } else {
             // User clicked on the monitor with Type Tool:
             // ALWAYS create a dedicated text clip on the timeline!
@@ -182,11 +188,18 @@ impl TrimApp {
                 self.create_text_clip_at_time(self.current_time, pos_x, pos_y, "Metin")
             {
                 self.canvas_state.selected_clip_pairs = vec![(tr_id, cl_id)];
-                self.status_message = format!(
-                    "Zaman Çizgisine Yeni Metin Klibi Eklendi (5.0s) - X: {:.0}%, Y: {:.0}%",
-                    pos_x * 100.0,
-                    pos_y * 100.0
-                );
+                self.status_message = match self.lang() {
+                    crate::i18n::Language::Turkish => format!(
+                        "Zaman Çizgisine Yeni Metin Klibi Eklendi (5.0s) - X: {:.0}%, Y: {:.0}%",
+                        pos_x * 100.0,
+                        pos_y * 100.0
+                    ),
+                    crate::i18n::Language::English => format!(
+                        "Added New Text Clip to Timeline (5.0s) - X: {:.0}%, Y: {:.0}%",
+                        pos_x * 100.0,
+                        pos_y * 100.0
+                    ),
+                };
             }
         }
     }
@@ -211,7 +224,10 @@ impl TrimApp {
         if let Some(pair) = found {
             if self.canvas_state.selected_clip_pairs.first() != Some(&pair) {
                 self.canvas_state.selected_clip_pairs = vec![pair];
-                self.status_message = "Metin Klibi Seçildi (görüntüde sürükleyerek taşıyın)".into();
+                self.set_status(
+                    "Metin Klibi Seçildi (görüntüde sürükleyerek taşıyın)",
+                    "Text Clip Selected (drag in monitor to move)",
+                );
             }
         }
     }
@@ -261,14 +277,17 @@ impl TrimApp {
                                 cl_id.clone(),
                             )]));
                             let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                            self.status_message = "Klip bağı kaldırıldı".to_string();
+                            self.set_status("Klip bağı kaldırıldı", "Clip unlinked");
                             self.project.mark_dirty();
                             return;
                         }
                     }
                 }
             }
-            self.status_message = "Bağlamak için en az 2 klip seçin (Shift + Tık)".to_string();
+            self.set_status(
+                "Bağlamak için en az 2 klip seçin (Shift + Tık)",
+                "Select at least 2 clips to link (Shift + Click)",
+            );
             return;
         }
 
@@ -299,13 +318,13 @@ impl TrimApp {
                 self.canvas_state.selected_clip_pairs.clone(),
             ));
             let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-            self.status_message = "Kliplerin bağı kaldırıldı (Unlink)".to_string();
+            self.set_status("Kliplerin bağı kaldırıldı (Unlink)", "Clips unlinked");
         } else {
             let cmd = Box::new(LinkClipsCommand::new(
                 self.canvas_state.selected_clip_pairs.clone(),
             ));
             let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-            self.status_message = "Klipler birbirine bağlandı (Link)".to_string();
+            self.set_status("Klipler birbirine bağlandı (Link)", "Clips linked");
         }
         self.project.mark_dirty();
     }
@@ -330,7 +349,10 @@ impl TrimApp {
         let name = track.name.clone();
         let cmd = Box::new(AddTrackCommand::new(track, 0));
         let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-        self.status_message = format!("Video kanalı eklendi: {}", name);
+        self.status_message = match self.lang() {
+            crate::i18n::Language::Turkish => format!("Video kanalı eklendi: {}", name),
+            crate::i18n::Language::English => format!("Video track added: {}", name),
+        };
         self.project.mark_dirty();
     }
 
@@ -355,7 +377,10 @@ impl TrimApp {
         let len = self.project.timeline.tracks.len();
         let cmd = Box::new(AddTrackCommand::new(track, len));
         let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-        self.status_message = format!("Ses kanalı eklendi: {}", name);
+        self.status_message = match self.lang() {
+            crate::i18n::Language::Turkish => format!("Ses kanalı eklendi: {}", name),
+            crate::i18n::Language::English => format!("Audio track added: {}", name),
+        };
         self.project.mark_dirty();
     }
 
@@ -381,7 +406,10 @@ impl TrimApp {
                 self.canvas_state.selected_clip_pairs.clear();
                 self.project.mark_dirty();
             } else {
-                self.status_message = "Kilitli kanaldaki klipler silinemez".to_string();
+                self.set_status(
+                    "Kilitli kanaldaki klipler silinemez",
+                    "Cannot delete clips on locked tracks",
+                );
             }
         }
     }
@@ -400,7 +428,10 @@ impl TrimApp {
                 self.canvas_state.selected_clip_pairs.clear();
                 self.project.mark_dirty();
             } else {
-                self.status_message = "Kilitli kanaldaki klip silinemez".to_string();
+                self.set_status(
+                    "Kilitli kanaldaki klip silinemez",
+                    "Cannot delete clip on locked track",
+                );
             }
         }
     }
@@ -446,13 +477,27 @@ impl TrimApp {
             let cmd = Box::new(RemoveMarkerCommand::new(existing.id));
             let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
             self.project.mark_dirty();
-            self.status_message = format!("İşaretçi silindi ({:.2}s)", self.current_time);
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => {
+                    format!("İşaretçi silindi ({:.2}s)", self.current_time)
+                }
+                crate::i18n::Language::English => {
+                    format!("Marker removed ({:.2}s)", self.current_time)
+                }
+            };
         } else {
             let marker = Marker::new(self.current_time);
             let cmd = Box::new(AddMarkerCommand::new(marker));
             let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
             self.project.mark_dirty();
-            self.status_message = format!("İşaretçi eklendi ({:.2}s)", self.current_time);
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => {
+                    format!("İşaretçi eklendi ({:.2}s)", self.current_time)
+                }
+                crate::i18n::Language::English => {
+                    format!("Marker added ({:.2}s)", self.current_time)
+                }
+            };
         }
     }
 
@@ -469,7 +514,10 @@ impl TrimApp {
             let target_tr = if all_tracks { None } else { Some(tr_id) };
             let cmd = Box::new(CloseGapCommand::new(target_tr, gap_start, gap_end));
             let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-            self.status_message = format!("⏩ Boşluk kapatıldı ({:.2}s)", dur);
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => format!("⏩ Boşluk kapatıldı ({:.2}s)", dur),
+                crate::i18n::Language::English => format!("⏩ Gap closed ({:.2}s)", dur),
+            };
             self.project.mark_dirty();
         }
     }
@@ -483,7 +531,14 @@ impl TrimApp {
             ));
             let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
         }
-        self.status_message = format!("🎨 Klip rengi güncellendi: {}", color.label());
+        self.status_message = match self.lang() {
+            crate::i18n::Language::Turkish => {
+                format!("🎨 Klip rengi güncellendi: {}", color.label())
+            }
+            crate::i18n::Language::English => {
+                format!("🎨 Clip color updated: {}", color.label())
+            }
+        };
         self.project.mark_dirty();
     }
 }

@@ -164,11 +164,21 @@ impl TrimApp {
                 );
                 match self.undo_stack.push(cmd, &mut self.project.timeline) {
                     Ok(()) => {
-                        self.status_message = format!("Klip {:.2}. saniyede kesildi", cut_time);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("Klip {:.2}. saniyede kesildi", cut_time)
+                            }
+                            crate::i18n::Language::English => {
+                                format!("Clip split at {:.2}s", cut_time)
+                            }
+                        };
                         self.project.mark_dirty();
                     }
                     Err(e) => {
-                        self.status_message = format!("Kesme hatası: {}", e);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => format!("Kesme hatası: {}", e),
+                            crate::i18n::Language::English => format!("Split error: {}", e),
+                        };
                     }
                 }
             }
@@ -207,7 +217,10 @@ impl TrimApp {
                     self.canvas_state.selected_clip_pairs.clear();
                     self.project.mark_dirty();
                 } else if !self.canvas_state.selected_clip_pairs.is_empty() {
-                    self.status_message = "Kilitli kanaldaki klipler silinemez".to_string();
+                    self.set_status(
+                        "Kilitli kanaldaki klipler silinemez",
+                        "Cannot delete clips on locked tracks",
+                    );
                 }
             }
             CanvasAction::RippleDeleteSelected => {
@@ -225,7 +238,10 @@ impl TrimApp {
                         self.canvas_state.selected_clip_pairs.clear();
                         self.project.mark_dirty();
                     } else {
-                        self.status_message = "Kilitli kanaldaki klip silinemez".to_string();
+                        self.set_status(
+                            "Kilitli kanaldaki klip silinemez",
+                            "Cannot delete clip on locked track",
+                        );
                     }
                 }
             }
@@ -244,9 +260,10 @@ impl TrimApp {
 
                 if let Some(seq_id) = seq_id_opt {
                     if self.project.active_sequence_id.as_deref() == Some(&seq_id) {
-                        self.status_message =
-                            "Bir sekans kendi içine yerleştirilemez (Nested Loop Engellendi)"
-                                .to_string();
+                        self.set_status(
+                            "Bir sekans kendi içine yerleştirilemez (Nested Loop Engellendi)",
+                            "A sequence cannot be nested inside itself",
+                        );
                     } else if let Some(seq) = self
                         .project
                         .sequences
@@ -316,7 +333,14 @@ impl TrimApp {
                             let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                             self.canvas_state.selected_clip_pairs = vec![(final_video_tr, clip_id)];
                         }
-                        self.status_message = format!("İç içe sekans eklendi: {}", seq.name);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("İç içe sekans eklendi: {}", seq.name)
+                            }
+                            crate::i18n::Language::English => {
+                                format!("Nested sequence added: {}", seq.name)
+                            }
+                        };
                         self.project.mark_dirty();
                     }
                 } else if let Some(media) = self.project.get_media(&media_id).cloned() {
@@ -443,7 +467,10 @@ impl TrimApp {
                 let cmd = Box::new(CloseGapCommand::new(track_id, gap_start, gap_end));
                 let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                 self.canvas_state.selected_gap = None;
-                self.status_message = format!("⏩ Boşluk kapatıldı ({:.2}s)", dur);
+                self.status_message = match self.lang() {
+                    crate::i18n::Language::Turkish => format!("⏩ Boşluk kapatıldı ({:.2}s)", dur),
+                    crate::i18n::Language::English => format!("⏩ Gap closed ({:.2}s)", dur),
+                };
                 self.project.mark_dirty();
             }
             CanvasAction::SetClipColor {
@@ -453,7 +480,14 @@ impl TrimApp {
             } => {
                 let cmd = Box::new(SetClipColorCommand::new(track_id, clip_id, color));
                 let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
-                self.status_message = format!("🎨 Klip rengi güncellendi: {}", color.label());
+                self.status_message = match self.lang() {
+                    crate::i18n::Language::Turkish => {
+                        format!("🎨 Klip rengi güncellendi: {}", color.label())
+                    }
+                    crate::i18n::Language::English => {
+                        format!("🎨 Clip color updated: {}", color.label())
+                    }
+                };
                 self.project.mark_dirty();
             }
             CanvasAction::ToggleLinkSelected => {
@@ -471,7 +505,7 @@ impl TrimApp {
                 self.audio_mixer.clear_cache();
                 self.canvas_state.selected_clip_pairs.clear();
                 self.current_time = 0.0;
-                self.status_message = "Sekans açıldı".to_string();
+                self.set_status("Sekans açıldı", "Sequence opened");
             }
             CanvasAction::CreateCompoundClip => {
                 self.create_compound_clip_from_selected();
@@ -501,7 +535,14 @@ impl TrimApp {
                 {
                     self.project.mark_dirty();
                     self.last_rendered_dirty = true;
-                    self.status_message = format!("Roll Trim uygulandı ({:+.2}s)", delta_secs);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => {
+                            format!("Roll Trim uygulandı ({:+.2}s)", delta_secs)
+                        }
+                        crate::i18n::Language::English => {
+                            format!("Roll Trim applied ({:+.2}s)", delta_secs)
+                        }
+                    };
                 }
             }
             CanvasAction::ClipSlideTrimmed {
@@ -525,7 +566,14 @@ impl TrimApp {
                 {
                     self.project.mark_dirty();
                     self.last_rendered_dirty = true;
-                    self.status_message = format!("Slide Trim uygulandı ({:+.2}s)", delta_secs);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => {
+                            format!("Slide Trim uygulandı ({:+.2}s)", delta_secs)
+                        }
+                        crate::i18n::Language::English => {
+                            format!("Slide Trim applied ({:+.2}s)", delta_secs)
+                        }
+                    };
                 }
             }
         }

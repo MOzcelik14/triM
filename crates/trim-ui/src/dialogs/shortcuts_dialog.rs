@@ -1,11 +1,74 @@
 //! Keyboard Shortcuts visual cheat sheet dialog modal (F1).
 
-use crate::shortcuts::ShortcutProfile;
-use egui::{Color32, RichText, Vec2, Window};
+use crate::shortcuts::{KeyBinding, KeymapConfig, ShortcutAction, ShortcutProfile};
+use egui::{Color32, Key, RichText, Vec2, Window};
 
 #[derive(Debug, Clone, Default)]
 pub struct ShortcutsDialog {
     pub is_open: bool,
+    pub capturing_action: Option<ShortcutAction>,
+    pub status_hint: Option<String>,
+}
+
+fn egui_key_to_name(key: Key) -> Option<&'static str> {
+    match key {
+        Key::Space => Some("Space"),
+        Key::Delete => Some("Delete"),
+        Key::Backspace => Some("Backspace"),
+        Key::OpenBracket => Some("OpenBracket"),
+        Key::CloseBracket => Some("CloseBracket"),
+        Key::Backslash => Some("Backslash"),
+        Key::Comma => Some("Comma"),
+        Key::Period => Some("Period"),
+        Key::Minus => Some("Minus"),
+        Key::Equals => Some("Equals"),
+        Key::Plus => Some("Plus"),
+        Key::Enter => Some("Enter"),
+        Key::Tab => Some("Tab"),
+        Key::Home => Some("Home"),
+        Key::End => Some("End"),
+        Key::ArrowLeft => Some("ArrowLeft"),
+        Key::ArrowRight => Some("ArrowRight"),
+        Key::ArrowUp => Some("ArrowUp"),
+        Key::ArrowDown => Some("ArrowDown"),
+        Key::A => Some("A"),
+        Key::B => Some("B"),
+        Key::C => Some("C"),
+        Key::D => Some("D"),
+        Key::E => Some("E"),
+        Key::F => Some("F"),
+        Key::G => Some("G"),
+        Key::H => Some("H"),
+        Key::I => Some("I"),
+        Key::J => Some("J"),
+        Key::K => Some("K"),
+        Key::L => Some("L"),
+        Key::M => Some("M"),
+        Key::N => Some("N"),
+        Key::O => Some("O"),
+        Key::P => Some("P"),
+        Key::Q => Some("Q"),
+        Key::R => Some("R"),
+        Key::S => Some("S"),
+        Key::T => Some("T"),
+        Key::U => Some("U"),
+        Key::V => Some("V"),
+        Key::W => Some("W"),
+        Key::X => Some("X"),
+        Key::Y => Some("Y"),
+        Key::Z => Some("Z"),
+        Key::Num0 => Some("0"),
+        Key::Num1 => Some("1"),
+        Key::Num2 => Some("2"),
+        Key::Num3 => Some("3"),
+        Key::Num4 => Some("4"),
+        Key::Num5 => Some("5"),
+        Key::Num6 => Some("6"),
+        Key::Num7 => Some("7"),
+        Key::Num8 => Some("8"),
+        Key::Num9 => Some("9"),
+        _ => None,
+    }
 }
 
 impl ShortcutsDialog {
@@ -15,21 +78,73 @@ impl ShortcutsDialog {
 
     pub fn toggle(&mut self) {
         self.is_open = !self.is_open;
+        if !self.is_open {
+            self.capturing_action = None;
+        }
     }
 
-    pub fn show(&mut self, ctx: &egui::Context, profile: &mut ShortcutProfile) {
+    pub fn show(
+        &mut self,
+        ctx: &egui::Context,
+        profile: &mut ShortcutProfile,
+        keymap: &mut KeymapConfig,
+    ) {
         if !self.is_open {
+            self.capturing_action = None;
             return;
+        }
+
+        if let Some(action) = self.capturing_action {
+            let captured = ctx.input(|i| {
+                if i.key_pressed(Key::Escape) {
+                    return Some(Err(()));
+                }
+                for key in &i.keys_down {
+                    if i.key_pressed(*key) {
+                        if let Some(name) = egui_key_to_name(*key) {
+                            return Some(Ok(KeyBinding {
+                                ctrl: i.modifiers.ctrl || i.modifiers.command,
+                                shift: i.modifiers.shift,
+                                alt: i.modifiers.alt,
+                                key: name.to_string(),
+                            }));
+                        }
+                    }
+                }
+                None
+            });
+            match captured {
+                Some(Err(())) => {
+                    self.capturing_action = None;
+                    self.status_hint = Some("Tuş atama iptal edildi.".to_string());
+                }
+                Some(Ok(binding)) => {
+                    let display = binding.display();
+                    let conflicts = keymap.rebind(action, binding, true);
+                    let _ = keymap.save_to_path(&KeymapConfig::config_path());
+                    self.capturing_action = None;
+                    self.status_hint = Some(if conflicts.is_empty() {
+                        format!("{} -> {} olarak kaydedildi.", action.label(), display)
+                    } else {
+                        format!(
+                            "{} -> {} atandı (çakışan eski atama kaldırıldı).",
+                            action.label(),
+                            display
+                        )
+                    });
+                }
+                None => {}
+            }
         }
 
         Window::new("Klavye Kısayolları (triM.)")
             .collapsible(true)
             .resizable(false)
-            .default_size(Vec2::new(580.0, 460.0))
+            .default_size(Vec2::new(600.0, 500.0))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new("Hızlı Kısayol Rehberi")
+                        RichText::new("Hızlı Kısayol Rehberi ve Editörü")
                             .size(14.0)
                             .strong()
                             .color(Color32::from_rgb(0xe0, 0x7a, 0x38)),
@@ -37,11 +152,13 @@ impl ShortcutsDialog {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("Kapat (Esc)").clicked() {
                             self.is_open = false;
+                            self.capturing_action = None;
                         }
                     });
                 });
                 ui.separator();
 
+                let prev_profile = *profile;
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("Aktif Kısayol Profili:").strong());
                     egui::ComboBox::from_id_salt("shortcut_dialog_profile_combo")
@@ -51,12 +168,35 @@ impl ShortcutsDialog {
                                 ui.selectable_value(profile, *p, p.label());
                             }
                         });
-                    ui.label(
-                        RichText::new(profile.description())
-                            .size(10.5)
-                            .color(Color32::from_rgb(0x90, 0x90, 0xa5)),
-                    );
+                    if ui.button("Varsayılana Sıfırla").clicked() {
+                        *keymap = KeymapConfig::for_profile(*profile);
+                        let _ = keymap.save_to_path(&KeymapConfig::config_path());
+                        self.capturing_action = None;
+                        self.status_hint = Some(format!(
+                            "{} profilinin varsayılanları geri yüklendi.",
+                            profile.label()
+                        ));
+                    }
                 });
+                if *profile != prev_profile {
+                    *keymap = KeymapConfig::for_profile(*profile);
+                    let _ = keymap.save_to_path(&KeymapConfig::config_path());
+                    self.capturing_action = None;
+                    self.status_hint =
+                        Some(format!("Profil {} olarak güncellendi.", profile.label()));
+                }
+                ui.label(
+                    RichText::new(profile.description())
+                        .size(10.5)
+                        .color(Color32::from_rgb(0x90, 0x90, 0xa5)),
+                );
+                if let Some(hint) = &self.status_hint {
+                    ui.label(
+                        RichText::new(hint)
+                            .size(11.0)
+                            .color(Color32::from_rgb(0x74, 0xc6, 0x9d)),
+                    );
+                }
                 ui.separator();
                 ui.add_space(4.0);
 
@@ -167,6 +307,58 @@ impl ShortcutsDialog {
                 ];
 
                 egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.group(|ui| {
+                        ui.set_width(560.0);
+                        ui.strong(
+                            RichText::new("Özelleştirilebilir Kısayollar (Tıklayıp Tuş Atayın)")
+                                .color(Color32::from_rgb(0xe0, 0x7a, 0x38))
+                                .size(12.0),
+                        );
+                        ui.add_space(3.0);
+                        for &action in ShortcutAction::ALL {
+                            ui.horizontal(|ui| {
+                                ui.set_min_height(20.0);
+                                let is_capturing = self.capturing_action == Some(action);
+                                let btn_text = if is_capturing {
+                                    "Tuşa basın... (Esc)".to_string()
+                                } else {
+                                    keymap
+                                        .bindings
+                                        .get(&action)
+                                        .map(|b| b.display())
+                                        .unwrap_or_else(|| "Atanmamış".to_string())
+                                };
+                                let fill = if is_capturing {
+                                    Color32::from_rgb(0x7a, 0x3e, 0x18)
+                                } else {
+                                    Color32::from_rgb(0x28, 0x28, 0x36)
+                                };
+                                let key_btn = egui::Button::new(
+                                    RichText::new(btn_text)
+                                        .size(11.0)
+                                        .strong()
+                                        .color(Color32::WHITE),
+                                )
+                                .fill(fill)
+                                .stroke(egui::Stroke::new(
+                                    1.0_f32,
+                                    Color32::from_rgb(0x3c, 0x3c, 0x4c),
+                                ))
+                                .rounding(3.0);
+                                if ui.add_sized([150.0, 20.0], key_btn).clicked() {
+                                    self.capturing_action =
+                                        if is_capturing { None } else { Some(action) };
+                                }
+                                ui.label(
+                                    RichText::new(action.label())
+                                        .size(11.5)
+                                        .color(Color32::from_rgb(0xd0, 0xd0, 0xdc)),
+                                );
+                            });
+                        }
+                    });
+                    ui.add_space(4.0);
+
                     for (cat, items) in sections {
                         ui.group(|ui| {
                             ui.set_width(540.0);

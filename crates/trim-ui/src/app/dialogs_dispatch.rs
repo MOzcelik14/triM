@@ -37,7 +37,7 @@ impl TrimApp {
                     self.export_runner.cancel();
                     self.export_dialog.is_exporting = false;
                     self.export_rx = None;
-                    self.status_message = "Dışa aktarma iptal edildi".to_string();
+                    self.set_status("Dışa aktarma iptal edildi", "Export cancelled");
                 }
                 ExportDialogAction::AddToQueue(preset, out_path, range) => {
                     let job_name = Path::new(&out_path)
@@ -49,7 +49,10 @@ impl TrimApp {
                         RenderJob::new(job_name, self.project.clone(), preset, out_path, range);
                     self.render_queue.add_job(job);
                     self.render_queue_dialog.open();
-                    self.status_message = "İş dışa aktarma kuyruğuna eklendi.".to_string();
+                    self.set_status(
+                        "İş dışa aktarma kuyruğuna eklendi.",
+                        "Job added to render queue.",
+                    );
                 }
                 ExportDialogAction::OpenOutputFolder(path) => {
                     let p = std::path::Path::new(&path);
@@ -70,8 +73,10 @@ impl TrimApp {
                     ctx.output_mut(|o| {
                         o.copied_text = chapters;
                     });
-                    self.status_message =
-                        "📑 YouTube Bölüm (Chapter) zaman damgaları panoya kopyalandı!".to_string();
+                    self.set_status(
+                        "📑 YouTube Bölüm (Chapter) zaman damgaları panoya kopyalandı!",
+                        "📑 YouTube Chapter timestamps copied to clipboard!",
+                    );
                 }
                 ExportDialogAction::ExportEdl => {
                     self.export_edl_dialog();
@@ -156,8 +161,10 @@ impl TrimApp {
                     ));
                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                     self.canvas_state.selected_clip_pairs.clear();
-                    self.status_message =
-                        "Sessizlikler otomatik kesildi (Jump-cut uygulandı)".to_string();
+                    self.set_status(
+                        "Sessizlikler otomatik kesildi (Jump-cut uygulandı)",
+                        "Silences auto-cut (Jump-cut applied)",
+                    );
                     self.project.mark_dirty();
                 }
             }
@@ -232,10 +239,16 @@ impl TrimApp {
                                         &mut self.project.timeline,
                                     );
                                     self.project.mark_dirty();
-                                    self.status_message = format!(
-                                        "Üst video kanalı otomatik oluşturuldu: {}",
-                                        new_track_name
-                                    );
+                                    self.status_message = match self.lang() {
+                                        crate::i18n::Language::Turkish => format!(
+                                            "Üst video kanalı otomatik oluşturuldu: {}",
+                                            new_track_name
+                                        ),
+                                        crate::i18n::Language::English => format!(
+                                            "Upper video track auto-created: {}",
+                                            new_track_name
+                                        ),
+                                    };
                                     new_id
                                 }
                             } else if self
@@ -260,9 +273,10 @@ impl TrimApp {
                                     .map(|t| t.locked)
                                     .unwrap_or(false);
                                 if is_locked {
-                                    self.status_message =
-                                        "Hedef video kanalı kilitli, metin klibi eklenemez"
-                                            .to_string();
+                                    self.set_status(
+                                        "Hedef video kanalı kilitli, metin klibi eklenemez",
+                                        "Target video track is locked, cannot add text clip",
+                                    );
                                 } else {
                                     let mut clip = Clip::new(
                                         m_id,
@@ -315,8 +329,14 @@ impl TrimApp {
                                     let cmd = Box::new(AddClipCommand::new(target_track_id, clip));
                                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                     self.project.mark_dirty();
-                                    self.status_message =
-                                        format!("Metin klibi eklendi ({}s)", duration);
+                                    self.status_message = match self.lang() {
+                                        crate::i18n::Language::Turkish => {
+                                            format!("Metin klibi eklendi ({}s)", duration)
+                                        }
+                                        crate::i18n::Language::English => {
+                                            format!("Text clip added ({}s)", duration)
+                                        }
+                                    };
                                 }
                             }
                         }
@@ -385,12 +405,20 @@ impl TrimApp {
                             }
                         }
                         let _ = std::fs::remove_file(&p);
-                        self.status_message = format!(
-                            "Proje otomatik kayıttan kurtarıldı ({}×{} @ {:.0}fps)",
-                            self.project.timeline.width,
-                            self.project.timeline.height,
-                            self.project.timeline.fps
-                        );
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => format!(
+                                "Proje otomatik kayıttan kurtarıldı ({}×{} @ {:.0}fps)",
+                                self.project.timeline.width,
+                                self.project.timeline.height,
+                                self.project.timeline.fps
+                            ),
+                            crate::i18n::Language::English => format!(
+                                "Project recovered from autosave ({}×{} @ {:.0}fps)",
+                                self.project.timeline.width,
+                                self.project.timeline.height,
+                                self.project.timeline.fps
+                            ),
+                        };
                     }
                 }
                 RecoveryAction::Discard(p) => {
@@ -547,10 +575,16 @@ impl TrimApp {
                         self.project.settings.name = name;
                         self.project.set_resolution(width, height);
                         self.project.set_fps(fps);
-                        self.status_message = format!(
-                            "Yeni proje hazır: {} ({}×{} @ {:.0}fps)",
-                            self.project.settings.name, width, height, fps
-                        );
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => format!(
+                                "Yeni proje hazır: {} ({}×{} @ {:.0}fps)",
+                                self.project.settings.name, width, height, fps
+                            ),
+                            crate::i18n::Language::English => format!(
+                                "New project ready: {} ({}×{} @ {:.0}fps)",
+                                self.project.settings.name, width, height, fps
+                            ),
+                        };
                         self.welcome_dialog.close();
                     }
                 }
@@ -602,7 +636,8 @@ impl TrimApp {
         // -------------------------------------------------------------
         // Keyboard Shortcuts Modal (F1)
         // -------------------------------------------------------------
-        self.shortcuts_dialog.show(ctx, &mut self.shortcut_profile);
+        self.shortcuts_dialog
+            .show(ctx, &mut self.shortcut_profile, &mut self.keymap_config);
 
         // -------------------------------------------------------------
         // Preferences / Settings Modal (Ctrl+,)
@@ -631,6 +666,7 @@ impl TrimApp {
                         self.snap_enabled = new_snap;
                     }
 
+                    let old_profile = self.shortcut_profile;
                     match new_prefs.shortcut_profile.as_str() {
                         "Adobe Premiere Pro" => {
                             self.shortcut_profile = ShortcutProfile::PremierePro
@@ -638,7 +674,15 @@ impl TrimApp {
                         "DaVinci Resolve" => {
                             self.shortcut_profile = ShortcutProfile::DaVinciResolve
                         }
+                        "Final Cut Pro" => self.shortcut_profile = ShortcutProfile::FinalCutPro,
                         _ => self.shortcut_profile = ShortcutProfile::TrimDefault,
+                    }
+                    if self.shortcut_profile != old_profile {
+                        self.keymap_config =
+                            crate::shortcuts::KeymapConfig::for_profile(self.shortcut_profile);
+                        let _ = self
+                            .keymap_config
+                            .save_to_path(&crate::shortcuts::KeymapConfig::config_path());
                     }
 
                     if self.preferences.max_memory_budget_mb != new_prefs.max_memory_budget_mb {
@@ -657,7 +701,14 @@ impl TrimApp {
                     );
 
                     if let Err(e) = new_prefs.save() {
-                        self.status_message = format!("Tercihler kaydedilemedi: {}", e);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("Tercihler kaydedilemedi: {}", e)
+                            }
+                            crate::i18n::Language::English => {
+                                format!("Failed to save preferences: {}", e)
+                            }
+                        };
                     } else {
                         self.status_message = match new_prefs.language.as_str() {
                             "en" => "Preferences saved successfully.".to_string(),
@@ -745,10 +796,16 @@ impl TrimApp {
                                 self.project.mark_dirty();
                             }
                         }
-                        self.status_message = format!(
-                            "Ekran kaydı içe aktarıldı: {:?}",
-                            file_path.file_name().unwrap_or_default()
-                        );
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => format!(
+                                "Ekran kaydı içe aktarıldı: {:?}",
+                                file_path.file_name().unwrap_or_default()
+                            ),
+                            crate::i18n::Language::English => format!(
+                                "Screen recording imported: {:?}",
+                                file_path.file_name().unwrap_or_default()
+                            ),
+                        };
                     }
                 }
             }
@@ -1101,12 +1158,25 @@ impl TrimApp {
                         BinDialogMode::Create => {
                             let bin_id = self.project.add_bin(trimmed);
                             self.media_bin_current_bin = Some(bin_id);
-                            self.status_message = format!("'{}' klasörü oluşturuldu", trimmed);
+                            self.status_message = match self.lang() {
+                                crate::i18n::Language::Turkish => {
+                                    format!("'{}' klasörü oluşturuldu", trimmed)
+                                }
+                                crate::i18n::Language::English => {
+                                    format!("Folder '{}' created", trimmed)
+                                }
+                            };
                         }
                         BinDialogMode::Rename(bin_id) => {
                             self.project.rename_bin(&bin_id, trimmed);
-                            self.status_message =
-                                format!("Klasör '{}' olarak yeniden adlandırıldı", trimmed);
+                            self.status_message = match self.lang() {
+                                crate::i18n::Language::Turkish => {
+                                    format!("Klasör '{}' olarak yeniden adlandırıldı", trimmed)
+                                }
+                                crate::i18n::Language::English => {
+                                    format!("Folder renamed to '{}'", trimmed)
+                                }
+                            };
                         }
                     }
                     self.project.mark_dirty();

@@ -55,17 +55,20 @@ impl TrimApp {
 
     pub fn shuttle_stop(&mut self) {
         self.pause();
-        self.status_message = "Duraklatıldı (1x)".to_string();
+        self.set_status("Duraklatıldı (1x)", "Paused (1x)");
     }
 
     pub fn toggle_snap(&mut self) {
         self.snap_enabled = !self.snap_enabled;
         self.project.timeline.snap_enabled = self.snap_enabled;
-        self.status_message = if self.snap_enabled {
-            "Mıknatıs / Yapışma (N): Açık".to_string()
+        if self.snap_enabled {
+            self.set_status("Mıknatıs / Yapışma (N): Açık", "Magnet / Snapping (N): On");
         } else {
-            "Mıknatıs / Yapışma (N): Kapalı".to_string()
-        };
+            self.set_status(
+                "Mıknatıs / Yapışma (N): Kapalı",
+                "Magnet / Snapping (N): Off",
+            );
+        }
     }
 
     pub fn stop(&mut self) {
@@ -148,7 +151,12 @@ impl TrimApp {
             self.clock_start = Some(Instant::now());
             self.clock_start_time = self.current_time;
         }
-        self.status_message = format!("İleri Sarma: {:.0}x", self.playback_speed);
+        self.status_message = match self.lang() {
+            crate::i18n::Language::Turkish => format!("İleri Sarma: {:.0}x", self.playback_speed),
+            crate::i18n::Language::English => {
+                format!("Shuttle Forward: {:.0}x", self.playback_speed)
+            }
+        };
     }
 
     pub fn shuttle_reverse(&mut self) {
@@ -170,7 +178,12 @@ impl TrimApp {
             self.clock_start = Some(Instant::now());
             self.clock_start_time = self.current_time;
         }
-        self.status_message = format!("Geri Sarma: {:.0}x", self.playback_speed);
+        self.status_message = match self.lang() {
+            crate::i18n::Language::Turkish => format!("Geri Sarma: {:.0}x", self.playback_speed),
+            crate::i18n::Language::English => {
+                format!("Shuttle Reverse: {:.0}x", self.playback_speed)
+            }
+        };
     }
 
     pub fn update_playback_tick(&mut self) {
@@ -332,7 +345,10 @@ impl TrimApp {
         self.scopes_panel.last_frame_rgba = Some((rgba[..(w * h * 4) as usize].to_vec(), w, h));
         self.scopes_panel
             .grab_still(ctx, active_clip.as_ref(), self.current_time);
-        self.status_message = "📷 Referans kare galeriye kaydedildi".to_string();
+        self.set_status(
+            "📷 Referans kare galeriye kaydedildi",
+            "📷 Reference still saved to gallery",
+        );
     }
 
     pub fn update_source_monitor_frame(&mut self, ctx: &egui::Context) {

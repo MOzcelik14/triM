@@ -182,12 +182,18 @@ impl TrimApp {
                                                 self.canvas_state
                                                     .selected_clip_pairs
                                                     .retain(|(tr_id, _)| tr_id != &t_id);
-                                                self.status_message = "Kanal silindi".to_string();
+                                                self.set_status("Kanal silindi", "Track removed");
                                                 self.project.mark_dirty();
                                             }
                                             Err(e) => {
-                                                self.status_message =
-                                                    format!("Kanal silinemedi: {}", e);
+                                                self.status_message = match self.lang() {
+                                                    crate::i18n::Language::Turkish => {
+                                                        format!("Kanal silinemedi: {}", e)
+                                                    }
+                                                    crate::i18n::Language::English => {
+                                                        format!("Failed to remove track: {}", e)
+                                                    }
+                                                };
                                             }
                                         }
                                     }
@@ -253,7 +259,7 @@ impl TrimApp {
                 self.last_rendered_monitor_frame = None;
                 self.video_engine.last_rendered_frame = None;
                 self.scopes_panel.mark_dirty();
-                self.status_message = "✨ Ayar Katmanı eklendi".to_string();
+                self.set_status("✨ Ayar Katmanı eklendi", "✨ Adjustment Layer added");
             }
         }
         if reset_heights_requested {

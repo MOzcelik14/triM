@@ -123,8 +123,10 @@ impl TrimApp {
                                     self.source_state.mark_out = None;
                                     self.source_state.is_playing = false;
                                     self.source_state.last_decoded_time = None;
-                                    self.status_message =
-                                        "Klip Kaynak Monitöründe Açıldı".to_string();
+                                    self.set_status(
+                                        "Klip Kaynak Monitöründe Açıldı",
+                                        "Clip Opened in Source Monitor",
+                                    );
                                 }
                                 MediaBinAction::AddToTimeline(m_id) => {
                                     let seq_id_opt = if let Some(stripped) = m_id.strip_prefix("seq:") {
@@ -137,7 +139,10 @@ impl TrimApp {
 
                                     if let Some(seq_id) = seq_id_opt {
                                         if self.project.active_sequence_id.as_deref() == Some(&seq_id) {
-                                            self.status_message = "Bir sekans kendi içine yerleştirilemez (Nested Loop Engellendi)".to_string();
+                                            self.set_status(
+                                                "Bir sekans kendi içine yerleştirilemez (Nested Loop Engellendi)",
+                                                "A sequence cannot be nested inside itself",
+                                            );
                                         } else if let Some(seq) = self.project.sequences.iter().find(|s| s.id == seq_id).cloned() {
                                             let target_video_track = if self
                                                 .project
@@ -180,7 +185,16 @@ impl TrimApp {
                                                 } else {
                                                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                                 }
-                                                self.status_message = format!("İç içe sekans eklendi: {}", seq.name);
+                                                self.status_message = match self.lang() {
+                                                    crate::i18n::Language::Turkish => format!(
+                                                        "İç içe sekans eklendi: {}",
+                                                        seq.name
+                                                    ),
+                                                    crate::i18n::Language::English => format!(
+                                                        "Nested sequence added: {}",
+                                                        seq.name
+                                                    ),
+                                                };
                                                 self.project.mark_dirty();
                                             }
                                         }
@@ -252,9 +266,10 @@ impl TrimApp {
                                                 .map(|t| t.locked)
                                                 .unwrap_or(false);
                                             if is_locked {
-                                                self.status_message =
-                                                    "Hedef kanal kilitli, klip eklenemez"
-                                                        .to_string();
+                                                self.set_status(
+                                                    "Hedef kanal kilitli, klip eklenemez",
+                                                    "Target track is locked, cannot add clip",
+                                                );
                                             } else {
                                                 if self
                                                     .project
@@ -342,9 +357,10 @@ impl TrimApp {
                                         .iter()
                                         .any(|t| t.clips.iter().any(|c| c.media_id == m_id));
                                     if is_used {
-                                        self.status_message =
-                                            "Zaman çizgisinde kullanılan bir medya silinemez"
-                                                .to_string();
+                                        self.set_status(
+                                            "Zaman çizgisinde kullanılan bir medya silinemez",
+                                            "Cannot delete media currently used on timeline",
+                                        );
                                     } else {
                                         self.project.media_pool.remove(&m_id);
                                         self.media_bin_textures.remove(&m_id);
@@ -380,10 +396,16 @@ impl TrimApp {
                                         if self.media_bin_current_bin.as_deref() == Some(&bin_id) {
                                             self.media_bin_current_bin = None;
                                         }
-                                        self.status_message = format!(
-                                            "'{}' klasörü silindi (içindekiler ana havuza aktarıldı)",
-                                            removed.name
-                                        );
+                                        self.status_message = match self.lang() {
+                                            crate::i18n::Language::Turkish => format!(
+                                                "'{}' klasörü silindi (içindekiler ana havuza aktarıldı)",
+                                                removed.name
+                                            ),
+                                            crate::i18n::Language::English => format!(
+                                                "Folder '{}' removed (items moved to root bin)",
+                                                removed.name
+                                            ),
+                                        };
                                     }
                                 }
                                 MediaBinAction::EnterBin(bin_id) => {
@@ -398,8 +420,16 @@ impl TrimApp {
                                             .and_then(|id| self.project.get_bin(id))
                                             .map(|b| b.name.as_str())
                                             .unwrap_or("Ana Havuz");
-                                        self.status_message =
-                                            format!("Medya '{}' klasörüne taşındı", target_name);
+                                        self.status_message = match self.lang() {
+                                            crate::i18n::Language::Turkish => format!(
+                                                "Medya '{}' klasörüne taşındı",
+                                                target_name
+                                            ),
+                                            crate::i18n::Language::English => format!(
+                                                "Media moved to folder '{}'",
+                                                target_name
+                                            ),
+                                        };
                                     }
                                 }
                                 MediaBinAction::OpenSequence(seq_id) => {
@@ -408,7 +438,7 @@ impl TrimApp {
                                     self.audio_mixer.clear_cache();
                                     self.canvas_state.selected_clip_pairs.clear();
                                     self.current_time = 0.0;
-                                    self.status_message = "Sekans açıldı".to_string();
+                                    self.set_status("Sekans açıldı", "Sequence opened");
                                 }
                                 MediaBinAction::CreateSequencePrompt => {
                                     let next_num = self.project.sequences.len() + 1;
@@ -418,11 +448,11 @@ impl TrimApp {
                                     self.audio_mixer.clear_cache();
                                     self.canvas_state.selected_clip_pairs.clear();
                                     self.current_time = 0.0;
-                                    self.status_message = "Yeni sekans oluşturuldu".to_string();
+                                    self.set_status("Yeni sekans oluşturuldu", "New sequence created");
                                 }
                                 MediaBinAction::DuplicateSequence(seq_id) => {
                                     if self.project.duplicate_sequence(&seq_id).is_some() {
-                                        self.status_message = "Sekans çoğaltıldı".to_string();
+                                        self.set_status("Sekans çoğaltıldı", "Sequence duplicated");
                                     }
                                 }
                                 MediaBinAction::DeleteSequence(seq_id) => {
@@ -431,7 +461,7 @@ impl TrimApp {
                                         self.audio_mixer.clear_cache();
                                         self.canvas_state.selected_clip_pairs.clear();
                                         self.current_time = 0.0;
-                                        self.status_message = "Sekans silindi".to_string();
+                                        self.set_status("Sekans silindi", "Sequence deleted");
                                     }
                                 }
                                 MediaBinAction::GenerateSoundscape(preset) => {
@@ -615,12 +645,16 @@ impl TrimApp {
                                 InspectorAction::StartWbEyedropper { track_id, clip_id } => {
                                     if self.wb_eyedropper_target.is_some() {
                                         self.wb_eyedropper_target = None;
-                                        self.status_message =
-                                            "WB Damlalığı kapatıldı.".to_string();
+                                        self.set_status(
+                                            "WB Damlalığı kapatıldı.",
+                                            "WB Eyedropper deactivated.",
+                                        );
                                     } else {
                                         self.wb_eyedropper_target = Some((track_id, clip_id));
-                                        self.status_message =
-                                            "🎯 WB Damlalığı Aktif: Program Monitörü üzerinde nötr beyaz/gri bir noktaya tıklayın.".to_string();
+                                        self.set_status(
+                                            "🎯 WB Damlalığı Aktif: Program Monitörü üzerinde nötr beyaz/gri bir noktaya tıklayın.",
+                                            "🎯 WB Eyedropper Active: Click a neutral white/gray point on the Program Monitor.",
+                                        );
                                     }
                                 }
                                 InspectorAction::SetColorGrading {
@@ -703,14 +737,21 @@ impl TrimApp {
                                             self.last_rendered_monitor_frame = None;
                                             self.video_engine.last_rendered_frame = None;
                                             self.scopes_panel.mark_dirty();
-                                            self.status_message = format!(
-                                                "✨ Otomatik Beyaz Dengesi uygulandı (Sıcaklık: {:+.1}, Ton: {:+.1})",
-                                                temp, tint
-                                            );
+                                            self.status_message = match self.lang() {
+                                                crate::i18n::Language::Turkish => format!(
+                                                    "✨ Otomatik Beyaz Dengesi uygulandı (Sıcaklık: {:+.1}, Ton: {:+.1})",
+                                                    temp, tint
+                                                ),
+                                                crate::i18n::Language::English => format!(
+                                                    "✨ Auto White Balance applied (Temp: {:+.1}, Tint: {:+.1})",
+                                                    temp, tint
+                                                ),
+                                            };
                                         } else {
-                                            self.status_message =
-                                                "⚠ Otomatik Beyaz Dengesi için kare analiz edilemedi."
-                                                    .to_string();
+                                            self.set_status(
+                                                "⚠ Otomatik Beyaz Dengesi için kare analiz edilemedi.",
+                                                "⚠ Could not analyze frame for Auto White Balance.",
+                                            );
                                         }
                                     }
                                 }
@@ -777,14 +818,21 @@ impl TrimApp {
                                         self.scopes_panel.mark_dirty();
                                         self.video_engine.last_rendered_frame = None;
                                         self.scopes_panel.mark_dirty();
-                                        self.status_message = format!(
-                                            "🎯 Shot Match uygulandı (Parlaklık: {:+.2}, Kontrast: {:.2}, Sıcaklık: {:+.1})",
-                                            b, c, temp
-                                        );
+                                        self.status_message = match self.lang() {
+                                            crate::i18n::Language::Turkish => format!(
+                                                "🎯 Shot Match uygulandı (Parlaklık: {:+.2}, Kontrast: {:.2}, Sıcaklık: {:+.1})",
+                                                b, c, temp
+                                            ),
+                                            crate::i18n::Language::English => format!(
+                                                "🎯 Shot Match applied (Brightness: {:+.2}, Contrast: {:.2}, Temp: {:+.1})",
+                                                b, c, temp
+                                            ),
+                                        };
                                     } else {
-                                        self.status_message =
-                                            "⚠ Shot Match için aktif önizleme karesi bulunamadı"
-                                                .to_string();
+                                        self.set_status(
+                                            "⚠ Shot Match için aktif önizleme karesi bulunamadı",
+                                            "⚠ No active preview frame found for Shot Match",
+                                        );
                                     }
                                 }
                             }
@@ -843,15 +891,17 @@ impl TrimApp {
                                 self.last_rendered_monitor_frame = None;
                                 self.video_engine.last_rendered_frame = None;
                                 self.scopes_panel.mark_dirty();
-                                self.status_message =
-                                    "🎨 Referans karenin renk derecelendirmesi (Grade) seçili klibe uygulandı"
-                                        .to_string();
+                                self.set_status(
+                                    "🎨 Referans karenin renk derecelendirmesi (Grade) seçili klibe uygulandı",
+                                    "🎨 Reference still color grade applied to selected clip",
+                                );
                             }
                         }
                     } else {
-                        self.status_message =
-                            "Referans rengini uygulamak için zaman çizgisinde bir klip seçin"
-                                .to_string();
+                        self.set_status(
+                            "Referans rengini uygulamak için zaman çizgisinde bir klip seçin",
+                            "Select a clip on the timeline to apply reference grade",
+                        );
                     }
                 }
             }

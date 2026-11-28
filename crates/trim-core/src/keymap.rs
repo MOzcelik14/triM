@@ -58,6 +58,40 @@ pub enum ShortcutAction {
     RippleDelete,
 }
 
+impl ShortcutAction {
+    pub const ALL: &'static [Self] = &[
+        Self::PlayPause,
+        Self::SelectTool,
+        Self::RazorTool,
+        Self::RippleTool,
+        Self::SplitAtPlayhead,
+        Self::RippleTrimHead,
+        Self::RippleTrimTail,
+        Self::ToggleSnap,
+        Self::Undo,
+        Self::Redo,
+        Self::DeleteSelected,
+        Self::RippleDelete,
+    ];
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::PlayPause => "Oynat / Duraklat (Play / Pause)",
+            Self::SelectTool => "Seçim Aracı (Select Tool)",
+            Self::RazorTool => "Jilet / Kesme Aracı (Razor / Blade)",
+            Self::RippleTool => "Dalgalanma Aracı (Ripple / Trim)",
+            Self::SplitAtPlayhead => "İmleç Konumunda Klibi Böl (Split)",
+            Self::RippleTrimHead => "Baştan Dalgalanma Kırp (Ripple Trim Head)",
+            Self::RippleTrimTail => "Sondan Dalgalanma Kırp (Ripple Trim Tail)",
+            Self::ToggleSnap => "Mıknatıs / Yapışma (Snap)",
+            Self::Undo => "Geri Al (Undo)",
+            Self::Redo => "Yinele (Redo)",
+            Self::DeleteSelected => "Seçili Klibi Sil (Delete)",
+            Self::RippleDelete => "Boşluğu Kapatarak Sil (Ripple Delete)",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct KeyBinding {
     pub ctrl: bool,
@@ -92,6 +126,31 @@ impl KeyBinding {
             alt: false,
             key: key.into(),
         }
+    }
+
+    pub fn display(&self) -> String {
+        let mut parts = Vec::new();
+        if self.ctrl {
+            parts.push("Ctrl");
+        }
+        if self.shift {
+            parts.push("Shift");
+        }
+        if self.alt {
+            parts.push("Alt");
+        }
+        let key_str = match self.key.as_str() {
+            "OpenBracket" => "[",
+            "CloseBracket" => "]",
+            "Backslash" => "\\",
+            "Comma" => ",",
+            "Period" => ".",
+            "Minus" => "-",
+            "Equals" => "=",
+            other => other,
+        };
+        parts.push(key_str);
+        parts.join(" + ")
     }
 }
 

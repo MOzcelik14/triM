@@ -76,4 +76,4 @@ Bu kılavuz, **triM.** video düzenleyicisinin kurulumundan ilk projenin dışa 
 
 - Uygulama içinde `F1` tuşuna basarak tüm kısayolları listeleyen yardım penceresini açabilirsiniz.
 - `Ctrl+,` ile **Tercihler** penceresinden dil (`Türkçe` / `English`), kısayol profili (`triM`, `Premiere Pro`, `DaVinci Resolve`) ve otomatik kayıt aralığını özelleştirebilirsiniz.
-- Ayrıntılar için [SHORTCUTS.md](file:///home/mozcelik/Projeler/triM/docs/SHORTCUTS.md) ve [ACCESSIBILITY.md](file:///home/mozcelik/Projeler/triM/docs/ACCESSIBILITY.md) dosyalarına bakın.
+- Ayrıntılar için [SHORTCUTS.md](SHORTCUTS.md) ve [ACCESSIBILITY.md](ACCESSIBILITY.md) dosyalarına bakın.

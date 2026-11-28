@@ -1,7 +1,7 @@
 # triM. Performans Temel Çizgisi (Baseline — v2.5.5)
 
 **Tarih:** 2026-11-24 22:20 +0300  
-**Komut:** `cargo run --release -p trim-media --example perf_bench -- "/home/mozcelik/İndirilenler/MVI_8603.MOV"`  
+**Komut:** `cargo run --release -p trim-media --example perf_bench -- "/path/to/MVI_8603.MOV"`  
 **Test Medyası (`GERÇEK`):** Canon EOS 2000D (`MVI_8603.MOV`), H.264 Constrained Baseline, 1920×1080, `24000/1001` (23.976 fps), `yuvj420p`, 44647.0 kbps, 31.45 s.  
 **Donanım / Ortam:** 12th Gen Intel(R) Core(TM) i5-12450H (12 mantıksal çekirdek), 23.2 GB RAM, Linux 7.0.0-43-generic x86_64, FFmpeg 6.1.1-3ubuntu5.
 

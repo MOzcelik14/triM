@@ -7,11 +7,11 @@
     "ram_avail_mb": 16421.45703125,
     "ffmpeg_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
     "os_kernel": "Linux 7.0.0-43-generic x86_64 GNU/Linux",
-    "command_line": "cargo run --release -p trim-media --example perf_bench -- /home/mozcelik/İndirilenler/MVI_8603.MOV"
+    "command_line": "cargo run --release -p trim-media --example perf_bench -- /path/to/MVI_8603.MOV"
   },
   "media": {
     "label": "GERÇEK",
-    "path": "/home/mozcelik/İndirilenler/MVI_8603.MOV",
+    "path": "/path/to/MVI_8603.MOV",
     "codec": "h264",
     "width": 1920,
     "height": 1080,

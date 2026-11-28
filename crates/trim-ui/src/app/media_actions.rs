@@ -19,7 +19,14 @@ impl TrimApp {
         } else {
             "KAPALI (Orijinal 4K/UHD)"
         };
-        self.status_message = format!("⚡ Akıllı Proxy Önizleme: {}", state_str);
+        self.status_message = match self.lang() {
+            crate::i18n::Language::Turkish => {
+                format!("⚡ Akıllı Proxy Önizleme: {}", state_str)
+            }
+            crate::i18n::Language::English => {
+                format!("⚡ Smart Proxy Preview: {}", state_str)
+            }
+        };
     }
 
     pub fn generate_proxy_for_media(&mut self, media_id: &str) {
@@ -28,8 +35,10 @@ impl TrimApp {
             None => return,
         };
         if media.media_type != MediaType::Video {
-            self.status_message =
-                "Proxy yalnızca video medyaları için oluşturulabilir.".to_string();
+            self.set_status(
+                "Proxy yalnızca video medyaları için oluşturulabilir.",
+                "Proxy can only be generated for video media.",
+            );
             return;
         }
 
@@ -40,12 +49,20 @@ impl TrimApp {
             if let Some(m) = self.project.get_media_mut(media_id) {
                 m.proxy_path = Some(out.to_string_lossy().to_string());
             }
-            self.status_message = format!(
-                "⚡ Proxy zaten mevcut: {}",
-                out.file_name()
-                    .map(|n| n.to_string_lossy())
-                    .unwrap_or_default()
-            );
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => format!(
+                    "⚡ Proxy zaten mevcut: {}",
+                    out.file_name()
+                        .map(|n| n.to_string_lossy())
+                        .unwrap_or_default()
+                ),
+                crate::i18n::Language::English => format!(
+                    "⚡ Proxy already exists: {}",
+                    out.file_name()
+                        .map(|n| n.to_string_lossy())
+                        .unwrap_or_default()
+                ),
+            };
             return;
         }
 
@@ -67,13 +84,19 @@ impl TrimApp {
             let _ = tx.send((m_id, payload));
         });
 
-        self.status_message = "⚡ 720p Proxy arka planda oluşturuluyor...".to_string();
+        self.set_status(
+            "⚡ 720p Proxy arka planda oluşturuluyor...",
+            "⚡ Generating 720p Proxy in background...",
+        );
     }
 
     pub fn start_voiceover(&mut self, track_id: String) {
         if let Some(t) = self.project.timeline.get_track_by_id(&track_id) {
             if t.locked {
-                self.status_message = "Kilitli kanala ses kaydı yapılamaz.".to_string();
+                self.set_status(
+                    "Kilitli kanala ses kaydı yapılamaz.",
+                    "Cannot record audio onto a locked track.",
+                );
                 return;
             }
         }
@@ -94,10 +117,20 @@ impl TrimApp {
                     recorder: rec,
                 });
                 self.play();
-                self.status_message = "🔴 Canlı seslendirme kaydediliyor... Durdurmak için [⏹] veya Boşluk tuşuna basın.".to_string();
+                self.set_status(
+                    "🔴 Canlı seslendirme kaydediliyor... Durdurmak için [⏹] veya Boşluk tuşuna basın.",
+                    "🔴 Recording live voiceover... Press [⏹] or Space to stop.",
+                );
             }
             Err(e) => {
-                self.status_message = format!("Ses kaydı başlatılamadı: {}", e);
+                self.status_message = match self.lang() {
+                    crate::i18n::Language::Turkish => {
+                        format!("Ses kaydı başlatılamadı: {}", e)
+                    }
+                    crate::i18n::Language::English => {
+                        format!("Failed to start audio recording: {}", e)
+                    }
+                };
             }
         }
     }
@@ -128,13 +161,25 @@ impl TrimApp {
                 let cmd = Box::new(AddClipCommand::new(vo.track_id.clone(), clip));
                 let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                 self.project.mark_dirty();
-                self.status_message = format!(
-                    "🎤 Seslendirme başarıyla kaydedildi ({:.1}s) ve kanala eklendi!",
-                    dur
-                );
+                self.status_message = match self.lang() {
+                    crate::i18n::Language::Turkish => format!(
+                        "🎤 Seslendirme başarıyla kaydedildi ({:.1}s) ve kanala eklendi!",
+                        dur
+                    ),
+                    crate::i18n::Language::English => {
+                        format!("🎤 Voiceover recorded ({:.1}s) and added to track!", dur)
+                    }
+                };
             }
             Err(e) => {
-                self.status_message = format!("Ses kaydı kaydedilemedi: {}", e);
+                self.status_message = match self.lang() {
+                    crate::i18n::Language::Turkish => {
+                        format!("Ses kaydı kaydedilemedi: {}", e)
+                    }
+                    crate::i18n::Language::English => {
+                        format!("Failed to save voiceover: {}", e)
+                    }
+                };
             }
         }
     }
@@ -189,12 +234,20 @@ impl TrimApp {
         self.source_state.last_decoded_time = None;
         if is_video && self.preferences.auto_generate_proxies {
             self.generate_proxy_for_media(&m_id);
-            self.status_message = format!(
-                "Medya içe aktarıldı ve otomatik 720p Proxy başlatıldı: {}",
-                name
-            );
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => format!(
+                    "Medya içe aktarıldı ve otomatik 720p Proxy başlatıldı: {}",
+                    name
+                ),
+                crate::i18n::Language::English => {
+                    format!("Media imported and auto 720p Proxy started: {}", name)
+                }
+            };
         } else {
-            self.status_message = format!("Medya içe aktarıldı: {}", name);
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => format!("Medya içe aktarıldı: {}", name),
+                crate::i18n::Language::English => format!("Media imported: {}", name),
+            };
         }
     }
 
@@ -202,7 +255,10 @@ impl TrimApp {
         let p = path.as_ref().to_path_buf();
         let tx = self.bg_task_tx.clone();
         let bin_id = self.media_bin_current_bin.clone();
-        self.status_message = format!("Medya analiz ediliyor: {}", p.display());
+        self.status_message = match self.lang() {
+            crate::i18n::Language::Turkish => format!("Medya analiz ediliyor: {}", p.display()),
+            crate::i18n::Language::English => format!("Analyzing media: {}", p.display()),
+        };
         std::thread::spawn(move || {
             let res = FFprobeAnalyzer::analyze(&p).map_err(|e| e.to_string());
             let _ = tx.send(crate::app::BackgroundTaskMsg::MediaAnalyzed {
@@ -217,7 +273,10 @@ impl TrimApp {
         if p.is_dir() {
             let tx = self.bg_task_tx.clone();
             let bin_id = self.media_bin_current_bin.clone();
-            self.status_message = format!("Klasör taranıyor: {}", p.display());
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => format!("Klasör taranıyor: {}", p.display()),
+                crate::i18n::Language::English => format!("Scanning folder: {}", p.display()),
+            };
             std::thread::spawn(move || {
                 let mut files = Vec::new();
                 collect_media_files_recursive(&p, 0, &mut files);
@@ -453,21 +512,42 @@ impl TrimApp {
                     let cmd = Box::new(AddClipCommand::new(track_id, clip));
                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                     self.project.mark_dirty();
-                    self.status_message = format!(
-                        "🎛 '{}' ({:.1}s) prosedürel olarak sentezlendi ve ses kanalına eklendi.",
-                        preset.label(),
-                        dur
-                    );
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => format!(
+                            "🎛 '{}' ({:.1}s) prosedürel olarak sentezlendi ve ses kanalına eklendi.",
+                            preset.label(),
+                            dur
+                        ),
+                        crate::i18n::Language::English => format!(
+                            "🎛 Synthesized '{}' ({:.1}s) and added to audio track.",
+                            preset.label(),
+                            dur
+                        ),
+                    };
                 } else {
-                    self.status_message = format!(
-                        "🎛 '{}' ({:.1}s) sentezlendi ve medya havuzuna eklendi.",
-                        preset.label(),
-                        dur
-                    );
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => format!(
+                            "🎛 '{}' ({:.1}s) sentezlendi ve medya havuzuna eklendi.",
+                            preset.label(),
+                            dur
+                        ),
+                        crate::i18n::Language::English => format!(
+                            "🎛 Synthesized '{}' ({:.1}s) and added to media bin.",
+                            preset.label(),
+                            dur
+                        ),
+                    };
                 }
             }
             Err(e) => {
-                self.status_message = format!("⚠ Prosedürel ses sentezlenemedi: {e}");
+                self.status_message = match self.lang() {
+                    crate::i18n::Language::Turkish => {
+                        format!("⚠ Prosedürel ses sentezlenemedi: {e}")
+                    }
+                    crate::i18n::Language::English => {
+                        format!("⚠ Failed to synthesize procedural audio: {e}")
+                    }
+                };
             }
         }
     }
@@ -575,8 +655,10 @@ impl TrimApp {
     pub fn smart_scene_cut_selected_clip(&mut self) {
         let selected = self.canvas_state.selected_clip_pairs.first().cloned();
         let Some((tr_id, cl_id)) = selected else {
-            self.status_message =
-                "Lütfen önce sahne tespiti yapılacak bir video klibi seçin".to_string();
+            self.set_status(
+                "Lütfen önce sahne tespiti yapılacak bir video klibi seçin",
+                "Please select a video clip first for scene detection",
+            );
             return;
         };
 
@@ -587,7 +669,7 @@ impl TrimApp {
         };
 
         let Some(clip) = clip_info else {
-            self.status_message = "Seçili klip bulunamadı".to_string();
+            self.set_status("Seçili klip bulunamadı", "Selected clip not found");
             return;
         };
 
@@ -623,7 +705,10 @@ impl TrimApp {
     pub fn open_silence_cut_dialog_for_selected(&mut self) {
         let selected = self.canvas_state.selected_clip_pairs.first().cloned();
         let Some((tr_id, cl_id)) = selected else {
-            self.status_message = "Lütfen önce sessizlikleri kesilecek bir klip seçin".to_string();
+            self.set_status(
+                "Lütfen önce sessizlikleri kesilecek bir klip seçin",
+                "Please select a clip first to cut silences",
+            );
             return;
         };
 
@@ -634,7 +719,7 @@ impl TrimApp {
         };
 
         let Some(clip) = clip_info else {
-            self.status_message = "Seçili klip bulunamadı".to_string();
+            self.set_status("Seçili klip bulunamadı", "Selected clip not found");
             return;
         };
 
@@ -707,7 +792,10 @@ impl TrimApp {
     pub fn open_transcribe_dialog_for_selected(&mut self) {
         let selected = self.canvas_state.selected_clip_pairs.first().cloned();
         let Some((tr_id, cl_id)) = selected else {
-            self.status_message = "Lütfen önce deşifre edilecek bir klip seçin".to_string();
+            self.set_status(
+                "Lütfen önce deşifre edilecek bir klip seçin",
+                "Please select a clip first to transcribe",
+            );
             return;
         };
 
@@ -717,7 +805,7 @@ impl TrimApp {
             None
         };
         let Some(clip) = clip_info else {
-            self.status_message = "Klip bulunamadı".to_string();
+            self.set_status("Klip bulunamadı", "Clip not found");
             return;
         };
 
@@ -742,7 +830,10 @@ impl TrimApp {
 
     pub fn insert_source_to_timeline(&mut self, is_overwrite: bool) {
         let Some(ref m_id) = self.source_state.media_id.clone() else {
-            self.status_message = "Kaynak monitöründe seçili klip yok".to_string();
+            self.set_status(
+                "Kaynak monitöründe seçili klip yok",
+                "No clip selected in Source Monitor",
+            );
             return;
         };
         let (media_duration, media_type, media_name, media_fps, media_w, media_h) =
@@ -931,10 +1022,10 @@ impl TrimApp {
         self.project.mark_dirty();
 
         self.seek(insert_time + clip_dur);
-        self.status_message = if is_overwrite {
-            "Klip üzerine yazıldı (Overwrite)".to_string()
+        if is_overwrite {
+            self.set_status("Klip üzerine yazıldı (Overwrite)", "Clip overwritten");
         } else {
-            "Klip eklendi (Insert)".to_string()
-        };
+            self.set_status("Klip eklendi (Insert)", "Clip inserted");
+        }
     }
 }

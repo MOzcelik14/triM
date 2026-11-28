@@ -207,7 +207,19 @@ impl TrimApp {
                                 .clicked()
                             {
                                 self.shortcut_profile = *p;
-                                self.status_message = format!("Kısayol Profili: {}", p.label());
+                                self.keymap_config =
+                                    crate::shortcuts::KeymapConfig::for_profile(*p);
+                                let _ = self
+                                    .keymap_config
+                                    .save_to_path(&crate::shortcuts::KeymapConfig::config_path());
+                                self.status_message = match self.lang() {
+                                    crate::i18n::Language::Turkish => {
+                                        format!("Kısayol Profili: {}", p.label())
+                                    }
+                                    crate::i18n::Language::English => {
+                                        format!("Shortcut Profile: {}", p.label())
+                                    }
+                                };
                                 ui.close_menu();
                             }
                         }
@@ -268,7 +280,14 @@ impl TrimApp {
                                 self.project.timeline.set_aspect_ratio(r);
                                 self.project.sync_settings_from_timeline();
                                 self.project.mark_dirty();
-                                self.status_message = format!("Format Değiştirildi: {}", r.label());
+                                self.status_message = match self.lang() {
+                                    crate::i18n::Language::Turkish => {
+                                        format!("Format Değiştirildi: {}", r.label())
+                                    }
+                                    crate::i18n::Language::English => {
+                                        format!("Aspect Ratio Changed: {}", r.label())
+                                    }
+                                };
                                 ui.close_menu();
                             }
                         }
@@ -383,10 +402,16 @@ impl TrimApp {
                         ctx.open_url(egui::OpenUrl::new_tab(
                             "https://github.com/MOzcelik14/triM/releases/latest",
                         ));
-                        self.status_message = format!(
-                            "↺ Yüklü sürüm: v{} — GitHub Releases sayfası tarayıcıda açıldı.",
-                            env!("CARGO_PKG_VERSION")
-                        );
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => format!(
+                                "↺ Yüklü sürüm: v{} — GitHub Releases sayfası tarayıcıda açıldı.",
+                                env!("CARGO_PKG_VERSION")
+                            ),
+                            crate::i18n::Language::English => format!(
+                                "↺ Installed version: v{} — Opened GitHub Releases in browser.",
+                                env!("CARGO_PKG_VERSION")
+                            ),
+                        };
                         ui.close_menu();
                     }
                     ui.separator();

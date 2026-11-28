@@ -1,6 +1,7 @@
-# triM. Yol Haritası Boşluk Raporu (Faz 0 — v2.5.5)
+# triM. Yol Haritası Boşluk Raporu (Tarihsel Faz 0 Envanteri & Kalan Açıklar)
 
-Bu rapor, Faz 0 envanterine dayanarak her kategori için "tavana kalan" boşlukları öncelik sırasıyla listeler. Sonraki fazlar doğrudan bu listeden beslenir.
+> [!NOTE]
+> Özelliklerin güncel durumu için **tek yetkili kaynak** [FEATURE_MATRIX.md](FEATURE_MATRIX.md) belgesidir. Aşağıdaki Bölüm 2 maddelerinin bir kısmı sonraki fazlarda tamamlanmıştır ve güncel durumları parantez içinde belirtilmiştir.
 
 ---
 
@@ -44,21 +45,21 @@ Toplam `crates/` altında 68.557 satır Rust kodu içinde 800 satırı aşan **2
 ## 2. Kategori Bazlı Boşluklar (Öncelik Sırasıyla)
 
 ### A. Düzenleme İşlevselliği (Faz 1)
-1. **Roll Trim ve Slide Trim Eksikliği (`Yok`):** `EditTool` ve `trim-commands` içinde `RollTrimCommand` ve `SlideTrimCommand` bulunmuyor. Bitişik kliplerin ortak kesim noktasını veya klibi komşularının sınırları içinde kaydırmak için eklenmeli.
-2. **Medya Havuzu Subclip Desteği (`Yok`):** Medya havuzundan Source Monitor In/Out aralığı ile bağımsız alt-klip (Subclip) oluşturma komutu/modeli yok.
+1. **Roll Trim ve Slide Trim (`Tamamlandı`):** `RollTrimCommand`, `SlideTrimCommand` ve export eşlik testleri eklendi (bkz. [FEATURE_MATRIX.md](FEATURE_MATRIX.md)).
+2. **Medya Havuzu Subclip Desteği (`Tamamlandı`):** `Subclip` modeli ve serileştirme testleri eklendi (bkz. [FEATURE_MATRIX.md](FEATURE_MATRIX.md)).
 3. **Timeline Keyframe Varsayılan Eğrisi & Çoklu-Keyframe Grafik (`Kısmi`):** `canvas/render.rs:1459` yeni eklenen keyframe'leri `Linear` olarak ekliyor; Inspector popup'ında eğri editörü var ancak zaman çizelgesi üzerinde veya genişletilmiş eğri panelinde çoklu keyframe eğrisi düzenlenemiyor.
-4. **Multicam Timecode Senkronu (`Kısmi`):** Ses dalga formuyla hizalama var, ancak kaynak medya `timecode` metadata'sı üzerinden otomatik multicam senkronizasyonu yok.
+4. **Multicam Timecode Senkronu (`Tamamlandı`):** `align_selected_clips_by_timecode` ve undo testleri eklendi (bkz. [FEATURE_MATRIX.md](FEATURE_MATRIX.md)).
 5. **Canlı Önizlemede Stabilizasyon (`Kısmi`):** Export'ta `deshake` var, ancak önizlemede stabilizasyon uyarısı/önizleme yolu yok.
 
 ### B. Performans (Faz 2)
 1. **Çok Katmanlı Kompozisyon:** 6 video track yazılım kompozisyonu şu an 640×360 cache-miss'te `15.80 ms/kare` (1080p için daha yüksek); profil (`perf`/flamegraph) alınıp 1080p hedefi ölçülmeli ve sıcak döngüler optimize edilmeli.
-2. **Donanım Decode Algılama & Fallback:** FFmpeg `-hwaccel` (vaapi/cuda/vulkan) çalışma zamanı probu, başarısızlıkta sessiz yazılım fallback ve loglama eklenmeli.
-3. **Proxy / Önbellek Bellek Tavanı:** Yüksek çözünürlüklü kliplerde otomatik proxy kullanım eşiği ve bellek tavanı politikası ölçümlü hale getirilmeli.
-4. **Benchmark Regresyon Koruması:** Yerel `scripts/bench-compare` karşılaştırma aracı eklenmeli.
+2. **Donanım Decode Algılama & Fallback (`Tamamlandı`):** `crates/trim-media/src/ffmpeg.rs` içinde `probe_working_hwaccel()` ve `streamer.rs` içinde otomatik CPU fallback bağlandı.
+3. **Proxy / Önbellek Bellek Tavanı (`Kısmi`):** `rss_leak_test` ve byte-sınırlı LRU önbellek eklendi; yüksek çözünürlüklü kliplerde otomatik proxy kullanım eşiği hâlâ açık.
+4. **Benchmark Regresyon Koruması (`Tamamlandı`):** `scripts/bench-compare` eklendi.
 
 ### C. UX ve Erişilebilirlik (Faz 3)
-1. **Uzun İşlem İptal Tutarlılığı:** Export ve Proxy için iptal butonu var; arka plan sahne algılama (`scene_detect`), sessizlik algılama (`silence_detect`) ve transkripsiyon (`transcribe`) işlemlerinde de tutarlı iptal + ilerleme göstergesi sağlanmalı.
-2. **Çift Dilli (TR/EN) Arayüz Tutarlılığı:** Birçok UI metni (`status_message`, `canvas`, `inspector`) doğrudan Türkçe hard-coded; `i18n` kapsamı genişletilmeli.
+1. **Uzun İşlem İptal Tutarlılığı (`Tamamlandı`):** Export, Proxy ve arka plan `bg_task_cancel_flag` iptal desteği eklendi.
+2. **Çift Dilli (TR/EN) Arayüz & Kısayol Özelleştirme (`Tamamlandı`):** `status_message` atamaları `i18n` katmanına taşındı; `KeymapConfig` ve `ShortcutsDialog` üzerinden etkileşimli kısayol atama/kalıcılık (`keybindings.json`) bağlandı.
 3. **Erişilebilirlik (`accesskit` / HiDPI / Klavye Navigasyonu):** `egui` accesskit desteği değerlendirilip etkinleştirilmeli ve IME/ekran okuyucu sınırları belgelenmeli.
 4. **Onboarding / Boş Proje Durumu:** İlk açılışta örnek proje veya hızlı başlangıç rehberi akışı cilalanmalı.
 

@@ -1,7 +1,7 @@
 # triM. Dürüst ve Tekrarlanabilir Medya Benchmark Raporu
 
 **Tarih:** 2026-11-24 23:26:57 +0300
-**Komut Satırı:** `cargo run --release -p trim-media --example perf_bench -- /home/mozcelik/İndirilenler/MVI_8603.MOV`
+**Komut Satırı:** `cargo run --release -p trim-media --example perf_bench -- /path/to/MVI_8603.MOV`
 
 > [!IMPORTANT]
 > **Önceki Sürüm Düzeltme Notu:** Bu dosyanın önceki sürümündeki sayılar hatalıydı ve silinmiştir:
@@ -20,7 +20,7 @@
 ## 2. Test Edilen Medya
 
 - **Etiket:** `GERÇEK`
-- **Dosya:** `/home/mozcelik/İndirilenler/MVI_8603.MOV`
+- **Dosya:** `/path/to/MVI_8603.MOV`
 - **Kodek / Çözünürlük / FPS:** h264 · 1920×1080 · `24000/1001` (23.976 fps)
 - **Bit Hızı / Piksel Formatı / Süre:** 44647.0 kbps · `yuvj420p` · 31.45 s
 

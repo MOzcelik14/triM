@@ -39,7 +39,7 @@ Paylaşımlı CI makinelerindeki CPU gürültüsü nedeniyle `bench-compare` CI'
 
 - **p50 (Medyan)** tipik kullanıcı deneyimini, **p95 / max** ise önbellek ıskalaması veya GC/alloc sıçramalarını gösterir.
 - Önce/sonra karşılaştırmaları mutlaka **aynı makinede, `--release --locked` profilinde ve aynı medya/çözünürlükte** yapılmalıdır.
-- Güncel temel çizgi ve faz ölçüm sonuçları [docs/benchmarks/baseline.md](file:///home/mozcelik/Projeler/triM/docs/benchmarks/baseline.md) dosyasında tutulur.
+- Güncel temel çizgi ve faz ölçüm sonuçları [docs/benchmarks/baseline.md](benchmarks/baseline.md) dosyasında tutulur.
 
 ---
 

@@ -26,10 +26,16 @@ impl TrimApp {
             .project
             .create_subclip_from_range(&media_id, name, sin, sout)
         {
-            self.status_message = format!(
-                "✂ Alt-Klip oluşturuldu: {} ({:.2}s – {:.2}s)",
-                sub.name, sub.source_in, sub.source_out
-            );
+            self.status_message = match self.lang() {
+                crate::i18n::Language::Turkish => format!(
+                    "✂ Alt-Klip oluşturuldu: {} ({:.2}s – {:.2}s)",
+                    sub.name, sub.source_in, sub.source_out
+                ),
+                crate::i18n::Language::English => format!(
+                    "✂ Subclip created: {} ({:.2}s – {:.2}s)",
+                    sub.name, sub.source_in, sub.source_out
+                ),
+            };
         }
     }
 
@@ -109,13 +115,25 @@ impl TrimApp {
                 }
                 MonitorAction::MarkIn => {
                     self.source_state.mark_in = Some(self.source_state.current_time);
-                    self.status_message =
-                        format!("Kaynak Giriş: {:.2}s", self.source_state.current_time);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => {
+                            format!("Kaynak Giriş: {:.2}s", self.source_state.current_time)
+                        }
+                        crate::i18n::Language::English => {
+                            format!("Source In: {:.2}s", self.source_state.current_time)
+                        }
+                    };
                 }
                 MonitorAction::MarkOut => {
                     self.source_state.mark_out = Some(self.source_state.current_time);
-                    self.status_message =
-                        format!("Kaynak Çıkış: {:.2}s", self.source_state.current_time);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => {
+                            format!("Kaynak Çıkış: {:.2}s", self.source_state.current_time)
+                        }
+                        crate::i18n::Language::English => {
+                            format!("Source Out: {:.2}s", self.source_state.current_time)
+                        }
+                    };
                 }
                 MonitorAction::GoToIn => {
                     self.source_state.current_time = self.source_state.mark_in.unwrap_or(0.0);
@@ -351,12 +369,26 @@ impl TrimApp {
                 MonitorAction::MarkIn => {
                     self.project.timeline.set_in_point(self.current_time);
                     self.project.mark_dirty();
-                    self.status_message = format!("Giriş Noktası (In): {:.2}s", self.current_time);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => {
+                            format!("Giriş Noktası (In): {:.2}s", self.current_time)
+                        }
+                        crate::i18n::Language::English => {
+                            format!("In Point: {:.2}s", self.current_time)
+                        }
+                    };
                 }
                 MonitorAction::MarkOut => {
                     self.project.timeline.set_out_point(self.current_time);
                     self.project.mark_dirty();
-                    self.status_message = format!("Çıkış Noktası (Out): {:.2}s", self.current_time);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => {
+                            format!("Çıkış Noktası (Out): {:.2}s", self.current_time)
+                        }
+                        crate::i18n::Language::English => {
+                            format!("Out Point: {:.2}s", self.current_time)
+                        }
+                    };
                 }
                 MonitorAction::GoToIn => {
                     let t = self.project.timeline.in_point.unwrap_or(0.0);
@@ -375,7 +407,14 @@ impl TrimApp {
                     self.project.timeline.set_aspect_ratio(r);
                     self.project.sync_settings_from_timeline();
                     self.project.mark_dirty();
-                    self.status_message = format!("Format Değiştirildi: {}", r.label());
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => {
+                            format!("Format Değiştirildi: {}", r.label())
+                        }
+                        crate::i18n::Language::English => {
+                            format!("Aspect Ratio Changed: {}", r.label())
+                        }
+                    };
                 }
                 MonitorAction::TextToolClick { pos_x, pos_y } => {
                     self.handle_monitor_text_click(pos_x, pos_y);
@@ -429,7 +468,7 @@ impl TrimApp {
                     self.handle_monitor_text_select(pos_x, pos_y);
                     self.current_edit_tool = EditTool::Type;
                     self.canvas_state.active_tool = EditTool::Type;
-                    self.status_message = "Metin Düzenleme Modu (T)".to_string();
+                    self.set_status("Metin Düzenleme Modu (T)", "Text Edit Mode (T)");
                 }
                 MonitorAction::ToggleFullscreen => {
                     self.is_monitor_fullscreen = !self.is_monitor_fullscreen;
@@ -515,22 +554,31 @@ impl TrimApp {
                 }
                 MonitorAction::ToggleSplitWipe => {
                     self.split_wipe_enabled = !self.split_wipe_enabled;
-                    self.status_message = if self.split_wipe_enabled {
-                        "◧ Bölünmüş Ekran (Before/After Wipe) Açık".to_string()
+                    if self.split_wipe_enabled {
+                        self.set_status(
+                            "◧ Bölünmüş Ekran (Before/After Wipe) Açık",
+                            "◧ Split Screen (Before/After Wipe) On",
+                        );
                     } else {
-                        "◧ Bölünmüş Ekran (Before/After Wipe) Kapalı".to_string()
-                    };
+                        self.set_status(
+                            "◧ Bölünmüş Ekran (Before/After Wipe) Kapalı",
+                            "◧ Split Screen (Before/After Wipe) Off",
+                        );
+                    }
                 }
                 MonitorAction::SplitWipePosChanged(pos) => {
                     self.split_wipe_pos = pos.clamp(0.05, 0.95);
                 }
                 MonitorAction::ToggleMulticamView => {
                     self.multicam_mode = !self.multicam_mode;
-                    self.status_message = if self.multicam_mode {
-                        "⊞ Multicam 2x2 Modu Açık (1–4 tuşlarıyla kamera açısı kesin)".to_string()
+                    if self.multicam_mode {
+                        self.set_status(
+                            "⊞ Multicam 2x2 Modu Açık (1–4 tuşlarıyla kamera açısı kesin)",
+                            "⊞ Multicam 2x2 Mode On (use keys 1–4 to cut angles)",
+                        );
                     } else {
-                        "⊞ Multicam 2x2 Modu Kapalı".to_string()
-                    };
+                        self.set_status("⊞ Multicam 2x2 Modu Kapalı", "⊞ Multicam 2x2 Mode Off");
+                    }
                 }
                 MonitorAction::MulticamAngleSelected(angle) => {
                     self.handle_multicam_angle_switch(angle);
@@ -552,7 +600,7 @@ impl TrimApp {
                 }
                 MonitorAction::CancelWbEyedropper => {
                     self.wb_eyedropper_target = None;
-                    self.status_message = "WB Damlalığı iptal edildi.".to_string();
+                    self.set_status("WB Damlalığı iptal edildi.", "WB Eyedropper cancelled.");
                 }
                 MonitorAction::PickWhiteBalancePixel { x_norm, y_norm } => {
                     if let Some((track_id, clip_id)) = self.wb_eyedropper_target.take() {
@@ -593,14 +641,22 @@ impl TrimApp {
                                 self.last_rendered_monitor_frame = None;
                                 self.video_engine.last_rendered_frame = None;
                                 self.scopes_panel.mark_dirty();
-                                self.status_message = format!(
-                                    "🎯 WB Damlalığı uygulandı (RGB: {},{},{} → Sıcaklık: {:+.1}, Ton: {:+.1})",
-                                    ro.rgb[0], ro.rgb[1], ro.rgb[2], temp, tint
-                                );
+                                self.status_message = match self.lang() {
+                                    crate::i18n::Language::Turkish => format!(
+                                        "🎯 WB Damlalığı uygulandı (RGB: {},{},{} → Sıcaklık: {:+.1}, Ton: {:+.1})",
+                                        ro.rgb[0], ro.rgb[1], ro.rgb[2], temp, tint
+                                    ),
+                                    crate::i18n::Language::English => format!(
+                                        "🎯 WB Eyedropper applied (RGB: {},{},{} → Temp: {:+.1}, Tint: {:+.1})",
+                                        ro.rgb[0], ro.rgb[1], ro.rgb[2], temp, tint
+                                    ),
+                                };
                             }
                         } else {
-                            self.status_message =
-                                "⚠ Piksel rengi okunamadı (aktif kare yok).".to_string();
+                            self.set_status(
+                                "⚠ Piksel rengi okunamadı (aktif kare yok).",
+                                "⚠ Could not sample pixel color (no active frame).",
+                            );
                         }
                     }
                 }

@@ -71,18 +71,31 @@ impl TrimApp {
                 self.welcome_dialog.close();
                 let offline = self.project.get_offline_media_ids();
                 if !offline.is_empty() {
-                    self.status_message = format!(
-                        "Proje yüklendi: {:?} ({} adet çevrimdışı medya tespit edildi)",
-                        path,
-                        offline.len()
-                    );
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => format!(
+                            "Proje yüklendi: {:?} ({} adet çevrimdışı medya tespit edildi)",
+                            path,
+                            offline.len()
+                        ),
+                        crate::i18n::Language::English => format!(
+                            "Project loaded: {:?} ({} offline media file(s) detected)",
+                            path,
+                            offline.len()
+                        ),
+                    };
                     self.relink_dialog.open(&self.project);
                 } else {
-                    self.status_message = format!("Proje yüklendi: {:?}", path);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => format!("Proje yüklendi: {:?}", path),
+                        crate::i18n::Language::English => format!("Project loaded: {:?}", path),
+                    };
                 }
             }
             Err(e) => {
-                self.status_message = format!("Proje yüklenemedi: {}", e);
+                self.status_message = match self.lang() {
+                    crate::i18n::Language::Turkish => format!("Proje yüklenemedi: {}", e),
+                    crate::i18n::Language::English => format!("Failed to load project: {}", e),
+                };
             }
         }
     }
@@ -110,11 +123,17 @@ impl TrimApp {
                     self.autosave_mgr.cleanup(&self.project);
                     self.welcome_dialog
                         .add_recent(&self.project.settings.name, &target.to_string_lossy());
-                    self.status_message = format!("Proje kaydedildi: {:?}", target);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => format!("Proje kaydedildi: {:?}", target),
+                        crate::i18n::Language::English => format!("Project saved: {:?}", target),
+                    };
                     true
                 }
                 Err(e) => {
-                    self.status_message = format!("Kayıt hatası: {}", e);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => format!("Kayıt hatası: {}", e),
+                        crate::i18n::Language::English => format!("Save error: {}", e),
+                    };
                     false
                 }
             }
@@ -206,8 +225,10 @@ impl TrimApp {
                 match parsed {
                     Ok(entries) => {
                         if entries.is_empty() {
-                            self.status_message =
-                                "Altyazı dosyasında geçerli satır bulunamadı".to_string();
+                            self.set_status(
+                                "Altyazı dosyasında geçerli satır bulunamadı",
+                                "No valid subtitle entries found in file",
+                            );
                             return;
                         }
                         let clips = trim_core::subtitle_entries_to_clips(&entries, 48.0);
@@ -233,17 +254,34 @@ impl TrimApp {
                                 tr.add_clip(clip);
                             }
                             self.project.mark_dirty();
-                            self.status_message =
-                                format!("{} adet altyazı zaman çizgisine başarıyla eklendi", count);
+                            self.status_message = match self.lang() {
+                                crate::i18n::Language::Turkish => format!(
+                                    "{} adet altyazı zaman çizgisine başarıyla eklendi",
+                                    count
+                                ),
+                                crate::i18n::Language::English => {
+                                    format!("Added {} subtitle(s) to timeline", count)
+                                }
+                            };
                         }
                     }
                     Err(e) => {
-                        self.status_message = format!("Altyazı ayrıştırma hatası: {}", e);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("Altyazı ayrıştırma hatası: {}", e)
+                            }
+                            crate::i18n::Language::English => {
+                                format!("Subtitle parse error: {}", e)
+                            }
+                        };
                     }
                 }
             }
             Err(e) => {
-                self.status_message = format!("Dosya okunamadı: {}", e);
+                self.status_message = match self.lang() {
+                    crate::i18n::Language::Turkish => format!("Dosya okunamadı: {}", e),
+                    crate::i18n::Language::English => format!("Failed to read file: {}", e),
+                };
             }
         }
     }
@@ -262,8 +300,10 @@ impl TrimApp {
         }
 
         if all_clips.is_empty() {
-            self.status_message =
-                "Dışa aktarılacak metin veya altyazı klibi bulunamadı".to_string();
+            self.set_status(
+                "Dışa aktarılacak metin veya altyazı klibi bulunamadı",
+                "No text or subtitle clips found to export",
+            );
             return;
         }
 
@@ -367,20 +407,36 @@ impl TrimApp {
                             .iter()
                             .map(|t| t.clips.len())
                             .sum();
-                        self.status_message = format!(
-                            "Proje başarıyla içe aktarıldı: {} kanal, {} klip ({})",
-                            self.project.timeline.tracks.len(),
-                            clip_count,
-                            file_name
-                        );
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => format!(
+                                "Proje başarıyla içe aktarıldı: {} kanal, {} klip ({})",
+                                self.project.timeline.tracks.len(),
+                                clip_count,
+                                file_name
+                            ),
+                            crate::i18n::Language::English => format!(
+                                "Project imported: {} track(s), {} clip(s) ({})",
+                                self.project.timeline.tracks.len(),
+                                clip_count,
+                                file_name
+                            ),
+                        };
                     }
                     Err(e) => {
-                        self.status_message = format!("İçe aktarma hatası: {}", e);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("İçe aktarma hatası: {}", e)
+                            }
+                            crate::i18n::Language::English => format!("Import error: {}", e),
+                        };
                     }
                 }
             }
             Err(e) => {
-                self.status_message = format!("Dosya okunamadı: {}", e);
+                self.status_message = match self.lang() {
+                    crate::i18n::Language::Turkish => format!("Dosya okunamadı: {}", e),
+                    crate::i18n::Language::English => format!("Failed to read file: {}", e),
+                };
             }
         }
     }
@@ -413,13 +469,23 @@ impl TrimApp {
                         self.autosave_mgr.cleanup(&self.project);
                         self.welcome_dialog
                             .add_recent(&self.project.settings.name, &target.to_string_lossy());
-                        self.status_message = format!("Proje kaydedildi: {:?}", target);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("Proje kaydedildi: {:?}", target)
+                            }
+                            crate::i18n::Language::English => {
+                                format!("Project saved: {:?}", target)
+                            }
+                        };
                         if let Some(pending) = after_save {
                             self.execute_pending_close_action(ctx, pending);
                         }
                     }
                     Err(e) => {
-                        self.status_message = format!("Kayıt hatası: {}", e);
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => format!("Kayıt hatası: {}", e),
+                            crate::i18n::Language::English => format!("Save error: {}", e),
+                        };
                     }
                 }
             }
@@ -448,7 +514,10 @@ impl TrimApp {
                 self.bg_task_active_count += 1;
                 self.bg_task_cancel_flag
                     .store(false, std::sync::atomic::Ordering::Release);
-                self.status_message = "Proje arka planda paketleniyor...".to_string();
+                self.set_status(
+                    "Proje arka planda paketleniyor...",
+                    "Bundling project in background...",
+                );
                 std::thread::spawn(move || {
                     let res = bundle_project(&proj_clone, &target_dir).map_err(|e| e.to_string());
                     let _ = tx.send(crate::app::BackgroundTaskMsg::BundleDone {
@@ -521,8 +590,14 @@ impl TrimApp {
                             txt.font_family = font_path_str;
                             self.project.mark_dirty();
                             self.last_rendered_dirty = true;
-                            self.status_message =
-                                format!("🔤 Özel font dosyası yüklendi: {}", font_name);
+                            self.status_message = match self.lang() {
+                                crate::i18n::Language::Turkish => {
+                                    format!("🔤 Özel font dosyası yüklendi: {}", font_name)
+                                }
+                                crate::i18n::Language::English => {
+                                    format!("🔤 Custom font loaded: {}", font_name)
+                                }
+                            };
                         }
                         break;
                     }
@@ -555,12 +630,20 @@ impl TrimApp {
                     self.video_engine.clear_cache();
                     self.audio_mixer.clear_cache();
                     self.last_rendered_dirty = true;
-                    self.status_message =
-                        format!("{} medya dosyası başarıyla yeniden bağlandı.", count);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => {
+                            format!("{} medya dosyası başarıyla yeniden bağlandı.", count)
+                        }
+                        crate::i18n::Language::English => {
+                            format!("Relinked {} media file(s) successfully.", count)
+                        }
+                    };
                     self.relink_dialog.refresh(&self.project);
                 } else {
-                    self.status_message =
-                        "Seçilen klasörde eşleşen çevrimdışı medya bulunamadı.".to_string();
+                    self.set_status(
+                        "Seçilen klasörde eşleşen çevrimdışı medya bulunamadı.",
+                        "No matching offline media found in selected folder.",
+                    );
                 }
             }
             FileDialogRequest::RelinkSingleMedia { media_id } => {
@@ -575,7 +658,14 @@ impl TrimApp {
                     self.video_engine.clear_cache();
                     self.audio_mixer.clear_cache();
                     self.last_rendered_dirty = true;
-                    self.status_message = format!("Medya yeniden bağlandı: {}", media_name);
+                    self.status_message = match self.lang() {
+                        crate::i18n::Language::Turkish => {
+                            format!("Medya yeniden bağlandı: {}", media_name)
+                        }
+                        crate::i18n::Language::English => {
+                            format!("Media relinked: {}", media_name)
+                        }
+                    };
                     self.relink_dialog.refresh(&self.project);
                 }
             }
@@ -593,13 +683,26 @@ impl TrimApp {
                         item.name = filename;
                         item.duration = 5.0;
                         self.project.add_media(item);
-                        self.status_message =
-                            format!("Kare dışa aktarıldı ve havuza eklendi: {}", path.display());
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("Kare dışa aktarıldı ve havuza eklendi: {}", path.display())
+                            }
+                            crate::i18n::Language::English => {
+                                format!("Frame exported and added to bin: {}", path.display())
+                            }
+                        };
                     } else {
-                        self.status_message = format!("Kare kaydedildi: {}", path.display());
+                        self.status_message = match self.lang() {
+                            crate::i18n::Language::Turkish => {
+                                format!("Kare kaydedildi: {}", path.display())
+                            }
+                            crate::i18n::Language::English => {
+                                format!("Frame saved: {}", path.display())
+                            }
+                        };
                     }
                 } else {
-                    self.status_message = "Kare kaydedilemedi".to_string();
+                    self.set_status("Kare kaydedilemedi", "Failed to save frame");
                 }
             }
         }
@@ -640,7 +743,7 @@ impl TrimApp {
         self.source_state.texture = None;
         self.source_state.is_playing = false;
         self.resolve_default_target_tracks();
-        self.status_message = "Yeni boş proje oluşturuldu".to_string();
+        self.set_status("Yeni boş proje oluşturuldu", "New empty project created");
     }
 
     /// Determines whether the project has any unsaved modifications, clips, media, or undo steps.
@@ -689,7 +792,10 @@ impl TrimApp {
                 config,
             );
         } else {
-            self.status_message = "Dışa aktarılacak aktif kare yok".to_string();
+            self.set_status(
+                "Dışa aktarılacak aktif kare yok",
+                "No active frame to export",
+            );
         }
     }
 }
