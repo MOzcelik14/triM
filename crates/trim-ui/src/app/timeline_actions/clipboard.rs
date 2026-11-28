@@ -66,7 +66,7 @@ impl TrimApp {
             return;
         }
 
-        self.clipboard_clips = clips_to_copy
+        self.tools.clipboard_clips = clips_to_copy
             .into_iter()
             .map(|(tt, idx, clip)| {
                 let rel_offset = (clip.timeline_in - min_in).max(0.0);
@@ -80,17 +80,17 @@ impl TrimApp {
 
         self.status_message = match self.lang() {
             crate::i18n::Language::Turkish => {
-                format!("📋 Kopyalandı: {} klip", self.clipboard_clips.len())
+                format!("📋 Kopyalandı: {} klip", self.tools.clipboard_clips.len())
             }
             crate::i18n::Language::English => {
-                format!("📋 Copied: {} clip(s)", self.clipboard_clips.len())
+                format!("📋 Copied: {} clip(s)", self.tools.clipboard_clips.len())
             }
         };
     }
 
     /// Pastes clips from the clipboard starting at the playhead (`current_time`) preserving track hierarchy.
     pub fn paste_clipboard_clips(&mut self) {
-        if self.clipboard_clips.is_empty() {
+        if self.tools.clipboard_clips.is_empty() {
             self.set_status(
                 "Panoda yapıştırılacak klip yok",
                 "No clips in clipboard to paste",
@@ -98,7 +98,7 @@ impl TrimApp {
             return;
         }
 
-        let paste_time = self.current_time;
+        let paste_time = self.playback.current_time;
         let mut new_selection = Vec::new();
         let mut commands: Vec<Box<dyn trim_commands::Command>> = Vec::new();
         let mut linked_id_map: std::collections::HashMap<String, String> =
@@ -124,15 +124,15 @@ impl TrimApp {
 
         let base_v_idx = v_ids
             .iter()
-            .position(|id| id == &self.target_video_track)
+            .position(|id| id == &self.tools.target_video_track)
             .unwrap_or(0);
         let base_a_idx = a_ids
             .iter()
-            .position(|id| id == &self.target_audio_track)
+            .position(|id| id == &self.tools.target_audio_track)
             .unwrap_or(0);
 
         let mut max_out = paste_time;
-        for (track_type, rel_track, rel_offset, clip) in &self.clipboard_clips {
+        for (track_type, rel_track, rel_offset, clip) in &self.tools.clipboard_clips {
             let final_track_id = match track_type {
                 trim_core::track::TrackType::Video => {
                     let desired_idx = base_v_idx + rel_track;
@@ -224,10 +224,10 @@ impl TrimApp {
             .is_ok()
         {
             self.canvas_state.selected_clip_pairs = new_selection;
-            self.current_time = max_out;
-            self.last_rendered_dirty = true;
-            self.video_engine.clear_cache();
-            self.audio_mixer.clear_cache();
+            self.playback.current_time = max_out;
+            self.media.last_rendered_dirty = true;
+            self.media.video_engine.clear_cache();
+            self.playback.audio_mixer.clear_cache();
             self.project.mark_dirty();
             self.status_message = match self.lang() {
                 crate::i18n::Language::Turkish => format!(
@@ -265,7 +265,7 @@ impl TrimApp {
                 (t, vx)
             }
             (None, _) => {
-                let t = self.current_time;
+                let t = self.playback.current_time;
                 let vx = ((t as f32 * old_pps) - scroll_x).max(0.0);
                 (t, vx)
             }

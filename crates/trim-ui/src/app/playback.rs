@@ -7,50 +7,50 @@ use trim_core::media::MediaType;
 
 impl TrimApp {
     pub fn toggle_play(&mut self) {
-        if self.is_playing {
+        if self.playback.is_playing {
             self.pause();
         } else {
-            self.playback_speed = 1.0;
+            self.playback.playback_speed = 1.0;
             self.play();
         }
     }
 
     pub fn play(&mut self) {
-        if self.source_state.is_playing {
-            self.source_state.is_playing = false;
-            self.source_state.clock_start = None;
+        if self.monitor.source_state.is_playing {
+            self.monitor.source_state.is_playing = false;
+            self.monitor.source_state.clock_start = None;
         }
         let dur = self.project.timeline.duration();
         if dur > 0.0 {
-            if self.playback_speed >= 0.0 && self.current_time >= dur {
-                self.current_time = 0.0;
-            } else if self.playback_speed < 0.0 && self.current_time <= 0.0 {
-                self.current_time = dur;
+            if self.playback.playback_speed >= 0.0 && self.playback.current_time >= dur {
+                self.playback.current_time = 0.0;
+            } else if self.playback.playback_speed < 0.0 && self.playback.current_time <= 0.0 {
+                self.playback.current_time = dur;
             }
         }
-        self.is_playing = true;
-        self.audio_worker.start(
+        self.playback.is_playing = true;
+        self.playback.audio_worker.start(
             self.project.clone(),
-            self.current_time,
-            self.playback_speed,
-            self.audio_mixer_dialog.master_volume,
+            self.playback.current_time,
+            self.playback.playback_speed,
+            self.dialogs.audio_mixer_dialog.master_volume,
         );
-        self.clock_start = Some(Instant::now());
-        self.clock_start_time = self.current_time;
+        self.playback.clock_start = Some(Instant::now());
+        self.playback.clock_start_time = self.playback.current_time;
     }
 
     pub fn pause(&mut self) {
-        if self.active_voiceover.is_some() {
+        if self.media.active_voiceover.is_some() {
             self.finish_voiceover();
         }
-        self.is_playing = false;
-        self.playback_speed = 1.0;
-        self.clock_start = None;
-        self.video_engine.streamer.stop();
-        self.audio_worker.stop();
-        self.audio_player.stop();
-        self.audio_mixer.reset_limiter();
-        self.vu_state.reset();
+        self.playback.is_playing = false;
+        self.playback.playback_speed = 1.0;
+        self.playback.clock_start = None;
+        self.media.video_engine.streamer.stop();
+        self.playback.audio_worker.stop();
+        self.playback.audio_player.stop();
+        self.playback.audio_mixer.reset_limiter();
+        self.playback.vu_state.reset();
     }
 
     pub fn shuttle_stop(&mut self) {
@@ -59,9 +59,9 @@ impl TrimApp {
     }
 
     pub fn toggle_snap(&mut self) {
-        self.snap_enabled = !self.snap_enabled;
-        self.project.timeline.snap_enabled = self.snap_enabled;
-        if self.snap_enabled {
+        self.tools.snap_enabled = !self.tools.snap_enabled;
+        self.project.timeline.snap_enabled = self.tools.snap_enabled;
+        if self.tools.snap_enabled {
             self.set_status("Mıknatıs / Yapışma (N): Açık", "Magnet / Snapping (N): On");
         } else {
             self.set_status(
@@ -72,7 +72,7 @@ impl TrimApp {
     }
 
     pub fn stop(&mut self) {
-        let start_t = self.clock_start_time;
+        let start_t = self.playback.clock_start_time;
         self.pause();
         if self.preferences.return_playhead_on_stop {
             self.seek(start_t);
@@ -80,33 +80,34 @@ impl TrimApp {
     }
 
     pub fn seek(&mut self, time: f64) {
-        let prev_time = self.current_time;
-        self.video_engine.streamer.stop();
-        self.audio_mixer.reset_limiter();
+        let prev_time = self.playback.current_time;
+        self.media.video_engine.streamer.stop();
+        self.playback.audio_mixer.reset_limiter();
         let dur = self.project.timeline.duration();
         let clamped = time.clamp(0.0, dur.max(0.0));
-        self.current_time = clamped;
+        self.playback.current_time = clamped;
 
-        if self.is_playing {
-            self.audio_player.stop();
-            self.audio_worker.start(
+        if self.playback.is_playing {
+            self.playback.audio_player.stop();
+            self.playback.audio_worker.start(
                 self.project.clone(),
-                self.current_time,
-                self.playback_speed,
-                self.audio_mixer_dialog.master_volume,
+                self.playback.current_time,
+                self.playback.playback_speed,
+                self.dialogs.audio_mixer_dialog.master_volume,
             );
-            self.clock_start = Some(Instant::now());
-            self.clock_start_time = self.current_time;
+            self.playback.clock_start = Some(Instant::now());
+            self.playback.clock_start_time = self.playback.current_time;
         } else {
             let delta = (clamped - prev_time).abs();
             if dur > 0.0 && delta > 0.002 && delta < 0.35 && clamped < dur {
                 // Short 30ms audio scrub snippet during interactive playhead dragging
                 let end_t = (clamped + 0.03).min(dur);
                 let (mut samples, db_l, db_r) =
-                    self.audio_mixer
+                    self.playback
+                        .audio_mixer
                         .render_audio_interval(&self.project, clamped, end_t);
                 if !samples.is_empty() {
-                    let master_vol = self.audio_mixer_dialog.master_volume;
+                    let master_vol = self.dialogs.audio_mixer_dialog.master_volume;
                     if (master_vol - 1.0).abs() > 1e-4 {
                         for s in &mut samples {
                             *s = ((*s as f32) * master_vol)
@@ -115,12 +116,12 @@ impl TrimApp {
                                 as i16;
                         }
                     }
-                    self.vu_state.set_levels(db_l, db_r);
-                    self.audio_player.prepare();
-                    self.audio_player.write_samples(&samples);
+                    self.playback.vu_state.set_levels(db_l, db_r);
+                    self.playback.audio_player.prepare();
+                    self.playback.audio_player.write_samples(&samples);
                 }
             } else {
-                self.audio_player.stop();
+                self.playback.audio_player.stop();
             }
         }
     }
@@ -128,134 +129,141 @@ impl TrimApp {
     pub fn step_frame(&mut self, delta: i32) {
         self.pause();
         let fps = self.project.timeline.fps.max(1.0);
-        let new_t = self.current_time + (delta as f64 / fps);
+        let new_t = self.playback.current_time + (delta as f64 / fps);
         self.seek(new_t);
     }
 
     pub fn shuttle_forward(&mut self) {
         let speeds = [1.0, 2.0, 4.0, 8.0];
-        if !self.is_playing || self.playback_speed <= 0.0 {
-            self.playback_speed = 1.0;
+        if !self.playback.is_playing || self.playback.playback_speed <= 0.0 {
+            self.playback.playback_speed = 1.0;
             self.play();
         } else {
             let next = speeds
                 .iter()
-                .find(|&&s| s > self.playback_speed + 0.1)
+                .find(|&&s| s > self.playback.playback_speed + 0.1)
                 .copied()
                 .unwrap_or(8.0);
-            self.playback_speed = next;
-            self.audio_worker.update_speed_and_volume(
-                self.playback_speed,
-                self.audio_mixer_dialog.master_volume,
+            self.playback.playback_speed = next;
+            self.playback.audio_worker.update_speed_and_volume(
+                self.playback.playback_speed,
+                self.dialogs.audio_mixer_dialog.master_volume,
             );
-            self.clock_start = Some(Instant::now());
-            self.clock_start_time = self.current_time;
+            self.playback.clock_start = Some(Instant::now());
+            self.playback.clock_start_time = self.playback.current_time;
         }
         self.status_message = match self.lang() {
-            crate::i18n::Language::Turkish => format!("İleri Sarma: {:.0}x", self.playback_speed),
+            crate::i18n::Language::Turkish => {
+                format!("İleri Sarma: {:.0}x", self.playback.playback_speed)
+            }
             crate::i18n::Language::English => {
-                format!("Shuttle Forward: {:.0}x", self.playback_speed)
+                format!("Shuttle Forward: {:.0}x", self.playback.playback_speed)
             }
         };
     }
 
     pub fn shuttle_reverse(&mut self) {
         let speeds = [-1.0, -2.0, -4.0, -8.0];
-        if !self.is_playing || self.playback_speed >= 0.0 {
-            self.playback_speed = -1.0;
+        if !self.playback.is_playing || self.playback.playback_speed >= 0.0 {
+            self.playback.playback_speed = -1.0;
             self.play();
         } else {
             let next = speeds
                 .iter()
-                .find(|&&s| s < self.playback_speed - 0.1)
+                .find(|&&s| s < self.playback.playback_speed - 0.1)
                 .copied()
                 .unwrap_or(-8.0);
-            self.playback_speed = next;
-            self.audio_worker.update_speed_and_volume(
-                self.playback_speed,
-                self.audio_mixer_dialog.master_volume,
+            self.playback.playback_speed = next;
+            self.playback.audio_worker.update_speed_and_volume(
+                self.playback.playback_speed,
+                self.dialogs.audio_mixer_dialog.master_volume,
             );
-            self.clock_start = Some(Instant::now());
-            self.clock_start_time = self.current_time;
+            self.playback.clock_start = Some(Instant::now());
+            self.playback.clock_start_time = self.playback.current_time;
         }
         self.status_message = match self.lang() {
-            crate::i18n::Language::Turkish => format!("Geri Sarma: {:.0}x", self.playback_speed),
+            crate::i18n::Language::Turkish => {
+                format!("Geri Sarma: {:.0}x", self.playback.playback_speed)
+            }
             crate::i18n::Language::English => {
-                format!("Shuttle Reverse: {:.0}x", self.playback_speed)
+                format!("Shuttle Reverse: {:.0}x", self.playback.playback_speed)
             }
         };
     }
 
     pub fn update_playback_tick(&mut self) {
-        if self.is_playing {
-            if let Some(start) = self.clock_start {
+        if self.playback.is_playing {
+            if let Some(start) = self.playback.clock_start {
                 // Master clock is derived from the audio sink when active, with wall-clock fallback
-                let cur = if let Some(audio_t) = self.audio_worker.audio_clock_time() {
+                let cur = if let Some(audio_t) = self.playback.audio_worker.audio_clock_time() {
                     audio_t
                 } else {
-                    let elapsed = start.elapsed().as_secs_f64() * self.playback_speed;
-                    self.clock_start_time + elapsed
+                    let elapsed = start.elapsed().as_secs_f64() * self.playback.playback_speed;
+                    self.playback.clock_start_time + elapsed
                 };
                 let dur = self.project.timeline.duration();
 
                 if dur <= 0.0 {
-                    self.current_time = 0.0;
+                    self.playback.current_time = 0.0;
                     self.pause();
                     return;
                 }
                 if cur >= dur || cur < 0.0 {
-                    self.current_time = cur.clamp(0.0, dur);
+                    self.playback.current_time = cur.clamp(0.0, dur);
                     self.pause();
                 } else {
-                    self.current_time = cur.max(0.0);
-                    if let Some((db_l, db_r)) = self.audio_worker.vu_levels() {
-                        self.vu_state.set_levels(db_l, db_r);
+                    self.playback.current_time = cur.max(0.0);
+                    if let Some((db_l, db_r)) = self.playback.audio_worker.vu_levels() {
+                        self.playback.vu_state.set_levels(db_l, db_r);
                     }
                 }
             }
         }
-        self.vu_state.tick_decay();
+        self.playback.vu_state.tick_decay();
     }
 
     pub fn update_monitor_frame(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        if let Some(compositor) = &mut self.gpu_compositor {
-            let layers = self.video_engine.collect_timeline_layers(
+        if let Some(compositor) = &mut self.monitor.gpu_compositor {
+            let layers = self.media.video_engine.collect_timeline_layers(
                 &self.project,
-                self.current_time,
-                self.is_playing,
+                self.playback.current_time,
+                self.playback.is_playing,
             );
             if layers.is_empty() {
-                self.monitor_gpu_texture_id = None;
-                self.monitor_texture = None;
-                self.last_rendered_monitor_frame = None;
-                if self.scopes_panel.is_open {
-                    self.scopes_panel.clear();
+                self.monitor.monitor_gpu_texture_id = None;
+                self.monitor.monitor_texture = None;
+                self.monitor.last_rendered_monitor_frame = None;
+                if self.monitor.scopes_panel.is_open {
+                    self.monitor.scopes_panel.clear();
                 }
                 return;
             }
             if let Some(tex_id) =
-                compositor.render_layers(&self.project, &layers, self.current_time, frame)
+                compositor.render_layers(&self.project, &layers, self.playback.current_time, frame)
             {
-                self.monitor_gpu_texture_id = Some(tex_id);
-                self.monitor_texture = None;
+                self.monitor.monitor_gpu_texture_id = Some(tex_id);
+                self.monitor.monitor_texture = None;
                 let time_changed =
-                    (self.scopes_panel.last_eval_time - self.current_time).abs() > 1e-4;
-                let throttle_ok = !self.is_playing
-                    || self.scopes_panel.last_refresh_instant.elapsed()
+                    (self.monitor.scopes_panel.last_eval_time - self.playback.current_time).abs()
+                        > 1e-4;
+                let throttle_ok = !self.playback.is_playing
+                    || self.monitor.scopes_panel.last_refresh_instant.elapsed()
                         >= std::time::Duration::from_millis(83);
-                if self.scopes_panel.is_open
-                    && (self.scopes_panel.needs_refresh
-                        || self.scopes_panel.request_grab_still
+                if self.monitor.scopes_panel.is_open
+                    && (self.monitor.scopes_panel.needs_refresh
+                        || self.monitor.scopes_panel.request_grab_still
                         || (time_changed && throttle_ok))
                 {
                     if let Some((rgba, rw, rh)) = compositor.readback_fbo_downsampled_rgba() {
-                        self.scopes_panel.update_from_rgba(ctx, &rgba, rw, rh);
-                        self.scopes_panel.last_eval_time = self.current_time;
-                        self.scopes_panel.last_refresh_instant = std::time::Instant::now();
-                        self.last_scope_rgba = Some((rgba, rw, rh));
+                        self.monitor
+                            .scopes_panel
+                            .update_from_rgba(ctx, &rgba, rw, rh);
+                        self.monitor.scopes_panel.last_eval_time = self.playback.current_time;
+                        self.monitor.scopes_panel.last_refresh_instant = std::time::Instant::now();
+                        self.monitor.last_scope_rgba = Some((rgba, rw, rh));
                     }
-                    if self.scopes_panel.request_grab_still {
-                        self.scopes_panel.request_grab_still = false;
+                    if self.monitor.scopes_panel.request_grab_still {
+                        self.monitor.scopes_panel.request_grab_still = false;
                         if let Some((rgba, rw, rh)) = compositor.readback_fbo_rgba() {
                             self.capture_reference_still(ctx, &rgba, rw, rh);
                         }
@@ -264,59 +272,62 @@ impl TrimApp {
                 return;
             }
             log::warn!("GPU Compositor çalışma zamanı hatası; CPU fallback moduna geçiliyor.");
-            self.gpu_compositor = None;
+            self.monitor.gpu_compositor = None;
         }
 
-        self.monitor_gpu_texture_id = None;
-        let frame_opt = self.video_engine.render_timeline_frame(
+        self.monitor.monitor_gpu_texture_id = None;
+        let frame_opt = self.media.video_engine.render_timeline_frame(
             &self.project,
-            self.current_time,
-            self.is_playing,
+            self.playback.current_time,
+            self.playback.is_playing,
         );
 
         if let Some(frame) = frame_opt {
-            let scope_due = !self.is_playing
-                || self.scopes_panel.last_refresh_instant.elapsed()
+            let scope_due = !self.playback.is_playing
+                || self.monitor.scopes_panel.last_refresh_instant.elapsed()
                     >= std::time::Duration::from_millis(83);
-            if self.scopes_panel.is_open
-                && (self.scopes_panel.needs_refresh
-                    || self.scopes_panel.request_grab_still
+            if self.monitor.scopes_panel.is_open
+                && (self.monitor.scopes_panel.needs_refresh
+                    || self.monitor.scopes_panel.request_grab_still
                     || (scope_due
-                        && (self.scopes_panel.last_eval_time - self.current_time).abs() > 1e-4))
+                        && (self.monitor.scopes_panel.last_eval_time - self.playback.current_time)
+                            .abs()
+                            > 1e-4))
             {
                 let rw = frame.width();
                 let rh = frame.height();
-                self.scopes_panel
+                self.monitor
+                    .scopes_panel
                     .update_from_rgba(ctx, frame.as_raw(), rw, rh);
-                self.scopes_panel.last_eval_time = self.current_time;
-                self.scopes_panel.last_refresh_instant = std::time::Instant::now();
-                if self.scopes_panel.request_grab_still {
-                    self.scopes_panel.request_grab_still = false;
+                self.monitor.scopes_panel.last_eval_time = self.playback.current_time;
+                self.monitor.scopes_panel.last_refresh_instant = std::time::Instant::now();
+                if self.monitor.scopes_panel.request_grab_still {
+                    self.monitor.scopes_panel.request_grab_still = false;
                     self.capture_reference_still(ctx, frame.as_raw(), rw, rh);
                 }
-                self.last_scope_rgba = Some((frame.as_raw().clone(), rw, rh));
+                self.monitor.last_scope_rgba = Some((frame.as_raw().clone(), rw, rh));
             }
-            if let Some(last) = &self.last_rendered_monitor_frame {
+            if let Some(last) = &self.monitor.last_rendered_monitor_frame {
                 if std::sync::Arc::ptr_eq(last, &frame) {
                     return;
                 }
             }
-            self.last_rendered_monitor_frame = Some(frame.clone());
+            self.monitor.last_rendered_monitor_frame = Some(frame.clone());
             let color_image = ColorImage::from_rgba_unmultiplied(
                 [frame.width() as usize, frame.height() as usize],
                 frame.as_raw(),
             );
-            if let Some(tex) = &mut self.monitor_texture {
+            if let Some(tex) = &mut self.monitor.monitor_texture {
                 tex.set(color_image, TextureOptions::LINEAR);
             } else {
-                self.monitor_texture =
+                self.monitor.monitor_texture =
                     Some(ctx.load_texture("monitor_preview", color_image, TextureOptions::LINEAR));
             }
         } else {
-            self.last_rendered_monitor_frame = None;
-            self.monitor_texture = None;
-            if self.scopes_panel.is_open {
-                self.scopes_panel.clear();
+            self.monitor.last_rendered_monitor_frame = None;
+            self.monitor.monitor_texture = None;
+            if self.monitor.scopes_panel.is_open {
+                self.monitor.scopes_panel.clear();
             }
         }
     }
@@ -339,12 +350,14 @@ impl TrimApp {
             .or_else(|| {
                 self.project
                     .timeline
-                    .get_top_visible_video_clip_at(self.current_time)
+                    .get_top_visible_video_clip_at(self.playback.current_time)
                     .map(|(_, c)| c.clone())
             });
-        self.scopes_panel.last_frame_rgba = Some((rgba[..(w * h * 4) as usize].to_vec(), w, h));
-        self.scopes_panel
-            .grab_still(ctx, active_clip.as_ref(), self.current_time);
+        self.monitor.scopes_panel.last_frame_rgba =
+            Some((rgba[..(w * h * 4) as usize].to_vec(), w, h));
+        self.monitor
+            .scopes_panel
+            .grab_still(ctx, active_clip.as_ref(), self.playback.current_time);
         self.set_status(
             "📷 Referans kare galeriye kaydedildi",
             "📷 Reference still saved to gallery",
@@ -352,8 +365,8 @@ impl TrimApp {
     }
 
     pub fn update_source_monitor_frame(&mut self, ctx: &egui::Context) {
-        let Some(ref m_id) = self.source_state.media_id.clone() else {
-            self.source_state.texture = None;
+        let Some(ref m_id) = self.monitor.source_state.media_id.clone() else {
+            self.monitor.source_state.texture = None;
             return;
         };
         let Some((media_duration, media_type, media_path, media_has_audio)) = self
@@ -361,40 +374,43 @@ impl TrimApp {
             .get_media(m_id)
             .map(|m| (m.duration, m.media_type, m.file_path.clone(), m.has_audio()))
         else {
-            self.source_state.texture = None;
+            self.monitor.source_state.texture = None;
             return;
         };
 
-        if self.source_state.is_playing {
-            let prev_t = self.source_state.current_time;
-            let cur_t = if let Some(start) = self.source_state.clock_start {
-                self.source_state.clock_start_time + start.elapsed().as_secs_f64()
+        if self.monitor.source_state.is_playing {
+            let prev_t = self.monitor.source_state.current_time;
+            let cur_t = if let Some(start) = self.monitor.source_state.clock_start {
+                self.monitor.source_state.clock_start_time + start.elapsed().as_secs_f64()
             } else {
                 let now = Instant::now();
-                self.source_state.clock_start = Some(now);
-                self.source_state.clock_start_time = prev_t;
+                self.monitor.source_state.clock_start = Some(now);
+                self.monitor.source_state.clock_start_time = prev_t;
                 prev_t + (1.0 / 60.0)
             };
 
             let end_limit = self
+                .monitor
                 .source_state
                 .mark_out
-                .filter(|&mo| mo > self.source_state.mark_in.unwrap_or(0.0))
+                .filter(|&mo| mo > self.monitor.source_state.mark_in.unwrap_or(0.0))
                 .unwrap_or(media_duration);
 
             if end_limit > 0.0 && cur_t >= end_limit {
-                self.source_state.current_time = self.source_state.mark_in.unwrap_or(0.0);
-                self.source_state.is_playing = false;
-                self.source_state.clock_start = None;
-                self.audio_player.stop();
-                self.vu_state.reset();
+                self.monitor.source_state.current_time =
+                    self.monitor.source_state.mark_in.unwrap_or(0.0);
+                self.monitor.source_state.is_playing = false;
+                self.monitor.source_state.clock_start = None;
+                self.playback.audio_player.stop();
+                self.playback.vu_state.reset();
             } else {
-                self.source_state.current_time = cur_t;
-                if media_has_audio && !self.is_playing {
+                self.monitor.source_state.current_time = cur_t;
+                if media_has_audio && !self.playback.is_playing {
                     let (mut samples, mut db_l, mut db_r) = self
+                        .playback
                         .audio_mixer
                         .render_source_media_interval(&media_path, prev_t, cur_t);
-                    let master_vol = self.audio_mixer_dialog.master_volume;
+                    let master_vol = self.dialogs.audio_mixer_dialog.master_volume;
                     if (master_vol - 1.0).abs() > 1e-4 {
                         for s in &mut samples {
                             *s = ((*s as f32) * master_vol)
@@ -411,42 +427,44 @@ impl TrimApp {
                             db_r = (db_r + gain_db).clamp(-60.0, 0.0);
                         }
                     }
-                    self.vu_state.set_levels(db_l, db_r);
-                    self.audio_player.write_samples(&samples);
+                    self.playback.vu_state.set_levels(db_l, db_r);
+                    self.playback.audio_player.write_samples(&samples);
                 }
             }
             ctx.request_repaint();
         }
 
         // Poll decoded result from async worker (zero UI blocking)
-        if let Some(res) = self.source_state.decoder.poll_result() {
-            if res.id == self.source_state.decoder.latest_req_id {
+        if let Some(res) = self.monitor.source_state.decoder.poll_result() {
+            if res.id == self.monitor.source_state.decoder.latest_req_id {
                 if let Some(frame) = res.frame {
                     let color_image = ColorImage::from_rgba_unmultiplied(
                         [frame.width() as usize, frame.height() as usize],
                         frame.as_raw(),
                     );
-                    if let Some(tex) = &mut self.source_state.texture {
+                    if let Some(tex) = &mut self.monitor.source_state.texture {
                         tex.set(color_image, TextureOptions::LINEAR);
                     } else {
-                        self.source_state.texture = Some(ctx.load_texture(
+                        self.monitor.source_state.texture = Some(ctx.load_texture(
                             "source_preview",
                             color_image,
                             TextureOptions::LINEAR,
                         ));
                     }
-                    self.source_state.last_decoded_id = Some(m_id.clone());
-                    self.source_state.last_decoded_time = Some(res.time);
+                    self.monitor.source_state.last_decoded_id = Some(m_id.clone());
+                    self.monitor.source_state.last_decoded_time = Some(res.time);
                     ctx.request_repaint();
                 }
             }
         }
 
         let needs_decode = match (
-            &self.source_state.last_decoded_id,
-            self.source_state.last_decoded_time,
+            &self.monitor.source_state.last_decoded_id,
+            self.monitor.source_state.last_decoded_time,
         ) {
-            (Some(id), Some(t)) => id != m_id || (t - self.source_state.current_time).abs() > 0.03,
+            (Some(id), Some(t)) => {
+                id != m_id || (t - self.monitor.source_state.current_time).abs() > 0.03
+            }
             _ => true,
         };
 
@@ -459,10 +477,10 @@ impl TrimApp {
                             [frame.width() as usize, frame.height() as usize],
                             frame.as_raw(),
                         );
-                        if let Some(tex) = &mut self.source_state.texture {
+                        if let Some(tex) = &mut self.monitor.source_state.texture {
                             tex.set(color_image, TextureOptions::LINEAR);
                         } else {
-                            self.source_state.texture = Some(ctx.load_texture(
+                            self.monitor.source_state.texture = Some(ctx.load_texture(
                                 "source_preview",
                                 color_image,
                                 TextureOptions::LINEAR,
@@ -473,12 +491,14 @@ impl TrimApp {
                         log::warn!("Source monitor image decode failed ({media_path}): {e}");
                     }
                 }
-                self.source_state.last_decoded_id = Some(m_id.clone());
-                self.source_state.last_decoded_time = Some(self.source_state.current_time);
+                self.monitor.source_state.last_decoded_id = Some(m_id.clone());
+                self.monitor.source_state.last_decoded_time =
+                    Some(self.monitor.source_state.current_time);
             } else if media_type == MediaType::Video {
-                self.source_state
+                self.monitor
+                    .source_state
                     .decoder
-                    .request_seek(&media_path, self.source_state.current_time);
+                    .request_seek(&media_path, self.monitor.source_state.current_time);
             }
         }
     }
@@ -486,7 +506,7 @@ impl TrimApp {
     pub fn render_fullscreen_monitor(&mut self, ctx: &egui::Context) {
         // Exit shortcuts
         if ctx.input(|i| i.key_pressed(egui::Key::Escape) || i.key_pressed(egui::Key::F11)) {
-            self.is_monitor_fullscreen = false;
+            self.monitor.is_monitor_fullscreen = false;
             return;
         }
 
@@ -497,12 +517,12 @@ impl TrimApp {
         // Left / Right arrow for frame step
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
             let fps = self.project.timeline.fps.max(1.0);
-            self.seek((self.current_time - 1.0 / fps).max(0.0));
+            self.seek((self.playback.current_time - 1.0 / fps).max(0.0));
         }
         if ctx.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
             let fps = self.project.timeline.fps.max(1.0);
             let dur = self.project.timeline.duration();
-            self.seek((self.current_time + 1.0 / fps).min(dur));
+            self.seek((self.playback.current_time + 1.0 / fps).min(dur));
         }
 
         egui::CentralPanel::default()
@@ -531,8 +551,9 @@ impl TrimApp {
                 let painter = ui.painter();
 
                 let active_tex_id = self
+                    .monitor
                     .monitor_gpu_texture_id
-                    .or_else(|| self.monitor_texture.as_ref().map(|t| t.id()));
+                    .or_else(|| self.monitor.monitor_texture.as_ref().map(|t| t.id()));
 
                 if let Some(tex_id) = active_tex_id {
                     painter.image(
@@ -546,7 +567,7 @@ impl TrimApp {
                     painter.text(
                         video_rect.center(),
                         egui::Align2::CENTER_CENTER,
-                        if self.is_playing {
+                        if self.playback.is_playing {
                             "Oynatılıyor..."
                         } else {
                             "Önizleme Yükleniyor..."
@@ -567,7 +588,7 @@ impl TrimApp {
                     egui::Sense::click(),
                 );
                 if screen_resp.double_clicked() {
-                    self.is_monitor_fullscreen = false;
+                    self.monitor.is_monitor_fullscreen = false;
                 }
 
                 // Top Exit Badge
@@ -596,7 +617,7 @@ impl TrimApp {
                     egui::Sense::click(),
                 );
                 if exit_resp.clicked() {
-                    self.is_monitor_fullscreen = false;
+                    self.monitor.is_monitor_fullscreen = false;
                 }
 
                 // Bottom floating transport bar
@@ -613,7 +634,11 @@ impl TrimApp {
                 ui.allocate_new_ui(egui::UiBuilder::new().max_rect(bar_rect), |ui| {
                     ui.horizontal_centered(|ui| {
                         ui.add_space(16.0);
-                        let play_sym = if self.is_playing { "⏸" } else { "▶" };
+                        let play_sym = if self.playback.is_playing {
+                            "⏸"
+                        } else {
+                            "▶"
+                        };
                         let btn_play = egui::Button::new(
                             RichText::new(play_sym)
                                 .size(15.0)
@@ -631,7 +656,7 @@ impl TrimApp {
                             .min_size(Vec2::new(26.0, 24.0));
                         if ui.add(btn_prev).on_hover_text("1 Kare Geri").clicked() {
                             let fps = self.project.timeline.fps.max(1.0);
-                            self.seek((self.current_time - 1.0 / fps).max(0.0));
+                            self.seek((self.playback.current_time - 1.0 / fps).max(0.0));
                         }
 
                         let btn_next = egui::Button::new(RichText::new("⏵").size(12.0))
@@ -640,13 +665,13 @@ impl TrimApp {
                         if ui.add(btn_next).on_hover_text("1 Kare İleri").clicked() {
                             let fps = self.project.timeline.fps.max(1.0);
                             let dur = self.project.timeline.duration();
-                            self.seek((self.current_time + 1.0 / fps).min(dur));
+                            self.seek((self.playback.current_time + 1.0 / fps).min(dur));
                         }
 
                         ui.add_space(8.0);
                         let total_dur = self.project.timeline.duration().max(0.1);
                         let cur_tc = trim_core::time::seconds_to_timecode(
-                            self.current_time,
+                            self.playback.current_time,
                             self.project.timeline.fps,
                         );
                         let tot_tc = trim_core::time::seconds_to_timecode(
@@ -661,7 +686,7 @@ impl TrimApp {
                         );
 
                         ui.add_space(12.0);
-                        let mut seek_t = self.current_time;
+                        let mut seek_t = self.playback.current_time;
                         let slider = egui::Slider::new(&mut seek_t, 0.0..=total_dur)
                             .show_value(false)
                             .trailing_fill(true);
@@ -680,7 +705,7 @@ impl TrimApp {
                                 .on_hover_text("Tam Ekrandan Çık (F11)")
                                 .clicked()
                             {
-                                self.is_monitor_fullscreen = false;
+                                self.monitor.is_monitor_fullscreen = false;
                             }
                         });
                     });
@@ -700,18 +725,18 @@ impl TrimApp {
                         .and_then(|t| t.get_clip_by_id(cl_id))
                         .is_some()
                 });
-            self.video_engine.clear_cache();
-            self.audio_mixer.clear_cache();
-            self.last_rendered_monitor_frame = None;
-            self.last_rendered_dirty = true;
-            self.scopes_panel.mark_dirty();
+            self.media.video_engine.clear_cache();
+            self.playback.audio_mixer.clear_cache();
+            self.monitor.last_rendered_monitor_frame = None;
+            self.media.last_rendered_dirty = true;
+            self.monitor.scopes_panel.mark_dirty();
             self.project.mark_dirty();
-            if self.is_playing {
-                self.audio_worker.start(
+            if self.playback.is_playing {
+                self.playback.audio_worker.start(
                     self.project.clone(),
-                    self.current_time,
-                    self.playback_speed,
-                    self.audio_mixer_dialog.master_volume,
+                    self.playback.current_time,
+                    self.playback.playback_speed,
+                    self.dialogs.audio_mixer_dialog.master_volume,
                 );
             }
         }
@@ -729,18 +754,18 @@ impl TrimApp {
                         .and_then(|t| t.get_clip_by_id(cl_id))
                         .is_some()
                 });
-            self.video_engine.clear_cache();
-            self.audio_mixer.clear_cache();
-            self.last_rendered_monitor_frame = None;
-            self.last_rendered_dirty = true;
-            self.scopes_panel.mark_dirty();
+            self.media.video_engine.clear_cache();
+            self.playback.audio_mixer.clear_cache();
+            self.monitor.last_rendered_monitor_frame = None;
+            self.media.last_rendered_dirty = true;
+            self.monitor.scopes_panel.mark_dirty();
             self.project.mark_dirty();
-            if self.is_playing {
-                self.audio_worker.start(
+            if self.playback.is_playing {
+                self.playback.audio_worker.start(
                     self.project.clone(),
-                    self.current_time,
-                    self.playback_speed,
-                    self.audio_mixer_dialog.master_volume,
+                    self.playback.current_time,
+                    self.playback.playback_speed,
+                    self.dialogs.audio_mixer_dialog.master_volume,
                 );
             }
         }

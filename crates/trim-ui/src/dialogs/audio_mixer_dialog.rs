@@ -25,6 +25,7 @@ impl Default for AudioMixerDialog {
 pub enum AudioMixerAction {
     TrackVolumeChanged(String, f64),
     TrackPanChanged(String, f64),
+    TrackBusChanged(String, trim_core::track::AudioBus),
     TrackMuteToggled(String),
     TrackSoloToggled(String),
     MasterVolumeChanged(f32),
@@ -327,6 +328,43 @@ impl AudioMixerDialog {
                                                 ));
                                             }
                                         });
+
+                                        ui.add_space(4.0);
+
+                                        // Submix Bus Routing Selector (Master / Diyalog / Müzik / SFX)
+                                        let next_bus = match track.bus {
+                                            trim_core::track::AudioBus::Master => {
+                                                trim_core::track::AudioBus::Dialogue
+                                            }
+                                            trim_core::track::AudioBus::Dialogue => {
+                                                trim_core::track::AudioBus::Music
+                                            }
+                                            trim_core::track::AudioBus::Music => {
+                                                trim_core::track::AudioBus::Sfx
+                                            }
+                                            trim_core::track::AudioBus::Sfx => {
+                                                trim_core::track::AudioBus::Master
+                                            }
+                                        };
+                                        if ui
+                                            .add(
+                                                Button::new(
+                                                    RichText::new(format!("Bus: {}", track.bus.label()))
+                                                        .size(9.5)
+                                                        .color(Color32::from_rgb(0x9a, 0xc2, 0xf0)),
+                                                )
+                                                .fill(Color32::from_rgb(0x1b, 0x22, 0x30))
+                                                .rounding(egui::Rounding::same(3.0))
+                                                .min_size(Vec2::new(76.0, 18.0)),
+                                            )
+                                            .on_hover_text("Alt Miks Bus'ını değiştir (Master / Diyalog / Müzik / SFX)")
+                                            .clicked()
+                                        {
+                                            actions.push(AudioMixerAction::TrackBusChanged(
+                                                track.id.clone(),
+                                                next_bus,
+                                            ));
+                                        }
 
                                         ui.add_space(4.0);
 

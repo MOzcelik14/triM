@@ -257,4 +257,95 @@ mod tests {
         assert!((tl.tracks[0].clips[0].duration() - 5.0).abs() < 1e-6);
         assert!((tl.tracks[0].clips[1].timeline_in - 5.0).abs() < 1e-6);
     }
+
+    #[test]
+    fn test_find_edit_points_with_markers_and_empty_timeline() {
+        let mut tl = TimelineModel::default();
+        assert_eq!(find_prev_edit_point(&tl, 5.0), 0.0);
+        assert_eq!(find_next_edit_point(&tl, 5.0), 0.0);
+
+        tl.tracks[0].add_clip(Clip::new("m1", 2.0, 6.0));
+        tl.markers.push(trim_core::marker::Marker::new(4.0));
+        assert_eq!(find_prev_edit_point(&tl, 5.0), 4.0);
+        assert_eq!(find_next_edit_point(&tl, 2.5), 4.0);
+    }
+
+    #[test]
+    fn test_split_at_playhead_preferred_track_and_boundary_004s() {
+        let mut tl = TimelineModel::default();
+        let mut stack = UndoStack::new();
+        let c1 = Clip::new("m1", 0.0, 10.0);
+        let c1_id = c1.id.clone();
+        let t0_id = tl.tracks[0].id.clone();
+        tl.tracks[0].add_clip(c1);
+
+        // Within 0.04s of clip edge -> must not split
+        assert!(!split_at_playhead(
+            &mut tl,
+            &mut stack,
+            Some(&t0_id),
+            Some(&c1_id),
+            0.02
+        ));
+        assert!(!split_at_playhead(
+            &mut tl,
+            &mut stack,
+            Some(&t0_id),
+            Some(&c1_id),
+            9.98
+        ));
+
+        // Preferred track/clip in middle -> splits cleanly
+        assert!(split_at_playhead(
+            &mut tl,
+            &mut stack,
+            Some(&t0_id),
+            Some(&c1_id),
+            5.0
+        ));
+        assert_eq!(tl.tracks[0].clips.len(), 2);
+
+        // Locked preferred track -> must not split even if IDs provided
+        tl.tracks[0].locked = true;
+        assert!(!split_at_playhead(
+            &mut tl,
+            &mut stack,
+            Some(&t0_id),
+            None,
+            2.5
+        ));
+    }
+
+    #[test]
+    fn test_ripple_trim_preferred_clip_and_004s_guards() {
+        let mut tl = TimelineModel::default();
+        let mut stack = UndoStack::new();
+        let c1 = Clip::new("m1", 0.0, 10.0);
+        let c1_id = c1.id.clone();
+        let t0_id = tl.tracks[0].id.clone();
+        tl.tracks[0].add_clip(c1);
+
+        assert!(!ripple_trim_head(
+            &mut tl,
+            &mut stack,
+            Some(&t0_id),
+            Some(&c1_id),
+            0.02
+        ));
+        assert!(!ripple_trim_tail(
+            &mut tl,
+            &mut stack,
+            Some(&t0_id),
+            Some(&c1_id),
+            9.98
+        ));
+        assert!(ripple_trim_tail(
+            &mut tl,
+            &mut stack,
+            Some(&t0_id),
+            Some(&c1_id),
+            8.0
+        ));
+        assert!((tl.tracks[0].clips[0].timeline_out - 8.0).abs() < 1e-6);
+    }
 }

@@ -106,23 +106,23 @@ impl TrimApp {
                         if let Some(act) = render_media_bin(
                             ui,
                             &self.project,
-                            &mut self.selected_media_id,
-                            &mut self.media_bin_search,
-                            &mut self.media_bin_is_grid,
-                            &mut self.media_bin_thumb_size,
-                            &self.media_bin_current_bin,
-                            &mut self.media_bin_filter,
-                            &self.media_bin_textures,
+                            &mut self.media.selected_media_id,
+                            &mut self.media.media_bin_search,
+                            &mut self.media.media_bin_is_grid,
+                            &mut self.media.media_bin_thumb_size,
+                            &self.media.media_bin_current_bin,
+                            &mut self.media.media_bin_filter,
+                            &self.media.media_bin_textures,
                         ) {
                             match act {
                                 MediaBinAction::ImportRequested => self.prompt_import_media(),
                                 MediaBinAction::OpenInSourceMonitor(m_id) => {
-                                    self.source_state.media_id = Some(m_id);
-                                    self.source_state.current_time = 0.0;
-                                    self.source_state.mark_in = None;
-                                    self.source_state.mark_out = None;
-                                    self.source_state.is_playing = false;
-                                    self.source_state.last_decoded_time = None;
+                                    self.monitor.source_state.media_id = Some(m_id);
+                                    self.monitor.source_state.current_time = 0.0;
+                                    self.monitor.source_state.mark_in = None;
+                                    self.monitor.source_state.mark_out = None;
+                                    self.monitor.source_state.is_playing = false;
+                                    self.monitor.source_state.last_decoded_time = None;
                                     self.set_status(
                                         "Klip Kaynak Monitöründe Açıldı",
                                         "Clip Opened in Source Monitor",
@@ -147,10 +147,10 @@ impl TrimApp {
                                             let target_video_track = if self
                                                 .project
                                                 .timeline
-                                                .get_track_by_id(&self.target_video_track)
+                                                .get_track_by_id(&self.tools.target_video_track)
                                                 .is_some()
                                             {
-                                                Some(self.target_video_track.clone())
+                                                Some(self.tools.target_video_track.clone())
                                             } else {
                                                 self.project
                                                     .timeline
@@ -168,7 +168,7 @@ impl TrimApp {
                                                     None
                                                 };
 
-                                                let mut clip = Clip::new_nested_sequence(&seq.id, &seq.name, self.current_time, self.current_time + dur);
+                                                let mut clip = Clip::new_nested_sequence(&seq.id, &seq.name, self.playback.current_time, self.playback.current_time + dur);
                                                 clip.linked_group_id = link_group.clone();
                                                 let cmd = Box::new(AddClipCommand::new(track_id.clone(), clip));
 
@@ -177,7 +177,7 @@ impl TrimApp {
                                                         .project
                                                         .timeline
                                                         .find_or_create_corresponding_audio_track(&track_id);
-                                                    let mut audio_clip = Clip::new_nested_sequence(&seq.id, format!("{} (Ses)", seq.name), self.current_time, self.current_time + dur);
+                                                    let mut audio_clip = Clip::new_nested_sequence(&seq.id, format!("{} (Ses)", seq.name), self.playback.current_time, self.playback.current_time + dur);
                                                     audio_clip.linked_group_id = Some(gid);
                                                     let cmd_a = Box::new(AddClipCommand::new(audio_track_id, audio_clip));
                                                     let macro_cmd = Box::new(MacroCommand::new("İç İçe Sekans ve Ses Ekle", vec![cmd, cmd_a]));
@@ -232,10 +232,10 @@ impl TrimApp {
                                             if self
                                                 .project
                                                 .timeline
-                                                .get_track_by_id(&self.target_audio_track)
+                                                .get_track_by_id(&self.tools.target_audio_track)
                                                 .is_some()
                                             {
-                                                Some(self.target_audio_track.clone())
+                                                Some(self.tools.target_audio_track.clone())
                                             } else {
                                                 self.project
                                                     .timeline
@@ -246,10 +246,10 @@ impl TrimApp {
                                         } else if self
                                             .project
                                             .timeline
-                                            .get_track_by_id(&self.target_video_track)
+                                            .get_track_by_id(&self.tools.target_video_track)
                                             .is_some()
                                         {
-                                            Some(self.target_video_track.clone())
+                                            Some(self.tools.target_video_track.clone())
                                         } else {
                                             self.project
                                                 .timeline
@@ -301,8 +301,8 @@ impl TrimApp {
 
                                                 let mut clip = Clip::new(
                                                     &m_id,
-                                                    self.current_time,
-                                                    self.current_time + clip_dur,
+                                                    self.playback.current_time,
+                                                    self.playback.current_time + clip_dur,
                                                 );
                                                 clip.name = media_name.clone();
                                                 clip.linked_group_id = link_group.clone();
@@ -320,8 +320,8 @@ impl TrimApp {
                                                         );
                                                     let mut audio_clip = Clip::new(
                                                         &m_id,
-                                                        self.current_time,
-                                                        self.current_time + clip_dur,
+                                                        self.playback.current_time,
+                                                        self.playback.current_time + clip_dur,
                                                     );
                                                     audio_clip.name =
                                                         format!("{} (Ses)", media_name);
@@ -363,10 +363,10 @@ impl TrimApp {
                                         );
                                     } else {
                                         self.project.media_pool.remove(&m_id);
-                                        self.media_bin_textures.remove(&m_id);
-                                        self.media_bin_textures.remove(&format!("strip:{m_id}"));
-                                        if self.source_state.media_id.as_deref() == Some(&m_id) {
-                                            self.source_state.media_id = None;
+                                        self.media.media_bin_textures.remove(&m_id);
+                                        self.media.media_bin_textures.remove(&format!("strip:{m_id}"));
+                                        if self.monitor.source_state.media_id.as_deref() == Some(&m_id) {
+                                            self.monitor.source_state.media_id = None;
                                         }
                                         self.project.mark_dirty();
                                     }
@@ -375,7 +375,7 @@ impl TrimApp {
                                     self.generate_proxy_for_media(&m_id);
                                 }
                                 MediaBinAction::CreateBinPrompt => {
-                                    self.bin_dialog = Some(BinDialogState {
+                                    self.media.bin_dialog = Some(BinDialogState {
                                         mode: BinDialogMode::Create,
                                         name_input: "Yeni Klasör".to_string(),
                                     });
@@ -386,15 +386,15 @@ impl TrimApp {
                                         .get_bin(&bin_id)
                                         .map(|b| b.name.clone())
                                         .unwrap_or_default();
-                                    self.bin_dialog = Some(BinDialogState {
+                                    self.media.bin_dialog = Some(BinDialogState {
                                         mode: BinDialogMode::Rename(bin_id),
                                         name_input: current_name,
                                     });
                                 }
                                 MediaBinAction::DeleteBin(bin_id) => {
                                     if let Some(removed) = self.project.remove_bin(&bin_id) {
-                                        if self.media_bin_current_bin.as_deref() == Some(&bin_id) {
-                                            self.media_bin_current_bin = None;
+                                        if self.media.media_bin_current_bin.as_deref() == Some(&bin_id) {
+                                            self.media.media_bin_current_bin = None;
                                         }
                                         self.status_message = match self.lang() {
                                             crate::i18n::Language::Turkish => format!(
@@ -409,7 +409,7 @@ impl TrimApp {
                                     }
                                 }
                                 MediaBinAction::EnterBin(bin_id) => {
-                                    self.media_bin_current_bin = bin_id;
+                                    self.media.media_bin_current_bin = bin_id;
                                 }
                                 MediaBinAction::MoveToBin { media_id, bin_id } => {
                                     if let Some(item) = self.project.get_media_mut(&media_id) {
@@ -434,20 +434,20 @@ impl TrimApp {
                                 }
                                 MediaBinAction::OpenSequence(seq_id) => {
                                     self.project.switch_sequence(&seq_id);
-                                    self.video_engine.clear_cache();
-                                    self.audio_mixer.clear_cache();
+                                    self.media.video_engine.clear_cache();
+                                    self.playback.audio_mixer.clear_cache();
                                     self.canvas_state.selected_clip_pairs.clear();
-                                    self.current_time = 0.0;
+                                    self.playback.current_time = 0.0;
                                     self.set_status("Sekans açıldı", "Sequence opened");
                                 }
                                 MediaBinAction::CreateSequencePrompt => {
                                     let next_num = self.project.sequences.len() + 1;
                                     let new_name = format!("Sekans {:02}", next_num);
                                     self.project.create_sequence(new_name);
-                                    self.video_engine.clear_cache();
-                                    self.audio_mixer.clear_cache();
+                                    self.media.video_engine.clear_cache();
+                                    self.playback.audio_mixer.clear_cache();
                                     self.canvas_state.selected_clip_pairs.clear();
-                                    self.current_time = 0.0;
+                                    self.playback.current_time = 0.0;
                                     self.set_status("Yeni sekans oluşturuldu", "New sequence created");
                                 }
                                 MediaBinAction::DuplicateSequence(seq_id) => {
@@ -457,10 +457,10 @@ impl TrimApp {
                                 }
                                 MediaBinAction::DeleteSequence(seq_id) => {
                                     if self.project.remove_sequence(&seq_id) {
-                                        self.video_engine.clear_cache();
-                                        self.audio_mixer.clear_cache();
+                                        self.media.video_engine.clear_cache();
+                                        self.playback.audio_mixer.clear_cache();
                                         self.canvas_state.selected_clip_pairs.clear();
-                                        self.current_time = 0.0;
+                                        self.playback.current_time = 0.0;
                                         self.set_status("Sekans silindi", "Sequence deleted");
                                     }
                                 }
@@ -484,13 +484,15 @@ impl TrimApp {
                                 })
                             });
                         let track_locked = inspector_before.as_ref().is_some_and(|(_, l, _)| *l);
+                        let lang = self.lang();
                         let inspector_action = ui
                             .add_enabled_ui(!track_locked, |ui| {
                                 render_inspector_panel(
                                     ui,
                                     &mut self.project,
                                     selected_clip_id.as_deref(),
-                                    self.current_time,
+                                    self.playback.current_time,
+                                    lang,
                                 )
                             })
                             .inner;
@@ -525,10 +527,10 @@ impl TrimApp {
                                         }
                                     }
                                     self.project.mark_dirty();
-                                    self.last_rendered_monitor_frame = None;
-                                    self.last_rendered_dirty = true;
-                                    self.scopes_panel.mark_dirty();
-                                    self.video_engine.last_rendered_frame = None;
+                                    self.monitor.last_rendered_monitor_frame = None;
+                                    self.media.last_rendered_dirty = true;
+                                    self.monitor.scopes_panel.mark_dirty();
+                                    self.media.video_engine.last_rendered_frame = None;
                                 }
                                 InspectorAction::SetTransform {
                                     track_id,
@@ -544,8 +546,8 @@ impl TrimApp {
                                     ));
                                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                     self.project.mark_dirty();
-                                    self.last_rendered_monitor_frame = None;
-                                    self.video_engine.last_rendered_frame = None;
+                                    self.monitor.last_rendered_monitor_frame = None;
+                                    self.media.video_engine.last_rendered_frame = None;
                                 }
                                 InspectorAction::SetColorWheels {
                                     track_id,
@@ -558,8 +560,8 @@ impl TrimApp {
                                     ));
                                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                     self.project.mark_dirty();
-                                    self.last_rendered_monitor_frame = None;
-                                    self.video_engine.last_rendered_frame = None;
+                                    self.monitor.last_rendered_monitor_frame = None;
+                                    self.media.video_engine.last_rendered_frame = None;
                                 }
                                 InspectorAction::SetEqPreset {
                                     track_id,
@@ -584,8 +586,8 @@ impl TrimApp {
                                     ));
                                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                     self.project.mark_dirty();
-                                    self.last_rendered_monitor_frame = None;
-                                    self.video_engine.last_rendered_frame = None;
+                                    self.monitor.last_rendered_monitor_frame = None;
+                                    self.media.video_engine.last_rendered_frame = None;
                                 }
                                 InspectorAction::ChangeSpeed(spd, rev) => {
                                     if let Some((tr_id, cl_id)) =
@@ -599,8 +601,8 @@ impl TrimApp {
                                                 cl.reverse = rev;
                                                 tr.sort_clips();
                                                 self.project.mark_dirty();
-                                                self.last_rendered_monitor_frame = None;
-                                                self.video_engine.last_rendered_frame = None;
+                                                self.monitor.last_rendered_monitor_frame = None;
+                                                self.media.video_engine.last_rendered_frame = None;
                                             }
                                         }
                                     }
@@ -643,14 +645,14 @@ impl TrimApp {
                                     self.prompt_export_cube_lut(&track_id, &clip_id);
                                 }
                                 InspectorAction::StartWbEyedropper { track_id, clip_id } => {
-                                    if self.wb_eyedropper_target.is_some() {
-                                        self.wb_eyedropper_target = None;
+                                    if self.monitor.wb_eyedropper_target.is_some() {
+                                        self.monitor.wb_eyedropper_target = None;
                                         self.set_status(
                                             "WB Damlalığı kapatıldı.",
                                             "WB Eyedropper deactivated.",
                                         );
                                     } else {
-                                        self.wb_eyedropper_target = Some((track_id, clip_id));
+                                        self.monitor.wb_eyedropper_target = Some((track_id, clip_id));
                                         self.set_status(
                                             "🎯 WB Damlalığı Aktif: Program Monitörü üzerinde nötr beyaz/gri bir noktaya tıklayın.",
                                             "🎯 WB Eyedropper Active: Click a neutral white/gray point on the Program Monitor.",
@@ -668,9 +670,9 @@ impl TrimApp {
                                     ));
                                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                     self.project.mark_dirty();
-                                    self.last_rendered_monitor_frame = None;
-                                    self.video_engine.last_rendered_frame = None;
-                                    self.scopes_panel.mark_dirty();
+                                    self.monitor.last_rendered_monitor_frame = None;
+                                    self.media.video_engine.last_rendered_frame = None;
+                                    self.monitor.scopes_panel.mark_dirty();
                                 }
                                 InspectorAction::SetBlendMode {
                                     track_id,
@@ -686,9 +688,9 @@ impl TrimApp {
                                     ));
                                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                     self.project.mark_dirty();
-                                    self.last_rendered_monitor_frame = None;
-                                    self.video_engine.last_rendered_frame = None;
-                                    self.scopes_panel.mark_dirty();
+                                    self.monitor.last_rendered_monitor_frame = None;
+                                    self.media.video_engine.last_rendered_frame = None;
+                                    self.monitor.scopes_panel.mark_dirty();
                                 }
                                 InspectorAction::SetMasks {
                                     track_id,
@@ -701,9 +703,9 @@ impl TrimApp {
                                     ));
                                     let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                     self.project.mark_dirty();
-                                    self.last_rendered_monitor_frame = None;
-                                    self.video_engine.last_rendered_frame = None;
-                                    self.scopes_panel.mark_dirty();
+                                    self.monitor.last_rendered_monitor_frame = None;
+                                    self.media.video_engine.last_rendered_frame = None;
+                                    self.monitor.scopes_panel.mark_dirty();
                                 }
                                 InspectorAction::AutoWhiteBalance { track_id, clip_id } => {
                                     let clip_snapshot = self
@@ -715,11 +717,11 @@ impl TrimApp {
                                     if let Some(clip_ref) = clip_snapshot {
                                         let old_state = ClipColorGradingState::from_clip(&clip_ref);
                                         if let Some((temp, tint)) = self
-                                            .video_engine
+                                            .media.video_engine
                                             .analyze_clip_auto_wb(
                                                 &self.project,
                                                 &clip_ref,
-                                                self.current_time,
+                                                self.playback.current_time,
                                             )
                                         {
                                             let mut new_state = old_state.clone();
@@ -734,9 +736,9 @@ impl TrimApp {
                                                 .undo_stack
                                                 .push(cmd, &mut self.project.timeline);
                                             self.project.mark_dirty();
-                                            self.last_rendered_monitor_frame = None;
-                                            self.video_engine.last_rendered_frame = None;
-                                            self.scopes_panel.mark_dirty();
+                                            self.monitor.last_rendered_monitor_frame = None;
+                                            self.media.video_engine.last_rendered_frame = None;
+                                            self.monitor.scopes_panel.mark_dirty();
                                             self.status_message = match self.lang() {
                                                 crate::i18n::Language::Turkish => format!(
                                                     "✨ Otomatik Beyaz Dengesi uygulandı (Sıcaklık: {:+.1}, Ton: {:+.1})",
@@ -757,16 +759,16 @@ impl TrimApp {
                                 }
                                 InspectorAction::ShotMatch { track_id, clip_id } => {
                                     let ref_opt = self
-                                        .scopes_panel
+                                        .monitor.scopes_panel
                                         .active_reference_still
-                                        .and_then(|idx| self.scopes_panel.reference_stills.get(idx))
+                                        .and_then(|idx| self.monitor.scopes_panel.reference_stills.get(idx))
                                         .map(|s| (s.rgba.clone(), s.width, s.height));
                                     let cur_opt = self
-                                        .last_scope_rgba
+                                        .monitor.last_scope_rgba
                                         .as_ref()
                                         .map(|(rgba, w, h)| (rgba.clone(), *w, *h))
                                         .or_else(|| {
-                                            self.last_rendered_monitor_frame.as_ref().map(|f| {
+                                            self.monitor.last_rendered_monitor_frame.as_ref().map(|f| {
                                                 (f.as_raw().clone(), f.width(), f.height())
                                             })
                                         });
@@ -813,11 +815,11 @@ impl TrimApp {
                                                 .push(cmd, &mut self.project.timeline);
                                         }
                                         self.project.mark_dirty();
-                                        self.last_rendered_monitor_frame = None;
-                                        self.last_rendered_dirty = true;
-                                        self.scopes_panel.mark_dirty();
-                                        self.video_engine.last_rendered_frame = None;
-                                        self.scopes_panel.mark_dirty();
+                                        self.monitor.last_rendered_monitor_frame = None;
+                                        self.media.last_rendered_dirty = true;
+                                        self.monitor.scopes_panel.mark_dirty();
+                                        self.media.video_engine.last_rendered_frame = None;
+                                        self.monitor.scopes_panel.mark_dirty();
                                         self.status_message = match self.lang() {
                                             crate::i18n::Language::Turkish => format!(
                                                 "🎯 Shot Match uygulandı (Parlaklık: {:+.2}, Kontrast: {:.2}, Sıcaklık: {:+.1})",
@@ -844,7 +846,8 @@ impl TrimApp {
         // -------------------------------------------------------------
         // UPPER-RIGHT: Color Scopes (Independent resizable panel)
         // -------------------------------------------------------------
-        if self.scopes_panel.is_open {
+        if self.monitor.scopes_panel.is_open {
+            self.monitor.scopes_panel.lang = self.lang();
             egui::SidePanel::right("scopes_panel")
                 .resizable(true)
                 .default_width(310.0)
@@ -852,10 +855,11 @@ impl TrimApp {
                 .max_width(540.0)
                 .frame(egui::Frame::side_top_panel(&ctx.style()).inner_margin(8.0))
                 .show(ctx, |ui| {
-                    self.scopes_panel.show(ui);
+                    self.monitor.scopes_panel.show(ui);
                 });
-            if let Some(still_idx) = self.scopes_panel.pending_apply_still_idx.take() {
+            if let Some(still_idx) = self.monitor.scopes_panel.pending_apply_still_idx.take() {
                 if let Some(src_clip) = self
+                    .monitor
                     .scopes_panel
                     .reference_stills
                     .get(still_idx)
@@ -888,9 +892,9 @@ impl TrimApp {
                                 cl.bloom = src_clip.bloom;
                                 cl.chromatic_aberration = src_clip.chromatic_aberration;
                                 self.project.mark_dirty();
-                                self.last_rendered_monitor_frame = None;
-                                self.video_engine.last_rendered_frame = None;
-                                self.scopes_panel.mark_dirty();
+                                self.monitor.last_rendered_monitor_frame = None;
+                                self.media.video_engine.last_rendered_frame = None;
+                                self.monitor.scopes_panel.mark_dirty();
                                 self.set_status(
                                     "🎨 Referans karenin renk derecelendirmesi (Grade) seçili klibe uygulandı",
                                     "🎨 Reference still color grade applied to selected clip",

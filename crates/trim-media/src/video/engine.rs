@@ -21,6 +21,7 @@ pub struct VideoEngine {
     pub last_rendered_frame: Option<Arc<RgbaImage>>,
     pub is_decoding_seek: bool,
     pub use_proxies: bool,
+    pub proxy_mode: trim_core::preferences::ProxyMode,
 }
 
 impl Default for VideoEngine {
@@ -42,7 +43,25 @@ impl VideoEngine {
             last_rendered_frame: None,
             is_decoding_seek: false,
             use_proxies: false,
+            proxy_mode: trim_core::preferences::ProxyMode::Auto,
         }
+    }
+
+    /// Resolves whether a media item should play via its 720p proxy or original source
+    /// according to `proxy_mode` (`Auto` enables proxy for >=1440p or when `use_proxies` is on).
+    pub fn effective_playback_path<'a>(&self, media: &'a trim_core::media::MediaItem) -> &'a str {
+        use trim_core::preferences::ProxyMode;
+        let use_p = match self.proxy_mode {
+            ProxyMode::Off => false,
+            ProxyMode::Always => true,
+            ProxyMode::Auto => crate::proxy::should_use_proxy(
+                media.width,
+                media.height,
+                self.use_proxies,
+                media.proxy_path.is_some(),
+            ),
+        };
+        media.resolved_playback_path(use_p)
     }
 
     pub fn clear_cache(&mut self) {
@@ -217,7 +236,7 @@ impl VideoEngine {
                 if media.media_type == MediaType::Image {
                     continue;
                 }
-                let eff_path = media.resolved_playback_path(self.use_proxies).to_string();
+                let eff_path = self.effective_playback_path(media).to_string();
                 let src_t = clip.map_timeline_to_source(timeline_time);
                 let ts_key = (src_t * 1000.0).round() as u64;
                 let hit = cache.peek(&(eff_path.clone(), ts_key)).is_some()
@@ -256,7 +275,7 @@ impl VideoEngine {
                 if media.media_type != MediaType::Video {
                     continue;
                 }
-                let eff_path = media.resolved_playback_path(self.use_proxies).to_string();
+                let eff_path = self.effective_playback_path(media).to_string();
                 let src_t = clip.map_timeline_to_source(timeline_time);
                 let ts_key = (src_t * 1000.0).round() as u64;
                 let already_cached = self
@@ -315,7 +334,7 @@ impl VideoEngine {
         let raw_img: Arc<RgbaImage> = if media_item.media_type == MediaType::Image {
             self.get_image(&media_item.file_path)?
         } else {
-            let eff_path = media_item.resolved_playback_path(self.use_proxies);
+            let eff_path = self.effective_playback_path(media_item);
             let src_t = clip.map_timeline_to_source(sample_tl_time);
             let ts_key = (src_t * 1000.0).round() as u64;
             let key = (eff_path.to_string(), ts_key);
@@ -428,9 +447,7 @@ impl VideoEngine {
                     }
                 }
                 _ => {
-                    let eff_path = media_item
-                        .resolved_playback_path(self.use_proxies)
-                        .to_string();
+                    let eff_path = self.effective_playback_path(media_item).to_string();
                     let src_t = clip.map_timeline_to_source(timeline_time);
                     let (pw, ph) =
                         calculate_preview_size(project.timeline.width, project.timeline.height);
@@ -559,7 +576,7 @@ impl VideoEngine {
                     }
                 }
             } else {
-                let eff_path = media_item.resolved_playback_path(self.use_proxies);
+                let eff_path = self.effective_playback_path(media_item);
                 let src_t = clip.map_timeline_to_source(timeline_time);
 
                 if is_playing {
@@ -726,9 +743,7 @@ impl VideoEngine {
                     }
                 }
                 _ => {
-                    let eff_path = media_item
-                        .resolved_playback_path(self.use_proxies)
-                        .to_string();
+                    let eff_path = self.effective_playback_path(media_item).to_string();
                     let src_t = clip.map_timeline_to_source(timeline_time);
                     self.resolve_layer_source_frame(
                         clip,

@@ -34,6 +34,12 @@ pub fn ensure_project_extension<P: AsRef<Path>>(path: P) -> PathBuf {
     }
 }
 
+fn backup_path_for(target: &Path) -> PathBuf {
+    let mut os = target.as_os_str().to_os_string();
+    os.push(".bak");
+    PathBuf::from(os)
+}
+
 fn write_atomic(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
     if bytes.is_empty() {
         return Err(std::io::Error::new(
@@ -46,28 +52,24 @@ fn write_atomic(target: &Path, bytes: &[u8]) -> std::io::Result<()> {
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    let _ = fs::create_dir_all(parent);
+    fs::create_dir_all(parent)?;
 
-    let atomic_result = (|| -> std::io::Result<()> {
-        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-        tmp.write_all(bytes)?;
-        tmp.as_file().sync_all()?;
-        tmp.persist(target).map_err(|e| e.error)?;
-        Ok(())
-    })();
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    tmp.write_all(bytes)?;
+    tmp.as_file().sync_all()?;
 
-    if atomic_result.is_err() {
-        // Fallback: direct write to target in case tempfile creation or atomic rename failed
-        // (e.g. document portal, directory permissions, or cross-filesystem issues)
-        let mut file = fs::File::create(target)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
+    if target.is_file() && target.extension().and_then(|e| e.to_str()) != Some("bak") {
+        let bak = backup_path_for(target);
+        if let Err(e) = fs::copy(target, &bak) {
+            log::warn!("Failed to create project backup {:?}: {}", bak, e);
+        }
     }
 
+    tmp.persist(target).map_err(|e| e.error)?;
     Ok(())
 }
 
-/// Saves project to disk using atomic temp-file + sync_all + persist (with fallback to direct write).
+/// Saves project to disk using atomic temp-file + sync_all + persist with `.bak` rotation.
 /// Automatically ensures .trim extension is appended if missing and cleans up any 0-byte orphan
 /// created by the OS file picker.
 pub fn save_project<P: AsRef<Path>>(
@@ -1227,5 +1229,43 @@ mod tests {
 
         mgr.cleanup(&recovered);
         assert!(mgr.check_recovery(&recovered).is_none());
+    }
+
+    #[test]
+    fn test_write_atomic_creates_bak_and_preserves_target_on_failure() {
+        let dir = tempdir().unwrap();
+        let proj_path = dir.path().join("atomic_test.trim");
+
+        let mut proj = Project::new("V1");
+        save_project(&mut proj, &proj_path).unwrap();
+        let v1_bytes = fs::read(&proj_path).unwrap();
+
+        proj.settings.name = "V2".to_string();
+        save_project(&mut proj, &proj_path).unwrap();
+        let v2_bytes = fs::read(&proj_path).unwrap();
+        assert_ne!(v1_bytes, v2_bytes);
+
+        let bak_path = backup_path_for(&proj_path);
+        assert_eq!(fs::read(&bak_path).unwrap(), v1_bytes);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let orig_perms = fs::metadata(dir.path()).unwrap().permissions();
+            fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
+
+            let res = write_atomic(&proj_path, b"corrupted partial write");
+            fs::set_permissions(dir.path(), orig_perms).unwrap();
+
+            assert!(
+                res.is_err(),
+                "write_atomic must fail without non-atomic fallback"
+            );
+            assert_eq!(
+                fs::read(&proj_path).unwrap(),
+                v2_bytes,
+                "existing .trim file must remain intact on failure"
+            );
+        }
     }
 }

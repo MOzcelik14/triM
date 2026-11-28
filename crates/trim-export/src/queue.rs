@@ -313,6 +313,43 @@ impl RenderQueue {
 
         (queued, in_prog, completed, failed)
     }
+
+    /// Default persistent path (`render_queue.json`) in the user's config directory.
+    pub fn default_state_path() -> std::path::PathBuf {
+        trim_core::paths::config_dir().join("render_queue.json")
+    }
+
+    /// Persists the render queue job list to disk atomically (temp + rename).
+    pub fn save_to_path(&self, path: &std::path::Path) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Kuyruk dizini oluşturulamadı: {e}"))?;
+        }
+        let json = serde_json::to_string_pretty(&self.jobs)
+            .map_err(|e| format!("Kuyruk JSON serileştirme hatası: {e}"))?;
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, json).map_err(|e| format!("Kuyruk yazılamadı: {e}"))?;
+        std::fs::rename(&tmp, path).map_err(|e| format!("Kuyruk kaydedilemedi: {e}"))?;
+        Ok(())
+    }
+
+    /// Loads persisted render jobs from disk, resetting any interrupted `InProgress` jobs to `Queued`.
+    pub fn load_from_path(&mut self, path: &std::path::Path) -> Result<usize, String> {
+        if !path.exists() {
+            return Ok(0);
+        }
+        let raw = std::fs::read_to_string(path).map_err(|e| format!("Kuyruk okunamadı: {e}"))?;
+        let mut jobs: Vec<RenderJob> = serde_json::from_str(&raw)
+            .map_err(|e| format!("Kuyruk JSON ayrıştırma hatası: {e}"))?;
+        for job in &mut jobs {
+            if matches!(job.status, RenderJobStatus::InProgress { .. }) {
+                job.status = RenderJobStatus::Queued;
+            }
+        }
+        let count = jobs.len();
+        self.jobs = jobs;
+        Ok(count)
+    }
 }
 
 #[cfg(test)]
@@ -353,5 +390,33 @@ mod tests {
         queue.remove_job(&id1);
         assert_eq!(queue.jobs.len(), 1);
         assert_eq!(queue.jobs[0].id, id2);
+    }
+
+    #[test]
+    fn test_render_queue_persistence_resets_in_progress_to_queued() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("render_queue.json");
+
+        let mut q1 = RenderQueue::new();
+        let mut job = RenderJob::new(
+            "Interrupted Job",
+            Project::default(),
+            ExportPreset::default(),
+            "/tmp/out_persist.mp4",
+            None,
+        );
+        job.status = RenderJobStatus::InProgress {
+            progress: 0.42,
+            status_text: "Encoding...".to_string(),
+        };
+        q1.jobs.push(job);
+        q1.save_to_path(&path).expect("save render queue");
+
+        let mut q2 = RenderQueue::new();
+        let loaded = q2.load_from_path(&path).expect("load render queue");
+        assert_eq!(loaded, 1);
+        assert_eq!(q2.jobs.len(), 1);
+        assert_eq!(q2.jobs[0].name, "Interrupted Job");
+        assert_eq!(q2.jobs[0].status, RenderJobStatus::Queued);
     }
 }

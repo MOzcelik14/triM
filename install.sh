@@ -192,6 +192,7 @@ press_enter_to_continue() {
 # ------------------------------------------------------------------------------
 ACTION="menu"
 FORCE_BUILD=false
+ALLOW_UNVERIFIED=false
 TARGET_BIN_DIR="${DEFAULT_BIN_DIR}"
 TARGET_DATA_DIR="${DEFAULT_DATA_DIR}"
 BATCH_MODE=false
@@ -203,6 +204,7 @@ show_help() {
     echo -e "${BOLD}Seçenekler:${RESET}"
     echo -e "  ${AMBER}-y, --yes, --batch${RESET}     Menüsüz otomatik kurulum (CI / hızlı kurulum)"
     echo -e "  ${AMBER}-b, --build${RESET}            GitHub sürümü yerine doğrudan kaynaktan derle"
+    echo -e "  ${AMBER}--allow-unverified${RESET}     SHA256SUMS.txt yoksa doğrulamasız kuruluma izin ver"
     echo -e "  ${AMBER}-u, --uninstall${RESET}        triM. ikilisini, masaüstü kısayollarını ve simgelerini kaldır"
     echo -e "  ${AMBER}--bin-dir <dizin>${RESET}      İkili dosya hedef dizini (varsayılan: ~/.local/bin)"
     echo -e "  ${AMBER}-h, --help${RESET}             Bu yardım mesajını göster"
@@ -223,6 +225,10 @@ while [[ $# -gt 0 ]]; do
         -b|--build)
             FORCE_BUILD=true
             ACTION="install"
+            shift
+            ;;
+        --allow-unverified)
+            ALLOW_UNVERIFIED=true
             shift
             ;;
         -u|--uninstall)
@@ -473,12 +479,23 @@ do_install() {
                                     exit 1
                                 }
                                 log_ok "AppImage SHA-256 bütünlüğü doğrulandı."
+                            elif [[ "$ALLOW_UNVERIFIED" == true ]]; then
+                                log_warn "sha256sum/shasum bulunamadı; --allow-unverified ile devam ediliyor."
+                            else
+                                log_err "sha256sum/shasum bulunamadı; bütünlük doğrulaması yapılamıyor (atlamak için --allow-unverified kullanın)."
+                                exit 1
                             fi
+                        elif [[ "$ALLOW_UNVERIFIED" == true ]]; then
+                            log_warn "SHA256SUMS.txt içinde ${APPIMAGE_NAME} girdisi bulunamadı; --allow-unverified ile devam ediliyor."
                         else
-                            log_warn "SHA256SUMS.txt içinde ${APPIMAGE_NAME} girdisi bulunamadı; devam ediliyor."
+                            log_err "SHA256SUMS.txt içinde ${APPIMAGE_NAME} girdisi bulunamadı; kurulum güvenlik nedeniyle durduruldu."
+                            exit 1
                         fi
+                    elif [[ "$ALLOW_UNVERIFIED" == true ]]; then
+                        log_warn "SHA256SUMS.txt indirilemedi; --allow-unverified ile devam ediliyor."
                     else
-                        log_warn "SHA256SUMS.txt indirilemedi; checksum doğrulaması atlandı."
+                        log_err "SHA256SUMS.txt indirilemedi; kurulum güvenlik nedeniyle durduruldu (atlamak için --allow-unverified kullanın)."
+                        exit 1
                     fi
                     chmod +x "${TEMP_DIR}/triM.AppImage"
                     # Extract the pure ELF binary so user does not need FUSE runtime installed

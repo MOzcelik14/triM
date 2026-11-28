@@ -79,28 +79,28 @@ impl TrimApp {
 
             if let Some(target_id) = seq_to_switch {
                 self.project.switch_sequence(&target_id);
-                self.video_engine.clear_cache();
-                self.audio_mixer.clear_cache();
+                self.media.video_engine.clear_cache();
+                self.playback.audio_mixer.clear_cache();
                 self.canvas_state.selected_clip_pairs.clear();
-                self.current_time = 0.0;
+                self.playback.current_time = 0.0;
             }
 
             if seq_to_create {
                 let next_num = self.project.sequences.len() + 1;
                 let new_name = format!("Sekans {:02}", next_num);
                 self.project.create_sequence(new_name);
-                self.video_engine.clear_cache();
-                self.audio_mixer.clear_cache();
+                self.media.video_engine.clear_cache();
+                self.playback.audio_mixer.clear_cache();
                 self.canvas_state.selected_clip_pairs.clear();
-                self.current_time = 0.0;
+                self.playback.current_time = 0.0;
             }
 
             if let Some(rem_id) = seq_to_remove {
                 self.project.remove_sequence(&rem_id);
-                self.video_engine.clear_cache();
-                self.audio_mixer.clear_cache();
+                self.media.video_engine.clear_cache();
+                self.playback.audio_mixer.clear_cache();
                 self.canvas_state.selected_clip_pairs.clear();
-                self.current_time = 0.0;
+                self.playback.current_time = 0.0;
             }
 
             if let Some(dup_id) = seq_to_duplicate {
@@ -108,7 +108,8 @@ impl TrimApp {
             }
 
             ui.add_space(8.0);
-            let current_tc = seconds_to_timecode(self.current_time, self.project.timeline.fps);
+            let current_tc =
+                seconds_to_timecode(self.playback.current_time, self.project.timeline.fps);
             ui.label(
                 RichText::new(&current_tc)
                     .monospace()
@@ -119,20 +120,20 @@ impl TrimApp {
 
             ui.add_space(10.0);
             let snap_btn = Button::new(RichText::new("Mıknatıs").size(11.0).strong().color(
-                if self.snap_enabled {
+                if self.tools.snap_enabled {
                     Color32::WHITE
                 } else {
                     Color32::from_rgb(0x90, 0x94, 0xa6)
                 },
             ))
-            .fill(if self.snap_enabled {
+            .fill(if self.tools.snap_enabled {
                 Color32::from_rgb(0x28, 0x5a, 0x9e)
             } else {
                 Color32::from_rgb(0x20, 0x20, 0x26)
             })
             .stroke(Stroke::new(
                 1.0_f32,
-                if self.snap_enabled {
+                if self.tools.snap_enabled {
                     Color32::from_rgb(0x4a, 0x8a, 0xe8)
                 } else {
                     Color32::from_rgb(0x30, 0x32, 0x3e)
@@ -179,24 +180,24 @@ impl TrimApp {
                 .on_hover_text("Zaman Çizgisine Yeni Başlık Klibi Ekle (Title Clip Modal)")
                 .clicked()
             {
-                self.title_dialog.open();
+                self.dialogs.title_dialog.open();
             }
 
             ui.add_space(6.0);
             let proxy_btn = Button::new(
-                RichText::new(if self.use_proxies {
+                RichText::new(if self.media.use_proxies {
                     "◈ Proxy: Açık"
                 } else {
                     "◈ Proxy: Kapalı"
                 })
                 .size(11.0)
-                .color(if self.use_proxies {
+                .color(if self.media.use_proxies {
                     Color32::from_rgb(0x38, 0xa0, 0xf0)
                 } else {
                     Color32::from_rgb(0x70, 0x70, 0x80)
                 }),
             )
-            .fill(if self.use_proxies {
+            .fill(if self.media.use_proxies {
                 Color32::from_rgb(0x18, 0x28, 0x3e)
             } else {
                 Color32::from_rgb(0x20, 0x20, 0x26)
@@ -224,7 +225,7 @@ impl TrimApp {
                 self.open_screen_record_dialog();
             }
 
-            if let Some(ref vo) = self.active_voiceover {
+            if let Some(ref vo) = self.media.active_voiceover {
                 let vo_dur = vo.recorder.elapsed_seconds();
                 let vo_rec_btn = Button::new(
                     RichText::new(format!("● SES KAYDI: {:.1}s [⏹ Durdur]", vo_dur))

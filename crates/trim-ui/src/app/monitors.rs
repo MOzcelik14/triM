@@ -12,14 +12,14 @@ use super::TrimApp;
 
 impl TrimApp {
     pub fn create_subclip_from_source_monitor(&mut self) {
-        let Some(media_id) = self.source_state.media_id.clone() else {
+        let Some(media_id) = self.monitor.source_state.media_id.clone() else {
             return;
         };
         let Some(media) = self.project.get_media(&media_id).cloned() else {
             return;
         };
-        let sin = self.source_state.mark_in.unwrap_or(0.0);
-        let sout = self.source_state.mark_out.unwrap_or(media.duration);
+        let sin = self.monitor.source_state.mark_in.unwrap_or(0.0);
+        let sout = self.monitor.source_state.mark_out.unwrap_or(media.duration);
         let idx = self.project.subclips.len() + 1;
         let name = format!("{} [Alt-Klip {}]", media.name, idx);
         if let Some(sub) = self
@@ -41,6 +41,7 @@ impl TrimApp {
 
     pub fn render_source_monitor(&mut self, source_ui: &mut egui::Ui) {
         let source_media = self
+            .monitor
             .source_state
             .media_id
             .as_ref()
@@ -52,7 +53,7 @@ impl TrimApp {
         let source_fps = source_media
             .map(|m| m.fps)
             .unwrap_or(self.project.timeline.fps);
-        let source_tc = seconds_to_timecode(self.source_state.current_time, source_fps);
+        let source_tc = seconds_to_timecode(self.monitor.source_state.current_time, source_fps);
         let source_dur_tc = seconds_to_timecode(source_dur, source_fps);
         let source_aspect = source_media
             .map(|m| (m.width as f32 / m.height.max(1) as f32).max(0.1))
@@ -63,16 +64,16 @@ impl TrimApp {
         let (_s_resp, s_act) = MonitorWidget::new(
             MonitorMode::Source,
             source_title,
-            self.source_state.texture.as_ref(),
+            self.monitor.source_state.texture.as_ref(),
             source_media.is_some(),
             source_aspect,
-            self.source_state.current_time,
+            self.monitor.source_state.current_time,
             source_dur,
-            self.source_state.mark_in,
-            self.source_state.mark_out,
+            self.monitor.source_state.mark_in,
+            self.monitor.source_state.mark_out,
             &source_tc,
             &source_dur_tc,
-            self.source_state.is_playing,
+            self.monitor.source_state.is_playing,
             1.0,
             source_label.as_deref(),
             false,
@@ -83,84 +84,98 @@ impl TrimApp {
             match act {
                 MonitorAction::ImportMedia => self.prompt_import_media(),
                 MonitorAction::TogglePlay => {
-                    if self.source_state.is_playing {
-                        self.source_state.is_playing = false;
-                        self.source_state.clock_start = None;
-                        self.audio_player.stop();
-                        self.vu_state.reset();
+                    if self.monitor.source_state.is_playing {
+                        self.monitor.source_state.is_playing = false;
+                        self.monitor.source_state.clock_start = None;
+                        self.playback.audio_player.stop();
+                        self.playback.vu_state.reset();
                     } else {
-                        if self.is_playing {
+                        if self.playback.is_playing {
                             self.pause();
                         }
-                        if source_dur > 0.0 && self.source_state.current_time >= source_dur {
-                            self.source_state.current_time =
-                                self.source_state.mark_in.unwrap_or(0.0);
+                        if source_dur > 0.0 && self.monitor.source_state.current_time >= source_dur
+                        {
+                            self.monitor.source_state.current_time =
+                                self.monitor.source_state.mark_in.unwrap_or(0.0);
                         }
-                        self.source_state.is_playing = true;
-                        self.source_state.clock_start = Some(Instant::now());
-                        self.source_state.clock_start_time = self.source_state.current_time;
-                        self.audio_player.prepare();
+                        self.monitor.source_state.is_playing = true;
+                        self.monitor.source_state.clock_start = Some(Instant::now());
+                        self.monitor.source_state.clock_start_time =
+                            self.monitor.source_state.current_time;
+                        self.playback.audio_player.prepare();
                     }
                 }
                 MonitorAction::StepFrame(d) => {
-                    if self.source_state.is_playing {
-                        self.source_state.is_playing = false;
-                        self.source_state.clock_start = None;
-                        self.audio_player.stop();
-                        self.vu_state.reset();
+                    if self.monitor.source_state.is_playing {
+                        self.monitor.source_state.is_playing = false;
+                        self.monitor.source_state.clock_start = None;
+                        self.playback.audio_player.stop();
+                        self.playback.vu_state.reset();
                     }
-                    let new_t = (self.source_state.current_time + (d as f64 / source_fps.max(1.0)))
-                        .clamp(0.0, source_dur);
-                    self.source_state.current_time = new_t;
+                    let new_t = (self.monitor.source_state.current_time
+                        + (d as f64 / source_fps.max(1.0)))
+                    .clamp(0.0, source_dur);
+                    self.monitor.source_state.current_time = new_t;
                 }
                 MonitorAction::MarkIn => {
-                    self.source_state.mark_in = Some(self.source_state.current_time);
+                    self.monitor.source_state.mark_in =
+                        Some(self.monitor.source_state.current_time);
                     self.status_message = match self.lang() {
                         crate::i18n::Language::Turkish => {
-                            format!("Kaynak Giriş: {:.2}s", self.source_state.current_time)
+                            format!(
+                                "Kaynak Giriş: {:.2}s",
+                                self.monitor.source_state.current_time
+                            )
                         }
                         crate::i18n::Language::English => {
-                            format!("Source In: {:.2}s", self.source_state.current_time)
+                            format!("Source In: {:.2}s", self.monitor.source_state.current_time)
                         }
                     };
                 }
                 MonitorAction::MarkOut => {
-                    self.source_state.mark_out = Some(self.source_state.current_time);
+                    self.monitor.source_state.mark_out =
+                        Some(self.monitor.source_state.current_time);
                     self.status_message = match self.lang() {
                         crate::i18n::Language::Turkish => {
-                            format!("Kaynak Çıkış: {:.2}s", self.source_state.current_time)
+                            format!(
+                                "Kaynak Çıkış: {:.2}s",
+                                self.monitor.source_state.current_time
+                            )
                         }
                         crate::i18n::Language::English => {
-                            format!("Source Out: {:.2}s", self.source_state.current_time)
+                            format!("Source Out: {:.2}s", self.monitor.source_state.current_time)
                         }
                     };
                 }
                 MonitorAction::GoToIn => {
-                    self.source_state.current_time = self.source_state.mark_in.unwrap_or(0.0);
-                    if self.source_state.is_playing {
-                        self.source_state.clock_start = Some(Instant::now());
-                        self.source_state.clock_start_time = self.source_state.current_time;
+                    self.monitor.source_state.current_time =
+                        self.monitor.source_state.mark_in.unwrap_or(0.0);
+                    if self.monitor.source_state.is_playing {
+                        self.monitor.source_state.clock_start = Some(Instant::now());
+                        self.monitor.source_state.clock_start_time =
+                            self.monitor.source_state.current_time;
                     }
                 }
                 MonitorAction::GoToOut => {
-                    self.source_state.current_time =
-                        self.source_state.mark_out.unwrap_or(source_dur);
-                    if self.source_state.is_playing {
-                        self.source_state.clock_start = Some(Instant::now());
-                        self.source_state.clock_start_time = self.source_state.current_time;
+                    self.monitor.source_state.current_time =
+                        self.monitor.source_state.mark_out.unwrap_or(source_dur);
+                    if self.monitor.source_state.is_playing {
+                        self.monitor.source_state.clock_start = Some(Instant::now());
+                        self.monitor.source_state.clock_start_time =
+                            self.monitor.source_state.current_time;
                     }
                 }
                 MonitorAction::InsertToTimeline => self.insert_source_to_timeline(false),
                 MonitorAction::OverwriteToTimeline => self.insert_source_to_timeline(true),
                 MonitorAction::CreateSubclip => self.create_subclip_from_source_monitor(),
                 MonitorAction::Seek(t) => {
-                    if self.source_state.is_playing {
-                        self.source_state.is_playing = false;
-                        self.source_state.clock_start = None;
-                        self.audio_player.stop();
-                        self.vu_state.reset();
+                    if self.monitor.source_state.is_playing {
+                        self.monitor.source_state.is_playing = false;
+                        self.monitor.source_state.clock_start = None;
+                        self.playback.audio_player.stop();
+                        self.playback.vu_state.reset();
                     }
-                    self.source_state.current_time = t.clamp(0.0, source_dur);
+                    self.monitor.source_state.current_time = t.clamp(0.0, source_dur);
                 }
                 _ => {}
             }
@@ -173,10 +188,10 @@ impl TrimApp {
             if !track.visible {
                 continue;
             }
-            if let Some(c) = track.find_clip_at(self.current_time) {
+            if let Some(c) = track.find_clip_at(self.playback.current_time) {
                 if let Some(txt) = &c.text_overlay {
-                    let dt = self.current_time - c.timeline_in;
-                    let rem = c.timeline_out - self.current_time;
+                    let dt = self.playback.current_time - c.timeline_in;
+                    let rem = c.timeline_out - self.playback.current_time;
                     let mut a = c.opacity as f32;
                     if c.fade_in > 0.0 && dt < c.fade_in {
                         a *= (dt / c.fade_in) as f32;
@@ -244,7 +259,7 @@ impl TrimApp {
             .any(|t| !t.clips.is_empty());
         let prog_dur = self.project.timeline.duration();
         let prog_fps = self.project.timeline.fps;
-        let prog_tc = seconds_to_timecode(self.current_time, prog_fps);
+        let prog_tc = seconds_to_timecode(self.playback.current_time, prog_fps);
         let prog_dur_tc = seconds_to_timecode(prog_dur, prog_fps);
         let prog_aspect =
             (self.project.timeline.width as f32 / self.project.timeline.height as f32).max(0.1);
@@ -252,7 +267,7 @@ impl TrimApp {
         let top_clip = self
             .project
             .timeline
-            .get_top_visible_video_clip_at(self.current_time);
+            .get_top_visible_video_clip_at(self.playback.current_time);
         let prog_label = top_clip
             .and_then(|(_, c)| self.project.get_media(&c.media_id))
             .map(|m| format!("{}x{} • {:.0}fps", m.width, m.height, m.fps));
@@ -286,16 +301,17 @@ impl TrimApp {
                         .map(|c| crate::monitor::ActiveMaskOverlay {
                             clip_id: c.id.clone(),
                             masks: c.masks.clone(),
-                            clip_time: (self.current_time - c.timeline_in).max(0.0),
+                            clip_time: (self.playback.current_time - c.timeline_in).max(0.0),
                         })
                 });
 
         let ref_tex = self
+            .monitor
             .scopes_panel
             .active_reference_still
-            .and_then(|i| self.scopes_panel.reference_stills.get(i))
+            .and_then(|i| self.monitor.scopes_panel.reference_stills.get(i))
             .and_then(|s| s.tex.as_ref())
-            .or(self.source_state.texture.as_ref());
+            .or(self.monitor.source_state.texture.as_ref());
 
         let mut v_tracks = self.project.timeline.get_video_tracks();
         v_tracks.reverse();
@@ -303,7 +319,7 @@ impl TrimApp {
             v_tracks
                 .get(idx)
                 .and_then(|tr| {
-                    tr.find_clip_at(self.current_time)
+                    tr.find_clip_at(self.playback.current_time)
                         .map(|cl| format!("{} • {}", tr.name, cl.name))
                         .or_else(|| Some(format!("{} (Boş)", tr.name)))
                 })
@@ -313,34 +329,38 @@ impl TrimApp {
         let (_p_resp, p_act) = MonitorWidget::new(
             MonitorMode::Program,
             "Sekans 01",
-            self.monitor_texture.as_ref(),
+            self.monitor.monitor_texture.as_ref(),
             has_clips,
             prog_aspect,
-            self.current_time,
+            self.playback.current_time,
             prog_dur,
             None,
             None,
             &prog_tc,
             &prog_dur_tc,
-            self.is_playing,
-            self.playback_speed,
+            self.playback.is_playing,
+            self.playback.playback_speed,
             prog_label.as_deref(),
-            self.video_engine.is_decoding_seek,
+            self.media.video_engine.is_decoding_seek,
         )
-        .custom_texture_id(self.monitor_gpu_texture_id)
-        .safe_zones(self.show_safe_zones)
+        .custom_texture_id(self.monitor.monitor_gpu_texture_id)
+        .safe_zones(self.monitor.show_safe_zones)
         .aspect_ratio_preset(Some(self.project.timeline.aspect_ratio()))
         .text_overlays(active_text_overlays)
-        .active_tool(self.current_edit_tool)
+        .active_tool(self.tools.current_edit_tool)
         .inline_text_edit(selected_text_content)
         .mask_overlay(active_mask_overlay)
-        .split_wipe(self.split_wipe_enabled, self.split_wipe_pos, ref_tex)
+        .split_wipe(
+            self.monitor.split_wipe_enabled,
+            self.monitor.split_wipe_pos,
+            ref_tex,
+        )
         .multicam(
-            self.multicam_mode,
-            self.multicam_active_angle,
+            self.monitor.multicam_mode,
+            self.monitor.multicam_active_angle,
             multicam_labels.to_vec(),
         )
-        .wb_eyedropper(self.wb_eyedropper_target.is_some())
+        .wb_eyedropper(self.monitor.wb_eyedropper_target.is_some())
         .show(prog_ui);
 
         if let Some(act) = p_act {
@@ -348,7 +368,8 @@ impl TrimApp {
                 MonitorAction::NewProject => {
                     if self.has_unsaved_changes() {
                         let name = self.project.settings.name.clone();
-                        self.close_confirm_dialog
+                        self.dialogs
+                            .close_confirm_dialog
                             .prompt(PendingCloseAction::NewProject, name);
                     } else {
                         self.reset_to_new_project();
@@ -357,7 +378,8 @@ impl TrimApp {
                 MonitorAction::OpenProject => {
                     if self.has_unsaved_changes() {
                         let name = self.project.settings.name.clone();
-                        self.close_confirm_dialog
+                        self.dialogs
+                            .close_confirm_dialog
                             .prompt(PendingCloseAction::OpenProject, name);
                     } else {
                         self.open_project_dialog();
@@ -367,26 +389,30 @@ impl TrimApp {
                 MonitorAction::TogglePlay => self.toggle_play(),
                 MonitorAction::StepFrame(d) => self.step_frame(d),
                 MonitorAction::MarkIn => {
-                    self.project.timeline.set_in_point(self.current_time);
+                    self.project
+                        .timeline
+                        .set_in_point(self.playback.current_time);
                     self.project.mark_dirty();
                     self.status_message = match self.lang() {
                         crate::i18n::Language::Turkish => {
-                            format!("Giriş Noktası (In): {:.2}s", self.current_time)
+                            format!("Giriş Noktası (In): {:.2}s", self.playback.current_time)
                         }
                         crate::i18n::Language::English => {
-                            format!("In Point: {:.2}s", self.current_time)
+                            format!("In Point: {:.2}s", self.playback.current_time)
                         }
                     };
                 }
                 MonitorAction::MarkOut => {
-                    self.project.timeline.set_out_point(self.current_time);
+                    self.project
+                        .timeline
+                        .set_out_point(self.playback.current_time);
                     self.project.mark_dirty();
                     self.status_message = match self.lang() {
                         crate::i18n::Language::Turkish => {
-                            format!("Çıkış Noktası (Out): {:.2}s", self.current_time)
+                            format!("Çıkış Noktası (Out): {:.2}s", self.playback.current_time)
                         }
                         crate::i18n::Language::English => {
-                            format!("Out Point: {:.2}s", self.current_time)
+                            format!("Out Point: {:.2}s", self.playback.current_time)
                         }
                     };
                 }
@@ -401,7 +427,7 @@ impl TrimApp {
                 MonitorAction::ExportFrame => self.export_current_frame(),
                 MonitorAction::Seek(t) => self.seek(t),
                 MonitorAction::ToggleSafeZones => {
-                    self.show_safe_zones = !self.show_safe_zones;
+                    self.monitor.show_safe_zones = !self.monitor.show_safe_zones;
                 }
                 MonitorAction::SetAspectRatio(r) => {
                     self.project.timeline.set_aspect_ratio(r);
@@ -420,13 +446,13 @@ impl TrimApp {
                     self.handle_monitor_text_click(pos_x, pos_y);
                 }
                 MonitorAction::TextPositionDrag { pos_x, pos_y } => {
-                    if self.monitor_text_drag_orig_pos.is_none() {
+                    if self.monitor.monitor_text_drag_orig_pos.is_none() {
                         if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first()
                         {
                             if let Some(tr) = self.project.timeline.get_track_by_id(tr_id) {
                                 if let Some(cl) = tr.get_clip_by_id(cl_id) {
                                     if let Some(ref txt) = cl.text_overlay {
-                                        self.monitor_text_drag_orig_pos = Some((
+                                        self.monitor.monitor_text_drag_orig_pos = Some((
                                             tr_id.clone(),
                                             cl_id.clone(),
                                             (txt.pos_x, txt.pos_y),
@@ -439,7 +465,9 @@ impl TrimApp {
                     self.handle_monitor_text_drag(pos_x, pos_y);
                 }
                 MonitorAction::TextPositionDragEnded => {
-                    if let Some((tr_id, cl_id, orig_pos)) = self.monitor_text_drag_orig_pos.take() {
+                    if let Some((tr_id, cl_id, orig_pos)) =
+                        self.monitor.monitor_text_drag_orig_pos.take()
+                    {
                         if let Some(tr) = self.project.timeline.get_track_by_id(&tr_id) {
                             if let Some(cl) = tr.get_clip_by_id(&cl_id) {
                                 if let Some(ref txt) = cl.text_overlay {
@@ -466,12 +494,12 @@ impl TrimApp {
                 }
                 MonitorAction::TextDoubleClick { pos_x, pos_y } => {
                     self.handle_monitor_text_select(pos_x, pos_y);
-                    self.current_edit_tool = EditTool::Type;
+                    self.tools.current_edit_tool = EditTool::Type;
                     self.canvas_state.active_tool = EditTool::Type;
                     self.set_status("Metin Düzenleme Modu (T)", "Text Edit Mode (T)");
                 }
                 MonitorAction::ToggleFullscreen => {
-                    self.is_monitor_fullscreen = !self.is_monitor_fullscreen;
+                    self.monitor.is_monitor_fullscreen = !self.monitor.is_monitor_fullscreen;
                 }
                 MonitorAction::MasksEdited {
                     clip_id,
@@ -500,19 +528,19 @@ impl TrimApp {
                             cl.masks = new_masks;
                         }
                         self.project.mark_dirty();
-                        self.last_rendered_monitor_frame = None;
-                        self.video_engine.last_rendered_frame = None;
-                        self.scopes_panel.mark_dirty();
+                        self.monitor.last_rendered_monitor_frame = None;
+                        self.media.video_engine.last_rendered_frame = None;
+                        self.monitor.scopes_panel.mark_dirty();
                     }
                 }
                 MonitorAction::TextContentEdited(content) => {
-                    if self.monitor_text_edit_orig_content.is_none() {
+                    if self.monitor.monitor_text_edit_orig_content.is_none() {
                         if let Some((tr_id, cl_id)) = self.canvas_state.selected_clip_pairs.first()
                         {
                             if let Some(tr) = self.project.timeline.get_track_by_id(tr_id) {
                                 if let Some(cl) = tr.get_clip_by_id(cl_id) {
                                     if let Some(ref txt) = cl.text_overlay {
-                                        self.monitor_text_edit_orig_content = Some((
+                                        self.monitor.monitor_text_edit_orig_content = Some((
                                             tr_id.clone(),
                                             cl_id.clone(),
                                             txt.content.clone(),
@@ -527,7 +555,7 @@ impl TrimApp {
                 }
                 MonitorAction::TextEditingCompleted => {
                     if let Some((tr_id, cl_id, orig_content, orig_name)) =
-                        self.monitor_text_edit_orig_content.take()
+                        self.monitor.monitor_text_edit_orig_content.take()
                     {
                         if let Some(tr) = self.project.timeline.get_track_by_id(&tr_id) {
                             if let Some(cl) = tr.get_clip_by_id(&cl_id) {
@@ -553,8 +581,8 @@ impl TrimApp {
                     }
                 }
                 MonitorAction::ToggleSplitWipe => {
-                    self.split_wipe_enabled = !self.split_wipe_enabled;
-                    if self.split_wipe_enabled {
+                    self.monitor.split_wipe_enabled = !self.monitor.split_wipe_enabled;
+                    if self.monitor.split_wipe_enabled {
                         self.set_status(
                             "◧ Bölünmüş Ekran (Before/After Wipe) Açık",
                             "◧ Split Screen (Before/After Wipe) On",
@@ -567,11 +595,11 @@ impl TrimApp {
                     }
                 }
                 MonitorAction::SplitWipePosChanged(pos) => {
-                    self.split_wipe_pos = pos.clamp(0.05, 0.95);
+                    self.monitor.split_wipe_pos = pos.clamp(0.05, 0.95);
                 }
                 MonitorAction::ToggleMulticamView => {
-                    self.multicam_mode = !self.multicam_mode;
-                    if self.multicam_mode {
+                    self.monitor.multicam_mode = !self.monitor.multicam_mode;
+                    if self.monitor.multicam_mode {
                         self.set_status(
                             "⊞ Multicam 2x2 Modu Açık (1–4 tuşlarıyla kamera açısı kesin)",
                             "⊞ Multicam 2x2 Mode On (use keys 1–4 to cut angles)",
@@ -583,12 +611,14 @@ impl TrimApp {
                 MonitorAction::MulticamAngleSelected(angle) => {
                     self.handle_multicam_angle_switch(angle);
                 }
-                MonitorAction::HoverPixelSample { x_norm, y_norm } if self.scopes_panel.is_open => {
-                    if let Some((rgba, rw, rh)) = &self.last_scope_rgba {
-                        self.scopes_panel.active_pixel_sample =
+                MonitorAction::HoverPixelSample { x_norm, y_norm }
+                    if self.monitor.scopes_panel.is_open =>
+                {
+                    if let Some((rgba, rw, rh)) = &self.monitor.last_scope_rgba {
+                        self.monitor.scopes_panel.active_pixel_sample =
                             trim_core::scopes::sample_pixel_rgba(rgba, *rw, *rh, x_norm, y_norm);
-                    } else if let Some(frame) = &self.last_rendered_monitor_frame {
-                        self.scopes_panel.active_pixel_sample =
+                    } else if let Some(frame) = &self.monitor.last_rendered_monitor_frame {
+                        self.monitor.scopes_panel.active_pixel_sample =
                             trim_core::scopes::sample_pixel_rgba(
                                 frame.as_raw(),
                                 frame.width(),
@@ -599,14 +629,14 @@ impl TrimApp {
                     }
                 }
                 MonitorAction::CancelWbEyedropper => {
-                    self.wb_eyedropper_target = None;
+                    self.monitor.wb_eyedropper_target = None;
                     self.set_status("WB Damlalığı iptal edildi.", "WB Eyedropper cancelled.");
                 }
                 MonitorAction::PickWhiteBalancePixel { x_norm, y_norm } => {
-                    if let Some((track_id, clip_id)) = self.wb_eyedropper_target.take() {
-                        let sample = if let Some((rgba, rw, rh)) = &self.last_scope_rgba {
+                    if let Some((track_id, clip_id)) = self.monitor.wb_eyedropper_target.take() {
+                        let sample = if let Some((rgba, rw, rh)) = &self.monitor.last_scope_rgba {
                             trim_core::scopes::sample_pixel_rgba(rgba, *rw, *rh, x_norm, y_norm)
-                        } else if let Some(frame) = &self.last_rendered_monitor_frame {
+                        } else if let Some(frame) = &self.monitor.last_rendered_monitor_frame {
                             trim_core::scopes::sample_pixel_rgba(
                                 frame.as_raw(),
                                 frame.width(),
@@ -638,9 +668,9 @@ impl TrimApp {
                                 ));
                                 let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                 self.project.mark_dirty();
-                                self.last_rendered_monitor_frame = None;
-                                self.video_engine.last_rendered_frame = None;
-                                self.scopes_panel.mark_dirty();
+                                self.monitor.last_rendered_monitor_frame = None;
+                                self.media.video_engine.last_rendered_frame = None;
+                                self.monitor.scopes_panel.mark_dirty();
                                 self.status_message = match self.lang() {
                                     crate::i18n::Language::Turkish => format!(
                                         "🎯 WB Damlalığı uygulandı (RGB: {},{},{} → Sıcaklık: {:+.1}, Ton: {:+.1})",

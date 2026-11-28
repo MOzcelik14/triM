@@ -758,6 +758,17 @@ impl TimelineExporter {
         }
         cmd.extend(["-r".into(), format!("{}", out_fps)]);
 
+        if preset.preserve_metadata {
+            cmd.extend([
+                "-map_metadata".into(),
+                "0".into(),
+                "-metadata".into(),
+                format!("title={}", project.settings.name),
+                "-metadata".into(),
+                "encoder=triM".into(),
+            ]);
+        }
+
         cmd.extend(vec![
             "-t".into(),
             format!("{:.6}", eff_duration),

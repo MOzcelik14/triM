@@ -860,6 +860,70 @@ struct HonestBenchmarkReport {
     unpaced_decode: UnpacedSummary,
     seek_comparison: SeekComparisonSummary,
     compositing: Vec<CompositingSummary>,
+    decode_4k_ms: StatsSummary,
+    audio_mixer_6ch_ms: StatsSummary,
+}
+
+fn bench_4k_decode(temp_dir: &Path) -> StatsSummary {
+    let path_4k = temp_dir.join("bench_4k_3840x2160.mp4");
+    if !path_4k.exists() {
+        let mut cmd = ffmpeg_cmd();
+        let _ = cmd
+            .args([
+                "-v",
+                "error",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=3840x2160:rate=30:duration=2",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-pix_fmt",
+                "yuv420p",
+            ])
+            .arg(&path_4k)
+            .output();
+    }
+    let mut times = Vec::with_capacity(3);
+    for i in 0..3 {
+        let t = 0.2 + (i as f64) * 0.5;
+        let t0 = Instant::now();
+        let _ = decode_frame_raw_sized(&path_4k, t, 1280, 720);
+        times.push(t0.elapsed().as_secs_f64() * 1000.0);
+    }
+    summarize(&times)
+}
+
+fn bench_audio_mixer_6ch() -> StatsSummary {
+    let mut mixer = trim_media::audio::AudioMixer::new();
+    let mut project = Project::default();
+    let sample_count = trim_media::audio::SAMPLE_RATE as usize * 5;
+    for ch in 0..6 {
+        let media_id = format!("aud_m_{}", ch);
+        let path_str = format!("/tmp/bench_aud_{}.wav", ch);
+        mixer.insert_cached_pcm(&path_str, vec![[1200, -1200]; sample_count]);
+        let mut item = MediaItem::new(&path_str);
+        item.name = format!("Track {}", ch);
+        item.media_type = MediaType::Audio;
+        item.duration = 5.0;
+        project.media_pool.insert(media_id.clone(), item);
+        let mut track = Track::new(format!("A{}", ch + 1), TrackType::Audio);
+        let mut clip = Clip::new(&media_id, 0.0, 5.0);
+        clip.volume = 0.7;
+        track.add_clip(clip);
+        project.timeline.tracks.push(track);
+    }
+    let mut times = Vec::with_capacity(10);
+    for i in 0..10 {
+        let s = (i as f64) * 0.1;
+        let t0 = Instant::now();
+        let _ = mixer.mix_timeline_chunk(&project, s, s + 0.1);
+        times.push(t0.elapsed().as_secs_f64() * 1000.0);
+    }
+    summarize(&times)
 }
 
 fn generate_markdown(r: &HonestBenchmarkReport) -> String {
@@ -1121,6 +1185,20 @@ fn main() {
         );
     }
 
+    println!("[6/7] 4K (3840x2160) decode gecikmesi ölçülüyor (3 tekrar)...");
+    let decode_4k_ms = bench_4k_decode(temp_dir.path());
+    println!(
+        "  -> 4K decode medyan: {:.2} ms (p95 {:.2} ms)",
+        decode_4k_ms.median, decode_4k_ms.p95
+    );
+
+    println!("[7/7] 6 kanallı AudioMixer DSP yükü ölçülüyor (10x 100ms chunk)...");
+    let audio_mixer_6ch_ms = bench_audio_mixer_6ch();
+    println!(
+        "  -> 6ch AudioMixer medyan: {:.3} ms/chunk (p95 {:.3} ms)",
+        audio_mixer_6ch_ms.median, audio_mixer_6ch_ms.p95
+    );
+
     let report = HonestBenchmarkReport {
         timestamp: timestamp_now(),
         system,
@@ -1130,6 +1208,8 @@ fn main() {
         unpaced_decode,
         seek_comparison,
         compositing,
+        decode_4k_ms,
+        audio_mixer_6ch_ms,
     };
 
     let docs_dir = PathBuf::from("docs/benchmarks");

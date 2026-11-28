@@ -34,22 +34,41 @@ impl EditTool {
     }
 
     pub fn tooltip(&self) -> &'static str {
-        match self {
-            EditTool::Select => "Seçim Aracı (V)\nKlipleri seçin, taşıyın ve kırpın",
-            EditTool::TrackSelect => "İleri İz Seçme Aracı (A)\nTıklanan klip ve sonrasındaki tüm klipleri seçin",
-            EditTool::Ripple => "Dalgalanma Düzenleme (B)\nKlipleri diğer kliplerin yerini kaydırarak düzenleyin",
-            EditTool::Roll => "Yuvarlama Düzenleme (Roll - R)\nİki bitişik klibin ortak kesim noktasını birlikte kaydırın",
-            EditTool::Razor => "Jilet / Kesme Aracı (C)\nKlipleri tıkladığınız noktadan ikiye bölün",
-            EditTool::Slip => "Kaydırma Aracı (Slip - Y)\nKlibin zaman çizgisindeki yeri sabitken kaynak içeriğini kaydırın",
-            EditTool::Slide => "Sürükleme Düzenleme (Slide - U)\nKlibi komşuları arasında kaydırarak komşu kesimlerini ayarlayın",
-            EditTool::Pen => "Kalem / Anahtar Kare Aracı (P)\nKlip özelliklerine anahtar kare noktaları ekleyin",
-            EditTool::Hand => "El Aracı (H)\nZaman çizgisinde tutup sürükleyerek gezinin",
-            EditTool::Type => "Metin Aracı (T)\nZaman çizgisine doğrudan başlık/yazı ekleyin",
+        self.tooltip_localized(crate::i18n::Language::Turkish)
+    }
+
+    pub fn tooltip_localized(&self, lang: crate::i18n::Language) -> &'static str {
+        use crate::i18n::Language;
+        match (lang, self) {
+            (Language::Turkish, EditTool::Select) => "Seçim Aracı (V)\nKlipleri seçin, taşıyın ve kırpın",
+            (Language::English, EditTool::Select) => "Selection Tool (V)\nSelect, move, and trim clips",
+            (Language::Turkish, EditTool::TrackSelect) => "İleri İz Seçme Aracı (A)\nTıklanan klip ve sonrasındaki tüm klipleri seçin",
+            (Language::English, EditTool::TrackSelect) => "Track Select Forward Tool (A)\nSelect the clicked clip and all following clips",
+            (Language::Turkish, EditTool::Ripple) => "Dalgalanma Düzenleme (B)\nKlipleri diğer kliplerin yerini kaydırarak düzenleyin",
+            (Language::English, EditTool::Ripple) => "Ripple Edit Tool (B)\nTrim clips while shifting subsequent clips",
+            (Language::Turkish, EditTool::Roll) => "Yuvarlama Düzenleme (Roll - R)\nİki bitişik klibin ortak kesim noktasını birlikte kaydırın",
+            (Language::English, EditTool::Roll) => "Rolling Edit Tool (R)\nShift the shared cut point between two adjacent clips",
+            (Language::Turkish, EditTool::Razor) => "Jilet / Kesme Aracı (C)\nKlipleri tıkladığınız noktadan ikiye bölün",
+            (Language::English, EditTool::Razor) => "Razor / Cut Tool (C)\nSplit clips at the clicked position",
+            (Language::Turkish, EditTool::Slip) => "Kaydırma Aracı (Slip - Y)\nKlibin zaman çizgisindeki yeri sabitken kaynak içeriğini kaydırın",
+            (Language::English, EditTool::Slip) => "Slip Tool (Y)\nShift source media in/out without moving timeline position",
+            (Language::Turkish, EditTool::Slide) => "Sürükleme Düzenleme (Slide - U)\nKlibi komşuları arasında kaydırarak komşu kesimlerini ayarlayın",
+            (Language::English, EditTool::Slide) => "Slide Tool (U)\nSlide clip between neighbors while adjusting adjacent cuts",
+            (Language::Turkish, EditTool::Pen) => "Kalem / Anahtar Kare Aracı (P)\nKlip özelliklerine anahtar kare noktaları ekleyin",
+            (Language::English, EditTool::Pen) => "Pen / Keyframe Tool (P)\nAdd keyframe points to clip properties",
+            (Language::Turkish, EditTool::Hand) => "El Aracı (H)\nZaman çizgisinde tutup sürükleyerek gezinin",
+            (Language::English, EditTool::Hand) => "Hand Tool (H)\nPan across the timeline by dragging",
+            (Language::Turkish, EditTool::Type) => "Metin Aracı (T)\nZaman çizgisine doğrudan başlık/yazı ekleyin",
+            (Language::English, EditTool::Type) => "Type Tool (T)\nAdd title/text directly onto the timeline",
         }
     }
 }
 
-pub fn render_vertical_toolbar(ui: &mut Ui, current_tool: &mut EditTool) {
+pub fn render_vertical_toolbar(
+    ui: &mut Ui,
+    current_tool: &mut EditTool,
+    lang: crate::i18n::Language,
+) {
     ui.vertical_centered(|ui| {
         ui.add_space(6.0);
 
@@ -67,7 +86,7 @@ pub fn render_vertical_toolbar(ui: &mut Ui, current_tool: &mut EditTool) {
         ];
 
         for tool in tools {
-            let tooltip = tool.tooltip();
+            let tooltip = tool.tooltip_localized(lang);
             let is_selected = *current_tool == tool;
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(32.0, 32.0), egui::Sense::click());
             if resp.clicked() {

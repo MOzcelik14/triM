@@ -21,6 +21,8 @@
 | **Yazılım Kompozisyonu (640×360, Cache-Miss)** | 1 Video Track | 2.06 ms/kare | 2.53 ms | — | — |
 | **Yazılım Kompozisyonu (640×360, Cache-Miss)** | 3 Video Track | 9.04 ms/kare | 9.54 ms | — | — |
 | **Yazılım Kompozisyonu (640×360, Cache-Miss)** | 6 Video Track | 15.80 ms/kare | 16.85 ms | — | — |
+| **4K Decode (`2026.11.2`, 3840×2160 → 720p)** | Tek Kare Decode (`decode_frame_raw_sized`) | 585.24 ms | 640.84 ms | — | — |
+| **Ses Mikseri (`2026.11.2`, 6 Kanal)** | `AudioMixer::mix_timeline_chunk` (100ms) | 0.429 ms/chunk | 0.960 ms | — | — |
 
 Ayrıntılı çıktı ve P0-2 önce/sonra tolerans karşılaştırması için bkz. [`2026-11-22_honest_benchmark.md`](./2026-11-22_honest_benchmark.md) ve [`2026-11-22_honest_benchmark.json`](./2026-11-22_honest_benchmark.json).
 

@@ -122,8 +122,13 @@ impl TrimApp {
             CanvasAction::PromptSpeed(tr_id, cl_id) => {
                 if let Some(tr) = self.project.timeline.get_track_by_id(&tr_id) {
                     if let Some(cl) = tr.get_clip_by_id(&cl_id) {
-                        self.speed_dialog
-                            .open(tr_id, cl_id, cl.speed, cl.reverse, cl.duration());
+                        self.dialogs.speed_dialog.open(
+                            tr_id,
+                            cl_id,
+                            cl.speed,
+                            cl.reverse,
+                            cl.duration(),
+                        );
                     }
                 }
             }
@@ -148,7 +153,7 @@ impl TrimApp {
                     &mut self.undo_stack,
                     preferred_track,
                     preferred_clip,
-                    self.current_time,
+                    self.playback.current_time,
                 );
                 self.project.mark_dirty();
             }
@@ -184,13 +189,13 @@ impl TrimApp {
             }
             CanvasAction::CreateTitleAtTime(t) => {
                 self.seek(t);
-                self.title_dialog.open();
+                self.dialogs.title_dialog.open();
             }
             CanvasAction::Pan(_) => {}
             CanvasAction::CopySelected => {
                 self.copy_selected_clips();
                 ctx.output_mut(|o| {
-                    o.copied_text = format!("trim://clips/{}", self.clipboard_clips.len());
+                    o.copied_text = format!("trim://clips/{}", self.tools.clipboard_clips.len());
                 });
             }
             CanvasAction::PasteClipboard => {
@@ -501,10 +506,10 @@ impl TrimApp {
             }
             CanvasAction::OpenSequence(seq_id) => {
                 self.project.switch_sequence(&seq_id);
-                self.video_engine.clear_cache();
-                self.audio_mixer.clear_cache();
+                self.media.video_engine.clear_cache();
+                self.playback.audio_mixer.clear_cache();
                 self.canvas_state.selected_clip_pairs.clear();
-                self.current_time = 0.0;
+                self.playback.current_time = 0.0;
                 self.set_status("Sekans açıldı", "Sequence opened");
             }
             CanvasAction::CreateCompoundClip => {
@@ -514,7 +519,7 @@ impl TrimApp {
                 self.join_selected_through_edits();
             }
             CanvasAction::OpenPasteAttributesDialog => {
-                self.paste_attrs_dialog_open = true;
+                self.paste_attrs.dialog_open = true;
             }
             CanvasAction::ClipRollTrimmed {
                 track_id,
@@ -534,7 +539,7 @@ impl TrimApp {
                     .is_ok()
                 {
                     self.project.mark_dirty();
-                    self.last_rendered_dirty = true;
+                    self.media.last_rendered_dirty = true;
                     self.status_message = match self.lang() {
                         crate::i18n::Language::Turkish => {
                             format!("Roll Trim uygulandı ({:+.2}s)", delta_secs)
@@ -565,7 +570,7 @@ impl TrimApp {
                     .is_ok()
                 {
                     self.project.mark_dirty();
-                    self.last_rendered_dirty = true;
+                    self.media.last_rendered_dirty = true;
                     self.status_message = match self.lang() {
                         crate::i18n::Language::Turkish => {
                             format!("Slide Trim uygulandı ({:+.2}s)", delta_secs)

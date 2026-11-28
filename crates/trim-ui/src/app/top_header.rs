@@ -28,13 +28,14 @@ impl TrimApp {
                 // Dosya / File
                 ui.menu_button(lang.t("menu_file"), |ui| {
                     if ui.button(lang.t("menu_welcome")).clicked() {
-                        self.welcome_dialog.open();
+                        self.dialogs.welcome_dialog.open();
                         ui.close_menu();
                     }
                     if ui.button(lang.t("menu_new_project")).clicked() {
                         if self.has_unsaved_changes() {
                             let name = self.project.settings.name.clone();
-                            self.close_confirm_dialog
+                            self.dialogs
+                                .close_confirm_dialog
                                 .prompt(PendingCloseAction::NewProject, name);
                         } else {
                             self.reset_to_new_project();
@@ -44,7 +45,8 @@ impl TrimApp {
                     if ui.button(lang.t("menu_open_project")).clicked() {
                         if self.has_unsaved_changes() {
                             let name = self.project.settings.name.clone();
-                            self.close_confirm_dialog
+                            self.dialogs
+                                .close_confirm_dialog
                                 .prompt(PendingCloseAction::OpenProject, name);
                         } else {
                             self.open_project_dialog();
@@ -64,13 +66,18 @@ impl TrimApp {
                         self.bundle_project_dialog();
                         ui.close_menu();
                     }
+                    if ui.button(lang.t("menu_snapshots")).clicked() {
+                        let snaps = self.persistence.autosave_mgr.list_snapshots();
+                        self.dialogs.recovery_dialog.open_snapshot_browser(snaps);
+                        ui.close_menu();
+                    }
                     ui.separator();
                     if ui.button(lang.t("menu_import_media")).clicked() {
                         self.prompt_import_media();
                         ui.close_menu();
                     }
                     if ui.button(lang.t("menu_relink")).clicked() {
-                        self.relink_dialog.open(&self.project);
+                        self.dialogs.relink_dialog.open(&self.project);
                         ui.close_menu();
                     }
                     if ui.button(lang.t("menu_import_interchange")).clicked() {
@@ -94,21 +101,22 @@ impl TrimApp {
                         ui.close_menu();
                     }
                     if ui.button(lang.t("menu_export_studio")).clicked() {
-                        self.export_dialog.open(&self.project);
+                        self.dialogs.export_dialog.open(&self.project);
                         ui.close_menu();
                     }
                     if ui.button(lang.t("menu_render_queue")).clicked() {
-                        self.render_queue_dialog.open();
+                        self.dialogs.render_queue_dialog.open();
                         ui.close_menu();
                     }
                     ui.separator();
                     if ui.button(lang.t("menu_exit")).clicked() {
-                        if self.has_unsaved_changes() && !self.confirmed_exit {
+                        if self.has_unsaved_changes() && !self.persistence.confirmed_exit {
                             let name = self.project.settings.name.clone();
-                            self.close_confirm_dialog
+                            self.dialogs
+                                .close_confirm_dialog
                                 .prompt(PendingCloseAction::ExitApp, name);
                         } else {
-                            self.confirmed_exit = true;
+                            self.persistence.confirmed_exit = true;
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                         ui.close_menu();
@@ -142,7 +150,8 @@ impl TrimApp {
                         self.copy_selected_clips();
                         self.delete_selected_clips();
                         ctx.output_mut(|o| {
-                            o.copied_text = format!("trim://clips/{}", self.clipboard_clips.len());
+                            o.copied_text =
+                                format!("trim://clips/{}", self.tools.clipboard_clips.len());
                         });
                         ui.close_menu();
                     }
@@ -152,11 +161,12 @@ impl TrimApp {
                     {
                         self.copy_selected_clips();
                         ctx.output_mut(|o| {
-                            o.copied_text = format!("trim://clips/{}", self.clipboard_clips.len());
+                            o.copied_text =
+                                format!("trim://clips/{}", self.tools.clipboard_clips.len());
                         });
                         ui.close_menu();
                     }
-                    let can_paste = !self.clipboard_clips.is_empty();
+                    let can_paste = !self.tools.clipboard_clips.is_empty();
                     if ui
                         .add_enabled(can_paste, Button::new(lang.t("menu_paste")))
                         .clicked()
@@ -203,13 +213,14 @@ impl TrimApp {
                     ui.menu_button(lang.t("menu_shortcut_profile"), |ui| {
                         for p in ShortcutProfile::ALL {
                             if ui
-                                .selectable_label(self.shortcut_profile == *p, p.label())
+                                .selectable_label(self.tools.shortcut_profile == *p, p.label())
                                 .clicked()
                             {
-                                self.shortcut_profile = *p;
-                                self.keymap_config =
+                                self.tools.shortcut_profile = *p;
+                                self.tools.keymap_config =
                                     crate::shortcuts::KeymapConfig::for_profile(*p);
                                 if let Err(e) = self
+                                    .tools
                                     .keymap_config
                                     .save_to_path(&crate::shortcuts::KeymapConfig::config_path())
                                 {
@@ -229,7 +240,7 @@ impl TrimApp {
                     });
                     ui.separator();
                     if ui.button(lang.t("menu_preferences")).clicked() {
-                        self.preferences_dialog.open(&self.preferences);
+                        self.dialogs.preferences_dialog.open(&self.preferences);
                         ui.close_menu();
                     }
                 });
@@ -250,14 +261,14 @@ impl TrimApp {
                     }
                     let snap_label = match lang {
                         Language::English => {
-                            if self.snap_enabled {
+                            if self.tools.snap_enabled {
                                 "Magnetic Snapping (N): Enabled"
                             } else {
                                 "Magnetic Snapping (N): Disabled"
                             }
                         }
                         Language::Turkish => {
-                            if self.snap_enabled {
+                            if self.tools.snap_enabled {
                                 "Manyetik Yapışma (N): Açık"
                             } else {
                                 "Manyetik Yapışma (N): Kapalı"
@@ -296,29 +307,29 @@ impl TrimApp {
                         }
                     });
                     if ui
-                        .checkbox(&mut self.show_safe_zones, lang.t("menu_safe_zones"))
+                        .checkbox(&mut self.monitor.show_safe_zones, lang.t("menu_safe_zones"))
                         .clicked()
                     {
                         ui.close_menu();
                     }
                     ui.separator();
                     if ui
-                        .checkbox(&mut self.use_proxies, lang.t("menu_proxies"))
+                        .checkbox(&mut self.media.use_proxies, lang.t("menu_proxies"))
                         .clicked()
                     {
-                        self.video_engine.use_proxies = self.use_proxies;
-                        self.video_engine.clear_cache();
-                        self.last_rendered_dirty = true;
+                        self.media.video_engine.use_proxies = self.media.use_proxies;
+                        self.media.video_engine.clear_cache();
+                        self.media.last_rendered_dirty = true;
                         let state_str = match lang {
                             Language::English => {
-                                if self.use_proxies {
+                                if self.media.use_proxies {
                                     "Enabled"
                                 } else {
                                     "Disabled"
                                 }
                             }
                             Language::Turkish => {
-                                if self.use_proxies {
+                                if self.media.use_proxies {
                                     "Açık"
                                 } else {
                                     "Kapalı"
@@ -364,33 +375,44 @@ impl TrimApp {
                 // Pencere / Window
                 ui.menu_button(lang.t("menu_window"), |ui| {
                     if ui
-                        .checkbox(&mut self.show_source_monitor, lang.t("menu_source_monitor"))
+                        .checkbox(
+                            &mut self.monitor.show_source_monitor,
+                            lang.t("menu_source_monitor"),
+                        )
                         .clicked()
                     {
                         ui.close_menu();
                     }
                     if ui
                         .checkbox(
-                            &mut self.scopes_panel.is_open,
+                            &mut self.monitor.scopes_panel.is_open,
                             "📊 Renk Kapsamları (Scopes)",
                         )
                         .clicked()
                     {
-                        if self.scopes_panel.is_open {
-                            self.scopes_panel.mark_dirty();
+                        if self.monitor.scopes_panel.is_open {
+                            self.monitor.scopes_panel.mark_dirty();
                         }
                         ui.close_menu();
                     }
                     if ui.button(lang.t("menu_audio_mixer")).clicked() {
-                        self.audio_mixer_dialog.toggle();
+                        self.dialogs.audio_mixer_dialog.toggle();
+                        ui.close_menu();
+                    }
+                    if ui.button(lang.t("menu_reset_audio_device")).clicked() {
+                        self.playback.audio_player.reset_device();
+                        self.set_status(
+                            "Ses çıkış cihazı yeniden başlatıldı",
+                            "Audio output device reset",
+                        );
                         ui.close_menu();
                     }
                     if ui.button(lang.t("menu_title_editor")).clicked() {
-                        self.title_dialog.open();
+                        self.dialogs.title_dialog.open();
                         ui.close_menu();
                     }
                     if ui.button(lang.t("menu_export_studio")).clicked() {
-                        self.export_dialog.open(&self.project);
+                        self.dialogs.export_dialog.open(&self.project);
                         ui.close_menu();
                     }
                 });
@@ -398,7 +420,7 @@ impl TrimApp {
                 // Yardım / Help
                 ui.menu_button(lang.t("menu_help"), |ui| {
                     if ui.button(lang.t("menu_shortcuts_f1")).clicked() {
-                        self.shortcuts_dialog.open();
+                        self.dialogs.shortcuts_dialog.open();
                         ui.close_menu();
                     }
                     let update_lbl = match lang {
@@ -423,7 +445,7 @@ impl TrimApp {
                     }
                     ui.separator();
                     if ui.button(lang.t("menu_about")).clicked() {
-                        self.show_about_dialog = true;
+                        self.dialogs.show_about_dialog = true;
                         ui.close_menu();
                     }
                 });
@@ -431,7 +453,7 @@ impl TrimApp {
                 // Right Side Controls: Settings + Quick Export + Mixer + Monitor view + Title
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let settings_btn = Button::new(RichText::new("⚙").size(13.0)).fill(
-                        if self.preferences_dialog.is_open {
+                        if self.dialogs.preferences_dialog.is_open {
                             Color32::from_rgb(0x28, 0x5a, 0x9e)
                         } else {
                             Color32::from_rgb(0x22, 0x22, 0x2c)
@@ -442,7 +464,7 @@ impl TrimApp {
                         .on_hover_text(lang.t("menu_preferences"))
                         .clicked()
                     {
-                        self.preferences_dialog.open(&self.preferences);
+                        self.dialogs.preferences_dialog.open(&self.preferences);
                     }
 
                     let quick_exp_btn = Button::new(
@@ -457,11 +479,11 @@ impl TrimApp {
                         .on_hover_text(lang.t("menu_export_studio"))
                         .clicked()
                     {
-                        self.export_dialog.open(&self.project);
+                        self.dialogs.export_dialog.open(&self.project);
                     }
 
                     let mixer_btn = Button::new(RichText::new(lang.t("btn_mixer")).size(11.0))
-                        .fill(if self.audio_mixer_dialog.is_open {
+                        .fill(if self.dialogs.audio_mixer_dialog.is_open {
                             Color32::from_rgb(0x2a, 0x54, 0x3d)
                         } else {
                             Color32::from_rgb(0x22, 0x22, 0x2c)
@@ -471,17 +493,17 @@ impl TrimApp {
                         .on_hover_text(lang.t("menu_audio_mixer"))
                         .clicked()
                     {
-                        self.audio_mixer_dialog.toggle();
+                        self.dialogs.audio_mixer_dialog.toggle();
                     }
 
-                    let mon_label = match (lang, self.show_source_monitor) {
+                    let mon_label = match (lang, self.monitor.show_source_monitor) {
                         (Language::English, true) => "Single Monitor",
                         (Language::English, false) => "Dual Monitor",
                         (Language::Turkish, true) => "Tek Monitör",
                         (Language::Turkish, false) => "İkili Monitör",
                     };
                     let mon_btn = Button::new(RichText::new(mon_label).size(11.0)).fill(
-                        if self.show_source_monitor {
+                        if self.monitor.show_source_monitor {
                             Color32::from_rgb(0x2a, 0x3d, 0x54)
                         } else {
                             Color32::from_rgb(0x22, 0x22, 0x2c)
@@ -492,7 +514,29 @@ impl TrimApp {
                         .on_hover_text(lang.t("menu_source_monitor"))
                         .clicked()
                     {
-                        self.show_source_monitor = !self.show_source_monitor;
+                        self.monitor.show_source_monitor = !self.monitor.show_source_monitor;
+                    }
+
+                    ui.separator();
+                    for (layout, tr_lbl, en_lbl) in [
+                        (super::WorkspaceLayout::Audio, "Ses", "Audio"),
+                        (super::WorkspaceLayout::Color, "Renk", "Color"),
+                        (super::WorkspaceLayout::Edit, "Kurgu", "Edit"),
+                    ] {
+                        let lbl = match lang {
+                            Language::Turkish => tr_lbl,
+                            Language::English => en_lbl,
+                        };
+                        let active = self.workspace_layout == layout;
+                        let btn =
+                            Button::new(RichText::new(lbl).size(11.0).strong()).fill(if active {
+                                Color32::from_rgb(0x28, 0x5a, 0x9e)
+                            } else {
+                                Color32::from_rgb(0x22, 0x22, 0x2c)
+                            });
+                        if ui.add(btn).clicked() {
+                            self.apply_workspace_layout(layout);
+                        }
                     }
 
                     let dirty_str = if self.has_unsaved_changes() { " *" } else { "" };

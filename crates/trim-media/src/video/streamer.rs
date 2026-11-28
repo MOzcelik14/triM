@@ -71,11 +71,15 @@ fn decode_frame_raw_sized_with_hwaccel(
 
     let mut guard = crate::ffmpeg::ChildGuard::spawn(&mut cmd).ok()?;
     let frame_bytes = (tw as usize).checked_mul(th as usize)?.checked_mul(4)?;
-    let mut buf = vec![0u8; frame_bytes];
+    static DECODE_POOL: std::sync::OnceLock<crate::frame_pool::FrameBufferPool> =
+        std::sync::OnceLock::new();
+    let pool = DECODE_POOL.get_or_init(|| crate::frame_pool::FrameBufferPool::new(8));
+    let mut buf = pool.checkout(frame_bytes);
     {
         let mut stdout = guard.take_stdout()?;
         if stdout.read_exact(&mut buf).is_err() {
             let _ = guard.kill();
+            pool.checkin(buf);
             return None;
         }
     }
@@ -767,6 +771,60 @@ impl PersistentSeekDecoder {
     }
 }
 
+/// LRU pool of hot `PersistentSeekDecoder` instances keyed by `(path, target_w, target_h)`.
+/// Keeps up to `capacity` active clip decoders warm across timeline cut transitions.
+pub struct HotDecoderPool {
+    capacity: usize,
+    entries: std::collections::VecDeque<((String, u32, u32), PersistentSeekDecoder)>,
+}
+
+impl HotDecoderPool {
+    pub fn new(capacity: usize) -> Self {
+        let cap = capacity.max(1);
+        Self {
+            capacity: cap,
+            entries: std::collections::VecDeque::with_capacity(cap),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn seek(
+        &mut self,
+        path: &str,
+        time: f64,
+        target_w: u32,
+        target_h: u32,
+    ) -> Option<Arc<RgbaImage>> {
+        if let Some(pos) = self
+            .entries
+            .iter()
+            .position(|(k, _)| k.0 == path && k.1 == target_w && k.2 == target_h)
+        {
+            if let Some(mut entry) = self.entries.remove(pos) {
+                let res = entry.1.seek(path, time, target_w, target_h);
+                self.entries.push_back(entry);
+                return res;
+            }
+        }
+
+        if self.entries.len() >= self.capacity {
+            self.entries.pop_front();
+        }
+        let mut decoder = PersistentSeekDecoder::new();
+        let res = decoder.seek(path, time, target_w, target_h);
+        self.entries
+            .push_back(((path.to_string(), target_w, target_h), decoder));
+        res
+    }
+}
+
 /// Asynchronous single-frame seek worker preventing UI thread lockup during timeline scrubbing.
 pub struct AsyncFrameDecoder {
     seek_tx: std::sync::mpsc::Sender<SeekCommand>,
@@ -786,14 +844,14 @@ impl AsyncFrameDecoder {
         let (result_tx, result_rx) = std::sync::mpsc::channel::<SeekResult>();
 
         std::thread::spawn(move || {
-            let mut persistent = PersistentSeekDecoder::new();
+            let mut pool = HotDecoderPool::new(4);
             while let Ok(mut cmd) = seek_rx.recv() {
                 // Request coalescing: discard stale seek requests queued during rapid dragging
                 while let Ok(newer) = seek_rx.try_recv() {
                     cmd = newer;
                 }
 
-                let maybe_img = persistent.seek(&cmd.path, cmd.time, cmd.target_w, cmd.target_h);
+                let maybe_img = pool.seek(&cmd.path, cmd.time, cmd.target_w, cmd.target_h);
                 let res = SeekResult {
                     id: cmd.id,
                     path: cmd.path,

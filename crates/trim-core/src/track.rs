@@ -24,6 +24,60 @@ impl std::fmt::Display for TrackType {
     }
 }
 
+/// Submix audio bus routing target for a track.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioBus {
+    #[default]
+    Master,
+    Dialogue,
+    Music,
+    Sfx,
+}
+
+impl AudioBus {
+    pub const ALL: &'static [Self] = &[Self::Master, Self::Dialogue, Self::Music, Self::Sfx];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Master => "Master",
+            Self::Dialogue => "Diyalog",
+            Self::Music => "Müzik",
+            Self::Sfx => "SFX",
+        }
+    }
+}
+
+/// Per-bus submix linear gains (`1.0` = 0 dB unity).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AudioBusGains {
+    pub dialogue: f64,
+    pub music: f64,
+    pub sfx: f64,
+}
+
+impl Default for AudioBusGains {
+    fn default() -> Self {
+        Self {
+            dialogue: 1.0,
+            music: 1.0,
+            sfx: 1.0,
+        }
+    }
+}
+
+impl AudioBusGains {
+    pub fn gain_for(self, bus: AudioBus) -> f64 {
+        match bus {
+            AudioBus::Master => 1.0,
+            AudioBus::Dialogue => self.dialogue,
+            AudioBus::Music => self.music,
+            AudioBus::Sfx => self.sfx,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Track {
     pub id: String,
@@ -42,6 +96,8 @@ pub struct Track {
     pub volume: f64,
     #[serde(default)]
     pub pan: f64,
+    #[serde(default)]
+    pub bus: AudioBus,
     #[serde(default)]
     pub clips: Vec<Clip>,
 }
@@ -65,6 +121,7 @@ impl Default for Track {
             visible: true,
             volume: 1.0,
             pan: 0.0,
+            bus: AudioBus::Master,
             clips: Vec::new(),
         }
     }

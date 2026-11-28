@@ -42,6 +42,9 @@ pub struct GpuCompositor {
     uploaded_mask_key: Option<(String, u64, u32, u32)>,
     scope_fbo: glow::Framebuffer,
     scope_texture: glow::Texture,
+    scope_pbos: [Option<glow::Buffer>; 2],
+    scope_pbo_idx: usize,
+    scope_pbo_ready: [bool; 2],
     uniform_cache: HashMap<&'static str, Option<glow::UniformLocation>>,
     max_tex_size: i32,
     gl_destroyed: bool,
@@ -337,6 +340,21 @@ impl GpuCompositor {
             );
             gl.bind_framebuffer(glow::FRAMEBUFFER, None);
 
+            let scope_pbo_bytes = (320usize * 180usize * 4usize) as i32;
+            let mut scope_pbos = [None, None];
+            if let (Ok(b0), Ok(b1)) = (gl.create_buffer(), gl.create_buffer()) {
+                for b in [b0, b1] {
+                    gl.bind_buffer(glow::PIXEL_PACK_BUFFER, Some(b));
+                    gl.buffer_data_size(
+                        glow::PIXEL_PACK_BUFFER,
+                        scope_pbo_bytes,
+                        glow::STREAM_READ,
+                    );
+                }
+                gl.bind_buffer(glow::PIXEL_PACK_BUFFER, None);
+                scope_pbos = [Some(b0), Some(b1)];
+            }
+
             let max_tex_size = gl.get_parameter_i32(glow::MAX_TEXTURE_SIZE).max(256);
 
             Some(Self {
@@ -365,6 +383,9 @@ impl GpuCompositor {
                 uploaded_mask_key: None,
                 scope_fbo,
                 scope_texture,
+                scope_pbos,
+                scope_pbo_idx: 0,
+                scope_pbo_ready: [false, false],
                 uniform_cache: HashMap::with_capacity(64),
                 max_tex_size,
                 gl_destroyed: false,
@@ -661,6 +682,72 @@ impl GpuCompositor {
         (true, tex_h)
     }
 
+    unsafe fn prepare_adjustment_layer_lut(&mut self, clip: &Clip) -> (bool, i32) {
+        let has_curves = clip
+            .custom_curves
+            .as_ref()
+            .is_some_and(|c| !c.is_identity());
+        let has_hsl = clip.hsl_curves.as_ref().is_some_and(|c| !c.is_identity());
+        let has_qual = clip.hsl_qualifier.as_ref().is_some_and(|q| q.enabled);
+
+        if !has_curves && !has_hsl && !has_qual {
+            return self.prepare_custom_lut(clip.custom_lut_path.as_deref());
+        }
+
+        let cache_key = format!(
+            "__adj__:{}:{:?}:{:?}:{:?}",
+            clip.custom_lut_path.as_deref().unwrap_or(""),
+            clip.custom_curves,
+            clip.hsl_curves,
+            clip.hsl_qualifier
+        );
+
+        if self.uploaded_lut_path.as_deref() == Some(cache_key.as_str())
+            && self.uploaded_lut_size >= 2
+        {
+            self.gl.active_texture(glow::TEXTURE1);
+            self.gl
+                .bind_texture(glow::TEXTURE_2D, Some(self.lut_texture));
+            return (true, self.uploaded_lut_size as i32);
+        }
+
+        if self.lut_cache.get(&cache_key).is_none() {
+            let base_lut = clip
+                .custom_lut_path
+                .as_deref()
+                .filter(|p| !p.is_empty())
+                .map(trim_core::paths::normalize_path)
+                .and_then(|p| parse_cube_lut_file(&p));
+            let baked = bake_adjustment_curves_lut(clip, base_lut.as_deref(), 17);
+            self.lut_cache.insert(cache_key.clone(), Some(baked));
+        }
+
+        let Some(Some(lut)) = self.lut_cache.get(&cache_key) else {
+            return (false, 0);
+        };
+        let n = lut.size as i32;
+        let tex_w = n * n;
+
+        self.gl.active_texture(glow::TEXTURE1);
+        self.gl
+            .bind_texture(glow::TEXTURE_2D, Some(self.lut_texture));
+        self.gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
+        self.gl.tex_image_2d(
+            glow::TEXTURE_2D,
+            0,
+            glow::RGBA8 as i32,
+            tex_w,
+            n,
+            0,
+            glow::RGBA,
+            glow::UNSIGNED_BYTE,
+            Some(&lut.rgba_strip),
+        );
+        self.uploaded_lut_path = Some(cache_key);
+        self.uploaded_lut_size = lut.size;
+        (true, n)
+    }
+
     unsafe fn prepare_clip_masks(
         &mut self,
         clip: &Clip,
@@ -898,8 +985,11 @@ impl GpuCompositor {
                 } else {
                     self.prepare_clip_masks(&layer.clip, current_time, logical_w, logical_h)
                 };
-                let (custom_lut_enabled, lut_size) =
-                    self.prepare_custom_lut(layer.clip.custom_lut_path.as_deref());
+                let (custom_lut_enabled, lut_size) = if u.is_adjustment_layer {
+                    self.prepare_adjustment_layer_lut(&layer.clip)
+                } else {
+                    self.prepare_custom_lut(layer.clip.custom_lut_path.as_deref())
+                };
 
                 let gl = &self.gl;
                 let prog = self.program;
@@ -1121,13 +1211,16 @@ impl GpuCompositor {
     }
 
     /// Reads back a 320x180 GPU-downsampled copy of the composited FBO for low-overhead real-time scopes.
-    pub fn readback_fbo_downsampled_rgba(&self) -> Option<(Vec<u8>, u32, u32)> {
+    /// Uses double-buffered OpenGL PBO (`PIXEL_PACK_BUFFER`) DMA when available, falling back to
+    /// synchronous `gl.read_pixels` on contexts without PBO mapping.
+    pub fn readback_fbo_downsampled_rgba(&mut self) -> Option<(Vec<u8>, u32, u32)> {
         if self.fbo_width == 0 || self.fbo_height == 0 {
             return None;
         }
         let sw = 320u32;
         let sh = 180u32;
-        let mut buf = vec![0u8; (sw as usize) * (sh as usize) * 4];
+        let byte_len = (sw as usize) * (sh as usize) * 4;
+        let mut buf = vec![0u8; byte_len];
         unsafe {
             self.gl
                 .bind_framebuffer(glow::READ_FRAMEBUFFER, Some(self.fbo));
@@ -1148,15 +1241,59 @@ impl GpuCompositor {
             self.gl
                 .bind_framebuffer(glow::FRAMEBUFFER, Some(self.scope_fbo));
             self.gl.pixel_store_i32(glow::PACK_ALIGNMENT, 1);
-            self.gl.read_pixels(
-                0,
-                0,
-                sw as i32,
-                sh as i32,
-                glow::RGBA,
-                glow::UNSIGNED_BYTE,
-                glow::PixelPackData::Slice(&mut buf),
-            );
+
+            let write_idx = self.scope_pbo_idx;
+            let read_idx = 1 - write_idx;
+            let mut got_pbo_data = false;
+
+            if let (Some(write_pbo), Some(read_pbo)) =
+                (self.scope_pbos[write_idx], self.scope_pbos[read_idx])
+            {
+                // Start async DMA transfer for current frame into `write_pbo`.
+                self.gl
+                    .bind_buffer(glow::PIXEL_PACK_BUFFER, Some(write_pbo));
+                self.gl.read_pixels(
+                    0,
+                    0,
+                    sw as i32,
+                    sh as i32,
+                    glow::RGBA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelPackData::BufferOffset(0),
+                );
+                self.scope_pbo_ready[write_idx] = true;
+
+                // Read previous frame's completed PBO if ready.
+                if self.scope_pbo_ready[read_idx] {
+                    self.gl.bind_buffer(glow::PIXEL_PACK_BUFFER, Some(read_pbo));
+                    let ptr = self.gl.map_buffer_range(
+                        glow::PIXEL_PACK_BUFFER,
+                        0,
+                        byte_len as i32,
+                        glow::MAP_READ_BIT,
+                    );
+                    if !ptr.is_null() {
+                        std::ptr::copy_nonoverlapping(ptr, buf.as_mut_ptr(), byte_len);
+                        self.gl.unmap_buffer(glow::PIXEL_PACK_BUFFER);
+                        got_pbo_data = true;
+                    }
+                }
+                self.gl.bind_buffer(glow::PIXEL_PACK_BUFFER, None);
+                self.scope_pbo_idx = read_idx;
+            }
+
+            if !got_pbo_data {
+                self.gl.read_pixels(
+                    0,
+                    0,
+                    sw as i32,
+                    sh as i32,
+                    glow::RGBA,
+                    glow::UNSIGNED_BYTE,
+                    glow::PixelPackData::Slice(&mut buf),
+                );
+            }
+
             self.gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None);
             self.gl.bind_framebuffer(glow::DRAW_FRAMEBUFFER, None);
             self.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
@@ -1172,6 +1309,9 @@ impl GpuCompositor {
         }
         self.gl_destroyed = true;
         unsafe {
+            for pbo in self.scope_pbos.iter().flatten() {
+                gl.delete_buffer(*pbo);
+            }
             gl.delete_framebuffer(self.scope_fbo);
             gl.delete_texture(self.scope_texture);
             gl.delete_texture(self.mask_texture);
@@ -1193,6 +1333,48 @@ impl Drop for GpuCompositor {
             let gl = std::sync::Arc::clone(&self.gl);
             self.destroy(&gl);
         }
+    }
+}
+
+fn bake_adjustment_curves_lut(clip: &Clip, base_lut: Option<&CubeLut3D>, size: u32) -> CubeLut3D {
+    let n = size.max(2) as usize;
+    let denom = (n - 1) as f32;
+    let mut rgba_strip = vec![0u8; n * n * n * 4];
+    for b_idx in 0..n {
+        for g_idx in 0..n {
+            for r_idx in 0..n {
+                let mut rgb = [
+                    r_idx as f32 / denom,
+                    g_idx as f32 / denom,
+                    b_idx as f32 / denom,
+                ];
+                if let Some(lut) = base_lut {
+                    rgb = lut.sample(rgb[0], rgb[1], rgb[2]);
+                }
+                if let Some(curves) = &clip.custom_curves {
+                    rgb = curves.apply_rgb(rgb[0], rgb[1], rgb[2]);
+                }
+                if let Some(hsl) = &clip.hsl_curves {
+                    rgb = hsl.apply_rgb(rgb[0], rgb[1], rgb[2]);
+                }
+                if let Some(qual) = &clip.hsl_qualifier {
+                    if qual.enabled {
+                        rgb = qual.apply_rgb(rgb[0], rgb[1], rgb[2]);
+                    }
+                }
+                let x = b_idx * n + r_idx;
+                let y = g_idx;
+                let off = (y * (n * n) + x) * 4;
+                rgba_strip[off] = (rgb[0].clamp(0.0, 1.0) * 255.0).round() as u8;
+                rgba_strip[off + 1] = (rgb[1].clamp(0.0, 1.0) * 255.0).round() as u8;
+                rgba_strip[off + 2] = (rgb[2].clamp(0.0, 1.0) * 255.0).round() as u8;
+                rgba_strip[off + 3] = 255;
+            }
+        }
+    }
+    CubeLut3D {
+        size: n as u32,
+        rgba_strip,
     }
 }
 
@@ -1263,5 +1445,25 @@ mod tests {
         let mut clip = Clip::new("media_1", 0.0, 5.0);
         clip.opacity = 0.0;
         assert!(LayerUniforms::from_clip(&clip, 640, 360, 640, 360, 1.0).is_none());
+    }
+
+    #[test]
+    fn test_bake_adjustment_curves_lut_applies_custom_curves() {
+        let mut clip = Clip::new("adj", 0.0, 5.0);
+        let curves = trim_core::color::CustomCurvesConfig {
+            master: vec![[0.0, 0.2], [1.0, 0.8]],
+            ..Default::default()
+        };
+        clip.custom_curves = Some(curves);
+
+        let lut = bake_adjustment_curves_lut(&clip, None, 17);
+        assert_eq!(lut.size, 17);
+        // Black (0,0,0) should map close to 0.2 -> ~51
+        let sampled_black = lut.sample(0.0, 0.0, 0.0);
+        assert!(
+            (sampled_black[0] - 0.2).abs() < 0.02,
+            "Expected ~0.2, got {}",
+            sampled_black[0]
+        );
     }
 }

@@ -131,7 +131,7 @@ impl TrimApp {
         let mut cmds: Vec<Box<dyn trim_commands::Command>> =
             vec![Box::new(RemoveMultipleClipsCommand::new(pairs_to_remove))];
 
-        let target_v = first_v_track.unwrap_or_else(|| self.target_video_track.clone());
+        let target_v = first_v_track.unwrap_or_else(|| self.tools.target_video_track.clone());
         let link_gid = if has_audio {
             Some(uuid::Uuid::new_v4().to_string())
         } else {
@@ -164,8 +164,8 @@ impl TrimApp {
             .is_ok()
         {
             self.canvas_state.selected_clip_pairs = vec![(target_v, nested_v_id)];
-            self.video_engine.clear_cache();
-            self.audio_mixer.clear_cache();
+            self.media.video_engine.clear_cache();
+            self.playback.audio_mixer.clear_cache();
             self.project.mark_dirty();
             self.status_message = match self.lang() {
                 crate::i18n::Language::Turkish => {
@@ -199,7 +199,7 @@ impl TrimApp {
                 let a = &tr.clips[i];
                 let b = &tr.clips[i + 1];
                 let is_relevant = if selected_set.is_empty() {
-                    (a.timeline_out - self.current_time).abs() < 0.1
+                    (a.timeline_out - self.playback.current_time).abs() < 0.1
                 } else {
                     selected_set.contains(&(tr.id.clone(), a.id.clone()))
                         || selected_set.contains(&(tr.id.clone(), b.id.clone()))
@@ -272,8 +272,8 @@ impl TrimApp {
             .is_ok()
         {
             self.canvas_state.selected_clip_pairs = new_sel;
-            self.video_engine.clear_cache();
-            self.audio_mixer.clear_cache();
+            self.media.video_engine.clear_cache();
+            self.playback.audio_mixer.clear_cache();
             self.project.mark_dirty();
             self.status_message = match self.lang() {
                 crate::i18n::Language::Turkish => {
@@ -294,7 +294,7 @@ impl TrimApp {
         copy_audio: bool,
         copy_speed: bool,
     ) {
-        let Some((_, _, _, src)) = self.clipboard_clips.first().cloned() else {
+        let Some((_, _, _, src)) = self.tools.clipboard_clips.first().cloned() else {
             self.set_status(
                 "Panoda özellikleri kopyalanmış klip yok (Önce Ctrl+C yapın)",
                 "No clip attributes in clipboard (press Ctrl+C first)",
@@ -377,10 +377,10 @@ impl TrimApp {
         }
 
         if applied_count > 0 {
-            self.video_engine.clear_cache();
-            self.audio_mixer.clear_cache();
-            self.last_rendered_monitor_frame = None;
-            self.scopes_panel.mark_dirty();
+            self.media.video_engine.clear_cache();
+            self.playback.audio_mixer.clear_cache();
+            self.monitor.last_rendered_monitor_frame = None;
+            self.monitor.scopes_panel.mark_dirty();
             self.project.mark_dirty();
             self.status_message = match self.lang() {
                 crate::i18n::Language::Turkish => {
@@ -395,8 +395,8 @@ impl TrimApp {
 
     /// Cuts across active video tracks at the playhead and activates the chosen Multicam angle (0..3).
     pub fn handle_multicam_angle_switch(&mut self, angle_idx: usize) {
-        self.multicam_active_angle = angle_idx.min(3);
-        let cut_t = self.current_time;
+        self.monitor.multicam_active_angle = angle_idx.min(3);
+        let cut_t = self.playback.current_time;
 
         let mut v_tracks: Vec<String> = self
             .project
@@ -452,18 +452,18 @@ impl TrimApp {
                     continue;
                 }
                 if let Some(cl) = tr.find_clip_at_mut(probe_t) {
-                    if idx == self.multicam_active_angle {
+                    if idx == self.monitor.multicam_active_angle {
                         cl.opacity = 1.0;
-                    } else if idx > self.multicam_active_angle {
+                    } else if idx > self.monitor.multicam_active_angle {
                         cl.opacity = 0.0;
                     }
                 }
             }
         }
 
-        self.video_engine.clear_cache();
-        self.last_rendered_monitor_frame = None;
-        self.scopes_panel.mark_dirty();
+        self.media.video_engine.clear_cache();
+        self.monitor.last_rendered_monitor_frame = None;
+        self.monitor.scopes_panel.mark_dirty();
         self.project.mark_dirty();
         self.status_message = match self.lang() {
             crate::i18n::Language::Turkish => format!(

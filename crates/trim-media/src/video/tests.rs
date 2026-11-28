@@ -4,24 +4,44 @@ use std::sync::Arc;
 use trim_core::media::MediaType;
 use trim_core::project::Project;
 
+fn generate_test_video(path: &std::path::Path, duration_secs: u32) {
+    let status = crate::ffmpeg::ffmpeg_cmd()
+        .args([
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            &format!("testsrc2=size=320x180:rate=30:duration={duration_secs}"),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+        ])
+        .arg(path)
+        .status()
+        .expect("spawn ffmpeg for test fixture");
+    assert!(status.success(), "ffmpeg test fixture generation failed");
+}
+
 #[test]
 fn test_video_frame_decoder_smoke() {
     let mut decoder = VideoFrameDecoder::new();
     let res = decoder.decode_frame("/tmp/nonexistent_video_file.mp4", 0.0);
     assert!(res.is_none());
 
-    let dummy = "/tmp/sample_trim_test.mp4";
-    if std::path::Path::new(dummy).is_file() {
-        let frame = decoder.decode_frame(dummy, 0.5);
+    if crate::ffmpeg::is_ffmpeg_available() {
+        let dir = tempfile::tempdir().unwrap();
+        let sample = dir.path().join("sample_smoke.mp4");
+        generate_test_video(&sample, 2);
+        let sample_str = sample.to_string_lossy().to_string();
+        let frame = decoder.decode_frame(&sample_str, 0.5);
         assert!(frame.is_some());
         let img = frame.unwrap();
         assert!(img.width() > 0 && img.height() > 0);
-    }
-
-    let user_file = "/home/mozcelik/Videolar/İsimsiz Proje.mp4";
-    if std::path::Path::new(user_file).is_file() {
-        let frame = decoder.decode_frame(user_file, 11.467);
-        assert!(frame.is_some());
     }
 }
 
@@ -73,9 +93,11 @@ fn test_image_preview_clears_at_end_and_during_gaps() {
 fn test_video_engine_lifecycle() {
     let engine = VideoEngine::new();
     assert!(!engine.streamer.is_active());
-    let dummy = "/tmp/sample_trim_test.mp4";
-    if std::path::Path::new(dummy).is_file() {
-        let frame = decode_frame_raw(dummy, 0.5);
+    if crate::ffmpeg::is_ffmpeg_available() {
+        let dir = tempfile::tempdir().unwrap();
+        let sample = dir.path().join("sample_lifecycle.mp4");
+        generate_test_video(&sample, 2);
+        let frame = decode_frame_raw(&sample, 0.5);
         assert!(frame.is_some());
         let f = frame.unwrap();
         assert_eq!(f.width(), PREVIEW_WIDTH);
@@ -85,97 +107,107 @@ fn test_video_engine_lifecycle() {
 
 #[test]
 fn test_playback_streamer_and_async_seek() {
-    let dummy = "/home/mozcelik/Videolar/İsimsiz Proje.mp4";
-    if std::path::Path::new(dummy).is_file() {
-        // Test PlaybackStreamer
-        let mut streamer = PlaybackStreamer::new();
-        streamer.start("test_clip", dummy, 1.0, 30.0, false, 0.0);
-        assert!(streamer.is_active());
-        let start = std::time::Instant::now();
-        let mut frame = None;
-        while start.elapsed().as_millis() < 1500 {
-            if let Some(f) = streamer.get_frame_for_time(1.2) {
-                frame = Some(f);
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        assert!(frame.is_some());
-        let f = frame.unwrap();
-        assert_eq!(f.width(), PREVIEW_WIDTH);
-        assert_eq!(f.height(), PREVIEW_HEIGHT);
-        streamer.stop();
-        assert!(!streamer.is_active());
-
-        // Test AsyncFrameDecoder
-        let mut async_dec = AsyncFrameDecoder::new();
-        let req_id = async_dec.request_seek(dummy, 2.0);
-        assert!(req_id > 0);
-        let start = std::time::Instant::now();
-        let mut got_result = None;
-        while start.elapsed().as_millis() < 1200 {
-            if let Some(res) = async_dec.poll_result() {
-                got_result = Some(res);
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(15));
-        }
-        assert!(got_result.is_some());
-        let res = got_result.unwrap();
-        let frame = res.frame.expect("should decode test frame");
-        assert_eq!(frame.width(), PREVIEW_WIDTH);
-        assert_eq!(frame.height(), PREVIEW_HEIGHT);
+    if !crate::ffmpeg::is_ffmpeg_available() {
+        return;
     }
+    let dir = tempfile::tempdir().unwrap();
+    let sample = dir.path().join("sample_stream.mp4");
+    generate_test_video(&sample, 4);
+    let dummy_str = sample.to_string_lossy().to_string();
+    let dummy = dummy_str.as_str();
+
+    // Test PlaybackStreamer
+    let mut streamer = PlaybackStreamer::new();
+    streamer.start("test_clip", dummy, 1.0, 30.0, false, 0.0);
+    assert!(streamer.is_active());
+    let start = std::time::Instant::now();
+    let mut frame = None;
+    while start.elapsed().as_millis() < 5000 {
+        if let Some(f) = streamer.get_frame_for_time(1.2) {
+            frame = Some(f);
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(frame.is_some());
+    let f = frame.unwrap();
+    assert_eq!(f.width(), PREVIEW_WIDTH);
+    assert_eq!(f.height(), PREVIEW_HEIGHT);
+    streamer.stop();
+    assert!(!streamer.is_active());
+
+    // Test AsyncFrameDecoder
+    let mut async_dec = AsyncFrameDecoder::new();
+    let req_id = async_dec.request_seek(dummy, 2.0);
+    assert!(req_id > 0);
+    let start = std::time::Instant::now();
+    let mut got_result = None;
+    while start.elapsed().as_millis() < 5000 {
+        if let Some(res) = async_dec.poll_result() {
+            got_result = Some(res);
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(15));
+    }
+    assert!(got_result.is_some());
+    let res = got_result.unwrap();
+    let frame = res.frame.expect("should decode test frame");
+    assert_eq!(frame.width(), PREVIEW_WIDTH);
+    assert_eq!(frame.height(), PREVIEW_HEIGHT);
 }
 
 #[test]
 fn test_render_timeline_real_file() {
-    let path = "/home/mozcelik/Videolar/İsimsiz Proje.mp4";
-    if std::path::Path::new(path).exists() {
-        let mut project = Project::default();
-        let media = trim_core::media::MediaItem::new(path);
-        let media_id = media.id.clone();
-        project.add_media(media);
-        let mut track = trim_core::track::Track::new("V1", trim_core::track::TrackType::Video);
-        let clip = trim_core::clip::Clip::new(&media_id, 0.0, 10.0);
-        track.add_clip(clip);
-        project.timeline.add_track(track);
-
-        let mut engine = VideoEngine::new();
-        let f1 = engine.render_timeline_frame(&project, 0.0, false);
-        assert!(f1.is_some(), "f1 should be some for real file at time 0.0");
-
-        // Test scrub to 2.0s
-        let _ = engine.render_timeline_frame(&project, 2.0, false);
-        let start = std::time::Instant::now();
-        let mut seek_done = false;
-        while start.elapsed().as_millis() < 1200 {
-            let f = engine.render_timeline_frame(&project, 2.0, false);
-            if !engine.is_decoding_seek {
-                assert!(f.is_some());
-                seek_done = true;
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        assert!(seek_done, "Seek to 2.0s should complete asynchronously");
-
-        // Test playback at 30fps
-        let mut got_streamed = false;
-        let play_start = std::time::Instant::now();
-        let mut t = 2.0;
-        while play_start.elapsed().as_millis() < 1500 {
-            t += 0.033;
-            let f = engine.render_timeline_frame(&project, t, true);
-            if let Some(img) = f {
-                assert_eq!(img.width(), PREVIEW_WIDTH);
-                got_streamed = true;
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(30));
-        }
-        assert!(got_streamed, "Playback should produce frames");
+    if !crate::ffmpeg::is_ffmpeg_available() {
+        return;
     }
+    let dir = tempfile::tempdir().unwrap();
+    let sample = dir.path().join("sample_timeline.mp4");
+    generate_test_video(&sample, 5);
+    let path_str = sample.to_string_lossy().to_string();
+    let mut project = Project::default();
+    let media = trim_core::media::MediaItem::new(&path_str);
+    let media_id = media.id.clone();
+    project.add_media(media);
+    let mut track = trim_core::track::Track::new("V1", trim_core::track::TrackType::Video);
+    let clip = trim_core::clip::Clip::new(&media_id, 0.0, 5.0);
+    track.add_clip(clip);
+    project.timeline.add_track(track);
+
+    let mut engine = VideoEngine::new();
+    let f1 = engine.render_timeline_frame(&project, 0.0, false);
+    assert!(f1.is_some(), "f1 should be some for real file at time 0.0");
+
+    // Test scrub to 2.0s
+    let _ = engine.render_timeline_frame(&project, 2.0, false);
+    let start = std::time::Instant::now();
+    let mut seek_done = false;
+    while start.elapsed().as_millis() < 5000 {
+        let f = engine.render_timeline_frame(&project, 2.0, false);
+        if !engine.is_decoding_seek {
+            assert!(f.is_some());
+            seek_done = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(seek_done, "Seek to 2.0s should complete asynchronously");
+
+    // Test playback at 30fps
+    let mut got_streamed = false;
+    let play_start = std::time::Instant::now();
+    let mut t = 2.0;
+    while play_start.elapsed().as_millis() < 5000 {
+        t += 0.033;
+        let f = engine.render_timeline_frame(&project, t, true);
+        if let Some(img) = f {
+            assert_eq!(img.width(), PREVIEW_WIDTH);
+            got_streamed = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    }
+    assert!(got_streamed, "Playback should produce frames");
 }
 
 #[test]
@@ -215,34 +247,39 @@ fn test_reverse_playback_streamer_flags() {
 
 #[test]
 fn test_reverse_playback_streamer_real_frames() {
-    let test_file = "/tmp/test_trim_rev.mp4";
-    if std::path::Path::new(test_file).is_file() {
-        let mut streamer = PlaybackStreamer::new();
-        streamer.start("clip_rev_real", test_file, 4.0, 30.0, true, 0.0);
-        assert!(streamer.is_active());
-        assert!(streamer.is_reversed());
-
-        let start = std::time::Instant::now();
-        let mut got_frame = false;
-        let mut t = 4.0;
-        while start.elapsed().as_millis() < 2000 {
-            t -= 0.033;
-            if let Some(f) = streamer.get_frame_for_time(t) {
-                assert_eq!(f.width(), PREVIEW_WIDTH);
-                assert_eq!(f.height(), PREVIEW_HEIGHT);
-                got_frame = true;
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        assert!(
-            got_frame,
-            "Streamer should deliver reversed frames from real video"
-        );
-        assert!(streamer.frames_delivered() > 0);
-        streamer.stop();
-        assert!(!streamer.is_active());
+    if !crate::ffmpeg::is_ffmpeg_available() {
+        return;
     }
+    let dir = tempfile::tempdir().unwrap();
+    let sample = dir.path().join("sample_rev.mp4");
+    generate_test_video(&sample, 5);
+    let test_file = sample.to_string_lossy().to_string();
+
+    let mut streamer = PlaybackStreamer::new();
+    streamer.start("clip_rev_real", &test_file, 4.0, 30.0, true, 0.0);
+    assert!(streamer.is_active());
+    assert!(streamer.is_reversed());
+
+    let start = std::time::Instant::now();
+    let mut got_frame = false;
+    let mut t = 4.0;
+    while start.elapsed().as_millis() < 5000 {
+        t -= 0.033;
+        if let Some(f) = streamer.get_frame_for_time(t) {
+            assert_eq!(f.width(), PREVIEW_WIDTH);
+            assert_eq!(f.height(), PREVIEW_HEIGHT);
+            got_frame = true;
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(
+        got_frame,
+        "Streamer should deliver reversed frames from real video"
+    );
+    assert!(streamer.frames_delivered() > 0);
+    streamer.stop();
+    assert!(!streamer.is_active());
 }
 
 #[test]
@@ -758,4 +795,23 @@ fn test_persistent_seek_decoder_no_stale_frame_on_forward_scrub() {
         f1.as_raw(),
         "forward scrub returned stale frame!"
     );
+}
+
+#[test]
+fn test_hot_decoder_pool_lru_capacity_and_hwaccel_flags() {
+    use crate::ffmpeg::HwAccelBackend;
+    assert_eq!(HwAccelBackend::Qsv.as_ffmpeg_flag(), Some("qsv"));
+    assert_eq!(HwAccelBackend::Amf.as_ffmpeg_flag(), Some("amf"));
+    assert_eq!(
+        HwAccelBackend::VideoToolbox.as_ffmpeg_flag(),
+        Some("videotoolbox")
+    );
+
+    let mut pool = HotDecoderPool::new(2);
+    assert!(pool.is_empty());
+    let _ = pool.seek("/nonexistent/a.mp4", 0.0, 160, 90);
+    let _ = pool.seek("/nonexistent/b.mp4", 0.0, 160, 90);
+    assert_eq!(pool.len(), 2);
+    let _ = pool.seek("/nonexistent/c.mp4", 0.0, 160, 90);
+    assert_eq!(pool.len(), 2);
 }

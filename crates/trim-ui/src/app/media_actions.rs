@@ -10,11 +10,11 @@ use trim_media::FFprobeAnalyzer;
 
 impl TrimApp {
     pub fn toggle_proxy(&mut self) {
-        self.use_proxies = !self.use_proxies;
-        self.video_engine.use_proxies = self.use_proxies;
-        self.video_engine.clear_cache();
-        self.last_rendered_dirty = true;
-        let state_str = if self.use_proxies {
+        self.media.use_proxies = !self.media.use_proxies;
+        self.media.video_engine.use_proxies = self.media.use_proxies;
+        self.media.video_engine.clear_cache();
+        self.media.last_rendered_dirty = true;
+        let state_str = if self.media.use_proxies {
             "AÇIK (720p H.264)"
         } else {
             "KAPALI (Orijinal 4K/UHD)"
@@ -66,17 +66,23 @@ impl TrimApp {
             return;
         }
 
-        if self.proxy_generating_ids.iter().any(|id| id == media_id) {
+        if self
+            .bg_tasks
+            .proxy_generating_ids
+            .iter()
+            .any(|id| id == media_id)
+        {
             return;
         }
-        if self.proxy_generating_ids.is_empty() {
-            self.proxy_cancel_flag
+        if self.bg_tasks.proxy_generating_ids.is_empty() {
+            self.bg_tasks
+                .proxy_cancel_flag
                 .store(false, std::sync::atomic::Ordering::Release);
         }
         let m_id = media_id.to_string();
-        self.proxy_generating_ids.push(m_id.clone());
-        let tx = self.proxy_tx.clone();
-        let cancel_flag = self.proxy_cancel_flag.clone();
+        self.bg_tasks.proxy_generating_ids.push(m_id.clone());
+        let tx = self.bg_tasks.proxy_tx.clone();
+        let cancel_flag = self.bg_tasks.proxy_cancel_flag.clone();
 
         std::thread::spawn(move || {
             let res = trim_media::generate_proxy_cancellable(&src, &out, &cancel_flag);
@@ -110,8 +116,8 @@ impl TrimApp {
 
         match trim_media::VoiceoverRecorder::start(&wav_path) {
             Ok(rec) => {
-                let start_time = self.current_time;
-                self.active_voiceover = Some(ActiveVoiceover {
+                let start_time = self.playback.current_time;
+                self.media.active_voiceover = Some(ActiveVoiceover {
                     track_id,
                     start_timeline_time: start_time,
                     recorder: rec,
@@ -136,7 +142,7 @@ impl TrimApp {
     }
 
     pub fn finish_voiceover(&mut self) {
-        let mut vo = match self.active_voiceover.take() {
+        let mut vo = match self.media.active_voiceover.take() {
             Some(v) => v,
             None => return,
         };
@@ -224,14 +230,14 @@ impl TrimApp {
         item.bin_id = bin_id;
         self.project.add_media(item);
         if has_audio {
-            self.audio_mixer.preload_audio_async(&file_path);
+            self.playback.audio_mixer.preload_audio_async(&file_path);
         }
         // Automatically set as active in Source Monitor
-        self.source_state.media_id = Some(m_id.clone());
-        self.source_state.current_time = 0.0;
-        self.source_state.mark_in = None;
-        self.source_state.mark_out = None;
-        self.source_state.last_decoded_time = None;
+        self.monitor.source_state.media_id = Some(m_id.clone());
+        self.monitor.source_state.current_time = 0.0;
+        self.monitor.source_state.mark_in = None;
+        self.monitor.source_state.mark_out = None;
+        self.monitor.source_state.last_decoded_time = None;
         if is_video && self.preferences.auto_generate_proxies {
             self.generate_proxy_for_media(&m_id);
             self.status_message = match self.lang() {
@@ -253,8 +259,8 @@ impl TrimApp {
 
     pub fn import_media_file<P: AsRef<std::path::Path>>(&mut self, path: P) {
         let p = path.as_ref().to_path_buf();
-        let tx = self.bg_task_tx.clone();
-        let bin_id = self.media_bin_current_bin.clone();
+        let tx = self.bg_tasks.tx.clone();
+        let bin_id = self.media.media_bin_current_bin.clone();
         self.status_message = match self.lang() {
             crate::i18n::Language::Turkish => format!("Medya analiz ediliyor: {}", p.display()),
             crate::i18n::Language::English => format!("Analyzing media: {}", p.display()),
@@ -271,8 +277,8 @@ impl TrimApp {
     pub fn import_media_path<P: AsRef<std::path::Path>>(&mut self, path: P) {
         let p = path.as_ref().to_path_buf();
         if p.is_dir() {
-            let tx = self.bg_task_tx.clone();
-            let bin_id = self.media_bin_current_bin.clone();
+            let tx = self.bg_tasks.tx.clone();
+            let bin_id = self.media.media_bin_current_bin.clone();
             self.status_message = match self.lang() {
                 crate::i18n::Language::Turkish => format!("Klasör taranıyor: {}", p.display()),
                 crate::i18n::Language::English => format!("Scanning folder: {}", p.display()),
@@ -436,14 +442,16 @@ impl TrimApp {
                     "tiff", "TIFF",
                 ],
             );
-        self.file_dialog_bridge
+        self.dialogs
+            .file_dialog_bridge
             .open(FileDialogRequest::ImportMedia, config);
     }
 
     pub fn prompt_custom_lut(&mut self, clip_id: String) {
         let config = FileDialogConfig::pick_file("3D LUT Dosyası Seç (.cube)")
             .add_filter("3D LUT (.cube)", &["cube"]);
-        self.file_dialog_bridge
+        self.dialogs
+            .file_dialog_bridge
             .open(FileDialogRequest::SelectCustomLut { clip_id }, config);
     }
 
@@ -452,7 +460,8 @@ impl TrimApp {
             "Font Dosyaları (*.ttf, *.otf)",
             &["ttf", "otf", "TTF", "OTF"],
         );
-        self.file_dialog_bridge
+        self.dialogs
+            .file_dialog_bridge
             .open(FileDialogRequest::SelectCustomFont { clip_id }, config);
     }
 
@@ -481,17 +490,17 @@ impl TrimApp {
                     media_item.media_type = MediaType::Audio;
                     media_item.duration = dur;
                     media_item.name = format!("{} ({:.1}s)", preset.label(), dur);
-                    media_item.bin_id = self.media_bin_current_bin.clone();
+                    media_item.bin_id = self.media.media_bin_current_bin.clone();
                     let id = media_item.id.clone();
                     self.project.add_media(media_item);
-                    self.audio_mixer.preload_audio_async(&p_str);
+                    self.playback.audio_mixer.preload_audio_async(&p_str);
                     id
                 };
 
                 let target_track_id = self
                     .project
                     .timeline
-                    .get_track_by_id(&self.target_audio_track)
+                    .get_track_by_id(&self.tools.target_audio_track)
                     .filter(|t| !t.locked)
                     .map(|t| t.id.clone())
                     .or_else(|| {
@@ -503,7 +512,7 @@ impl TrimApp {
                             .map(|t| t.id.clone())
                     });
 
-                let insert_t = insert_time_override.unwrap_or(self.current_time);
+                let insert_t = insert_time_override.unwrap_or(self.playback.current_time);
                 if let Some(track_id) = target_track_id {
                     let mut clip = Clip::new(&media_id, insert_t, insert_t + dur);
                     clip.name = preset.label().to_string();
@@ -606,7 +615,7 @@ impl TrimApp {
         let config =
             FileDialogConfig::save_file("3D LUT Olarak Kaydet (.cube)", Some(default_file))
                 .add_filter("3D LUT (.cube)", &["cube"]);
-        self.file_dialog_bridge.open(
+        self.dialogs.file_dialog_bridge.open(
             FileDialogRequest::ExportCubeLut {
                 cube_text,
                 clip_name: clip.name.clone(),
@@ -617,9 +626,9 @@ impl TrimApp {
 
     pub fn update_media_bin_thumbnails(&mut self, ctx: &egui::Context) {
         // 1. Poll completed background thumbnails
-        while let Some((m_id, thumb_path)) = self.thumbnail_gen.poll_thumbnail() {
+        while let Some((m_id, thumb_path)) = self.media.thumbnail_gen.poll_thumbnail() {
             if let std::collections::hash_map::Entry::Vacant(e) =
-                self.media_bin_textures.entry(m_id.clone())
+                self.media.media_bin_textures.entry(m_id.clone())
             {
                 if let Ok(dyn_img) = image::open(&thumb_path) {
                     let rgba = dyn_img.to_rgba8();
@@ -640,13 +649,13 @@ impl TrimApp {
 
         // 2. Queue missing thumbnails & 8-tile filmstrips to background worker (zero UI blocking)
         for (m_id, item) in &self.project.media_pool {
-            if !self.media_bin_textures.contains_key(m_id) {
-                self.thumbnail_gen.request_thumbnail(item);
+            if !self.media.media_bin_textures.contains_key(m_id) {
+                self.media.thumbnail_gen.request_thumbnail(item);
             }
             if item.media_type == MediaType::Video {
                 let strip_key = format!("strip:{}", m_id);
-                if !self.media_bin_textures.contains_key(&strip_key) {
-                    self.thumbnail_gen.request_filmstrip(item);
+                if !self.media.media_bin_textures.contains_key(&strip_key) {
+                    self.media.thumbnail_gen.request_filmstrip(item);
                 }
             }
         }
@@ -688,10 +697,11 @@ impl TrimApp {
         let source_out = clip.effective_source_out();
 
         self.status_message = "Sahneler arka planda taranıyor...".to_string();
-        self.bg_task_active_count += 1;
-        self.bg_task_cancel_flag
+        self.bg_tasks.active_count += 1;
+        self.bg_tasks
+            .cancel_flag
             .store(false, std::sync::atomic::Ordering::Release);
-        let tx = self.bg_task_tx.clone();
+        let tx = self.bg_tasks.tx.clone();
         std::thread::spawn(move || {
             let result = trim_media::detect_scene_changes(&media_path, source_in, source_out, 0.40);
             let _ = tx.send(crate::app::BackgroundTaskMsg::SceneDetectDone {
@@ -731,7 +741,8 @@ impl TrimApp {
             "Klip".to_string()
         };
 
-        self.silence_dialog
+        self.dialogs
+            .silence_dialog
             .open(tr_id, cl_id, name, clip.duration());
     }
 
@@ -748,8 +759,8 @@ impl TrimApp {
             None
         };
         let Some(clip) = clip_info else {
-            self.silence_dialog.status_text = "Klip bulunamadı".to_string();
-            self.silence_dialog.is_analyzing = false;
+            self.dialogs.silence_dialog.status_text = "Klip bulunamadı".to_string();
+            self.dialogs.silence_dialog.is_analyzing = false;
             return;
         };
 
@@ -760,18 +771,19 @@ impl TrimApp {
         };
 
         if !media_path.exists() {
-            self.silence_dialog.status_text = "Kaynak medya dosyası bulunamadı".to_string();
-            self.silence_dialog.is_analyzing = false;
+            self.dialogs.silence_dialog.status_text = "Kaynak medya dosyası bulunamadı".to_string();
+            self.dialogs.silence_dialog.is_analyzing = false;
             return;
         }
 
         let source_in = clip.source_in;
         let source_out = clip.effective_source_out();
-        let padding = self.silence_dialog.padding;
-        self.bg_task_active_count += 1;
-        self.bg_task_cancel_flag
+        let padding = self.dialogs.silence_dialog.padding;
+        self.bg_tasks.active_count += 1;
+        self.bg_tasks
+            .cancel_flag
             .store(false, std::sync::atomic::Ordering::Release);
-        let tx = self.bg_task_tx.clone();
+        let tx = self.bg_tasks.tx.clone();
         std::thread::spawn(move || {
             let result = trim_media::detect_silence_regions(
                 &media_path,
@@ -821,15 +833,15 @@ impl TrimApp {
             "Klip".to_string()
         };
 
-        self.transcribe_dialog.open(media_path, name);
+        self.dialogs.transcribe_dialog.open(media_path, name);
     }
 
     pub fn open_screen_record_dialog(&mut self) {
-        self.screen_record_dialog.open();
+        self.dialogs.screen_record_dialog.open();
     }
 
     pub fn insert_source_to_timeline(&mut self, is_overwrite: bool) {
-        let Some(ref m_id) = self.source_state.media_id.clone() else {
+        let Some(ref m_id) = self.monitor.source_state.media_id.clone() else {
             self.set_status(
                 "Kaynak monitöründe seçili klip yok",
                 "No clip selected in Source Monitor",
@@ -850,11 +862,13 @@ impl TrimApp {
             };
 
         let start_in = self
+            .monitor
             .source_state
             .mark_in
             .unwrap_or(0.0)
             .clamp(0.0, media_duration);
         let end_out = self
+            .monitor
             .source_state
             .mark_out
             .unwrap_or(media_duration)
@@ -868,7 +882,7 @@ impl TrimApp {
         let target_track_id = if media_type == MediaType::Audio {
             self.project
                 .timeline
-                .get_track_by_id(&self.target_audio_track)
+                .get_track_by_id(&self.tools.target_audio_track)
                 .map(|t| t.id.clone())
                 .or_else(|| {
                     self.project
@@ -880,7 +894,7 @@ impl TrimApp {
         } else {
             self.project
                 .timeline
-                .get_track_by_id(&self.target_video_track)
+                .get_track_by_id(&self.tools.target_video_track)
                 .map(|t| t.id.clone())
                 .or_else(|| {
                     self.project
@@ -904,7 +918,7 @@ impl TrimApp {
             }
         }
 
-        let insert_time = self.current_time;
+        let insert_time = self.playback.current_time;
 
         let mut commands: Vec<Box<dyn Command>> = Vec::new();
 

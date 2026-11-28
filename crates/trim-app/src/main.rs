@@ -153,29 +153,29 @@ fn main() -> Result<(), eframe::Error> {
                 let p = Path::new(file_str);
                 if p.exists() {
                     app.open_path(p);
-                    app.welcome_dialog.close();
+                    app.dialogs.welcome_dialog.close();
                 }
             }
             if cli.no_splash {
-                app.splash_screen.dismiss();
+                app.dialogs.splash_screen.dismiss();
             }
             if cli.no_welcome {
-                app.welcome_dialog.close();
+                app.dialogs.welcome_dialog.close();
             }
             if cli.open_shortcuts {
-                app.welcome_dialog.close();
-                app.shortcuts_dialog.open();
+                app.dialogs.welcome_dialog.close();
+                app.dialogs.shortcuts_dialog.open();
             }
             if cli.open_mixer {
-                app.welcome_dialog.close();
-                app.audio_mixer_dialog.open();
+                app.dialogs.welcome_dialog.close();
+                app.dialogs.audio_mixer_dialog.open();
             }
             if cli.open_export {
-                app.welcome_dialog.close();
-                app.export_dialog.open(&app.project);
+                app.dialogs.welcome_dialog.close();
+                app.dialogs.export_dialog.open(&app.project);
             }
             if cli.enable_safe_zones {
-                app.show_safe_zones = true;
+                app.monitor.show_safe_zones = true;
             }
             if let Some(ref srt_file) = cli.import_srt {
                 if let Ok(content) = std::fs::read_to_string(srt_file) {
@@ -200,11 +200,83 @@ fn main() -> Result<(), eframe::Error> {
                 if let Some(t) = app.project.timeline.tracks.iter().find(|t| t.name == "V1") {
                     if let Some(c) = t.clips.first() {
                         app.canvas_state.selected_clip_pairs = vec![(t.id.clone(), c.id.clone())];
-                        app.current_time = 1.0;
+                        app.playback.current_time = 1.0;
                     }
                 }
             }
             Ok(Box::new(app))
         }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_cli_args;
+
+    fn to_args(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn test_parse_cli_args_defaults() {
+        let cli = parse_cli_args(to_args(&["trim"]));
+        assert!(!cli.show_version);
+        assert!(!cli.show_help);
+        assert!(!cli.no_splash);
+        assert!(!cli.no_welcome);
+        assert!(cli.import_srt.is_none());
+        assert!(cli.files.is_empty());
+    }
+
+    #[test]
+    fn test_parse_cli_args_version_and_help() {
+        let ver = parse_cli_args(to_args(&["trim", "-v"]));
+        assert!(ver.show_version);
+        let help = parse_cli_args(to_args(&["trim", "--help"]));
+        assert!(help.show_help);
+    }
+
+    #[test]
+    fn test_parse_cli_args_flags_and_import_srt() {
+        let cli = parse_cli_args(to_args(&[
+            "trim",
+            "--no-splash",
+            "--no-welcome",
+            "--open-shortcuts",
+            "--open-mixer",
+            "--open-export",
+            "--enable-safe-zones",
+            "--tab-effects",
+            "--select-v1",
+            "--import-srt",
+            "subs.srt",
+        ]));
+        assert!(cli.no_splash);
+        assert!(cli.no_welcome);
+        assert!(cli.open_shortcuts);
+        assert!(cli.open_mixer);
+        assert!(cli.open_export);
+        assert!(cli.enable_safe_zones);
+        assert!(cli.tab_effects);
+        assert!(cli.select_v1);
+        assert_eq!(cli.import_srt.as_deref(), Some("subs.srt"));
+    }
+
+    #[test]
+    fn test_parse_cli_args_files_and_unknown_flags() {
+        let cli = parse_cli_args(to_args(&[
+            "trim",
+            "--unknown-flag",
+            "project.trim",
+            "clip.mp4",
+        ]));
+        assert_eq!(cli.files, vec!["project.trim", "clip.mp4"]);
+    }
+
+    #[test]
+    fn test_parse_cli_args_missing_srt_value_no_panic() {
+        let cli = parse_cli_args(to_args(&["trim", "--import-srt"]));
+        assert!(cli.import_srt.is_none());
+        assert!(cli.files.is_empty());
+    }
 }

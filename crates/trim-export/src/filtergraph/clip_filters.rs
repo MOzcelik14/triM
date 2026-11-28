@@ -646,4 +646,23 @@ impl TimelineExporter {
             format!("'(H-h)/2+{py}'"),
         )
     }
+
+    /// Builds an FFmpeg `xfade` video transition filter for `TransitionKind`.
+    pub fn build_xfade_transition_filter(
+        kind: trim_core::clip::TransitionKind,
+        duration: f64,
+        offset: f64,
+    ) -> String {
+        format!(
+            "xfade=transition={}:duration={:.4}:offset={:.4}",
+            kind.xfade_name(),
+            duration.max(0.01),
+            offset.max(0.0)
+        )
+    }
+
+    /// Builds an FFmpeg `acrossfade` audio transition filter.
+    pub fn build_acrossfade_filter(duration: f64) -> String {
+        format!("acrossfade=d={:.4}:c1=tri:c2=tri", duration.max(0.01))
+    }
 }

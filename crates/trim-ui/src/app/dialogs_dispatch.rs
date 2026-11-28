@@ -20,12 +20,12 @@ impl TrimApp {
         // -------------------------------------------------------------
         // Modals & Dialogs
         // -------------------------------------------------------------
-        if let Some(act) = self.export_dialog.show(ctx) {
+        if let Some(act) = self.dialogs.export_dialog.show(ctx) {
             match act {
                 ExportDialogAction::StartExport(preset, out_path, range) => {
                     let (tx, rx) = channel();
-                    self.export_rx = Some(rx);
-                    self.export_runner.start_export(
+                    self.export.export_rx = Some(rx);
+                    self.export.export_runner.start_export(
                         self.project.clone(),
                         preset,
                         out_path,
@@ -34,9 +34,9 @@ impl TrimApp {
                     );
                 }
                 ExportDialogAction::CancelExport => {
-                    self.export_runner.cancel();
-                    self.export_dialog.is_exporting = false;
-                    self.export_rx = None;
+                    self.export.export_runner.cancel();
+                    self.dialogs.export_dialog.is_exporting = false;
+                    self.export.export_rx = None;
                     self.set_status("Dışa aktarma iptal edildi", "Export cancelled");
                 }
                 ExportDialogAction::AddToQueue(preset, out_path, range) => {
@@ -47,8 +47,15 @@ impl TrimApp {
                         .to_string();
                     let job =
                         RenderJob::new(job_name, self.project.clone(), preset, out_path, range);
-                    self.render_queue.add_job(job);
-                    self.render_queue_dialog.open();
+                    self.export.render_queue.add_job(job);
+                    if let Err(e) = self
+                        .export
+                        .render_queue
+                        .save_to_path(&trim_export::queue::RenderQueue::default_state_path())
+                    {
+                        log::warn!("Render queue save failed: {}", e);
+                    }
+                    self.dialogs.render_queue_dialog.open();
                     self.set_status(
                         "İş dışa aktarma kuyruğuna eklendi.",
                         "Job added to render queue.",
@@ -87,7 +94,11 @@ impl TrimApp {
             }
         }
 
-        if let Some(act) = self.render_queue_dialog.show(ctx, &mut self.render_queue) {
+        if let Some(act) = self
+            .dialogs
+            .render_queue_dialog
+            .show(ctx, &mut self.export.render_queue)
+        {
             match act {
                 RenderQueueDialogAction::OpenOutputFolder(path) => {
                     let p = std::path::Path::new(&path);
@@ -101,13 +112,13 @@ impl TrimApp {
                     }
                 }
                 RenderQueueDialogAction::NewExportJob => {
-                    self.export_dialog.open(&self.project);
+                    self.dialogs.export_dialog.open(&self.project);
                 }
                 RenderQueueDialogAction::Close => {}
             }
         }
 
-        if let Some(act) = self.relink_dialog.show(ctx) {
+        if let Some(act) = self.dialogs.relink_dialog.show(ctx) {
             match act {
                 RelinkDialogAction::PickFolder => {
                     self.relink_folder_dialog();
@@ -116,13 +127,13 @@ impl TrimApp {
                     self.relink_single_media_dialog(media_id);
                 }
                 RelinkDialogAction::Refresh => {
-                    self.relink_dialog.refresh(&self.project);
+                    self.dialogs.relink_dialog.refresh(&self.project);
                 }
                 RelinkDialogAction::Close => {}
             }
         }
 
-        if let Some(act) = self.speed_dialog.show(ctx) {
+        if let Some(act) = self.dialogs.speed_dialog.show(ctx) {
             match act {
                 SpeedDialogAction::Apply {
                     track_id,
@@ -139,7 +150,7 @@ impl TrimApp {
             }
         }
 
-        if let Some(act) = self.silence_dialog.show(ctx) {
+        if let Some(act) = self.dialogs.silence_dialog.show(ctx) {
             match act {
                 SilenceDialogAction::DetectRequested {
                     track_id,
@@ -170,7 +181,7 @@ impl TrimApp {
             }
         }
 
-        if let Some(act) = self.title_dialog.show(ctx) {
+        if let Some(act) = self.dialogs.title_dialog.show(ctx) {
             match act {
                 TitleDialogAction::CreateTitle {
                     text,
@@ -206,15 +217,15 @@ impl TrimApp {
                             let target_has_clip = self
                                 .project
                                 .timeline
-                                .get_track_by_id(&self.target_video_track)
-                                .map(|t| t.find_clip_at(self.current_time).is_some())
+                                .get_track_by_id(&self.tools.target_video_track)
+                                .map(|t| t.find_clip_at(self.playback.current_time).is_some())
                                 .unwrap_or(false);
 
                             let target_track_id = if target_has_clip {
                                 let upper_track = current_video_tracks
                                     .iter()
-                                    .filter(|t| t.id != self.target_video_track && !t.locked)
-                                    .find(|t| t.find_clip_at(self.current_time).is_none());
+                                    .filter(|t| t.id != self.tools.target_video_track && !t.locked)
+                                    .find(|t| t.find_clip_at(self.playback.current_time).is_none());
 
                                 if let Some(t) = upper_track {
                                     t.id.clone()
@@ -254,10 +265,10 @@ impl TrimApp {
                             } else if self
                                 .project
                                 .timeline
-                                .get_track_by_id(&self.target_video_track)
+                                .get_track_by_id(&self.tools.target_video_track)
                                 .is_some()
                             {
-                                self.target_video_track.clone()
+                                self.tools.target_video_track.clone()
                             } else {
                                 current_video_tracks
                                     .first()
@@ -280,8 +291,8 @@ impl TrimApp {
                                 } else {
                                     let mut clip = Clip::new(
                                         m_id,
-                                        self.current_time,
-                                        self.current_time + duration,
+                                        self.playback.current_time,
+                                        self.playback.current_time + duration,
                                     );
                                     clip.name = format!("Başlık: {}", text);
                                     clip.text_overlay = Some(TextOverlay {
@@ -345,9 +356,10 @@ impl TrimApp {
             }
         }
 
-        if let Some(act) = self.recovery_dialog.show(ctx) {
+        if let Some(act) = self.dialogs.recovery_dialog.show(ctx) {
+            let remove_after = matches!(act, RecoveryAction::Restore(_));
             match act {
-                RecoveryAction::Restore(p) => {
+                RecoveryAction::Restore(p) | RecoveryAction::RestoreSnapshot(p) => {
                     if let Ok(mut proj) = load_project(&p) {
                         // If an older recovery snapshot had 1920x1080 clobbered over a 4K/custom
                         // video clip, recover the resolution from the timeline's first video clip.
@@ -374,21 +386,21 @@ impl TrimApp {
 
                         self.project = proj;
                         self.project.mark_dirty();
-                        self.welcome_dialog.close();
+                        self.dialogs.welcome_dialog.close();
                         self.undo_stack.clear();
                         self.canvas_state.selected_clip_pairs.clear();
-                        self.current_time = 0.0;
-                        self.media_bin_textures.clear();
-                        self.video_engine.clear_cache();
-                        self.audio_mixer.clear_cache();
-                        self.audio_player.stop();
-                        self.is_playing = false;
-                        self.monitor_texture = None;
-                        self.last_rendered_dirty = true;
-                        self.source_state.media_id = None;
-                        self.source_state.texture = None;
-                        self.source_state.is_playing = false;
-                        self.source_state.clock_start = None;
+                        self.playback.current_time = 0.0;
+                        self.media.media_bin_textures.clear();
+                        self.media.video_engine.clear_cache();
+                        self.playback.audio_mixer.clear_cache();
+                        self.playback.audio_player.stop();
+                        self.playback.is_playing = false;
+                        self.monitor.monitor_texture = None;
+                        self.media.last_rendered_dirty = true;
+                        self.monitor.source_state.media_id = None;
+                        self.monitor.source_state.texture = None;
+                        self.monitor.source_state.is_playing = false;
+                        self.monitor.source_state.clock_start = None;
                         self.resolve_default_target_tracks();
                         for item in self.project.media_pool.values_mut() {
                             if item.media_type == MediaType::Video && !item.has_audio() {
@@ -401,10 +413,14 @@ impl TrimApp {
                                 }
                             }
                             if item.has_audio() {
-                                self.audio_mixer.preload_audio_async(&item.file_path);
+                                self.playback
+                                    .audio_mixer
+                                    .preload_audio_async(&item.file_path);
                             }
                         }
-                        let _ = std::fs::remove_file(&p);
+                        if remove_after {
+                            let _ = std::fs::remove_file(&p);
+                        }
                         self.status_message = match self.lang() {
                             crate::i18n::Language::Turkish => format!(
                                 "Proje otomatik kayıttan kurtarıldı ({}×{} @ {:.0}fps)",
@@ -423,7 +439,7 @@ impl TrimApp {
                 }
                 RecoveryAction::Discard(p) => {
                     let _ = std::fs::remove_file(p);
-                    self.autosave_mgr.cleanup(&self.project);
+                    self.persistence.autosave_mgr.cleanup(&self.project);
                 }
             }
         }
@@ -431,11 +447,11 @@ impl TrimApp {
         // -------------------------------------------------------------
         // Audio Mixer Modal
         // -------------------------------------------------------------
-        let mixer_actions = self.audio_mixer_dialog.show(
+        let mixer_actions = self.dialogs.audio_mixer_dialog.show(
             ctx,
             &self.project,
-            self.vu_state.current_l,
-            self.vu_state.current_r,
+            self.playback.vu_state.current_l,
+            self.playback.vu_state.current_r,
         );
         for act in mixer_actions {
             match act {
@@ -448,7 +464,13 @@ impl TrimApp {
                 AudioMixerAction::TrackPanChanged(t_id, pan) => {
                     if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
                         t.pan = pan.clamp(-1.0, 1.0);
-                        self.audio_mixer.clear_cache();
+                        self.playback.audio_mixer.clear_cache();
+                        self.project.mark_dirty();
+                    }
+                }
+                AudioMixerAction::TrackBusChanged(t_id, bus) => {
+                    if let Some(t) = self.project.timeline.get_track_by_id_mut(&t_id) {
+                        t.bus = bus;
                         self.project.mark_dirty();
                     }
                 }
@@ -471,8 +493,8 @@ impl TrimApp {
         // -------------------------------------------------------------
         // Paste Attributes Modal (Ctrl+Alt+V)
         // -------------------------------------------------------------
-        if self.paste_attrs_dialog_open {
-            let mut open = self.paste_attrs_dialog_open;
+        if self.paste_attrs.dialog_open {
+            let mut open = self.paste_attrs.dialog_open;
             let mut do_apply = false;
             let mut do_close = false;
             egui::Window::new("≡ Özellikleri Seçerek Yapıştır (Paste Attributes)")
@@ -483,6 +505,7 @@ impl TrimApp {
                 .fixed_size(Vec2::new(390.0, 220.0))
                 .show(ctx, |ui| {
                     let src_name = self
+                        .tools
                         .clipboard_clips
                         .first()
                         .map(|(_, _, _, c)| c.name.as_str())
@@ -497,19 +520,19 @@ impl TrimApp {
                     ui.add_space(6.0);
 
                     ui.checkbox(
-                        &mut self.paste_attr_color,
+                        &mut self.paste_attrs.color,
                         "■ Renk & Grading (Color Wheels, Eğriler, HSL, LUT, Film FX)",
                     );
                     ui.checkbox(
-                        &mut self.paste_attr_transform,
+                        &mut self.paste_attrs.transform,
                         "⊞ Dönüşüm & Kompozisyon (Konum, Ölçek, Döndürme, Kırpma, Corner Pin)",
                     );
                     ui.checkbox(
-                        &mut self.paste_attr_audio,
+                        &mut self.paste_attrs.audio,
                         "♪ Ses & Fairlight (Ses Seviyesi, Pan, 6-Band EQ, Kompresör, Reverb)",
                     );
                     ui.checkbox(
-                        &mut self.paste_attr_speed,
+                        &mut self.paste_attrs.speed,
                         "▸ Hız & Yön (Speed, Reverse, Pitch Lock)",
                     );
 
@@ -524,7 +547,7 @@ impl TrimApp {
                             )
                             .fill(Color32::from_rgb(0x28, 0x5a, 0x9e));
                             if ui
-                                .add_enabled(!self.clipboard_clips.is_empty(), apply_btn)
+                                .add_enabled(!self.tools.clipboard_clips.is_empty(), apply_btn)
                                 .clicked()
                             {
                                 do_apply = true;
@@ -537,14 +560,14 @@ impl TrimApp {
                 });
             if do_apply {
                 self.apply_paste_attributes(
-                    self.paste_attr_color,
-                    self.paste_attr_transform,
-                    self.paste_attr_audio,
-                    self.paste_attr_speed,
+                    self.paste_attrs.color,
+                    self.paste_attrs.transform,
+                    self.paste_attrs.audio,
+                    self.paste_attrs.speed,
                 );
-                self.paste_attrs_dialog_open = false;
+                self.paste_attrs.dialog_open = false;
             } else if do_close || !open {
-                self.paste_attrs_dialog_open = false;
+                self.paste_attrs.dialog_open = false;
             }
         }
 
@@ -552,11 +575,12 @@ impl TrimApp {
         // Welcome Screen / Project Launcher Modal
         // (Do not overlap when Crash Recovery modal is active)
         // -------------------------------------------------------------
-        let welcome_act = if self.recovery_dialog.is_open || self.splash_screen.is_active {
-            None
-        } else {
-            self.welcome_dialog.show(ctx)
-        };
+        let welcome_act =
+            if self.dialogs.recovery_dialog.is_open || self.dialogs.splash_screen.is_active {
+                None
+            } else {
+                self.dialogs.welcome_dialog.show(ctx)
+            };
         if let Some(act) = welcome_act {
             match act {
                 WelcomeAction::CreateNewProject {
@@ -567,9 +591,10 @@ impl TrimApp {
                 } => {
                     if self.has_unsaved_changes() {
                         let current_name = self.project.settings.name.clone();
-                        self.close_confirm_dialog
+                        self.dialogs
+                            .close_confirm_dialog
                             .prompt(PendingCloseAction::NewProject, current_name);
-                        self.welcome_dialog.close();
+                        self.dialogs.welcome_dialog.close();
                     } else {
                         self.reset_to_new_project();
                         self.project.settings.name = name;
@@ -585,33 +610,35 @@ impl TrimApp {
                                 self.project.settings.name, width, height, fps
                             ),
                         };
-                        self.welcome_dialog.close();
+                        self.dialogs.welcome_dialog.close();
                     }
                 }
                 WelcomeAction::OpenProjectRequested => {
                     if self.has_unsaved_changes() {
                         let name = self.project.settings.name.clone();
-                        self.close_confirm_dialog
+                        self.dialogs
+                            .close_confirm_dialog
                             .prompt(PendingCloseAction::OpenProject, name);
-                        self.welcome_dialog.close();
+                        self.dialogs.welcome_dialog.close();
                     } else {
                         self.open_project_dialog();
-                        self.welcome_dialog.close();
+                        self.dialogs.welcome_dialog.close();
                     }
                 }
                 WelcomeAction::OpenRecentProject(path) => {
                     if self.has_unsaved_changes() {
                         let name = self.project.settings.name.clone();
-                        self.close_confirm_dialog
+                        self.dialogs
+                            .close_confirm_dialog
                             .prompt(PendingCloseAction::OpenPath(PathBuf::from(path)), name);
-                        self.welcome_dialog.close();
+                        self.dialogs.welcome_dialog.close();
                     } else {
                         self.open_path(Path::new(&path));
-                        self.welcome_dialog.close();
+                        self.dialogs.welcome_dialog.close();
                     }
                 }
                 WelcomeAction::Close => {
-                    self.welcome_dialog.close();
+                    self.dialogs.welcome_dialog.close();
                 }
             }
         }
@@ -619,14 +646,14 @@ impl TrimApp {
         // -------------------------------------------------------------
         // Unsaved Changes Confirmation Modal
         // -------------------------------------------------------------
-        if let Some(act) = self.close_confirm_dialog.show(ctx) {
+        if let Some(act) = self.dialogs.close_confirm_dialog.show(ctx) {
             match act {
                 CloseConfirmAction::SaveAndProceed(pending) => {
                     self.save_project_and_proceed(ctx, pending);
                 }
                 CloseConfirmAction::DiscardAndProceed(pending) => {
                     self.project.is_dirty = false;
-                    self.last_saved_undo_len = self.undo_stack.len();
+                    self.persistence.last_saved_undo_len = self.undo_stack.len();
                     self.execute_pending_close_action(ctx, pending);
                 }
                 CloseConfirmAction::Cancel => {}
@@ -636,14 +663,17 @@ impl TrimApp {
         // -------------------------------------------------------------
         // Keyboard Shortcuts Modal (F1)
         // -------------------------------------------------------------
-        self.shortcuts_dialog.lang = self.lang();
-        self.shortcuts_dialog
-            .show(ctx, &mut self.shortcut_profile, &mut self.keymap_config);
+        self.dialogs.shortcuts_dialog.lang = self.lang();
+        self.dialogs.shortcuts_dialog.show(
+            ctx,
+            &mut self.tools.shortcut_profile,
+            &mut self.tools.keymap_config,
+        );
 
         // -------------------------------------------------------------
         // Preferences / Settings Modal (Ctrl+,)
         // -------------------------------------------------------------
-        if let Some(act) = self.preferences_dialog.show(ctx, self.lang()) {
+        if let Some(act) = self.dialogs.preferences_dialog.show(ctx, self.lang()) {
             match act {
                 PreferencesAction::Save(new_prefs) => {
                     let old_scale = self.preferences.ui_scale;
@@ -657,31 +687,37 @@ impl TrimApp {
                     if (old_scale - new_scale).abs() > 0.001 {
                         ctx.set_pixels_per_point(new_scale);
                     }
-                    if old_proxy != new_proxy {
-                        self.use_proxies = new_proxy;
-                        self.video_engine.use_proxies = new_proxy;
-                        self.video_engine.clear_cache();
-                        self.last_rendered_dirty = true;
+                    if old_proxy != new_proxy || self.preferences.proxy_mode != new_prefs.proxy_mode
+                    {
+                        self.media.use_proxies = new_proxy;
+                        self.media.video_engine.use_proxies = new_proxy;
+                        self.media.video_engine.proxy_mode = new_prefs.proxy_mode;
+                        self.media.video_engine.clear_cache();
+                        self.media.last_rendered_dirty = true;
                     }
                     if old_snap != new_snap {
-                        self.snap_enabled = new_snap;
+                        self.tools.snap_enabled = new_snap;
                     }
 
-                    let old_profile = self.shortcut_profile;
+                    let old_profile = self.tools.shortcut_profile;
                     match new_prefs.shortcut_profile.as_str() {
                         "Adobe Premiere Pro" => {
-                            self.shortcut_profile = ShortcutProfile::PremierePro
+                            self.tools.shortcut_profile = ShortcutProfile::PremierePro
                         }
                         "DaVinci Resolve" => {
-                            self.shortcut_profile = ShortcutProfile::DaVinciResolve
+                            self.tools.shortcut_profile = ShortcutProfile::DaVinciResolve
                         }
-                        "Final Cut Pro" => self.shortcut_profile = ShortcutProfile::FinalCutPro,
-                        _ => self.shortcut_profile = ShortcutProfile::TrimDefault,
+                        "Final Cut Pro" => {
+                            self.tools.shortcut_profile = ShortcutProfile::FinalCutPro
+                        }
+                        _ => self.tools.shortcut_profile = ShortcutProfile::TrimDefault,
                     }
-                    if self.shortcut_profile != old_profile {
-                        self.keymap_config =
-                            crate::shortcuts::KeymapConfig::for_profile(self.shortcut_profile);
+                    if self.tools.shortcut_profile != old_profile {
+                        self.tools.keymap_config = crate::shortcuts::KeymapConfig::for_profile(
+                            self.tools.shortcut_profile,
+                        );
                         if let Err(e) = self
+                            .tools
                             .keymap_config
                             .save_to_path(&crate::shortcuts::KeymapConfig::config_path())
                         {
@@ -691,12 +727,15 @@ impl TrimApp {
 
                     if self.preferences.max_memory_budget_mb != new_prefs.max_memory_budget_mb {
                         let mb = new_prefs.max_memory_budget_mb.max(128);
-                        self.audio_mixer.set_max_cache_bytes(mb * 1024 * 1024);
-                        self.video_engine
+                        self.playback
+                            .audio_mixer
+                            .set_max_cache_bytes(mb * 1024 * 1024);
+                        self.media
+                            .video_engine
                             .set_frame_cache_capacity((mb * 300 / 512).max(50));
                     }
 
-                    self.audio_mixer.limiter.set_ceiling_dbfs(
+                    self.playback.audio_mixer.limiter.set_ceiling_dbfs(
                         if new_prefs.master_limiter_enabled {
                             new_prefs.limiter_ceiling_db
                         } else {
@@ -730,22 +769,23 @@ impl TrimApp {
         // -------------------------------------------------------------
         // Whisper Speech-to-Text Transcription Modal
         // -------------------------------------------------------------
-        if let Some(act) = self.transcribe_dialog.ui(ctx) {
+        if let Some(act) = self.dialogs.transcribe_dialog.ui(ctx) {
             match act {
                 TranscribeDialogAction::StartTranscribe {
                     media_path,
                     model_name,
                     language,
                 } => {
-                    let whisper_bin_opt = self.transcribe_dialog.whisper_bin.clone();
+                    let whisper_bin_opt = self.dialogs.transcribe_dialog.whisper_bin.clone();
                     if let Some(whisper_bin) = whisper_bin_opt {
-                        self.transcribe_dialog.is_transcribing = true;
-                        self.transcribe_dialog.status_message =
+                        self.dialogs.transcribe_dialog.is_transcribing = true;
+                        self.dialogs.transcribe_dialog.status_message =
                             "Ses ayıklanıyor ve deşifre ediliyor (arka planda)...".to_string();
-                        self.bg_task_active_count += 1;
-                        self.bg_task_cancel_flag
+                        self.bg_tasks.active_count += 1;
+                        self.bg_tasks
+                            .cancel_flag
                             .store(false, std::sync::atomic::Ordering::Release);
-                        let tx = self.bg_task_tx.clone();
+                        let tx = self.bg_tasks.tx.clone();
                         std::thread::spawn(move || {
                             let temp_wav = std::env::temp_dir()
                                 .join(format!("trim_whisper_{}.wav", uuid::Uuid::new_v4()));
@@ -765,8 +805,8 @@ impl TrimApp {
                             let _ = tx.send(BackgroundTaskMsg::TranscribeDone { result: res });
                         });
                     } else {
-                        self.transcribe_dialog.is_transcribing = false;
-                        self.transcribe_dialog.status_message = "Whisper çalıştırılabilir dosyası bulunamadı. Lütfen whisper-cli veya openai-whisper kurun.".to_string();
+                        self.dialogs.transcribe_dialog.is_transcribing = false;
+                        self.dialogs.transcribe_dialog.status_message = "Whisper çalıştırılabilir dosyası bulunamadı. Lütfen whisper-cli veya openai-whisper kurun.".to_string();
                     }
                 }
             }
@@ -775,8 +815,8 @@ impl TrimApp {
         // -------------------------------------------------------------
         // Screen & Webcam Recorder Modal
         // -------------------------------------------------------------
-        self.screen_record_dialog.lang = self.lang();
-        if let Some(act) = self.screen_record_dialog.ui(ctx) {
+        self.dialogs.screen_record_dialog.lang = self.lang();
+        if let Some(act) = self.dialogs.screen_record_dialog.ui(ctx) {
             match act {
                 ScreenRecordAction::RecordingSaved {
                     file_path,
@@ -794,8 +834,11 @@ impl TrimApp {
                         if auto_add_to_timeline && dur > 0.1 {
                             let current_video_tracks = self.project.timeline.get_video_tracks();
                             if let Some(target_tr) = current_video_tracks.first() {
-                                let clip =
-                                    Clip::new(m_id, self.current_time, self.current_time + dur);
+                                let clip = Clip::new(
+                                    m_id,
+                                    self.playback.current_time,
+                                    self.playback.current_time + dur,
+                                );
                                 let cmd = Box::new(AddClipCommand::new(&target_tr.id, clip));
                                 let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
                                 self.project.mark_dirty();
@@ -816,9 +859,9 @@ impl TrimApp {
             }
         }
 
-        if self.show_about_dialog {
+        if self.dialogs.show_about_dialog {
             if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-                self.show_about_dialog = false;
+                self.dialogs.show_about_dialog = false;
             }
 
             let screen_rect = ctx.screen_rect();
@@ -831,7 +874,7 @@ impl TrimApp {
                     ui.painter()
                         .rect_filled(rect, 0.0, Color32::from_black_alpha(155));
                     if resp.clicked() {
-                        self.show_about_dialog = false;
+                        self.dialogs.show_about_dialog = false;
                     }
                 });
 
@@ -1062,7 +1105,7 @@ impl TrimApp {
                                     .fill(Color32::from_rgb(0xe0, 0x7a, 0x38));
 
                                     if ui.add(close_btn).clicked() {
-                                        self.show_about_dialog = false;
+                                        self.dialogs.show_about_dialog = false;
                                     }
                                 },
                             );
@@ -1071,7 +1114,7 @@ impl TrimApp {
                 });
         }
 
-        if let Some(mut state) = self.bin_dialog.clone() {
+        if let Some(mut state) = self.media.bin_dialog.clone() {
             let mut close_dialog = false;
             let mut commit_dialog = false;
 
@@ -1162,7 +1205,7 @@ impl TrimApp {
                     match state.mode {
                         BinDialogMode::Create => {
                             let bin_id = self.project.add_bin(trimmed);
-                            self.media_bin_current_bin = Some(bin_id);
+                            self.media.media_bin_current_bin = Some(bin_id);
                             self.status_message = match self.lang() {
                                 crate::i18n::Language::Turkish => {
                                     format!("'{}' klasörü oluşturuldu", trimmed)
@@ -1186,19 +1229,19 @@ impl TrimApp {
                     }
                     self.project.mark_dirty();
                 }
-                self.bin_dialog = None;
+                self.media.bin_dialog = None;
             } else if close_dialog {
-                self.bin_dialog = None;
+                self.media.bin_dialog = None;
             } else {
-                self.bin_dialog = Some(state);
+                self.media.bin_dialog = Some(state);
             }
         }
 
         // -------------------------------------------------------------
         // FFmpeg Missing Diagnostic Modal
         // -------------------------------------------------------------
-        if self.ffmpeg_missing_alert && !self.splash_screen.is_active {
-            let mut is_open = self.ffmpeg_missing_alert;
+        if self.dialogs.ffmpeg_missing_alert && !self.dialogs.splash_screen.is_active {
+            let mut is_open = self.dialogs.ffmpeg_missing_alert;
             let title = match self.lang() {
                 Language::Turkish => "⚠ triM. — FFmpeg Medya Motoru Bulunamadı",
                 Language::English => "⚠ triM. — FFmpeg Media Engine Not Found",
@@ -1265,7 +1308,7 @@ impl TrimApp {
                         if ui.button(retry_lbl).clicked() {
                             trim_media::refresh_ffmpeg_availability();
                             if trim_media::is_ffmpeg_available() && trim_media::is_ffprobe_available() {
-                                self.ffmpeg_missing_alert = false;
+                                self.dialogs.ffmpeg_missing_alert = false;
                                 self.status_message = match self.lang() {
                                     Language::Turkish => "FFmpeg başarıyla tespit edildi! Sistem hazır.".to_string(),
                                     Language::English => "FFmpeg detected successfully! System ready.".to_string(),
@@ -1284,13 +1327,13 @@ impl TrimApp {
                                 Language::English => "Continue Anyway",
                             };
                             if ui.button(close_lbl).clicked() {
-                                self.ffmpeg_missing_alert = false;
+                                self.dialogs.ffmpeg_missing_alert = false;
                             }
                         });
                     });
                 });
             if !is_open {
-                self.ffmpeg_missing_alert = false;
+                self.dialogs.ffmpeg_missing_alert = false;
             }
         }
     }
@@ -1305,6 +1348,6 @@ impl TrimApp {
         let program = "xdg-open";
         let mut cmd = std::process::Command::new(program);
         cmd.arg(folder);
-        let _ = self.helper_processes.spawn(&mut cmd);
+        let _ = self.bg_tasks.helper_processes.spawn(&mut cmd);
     }
 }

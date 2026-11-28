@@ -368,6 +368,9 @@ pub enum HwAccelBackend {
     None,
     Vaapi,
     Cuda,
+    Qsv,
+    Amf,
+    VideoToolbox,
     Vulkan,
 }
 
@@ -377,14 +380,17 @@ impl HwAccelBackend {
             Self::None => None,
             Self::Vaapi => Some("vaapi"),
             Self::Cuda => Some("cuda"),
+            Self::Qsv => Some("qsv"),
+            Self::Amf => Some("amf"),
+            Self::VideoToolbox => Some("videotoolbox"),
             Self::Vulkan => Some("vulkan"),
         }
     }
 }
 
-/// Probes FFmpeg hardware decode backends (`vaapi`, `cuda`, `vulkan`) at runtime using a
-/// short bounded functional decode test. Silently falls back to `HwAccelBackend::None` on
-/// any probe failure and logs the fallback reason.
+/// Probes FFmpeg hardware decode backends (`vaapi`, `cuda`, `qsv`, `amf`, `videotoolbox`, `vulkan`)
+/// at runtime using a short bounded functional decode test. Silently falls back to
+/// `HwAccelBackend::None` on any probe failure and logs the fallback reason.
 pub fn probe_working_hwaccel() -> HwAccelBackend {
     static CACHED: std::sync::OnceLock<HwAccelBackend> = std::sync::OnceLock::new();
     *CACHED.get_or_init(probe_working_hwaccel_uncached)
@@ -404,11 +410,19 @@ pub fn probe_working_hwaccel_uncached() -> HwAccelBackend {
     };
     let supported = String::from_utf8_lossy(&list_out.stdout).to_lowercase();
 
-    for backend in [
-        HwAccelBackend::Vaapi,
-        HwAccelBackend::Cuda,
-        HwAccelBackend::Vulkan,
-    ] {
+    let candidates: &[HwAccelBackend] = if cfg!(target_os = "macos") {
+        &[HwAccelBackend::VideoToolbox, HwAccelBackend::Vulkan]
+    } else {
+        &[
+            HwAccelBackend::Vaapi,
+            HwAccelBackend::Cuda,
+            HwAccelBackend::Qsv,
+            HwAccelBackend::Amf,
+            HwAccelBackend::Vulkan,
+        ]
+    };
+
+    for &backend in candidates {
         let Some(flag) = backend.as_ffmpeg_flag() else {
             continue;
         };

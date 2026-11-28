@@ -48,10 +48,29 @@ pub enum ShortcutAction {
     SelectTool,
     RazorTool,
     RippleTool,
+    TrackSelectTool,
+    SlipTool,
+    RollTool,
+    SlideTool,
+    PenTool,
+    HandTool,
+    TypeTool,
     SplitAtPlayhead,
     RippleTrimHead,
     RippleTrimTail,
     ToggleSnap,
+    ShuttleReverse,
+    ShuttleStop,
+    ShuttleForward,
+    AddMarker,
+    MarkIn,
+    MarkOut,
+    StepFrameBack,
+    StepFrameForward,
+    PrevEditPoint,
+    NextEditPoint,
+    GoToHome,
+    GoToEnd,
     Undo,
     Redo,
     DeleteSelected,
@@ -64,10 +83,29 @@ impl ShortcutAction {
         Self::SelectTool,
         Self::RazorTool,
         Self::RippleTool,
+        Self::TrackSelectTool,
+        Self::SlipTool,
+        Self::RollTool,
+        Self::SlideTool,
+        Self::PenTool,
+        Self::HandTool,
+        Self::TypeTool,
         Self::SplitAtPlayhead,
         Self::RippleTrimHead,
         Self::RippleTrimTail,
         Self::ToggleSnap,
+        Self::ShuttleReverse,
+        Self::ShuttleStop,
+        Self::ShuttleForward,
+        Self::AddMarker,
+        Self::MarkIn,
+        Self::MarkOut,
+        Self::StepFrameBack,
+        Self::StepFrameForward,
+        Self::PrevEditPoint,
+        Self::NextEditPoint,
+        Self::GoToHome,
+        Self::GoToEnd,
         Self::Undo,
         Self::Redo,
         Self::DeleteSelected,
@@ -80,10 +118,29 @@ impl ShortcutAction {
             Self::SelectTool => "Seçim Aracı (Select Tool)",
             Self::RazorTool => "Jilet / Kesme Aracı (Razor / Blade)",
             Self::RippleTool => "Dalgalanma Aracı (Ripple / Trim)",
+            Self::TrackSelectTool => "İz Seçme Aracı (Track Select)",
+            Self::SlipTool => "Kaydırma Aracı (Slip)",
+            Self::RollTool => "Yuvarlama Aracı (Roll)",
+            Self::SlideTool => "Sürükleme Aracı (Slide)",
+            Self::PenTool => "Kalem / Anahtar Kare Aracı (Pen)",
+            Self::HandTool => "El Aracı (Hand)",
+            Self::TypeTool => "Metin Aracı (Type)",
             Self::SplitAtPlayhead => "İmleç Konumunda Klibi Böl (Split)",
             Self::RippleTrimHead => "Baştan Dalgalanma Kırp (Ripple Trim Head)",
             Self::RippleTrimTail => "Sondan Dalgalanma Kırp (Ripple Trim Tail)",
             Self::ToggleSnap => "Mıknatıs / Yapışma (Snap)",
+            Self::ShuttleReverse => "Geri Sar (Shuttle Reverse)",
+            Self::ShuttleStop => "Duraklat (Shuttle Stop)",
+            Self::ShuttleForward => "İleri Oynat (Shuttle Forward)",
+            Self::AddMarker => "İşaretçi Ekle/Kaldır (Marker)",
+            Self::MarkIn => "Giriş Noktası (Mark In)",
+            Self::MarkOut => "Çıkış Noktası (Mark Out)",
+            Self::StepFrameBack => "1 Kare Geri",
+            Self::StepFrameForward => "1 Kare İleri",
+            Self::PrevEditPoint => "Önceki Kesim Noktası",
+            Self::NextEditPoint => "Sonraki Kesim Noktası",
+            Self::GoToHome => "Zaman Çizgisi Başına Git",
+            Self::GoToEnd => "Zaman Çizgisi Sonuna Git",
             Self::Undo => "Geri Al (Undo)",
             Self::Redo => "Yinele (Redo)",
             Self::DeleteSelected => "Seçili Klibi Sil (Delete)",
@@ -97,10 +154,29 @@ impl ShortcutAction {
             Self::SelectTool => "action_select_tool",
             Self::RazorTool => "action_razor_tool",
             Self::RippleTool => "action_ripple_tool",
+            Self::TrackSelectTool => "action_track_select_tool",
+            Self::SlipTool => "action_slip_tool",
+            Self::RollTool => "action_roll_tool",
+            Self::SlideTool => "action_slide_tool",
+            Self::PenTool => "action_pen_tool",
+            Self::HandTool => "action_hand_tool",
+            Self::TypeTool => "action_type_tool",
             Self::SplitAtPlayhead => "action_split_at_playhead",
             Self::RippleTrimHead => "action_ripple_trim_head",
             Self::RippleTrimTail => "action_ripple_trim_tail",
             Self::ToggleSnap => "action_toggle_snap",
+            Self::ShuttleReverse => "action_shuttle_reverse",
+            Self::ShuttleStop => "action_shuttle_stop",
+            Self::ShuttleForward => "action_shuttle_forward",
+            Self::AddMarker => "action_add_marker",
+            Self::MarkIn => "action_mark_in",
+            Self::MarkOut => "action_mark_out",
+            Self::StepFrameBack => "action_step_frame_back",
+            Self::StepFrameForward => "action_step_frame_forward",
+            Self::PrevEditPoint => "action_prev_edit_point",
+            Self::NextEditPoint => "action_next_edit_point",
+            Self::GoToHome => "action_go_to_home",
+            Self::GoToEnd => "action_go_to_end",
             Self::Undo => "action_undo",
             Self::Redo => "action_redo",
             Self::DeleteSelected => "action_delete_selected",
@@ -193,12 +269,40 @@ impl KeymapConfig {
         );
         bindings.insert(ShortcutAction::DeleteSelected, KeyBinding::plain("Delete"));
         bindings.insert(ShortcutAction::RippleDelete, KeyBinding::shift("Delete"));
+        bindings.insert(ShortcutAction::SlipTool, KeyBinding::plain("Y"));
+        bindings.insert(ShortcutAction::RollTool, KeyBinding::plain("R"));
+        bindings.insert(ShortcutAction::SlideTool, KeyBinding::plain("U"));
+        bindings.insert(ShortcutAction::PenTool, KeyBinding::plain("P"));
+        bindings.insert(ShortcutAction::HandTool, KeyBinding::plain("H"));
+        bindings.insert(ShortcutAction::ShuttleReverse, KeyBinding::plain("J"));
+        bindings.insert(ShortcutAction::ShuttleStop, KeyBinding::plain("K"));
+        bindings.insert(ShortcutAction::ShuttleForward, KeyBinding::plain("L"));
+        bindings.insert(ShortcutAction::AddMarker, KeyBinding::plain("M"));
+        bindings.insert(ShortcutAction::MarkIn, KeyBinding::plain("I"));
+        bindings.insert(ShortcutAction::MarkOut, KeyBinding::plain("O"));
+        bindings.insert(
+            ShortcutAction::StepFrameBack,
+            KeyBinding::plain("ArrowLeft"),
+        );
+        bindings.insert(
+            ShortcutAction::StepFrameForward,
+            KeyBinding::plain("ArrowRight"),
+        );
+        bindings.insert(ShortcutAction::PrevEditPoint, KeyBinding::plain("ArrowUp"));
+        bindings.insert(
+            ShortcutAction::NextEditPoint,
+            KeyBinding::plain("ArrowDown"),
+        );
+        bindings.insert(ShortcutAction::GoToHome, KeyBinding::plain("Home"));
+        bindings.insert(ShortcutAction::GoToEnd, KeyBinding::plain("End"));
 
         match profile {
             ShortcutProfile::TrimDefault => {
                 bindings.insert(ShortcutAction::SelectTool, KeyBinding::plain("V"));
                 bindings.insert(ShortcutAction::RazorTool, KeyBinding::plain("C"));
                 bindings.insert(ShortcutAction::RippleTool, KeyBinding::plain("B"));
+                bindings.insert(ShortcutAction::TrackSelectTool, KeyBinding::plain("A"));
+                bindings.insert(ShortcutAction::TypeTool, KeyBinding::plain("T"));
                 bindings.insert(ShortcutAction::SplitAtPlayhead, KeyBinding::plain("S"));
                 bindings.insert(ShortcutAction::RippleTrimHead, KeyBinding::plain("Q"));
                 bindings.insert(ShortcutAction::RippleTrimTail, KeyBinding::plain("W"));
@@ -207,6 +311,8 @@ impl KeymapConfig {
                 bindings.insert(ShortcutAction::SelectTool, KeyBinding::plain("V"));
                 bindings.insert(ShortcutAction::RazorTool, KeyBinding::plain("C"));
                 bindings.insert(ShortcutAction::RippleTool, KeyBinding::plain("B"));
+                bindings.insert(ShortcutAction::TrackSelectTool, KeyBinding::plain("A"));
+                bindings.insert(ShortcutAction::TypeTool, KeyBinding::plain("T"));
                 bindings.insert(ShortcutAction::SplitAtPlayhead, KeyBinding::ctrl("K"));
                 bindings.insert(ShortcutAction::RippleTrimHead, KeyBinding::plain("Q"));
                 bindings.insert(ShortcutAction::RippleTrimTail, KeyBinding::plain("W"));
@@ -215,6 +321,8 @@ impl KeymapConfig {
                 bindings.insert(ShortcutAction::SelectTool, KeyBinding::plain("A"));
                 bindings.insert(ShortcutAction::RazorTool, KeyBinding::plain("B"));
                 bindings.insert(ShortcutAction::RippleTool, KeyBinding::plain("T"));
+                bindings.insert(ShortcutAction::TrackSelectTool, KeyBinding::shift("A"));
+                bindings.insert(ShortcutAction::TypeTool, KeyBinding::shift("T"));
                 bindings.insert(
                     ShortcutAction::SplitAtPlayhead,
                     KeyBinding::ctrl("Backslash"),
@@ -232,6 +340,8 @@ impl KeymapConfig {
                 bindings.insert(ShortcutAction::SelectTool, KeyBinding::plain("A"));
                 bindings.insert(ShortcutAction::RazorTool, KeyBinding::plain("B"));
                 bindings.insert(ShortcutAction::RippleTool, KeyBinding::plain("T"));
+                bindings.insert(ShortcutAction::TrackSelectTool, KeyBinding::shift("A"));
+                bindings.insert(ShortcutAction::TypeTool, KeyBinding::shift("T"));
                 bindings.insert(ShortcutAction::SplitAtPlayhead, KeyBinding::ctrl("B"));
                 bindings.insert(
                     ShortcutAction::RippleTrimHead,

@@ -22,32 +22,32 @@ impl TrimApp {
         // Autosave check
         let autosave_secs = self.preferences.autosave_interval_secs;
         if autosave_secs > 0
-            && self.last_autosave.elapsed().as_secs() >= autosave_secs
+            && self.persistence.last_autosave.elapsed().as_secs() >= autosave_secs
             && self.project.is_dirty
         {
-            let _ = self.autosave_mgr.save_snapshot(&self.project);
-            self.last_autosave = Instant::now();
+            let _ = self.persistence.autosave_mgr.save_snapshot(&self.project);
+            self.persistence.last_autosave = Instant::now();
         }
 
         // Poll background OS file dialogs non-blockingly and reap finished helper processes
         self.poll_file_dialogs(ctx);
-        self.helper_processes.poll_reap();
+        self.bg_tasks.helper_processes.poll_reap();
 
         // Check background export messages
         let mut export_finished = false;
-        if let Some(rx) = &self.export_rx {
+        if let Some(rx) = &self.export.export_rx {
             while let Ok(msg) = rx.try_recv() {
                 match msg {
                     ExportMessage::Progress(pct) => {
-                        self.export_dialog.progress = pct;
-                        self.export_dialog.status_text = format!("{:.1}%", pct);
+                        self.dialogs.export_dialog.progress = pct;
+                        self.dialogs.export_dialog.status_text = format!("{:.1}%", pct);
                     }
                     ExportMessage::Status(s) => {
-                        self.export_dialog.status_text = s;
+                        self.dialogs.export_dialog.status_text = s;
                     }
                     ExportMessage::Finished(res) => {
-                        self.export_dialog.is_exporting = false;
-                        self.export_dialog.is_open = false;
+                        self.dialogs.export_dialog.is_exporting = false;
+                        self.dialogs.export_dialog.is_open = false;
                         export_finished = true;
                         match res {
                             Ok(p) => {
@@ -74,17 +74,19 @@ impl TrimApp {
             }
         }
         if export_finished {
-            self.export_rx = None;
+            self.export.export_rx = None;
         }
 
         // Poll sequential background render queue
-        let queue_events = self.render_queue.poll();
+        let queue_events = self.export.render_queue.poll();
+        let mut queue_dirty = false;
         for ev in queue_events {
             match ev {
                 RenderQueueEvent::JobProgress { .. } => {
                     ctx.request_repaint();
                 }
                 RenderQueueEvent::JobCompleted { output_path, .. } => {
+                    queue_dirty = true;
                     self.status_message = match self.lang() {
                         Language::Turkish => format!("Kuyruk işi tamamlandı: {}", output_path),
                         Language::English => format!("Queue job completed: {}", output_path),
@@ -92,6 +94,7 @@ impl TrimApp {
                     ctx.request_repaint();
                 }
                 RenderQueueEvent::JobFailed { error, .. } => {
+                    queue_dirty = true;
                     self.status_message = match self.lang() {
                         Language::Turkish => format!("Kuyruk işinde hata: {}", error),
                         Language::English => format!("Queue job failed: {}", error),
@@ -99,6 +102,7 @@ impl TrimApp {
                     ctx.request_repaint();
                 }
                 RenderQueueEvent::QueueFinished => {
+                    queue_dirty = true;
                     self.set_status(
                         "Tüm render kuyruğu tamamlandı!",
                         "All render queue jobs completed!",
@@ -107,11 +111,20 @@ impl TrimApp {
                 }
             }
         }
+        if queue_dirty {
+            if let Err(e) = self
+                .export
+                .render_queue
+                .save_to_path(&trim_export::queue::RenderQueue::default_state_path())
+            {
+                log::warn!("Render queue save failed: {}", e);
+            }
+        }
 
         // Check background proxy generation messages
-        if let Some(rx) = &self.proxy_rx {
+        if let Some(rx) = &self.bg_tasks.proxy_rx {
             while let Ok((m_id, res)) = rx.try_recv() {
-                self.proxy_generating_ids.retain(|id| id != &m_id);
+                self.bg_tasks.proxy_generating_ids.retain(|id| id != &m_id);
                 match res {
                     Ok(p_path) => {
                         if let Some(m) = self.project.get_media_mut(&m_id) {
@@ -135,7 +148,7 @@ impl TrimApp {
         }
 
         // Poll asynchronous background tasks (scene cut, silence detect, Whisper transcription)
-        let bg_msgs: Vec<BackgroundTaskMsg> = self.bg_task_rx.try_iter().collect();
+        let bg_msgs: Vec<BackgroundTaskMsg> = self.bg_tasks.rx.try_iter().collect();
         for msg in bg_msgs {
             ctx.request_repaint();
             let is_cancellable_task = matches!(
@@ -147,21 +160,23 @@ impl TrimApp {
                     | BackgroundTaskMsg::MotionTrackDone { .. }
             );
             if is_cancellable_task {
-                self.bg_task_active_count = self.bg_task_active_count.saturating_sub(1);
+                self.bg_tasks.active_count = self.bg_tasks.active_count.saturating_sub(1);
                 let cancelled = self
-                    .bg_task_cancel_flag
+                    .bg_tasks
+                    .cancel_flag
                     .load(std::sync::atomic::Ordering::Acquire);
-                if self.bg_task_active_count == 0 {
-                    self.bg_task_cancel_flag
+                if self.bg_tasks.active_count == 0 {
+                    self.bg_tasks
+                        .cancel_flag
                         .store(false, std::sync::atomic::Ordering::Release);
                 }
                 if cancelled {
                     match msg {
                         BackgroundTaskMsg::SilenceDetectDone { .. } => {
-                            self.silence_dialog.is_analyzing = false;
+                            self.dialogs.silence_dialog.is_analyzing = false;
                         }
                         BackgroundTaskMsg::TranscribeDone { .. } => {
-                            self.transcribe_dialog.is_transcribing = false;
+                            self.dialogs.transcribe_dialog.is_transcribing = false;
                         }
                         _ => {}
                     }
@@ -258,11 +273,13 @@ impl TrimApp {
                         let speech = trim_media::calculate_speech_intervals(
                             source_in, source_out, &silences, padding,
                         );
-                        self.silence_dialog.set_analysis_results(silences, speech);
+                        self.dialogs
+                            .silence_dialog
+                            .set_analysis_results(silences, speech);
                     }
                     Err(e) => {
-                        self.silence_dialog.status_text = format!("Hata: {}", e);
-                        self.silence_dialog.is_analyzing = false;
+                        self.dialogs.silence_dialog.status_text = format!("Hata: {}", e);
+                        self.dialogs.silence_dialog.is_analyzing = false;
                     }
                 },
                 BackgroundTaskMsg::TranscribeDone { result } => match result {
@@ -319,11 +336,11 @@ impl TrimApp {
                                 }
                             };
                         }
-                        self.transcribe_dialog.close();
+                        self.dialogs.transcribe_dialog.close();
                     }
                     Err(e) => {
-                        self.transcribe_dialog.is_transcribing = false;
-                        self.transcribe_dialog.status_message = e;
+                        self.dialogs.transcribe_dialog.is_transcribing = false;
+                        self.dialogs.transcribe_dialog.status_message = e;
                     }
                 },
                 BackgroundTaskMsg::BundleDone { target_dir, result } => match result {
@@ -389,8 +406,8 @@ impl TrimApp {
                             .is_ok()
                         {
                             self.project.mark_dirty();
-                            self.last_rendered_monitor_frame = None;
-                            self.video_engine.last_rendered_frame = None;
+                            self.monitor.last_rendered_monitor_frame = None;
+                            self.media.video_engine.last_rendered_frame = None;
                             self.status_message = match self.lang() {
                                 Language::Turkish => format!(
                                     "🎯 Maske hareket takibi tamamlandı ({} anahtar kare oluşturuldu)",
@@ -431,12 +448,12 @@ impl TrimApp {
                         item.audio_channels = channels;
                         item.audio_sample_rate = sample_rate;
                     }
-                    self.audio_mixer.preload_audio_async(&file_path);
+                    self.playback.audio_mixer.preload_audio_async(&file_path);
                 }
             }
         }
 
-        if self.active_voiceover.is_some() {
+        if self.media.active_voiceover.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
     }

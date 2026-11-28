@@ -9,6 +9,7 @@ use super::TrimApp;
 
 impl TrimApp {
     pub(super) fn render_timeline_panel(&mut self, ctx: &egui::Context) {
+        self.canvas_state.lang = self.lang();
         // -------------------------------------------------------------
         // BOTTOM TIMELINE PANEL: Guaranteed permanently anchored at the bottom
         // -------------------------------------------------------------
@@ -58,7 +59,8 @@ impl TrimApp {
 
                     // 1. Vertical Toolbar (Fixed width 42px for 32x32 tools)
                     ui.allocate_ui(Vec2::new(42.0, ui.available_height()), |ui| {
-                        render_vertical_toolbar(ui, &mut self.current_edit_tool);
+                        let lang = self.lang();
+                        render_vertical_toolbar(ui, &mut self.tools.current_edit_tool, lang);
                     });
 
                     ui.add_space(2.0);
@@ -97,21 +99,26 @@ impl TrimApp {
                                         current_scroll_x,
                                         self.project.timeline.duration(),
                                         self.project.timeline.fps,
-                                        self.current_time,
+                                        self.playback.current_time,
                                         &markers,
                                         self.project.timeline.in_point,
                                         self.project.timeline.out_point,
                                         Some(&|t| {
-                                            self.video_engine
+                                            self.media
+                                                .video_engine
                                                 .is_timeline_time_cached(&self.project, t)
                                         }),
                                     );
-                                    if !self.is_playing && !self.video_engine.is_decoding_seek {
+                                    if !self.playback.is_playing
+                                        && !self.media.video_engine.is_decoding_seek
+                                    {
                                         let step_t = (1.0 / self.project.timeline.fps.max(24.0))
                                             .clamp(0.03, 0.1);
                                         for k in 1..=6 {
-                                            let probe_t = self.current_time + k as f64 * step_t;
+                                            let probe_t =
+                                                self.playback.current_time + k as f64 * step_t;
                                             if self
+                                                .media
                                                 .video_engine
                                                 .prewarm_frame_at_time(&self.project, probe_t)
                                             {
@@ -139,8 +146,8 @@ impl TrimApp {
                                 });
 
                             // 2. Timeline Canvas (Driver of both X and Y scroll)
-                            self.canvas_state.active_tool = self.current_edit_tool;
-                            self.project.timeline.snap_enabled = self.snap_enabled;
+                            self.canvas_state.active_tool = self.tools.current_edit_tool;
+                            self.project.timeline.snap_enabled = self.tools.snap_enabled;
                             let mut canvas_scroll = egui::ScrollArea::both()
                                 .id_salt("timeline_canvas_both_scroll")
                                 .auto_shrink([false, false]);
@@ -159,9 +166,9 @@ impl TrimApp {
                                     ui,
                                     &mut self.project,
                                     &mut self.canvas_state,
-                                    self.current_time,
-                                    &self.waveform_gen,
-                                    &self.media_bin_textures,
+                                    self.playback.current_time,
+                                    &self.media.waveform_gen,
+                                    &self.media.media_bin_textures,
                                 );
                                 canvas_act
                             });
@@ -226,7 +233,7 @@ impl TrimApp {
                             );
                             ui.add_space(6.0);
                             ui.allocate_ui(Vec2::new((vu_w - 15.0).max(68.0), full_h), |ui| {
-                                ui.add(VuMeterWidget::new(&mut self.vu_state));
+                                ui.add(VuMeterWidget::new(&mut self.playback.vu_state));
                             });
                         },
                     );

@@ -86,6 +86,8 @@ pub struct ExportPreset {
     pub hw_accel: HardwareAccel,
     #[serde(default)]
     pub loudness_norm: LoudnessNorm,
+    #[serde(default)]
+    pub preserve_metadata: bool,
 }
 
 impl Default for ExportPreset {
@@ -102,6 +104,7 @@ impl Default for ExportPreset {
             audio_bitrate: "256k".to_string(),
             hw_accel: HardwareAccel::Auto,
             loudness_norm: LoudnessNorm::YouTube,
+            preserve_metadata: false,
         }
     }
 }
@@ -120,6 +123,7 @@ pub fn get_default_presets() -> Vec<ExportPreset> {
             audio_bitrate: "256k".to_string(),
             hw_accel: HardwareAccel::Auto,
             loudness_norm: LoudnessNorm::YouTube,
+            preserve_metadata: false,
         },
         ExportPreset {
             name: "720p Hızlı (Düşük Boyut)".to_string(),
@@ -133,6 +137,7 @@ pub fn get_default_presets() -> Vec<ExportPreset> {
             audio_bitrate: "128k".to_string(),
             hw_accel: HardwareAccel::Auto,
             loudness_norm: LoudnessNorm::YouTube,
+            preserve_metadata: false,
         },
         ExportPreset {
             name: "Kaynak ile Eşleşen".to_string(),
@@ -146,6 +151,7 @@ pub fn get_default_presets() -> Vec<ExportPreset> {
             audio_bitrate: "192k".to_string(),
             hw_accel: HardwareAccel::Auto,
             loudness_norm: LoudnessNorm::Off,
+            preserve_metadata: false,
         },
         ExportPreset {
             name: "4K UHD Sinematik (YouTube / TV)".to_string(),
@@ -159,6 +165,7 @@ pub fn get_default_presets() -> Vec<ExportPreset> {
             audio_bitrate: "320k".to_string(),
             hw_accel: HardwareAccel::Auto,
             loudness_norm: LoudnessNorm::YouTube,
+            preserve_metadata: false,
         },
         ExportPreset {
             name: "TikTok / Instagram Reels (1080x1920 9:16 Dikey)".to_string(),
@@ -172,6 +179,7 @@ pub fn get_default_presets() -> Vec<ExportPreset> {
             audio_bitrate: "256k".to_string(),
             hw_accel: HardwareAccel::Auto,
             loudness_norm: LoudnessNorm::YouTube,
+            preserve_metadata: false,
         },
         ExportPreset {
             name: "HEVC / H.265 1080p (Yüksek Sıkıştırma)".to_string(),
@@ -185,6 +193,7 @@ pub fn get_default_presets() -> Vec<ExportPreset> {
             audio_bitrate: "192k".to_string(),
             hw_accel: HardwareAccel::Auto,
             loudness_norm: LoudnessNorm::YouTube,
+            preserve_metadata: false,
         },
         ExportPreset {
             name: "Apple ProRes 422 (Kayıpsız Düzenleme)".to_string(),
@@ -198,6 +207,7 @@ pub fn get_default_presets() -> Vec<ExportPreset> {
             audio_bitrate: "384k".to_string(),
             hw_accel: HardwareAccel::Cpu,
             loudness_norm: LoudnessNorm::Off,
+            preserve_metadata: false,
         },
     ]
 }

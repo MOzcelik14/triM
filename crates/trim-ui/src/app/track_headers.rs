@@ -89,10 +89,11 @@ impl TrimApp {
                             ui.spacing_mut().item_spacing = Vec2::ZERO;
                             let mut pending_header_actions = Vec::new();
                             for track in &self.project.timeline.tracks {
-                                let is_patch = self.target_video_track == track.id
-                                    || self.target_audio_track == track.id;
+                                let is_patch = self.tools.target_video_track == track.id
+                                    || self.tools.target_audio_track == track.id;
                                 let tr_h = self.canvas_state.get_track_height(&track.id);
                                 let is_recording_vo = self
+                                    .media
                                     .active_voiceover
                                     .as_ref()
                                     .map(|vo| vo.track_id == track.id)
@@ -136,20 +137,21 @@ impl TrimApp {
                                             self.project.timeline.get_track_by_id(&t_id)
                                         {
                                             if t.track_type == trim_core::track::TrackType::Video {
-                                                self.target_video_track = t_id.clone();
-                                                self.target_audio_track = self
+                                                self.tools.target_video_track = t_id.clone();
+                                                self.tools.target_audio_track = self
                                                     .project
                                                     .timeline
                                                     .find_or_create_corresponding_audio_track(
                                                         &t_id,
                                                     );
                                             } else {
-                                                self.target_audio_track = t_id.clone();
+                                                self.tools.target_audio_track = t_id.clone();
                                             }
                                         }
                                     }
                                     TrackHeaderAction::RecordVoiceover => {
                                         let is_currently_rec = self
+                                            .media
                                             .active_voiceover
                                             .as_ref()
                                             .map(|vo| vo.track_id == t_id)
@@ -157,7 +159,7 @@ impl TrimApp {
                                         if is_currently_rec {
                                             self.finish_voiceover();
                                         } else {
-                                            if self.active_voiceover.is_some() {
+                                            if self.media.active_voiceover.is_some() {
                                                 self.finish_voiceover();
                                             }
                                             self.start_voiceover(t_id.clone());
@@ -226,7 +228,7 @@ impl TrimApp {
             self.add_audio_track();
         }
         if add_adjustment_layer_requested {
-            let t0 = self.current_time.max(0.0);
+            let t0 = self.playback.current_time.max(0.0);
             let t1 = t0 + 5.0;
             let target_track_id = self
                 .project
@@ -256,9 +258,9 @@ impl TrimApp {
             {
                 self.canvas_state.selected_clip_pairs = vec![(target_track_id, adj_id)];
                 self.project.mark_dirty();
-                self.last_rendered_monitor_frame = None;
-                self.video_engine.last_rendered_frame = None;
-                self.scopes_panel.mark_dirty();
+                self.monitor.last_rendered_monitor_frame = None;
+                self.media.video_engine.last_rendered_frame = None;
+                self.monitor.scopes_panel.mark_dirty();
                 self.set_status("✨ Ayar Katmanı eklendi", "✨ Adjustment Layer added");
             }
         }

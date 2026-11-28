@@ -250,7 +250,7 @@ fn test_has_unsaved_changes_lifecycle() {
     // 3. Simulate save
     app.project.is_dirty = false;
     app.project.file_path = Some("/tmp/saved_proj.trim".to_string());
-    app.last_saved_undo_len = app.undo_stack.len();
+    app.persistence.last_saved_undo_len = app.undo_stack.len();
     assert!(!app.has_unsaved_changes());
 
     // 4. Slight change (e.g., track volume / mute / split)
@@ -332,8 +332,8 @@ fn test_monitor_select_tool_picks_and_drags_text() {
     track.add_clip(Clip::new("m_test", 0.0, 5.0));
     let tr_id = track.id.clone();
     app.project.timeline.add_track(track);
-    app.target_video_track = tr_id;
-    app.current_time = 1.0;
+    app.tools.target_video_track = tr_id;
+    app.playback.current_time = 1.0;
 
     app.handle_monitor_text_click(0.30, 0.40);
     let created = app
@@ -379,8 +379,8 @@ fn test_monitor_text_tool_click_drag_content() {
     let orig_tr_id = track.id.clone();
     track.add_clip(clip);
     app.project.timeline.add_track(track);
-    app.target_video_track = orig_tr_id.clone();
-    app.current_time = 2.0;
+    app.tools.target_video_track = orig_tr_id.clone();
+    app.playback.current_time = 2.0;
 
     // Test click: creates a dedicated text clip on an upper track (V2)
     app.handle_monitor_text_click(0.35, 0.45);
@@ -455,24 +455,24 @@ fn test_monitor_text_tool_click_drag_content() {
 fn test_edit_tools_and_shortcuts_mapping() {
     use crate::toolbar::EditTool;
     let mut app = TrimApp::default();
-    assert_eq!(app.current_edit_tool, EditTool::Select);
+    assert_eq!(app.tools.current_edit_tool, EditTool::Select);
 
-    app.current_edit_tool = EditTool::Type;
+    app.tools.current_edit_tool = EditTool::Type;
     app.canvas_state.active_tool = EditTool::Type;
-    assert_eq!(app.current_edit_tool, EditTool::Type);
+    assert_eq!(app.tools.current_edit_tool, EditTool::Type);
     assert_eq!(app.canvas_state.active_tool, EditTool::Type);
 
-    app.current_edit_tool = EditTool::Slip;
+    app.tools.current_edit_tool = EditTool::Slip;
     app.canvas_state.active_tool = EditTool::Slip;
-    assert_eq!(app.current_edit_tool, EditTool::Slip);
+    assert_eq!(app.tools.current_edit_tool, EditTool::Slip);
 
-    app.current_edit_tool = EditTool::Pen;
+    app.tools.current_edit_tool = EditTool::Pen;
     app.canvas_state.active_tool = EditTool::Pen;
-    assert_eq!(app.current_edit_tool, EditTool::Pen);
+    assert_eq!(app.tools.current_edit_tool, EditTool::Pen);
 
-    app.current_edit_tool = EditTool::Hand;
+    app.tools.current_edit_tool = EditTool::Hand;
     app.canvas_state.active_tool = EditTool::Hand;
-    assert_eq!(app.current_edit_tool, EditTool::Hand);
+    assert_eq!(app.tools.current_edit_tool, EditTool::Hand);
 }
 
 #[test]
@@ -483,7 +483,7 @@ fn test_resolve_default_target_tracks_behavior() {
     assert_eq!(
         app.project
             .timeline
-            .get_track_by_id(&app.target_video_track)
+            .get_track_by_id(&app.tools.target_video_track)
             .unwrap()
             .name,
         "V1"
@@ -491,7 +491,7 @@ fn test_resolve_default_target_tracks_behavior() {
     assert_eq!(
         app.project
             .timeline
-            .get_track_by_id(&app.target_audio_track)
+            .get_track_by_id(&app.tools.target_audio_track)
             .unwrap()
             .name,
         "A1"
@@ -509,7 +509,7 @@ fn test_resolve_default_target_tracks_behavior() {
     assert_eq!(
         app.project
             .timeline
-            .get_track_by_id(&app.target_video_track)
+            .get_track_by_id(&app.tools.target_video_track)
             .unwrap()
             .name,
         "CustomVideo"
@@ -517,7 +517,7 @@ fn test_resolve_default_target_tracks_behavior() {
     assert_eq!(
         app.project
             .timeline
-            .get_track_by_id(&app.target_audio_track)
+            .get_track_by_id(&app.tools.target_audio_track)
             .unwrap()
             .name,
         "CustomAudio"
@@ -526,8 +526,8 @@ fn test_resolve_default_target_tracks_behavior() {
     // If tracks are empty
     app.project.timeline.tracks.clear();
     app.resolve_default_target_tracks();
-    assert_eq!(app.target_video_track, "");
-    assert_eq!(app.target_audio_track, "");
+    assert_eq!(app.tools.target_video_track, "");
+    assert_eq!(app.tools.target_audio_track, "");
 }
 
 #[test]
@@ -576,66 +576,66 @@ fn test_file_dialog_bridge_async_lifecycle_and_duplicate_guard() {
 #[test]
 fn test_jkl_shuttle_and_snap_toggle() {
     let mut app = TrimApp::default();
-    assert!(!app.is_playing);
-    assert_eq!(app.playback_speed, 1.0);
+    assert!(!app.playback.is_playing);
+    assert_eq!(app.playback.playback_speed, 1.0);
 
     // Consecutive L presses: 1x -> 2x -> 4x -> 8x -> 8x
     app.shuttle_forward();
-    assert!(app.is_playing);
-    assert_eq!(app.playback_speed, 1.0);
+    assert!(app.playback.is_playing);
+    assert_eq!(app.playback.playback_speed, 1.0);
 
     app.shuttle_forward();
-    assert!(app.is_playing);
-    assert_eq!(app.playback_speed, 2.0);
+    assert!(app.playback.is_playing);
+    assert_eq!(app.playback.playback_speed, 2.0);
 
     app.shuttle_forward();
-    assert_eq!(app.playback_speed, 4.0);
+    assert_eq!(app.playback.playback_speed, 4.0);
 
     app.shuttle_forward();
-    assert_eq!(app.playback_speed, 8.0);
+    assert_eq!(app.playback.playback_speed, 8.0);
 
     app.shuttle_forward();
-    assert_eq!(app.playback_speed, 8.0);
+    assert_eq!(app.playback.playback_speed, 8.0);
 
     // Consecutive J presses: -1x -> -2x -> -4x -> -8x -> -8x
     app.shuttle_reverse();
-    assert!(app.is_playing);
-    assert_eq!(app.playback_speed, -1.0);
+    assert!(app.playback.is_playing);
+    assert_eq!(app.playback.playback_speed, -1.0);
 
     app.shuttle_reverse();
-    assert_eq!(app.playback_speed, -2.0);
+    assert_eq!(app.playback.playback_speed, -2.0);
 
     app.shuttle_reverse();
-    assert_eq!(app.playback_speed, -4.0);
+    assert_eq!(app.playback.playback_speed, -4.0);
 
     app.shuttle_reverse();
-    assert_eq!(app.playback_speed, -8.0);
+    assert_eq!(app.playback.playback_speed, -8.0);
 
     app.shuttle_reverse();
-    assert_eq!(app.playback_speed, -8.0);
+    assert_eq!(app.playback.playback_speed, -8.0);
 
     // K (shuttle_stop) pauses immediately and resets speed to 1.0
     app.shuttle_stop();
-    assert!(!app.is_playing);
-    assert_eq!(app.playback_speed, 1.0);
+    assert!(!app.playback.is_playing);
+    assert_eq!(app.playback.playback_speed, 1.0);
 
     // Space (toggle_play) plays at 1.0x and pauses back
-    app.playback_speed = 4.0;
+    app.playback.playback_speed = 4.0;
     app.toggle_play();
-    assert!(app.is_playing);
-    assert_eq!(app.playback_speed, 1.0);
+    assert!(app.playback.is_playing);
+    assert_eq!(app.playback.playback_speed, 1.0);
     app.toggle_play();
-    assert!(!app.is_playing);
-    assert_eq!(app.playback_speed, 1.0);
+    assert!(!app.playback.is_playing);
+    assert_eq!(app.playback.playback_speed, 1.0);
 
     // Magnetic snapping toggle synchronizes TrimApp and TimelineModel
-    assert!(app.snap_enabled);
+    assert!(app.tools.snap_enabled);
     assert!(app.project.timeline.snap_enabled);
     app.toggle_snap();
-    assert!(!app.snap_enabled);
+    assert!(!app.tools.snap_enabled);
     assert!(!app.project.timeline.snap_enabled);
     app.toggle_snap();
-    assert!(app.snap_enabled);
+    assert!(app.tools.snap_enabled);
     assert!(app.project.timeline.snap_enabled);
 }
 
@@ -645,8 +645,8 @@ fn test_media_bin_bins_and_filters_navigation() {
     use trim_core::media::{MediaItem, MediaType};
 
     let mut app = TrimApp::default();
-    assert!(app.media_bin_current_bin.is_none());
-    assert_eq!(app.media_bin_filter, MediaFilterType::All);
+    assert!(app.media.media_bin_current_bin.is_none());
+    assert_eq!(app.media.media_bin_filter, MediaFilterType::All);
 
     // Add bins
     let bin1 = app.project.add_bin("Röportajlar");
@@ -682,8 +682,11 @@ fn test_media_bin_bins_and_filters_navigation() {
     app.project.add_media(root_img);
 
     // Navigation into bin1
-    app.media_bin_current_bin = Some(bin1.clone());
-    assert_eq!(app.media_bin_current_bin.as_deref(), Some(bin1.as_str()));
+    app.media.media_bin_current_bin = Some(bin1.clone());
+    assert_eq!(
+        app.media.media_bin_current_bin.as_deref(),
+        Some(bin1.as_str())
+    );
 
     // Move root_img into bin1
     if let Some(item) = app.project.get_media_mut("img1") {
@@ -695,15 +698,15 @@ fn test_media_bin_bins_and_filters_navigation() {
     );
 
     // Filter chips switch
-    app.media_bin_filter = MediaFilterType::Video;
-    assert_eq!(app.media_bin_filter, MediaFilterType::Video);
+    app.media.media_bin_filter = MediaFilterType::Video;
+    assert_eq!(app.media.media_bin_filter, MediaFilterType::Video);
 
     // Removing bin1 moves contained items (v1, img1) back to root
     app.project.remove_bin(&bin1);
-    if app.media_bin_current_bin.as_deref() == Some(&bin1) {
-        app.media_bin_current_bin = None;
+    if app.media.media_bin_current_bin.as_deref() == Some(&bin1) {
+        app.media.media_bin_current_bin = None;
     }
-    assert!(app.media_bin_current_bin.is_none());
+    assert!(app.media.media_bin_current_bin.is_none());
     assert_eq!(app.project.bins.len(), 1);
     assert_eq!(app.project.get_media("v1").unwrap().bin_id, None);
     assert_eq!(app.project.get_media("img1").unwrap().bin_id, None);
@@ -814,11 +817,11 @@ fn test_drop_media_atomic_undo() {
         .id
         .clone();
 
-    app.target_video_track = v1_id.clone();
-    app.target_audio_track = a1_id.clone();
+    app.tools.target_video_track = v1_id.clone();
+    app.tools.target_audio_track = a1_id.clone();
 
     // Insert clip onto timeline from source monitor
-    app.source_state.media_id = Some("vid_1".to_string());
+    app.monitor.source_state.media_id = Some("vid_1".to_string());
     app.insert_source_to_timeline(false);
 
     assert_eq!(
@@ -1176,7 +1179,7 @@ fn test_synchronized_follower_scroll() {
 #[test]
 fn test_copy_and_paste_clips_with_undo() {
     let mut app = app::TrimApp::default();
-    let v1_id = app.target_video_track.clone();
+    let v1_id = app.tools.target_video_track.clone();
 
     // Add a sample clip to V1
     let mut clip = trim_core::clip::Clip::new("m1", 0.0, 5.0);
@@ -1200,15 +1203,15 @@ fn test_copy_and_paste_clips_with_undo() {
 
     // 1. Copy when nothing is selected
     app.copy_selected_clips();
-    assert!(app.clipboard_clips.is_empty());
+    assert!(app.tools.clipboard_clips.is_empty());
 
     // 2. Select and copy clip
     app.canvas_state.selected_clip_pairs = vec![(v1_id.clone(), "clip_original".to_string())];
     app.copy_selected_clips();
-    assert_eq!(app.clipboard_clips.len(), 1);
+    assert_eq!(app.tools.clipboard_clips.len(), 1);
 
     // 3. Paste at time = 10.0
-    app.current_time = 10.0;
+    app.playback.current_time = 10.0;
     app.paste_clipboard_clips();
 
     let track = app.project.timeline.get_track_by_id(&v1_id).unwrap();
@@ -1223,7 +1226,7 @@ fn test_copy_and_paste_clips_with_undo() {
     assert_eq!(pasted.source_in, 1.0);
     assert_eq!(app.canvas_state.selected_clip_pairs.len(), 1);
     assert_eq!(app.canvas_state.selected_clip_pairs[0].1, pasted.id);
-    assert_eq!(app.current_time, 15.0);
+    assert_eq!(app.playback.current_time, 15.0);
 
     // 4. Undo paste
     assert!(app.undo_stack.can_undo());
@@ -1255,7 +1258,7 @@ fn test_copy_and_paste_clips_with_undo() {
 #[test]
 fn test_multitrack_copy_and_paste_preserves_hierarchy() {
     let mut app = app::TrimApp::default();
-    let v1_id = app.target_video_track.clone();
+    let v1_id = app.tools.target_video_track.clone();
     let v2_id = app.project.timeline.add_new_video_track();
 
     // Add clip on V1 (0.0 to 3.0) and clip on V2 (1.0 to 4.0)
@@ -1281,11 +1284,11 @@ fn test_multitrack_copy_and_paste_preserves_hierarchy() {
         (v2_id.clone(), "c_v2".to_string()),
     ];
     app.copy_selected_clips();
-    assert_eq!(app.clipboard_clips.len(), 2);
+    assert_eq!(app.tools.clipboard_clips.len(), 2);
 
     // Paste at time = 10.0 starting at V1
-    app.current_time = 10.0;
-    app.target_video_track = v1_id.clone();
+    app.playback.current_time = 10.0;
+    app.tools.target_video_track = v1_id.clone();
     app.paste_clipboard_clips();
 
     // V1 should have 2 clips, V2 should have 2 clips!
@@ -1400,23 +1403,26 @@ fn test_relink_dialog_and_relink_actions() {
     app.project.add_media(missing_item);
 
     // Open relink dialog
-    app.relink_dialog.open(&app.project);
-    assert!(app.relink_dialog.is_open);
-    assert_eq!(app.relink_dialog.offline_items.len(), 1);
-    assert_eq!(app.relink_dialog.offline_items[0].media_id, "m_offline_1");
+    app.dialogs.relink_dialog.open(&app.project);
+    assert!(app.dialogs.relink_dialog.is_open);
+    assert_eq!(app.dialogs.relink_dialog.offline_items.len(), 1);
+    assert_eq!(
+        app.dialogs.relink_dialog.offline_items[0].media_id,
+        "m_offline_1"
+    );
 
     // Relink from folder
     let relinked_count = app.project.relink_media_from_folder(temp_dir.path());
     assert_eq!(relinked_count, 1);
 
     // Refresh dialog
-    app.relink_dialog.refresh(&app.project);
-    assert!(app.relink_dialog.offline_items.is_empty());
+    app.dialogs.relink_dialog.refresh(&app.project);
+    assert!(app.dialogs.relink_dialog.offline_items.is_empty());
 
     // Test rendering UI with egui context
     let ctx = egui::Context::default();
     let _ = ctx.run(Default::default(), |ctx| {
-        let action = app.relink_dialog.show(ctx);
+        let action = app.dialogs.relink_dialog.show(ctx);
         assert!(action.is_none() || matches!(action, Some(RelinkDialogAction::Close)));
     });
 }
@@ -1439,8 +1445,8 @@ fn test_ripple_edit_tool_and_canvas_action() {
     app.project.timeline.tracks[0].add_clip(c2);
 
     // Verify tool selection
-    app.current_edit_tool = EditTool::Ripple;
-    assert_eq!(app.current_edit_tool, EditTool::Ripple);
+    app.tools.current_edit_tool = EditTool::Ripple;
+    assert_eq!(app.tools.current_edit_tool, EditTool::Ripple);
 
     // Verify canvas state tool mapping
     let state = TimelineCanvasState {
@@ -1587,34 +1593,34 @@ fn test_render_queue_dialog_lifecycle_and_actions() {
     use trim_export::queue::RenderJob;
 
     let mut app = TrimApp::default();
-    assert!(!app.render_queue_dialog.is_open);
-    assert_eq!(app.render_queue.jobs.len(), 0);
+    assert!(!app.dialogs.render_queue_dialog.is_open);
+    assert_eq!(app.export.render_queue.jobs.len(), 0);
 
     // Open dialog directly
-    app.render_queue_dialog.open();
-    assert!(app.render_queue_dialog.is_open);
+    app.dialogs.render_queue_dialog.open();
+    assert!(app.dialogs.render_queue_dialog.is_open);
 
     // Toggle dialog
-    app.render_queue_dialog.toggle();
-    assert!(!app.render_queue_dialog.is_open);
+    app.dialogs.render_queue_dialog.toggle();
+    assert!(!app.dialogs.render_queue_dialog.is_open);
 
     // Simulate AddToQueue from ExportDialog
     let preset = trim_export::ExportPreset::default();
     let action = ExportDialogAction::AddToQueue(preset.clone(), "/tmp/test_queue.mp4".into(), None);
     if let ExportDialogAction::AddToQueue(p, out_p, rng) = action {
         let job = RenderJob::new("Test Q Job", app.project.clone(), p, out_p, rng);
-        app.render_queue.add_job(job);
-        app.render_queue_dialog.open();
+        app.export.render_queue.add_job(job);
+        app.dialogs.render_queue_dialog.open();
     }
 
-    assert_eq!(app.render_queue.jobs.len(), 1);
-    assert!(app.render_queue_dialog.is_open);
-    assert_eq!(app.render_queue.jobs[0].name, "Test Q Job");
+    assert_eq!(app.export.render_queue.jobs.len(), 1);
+    assert!(app.dialogs.render_queue_dialog.is_open);
+    assert_eq!(app.export.render_queue.jobs[0].name, "Test Q Job");
 
     // Cancel job
-    app.render_queue.cancel_current();
+    app.export.render_queue.cancel_current();
     assert_eq!(
-        app.render_queue.jobs[0].status,
+        app.export.render_queue.jobs[0].status,
         trim_export::queue::RenderJobStatus::Cancelled
     );
 
@@ -1770,13 +1776,13 @@ fn test_parse_dropped_paths() {
 #[test]
 fn test_fullscreen_monitor_toggle_and_shortcuts() {
     let mut app = TrimApp::default();
-    assert!(!app.is_monitor_fullscreen);
+    assert!(!app.monitor.is_monitor_fullscreen);
 
-    app.is_monitor_fullscreen = true;
-    assert!(app.is_monitor_fullscreen);
+    app.monitor.is_monitor_fullscreen = true;
+    assert!(app.monitor.is_monitor_fullscreen);
 
-    app.is_monitor_fullscreen = false;
-    assert!(!app.is_monitor_fullscreen);
+    app.monitor.is_monitor_fullscreen = false;
+    assert!(!app.monitor.is_monitor_fullscreen);
 }
 
 #[test]
@@ -1788,9 +1794,9 @@ fn test_fullscreen_monitor_gpu_texture_and_overlays() {
     let ctx = egui::Context::default();
 
     // Simulate GPU composited texture ID active, CPU texture None
-    app.monitor_gpu_texture_id = Some(egui::TextureId::User(42));
-    app.monitor_texture = None;
-    app.is_monitor_fullscreen = true;
+    app.monitor.monitor_gpu_texture_id = Some(egui::TextureId::User(42));
+    app.monitor.monitor_texture = None;
+    app.monitor.is_monitor_fullscreen = true;
 
     // Render fullscreen monitor frame in egui context
     let _ = ctx.run(Default::default(), |ctx| {
@@ -1807,7 +1813,7 @@ fn test_fullscreen_monitor_gpu_texture_and_overlays() {
     });
     track.add_clip(clip);
     app.project.timeline.add_track(track);
-    app.current_time = 2.0;
+    app.playback.current_time = 2.0;
 
     let overlays = app.collect_active_text_overlays();
     assert_eq!(overlays.len(), 1);
@@ -1862,14 +1868,14 @@ fn test_timeline_actions_split_marker_gap_and_undo() {
 
     // 2. split_at_playhead_command at t=2.0 splits c1 into 2 clips -> 3 clips total
     app.canvas_state.selected_clip_pairs = vec![("v1".into(), "c1".into())];
-    app.current_time = 2.0;
+    app.playback.current_time = 2.0;
     app.split_at_playhead_command();
     assert_eq!(app.project.timeline.tracks[0].clips.len(), 3);
     app.perform_undo();
     assert_eq!(app.project.timeline.tracks[0].clips.len(), 2);
 
     // 3. add_or_toggle_marker adds at 2.0 and removes when toggled again at 2.0
-    app.current_time = 2.0;
+    app.playback.current_time = 2.0;
     app.add_or_toggle_marker();
     assert_eq!(app.project.timeline.markers.len(), 1);
     app.add_or_toggle_marker();
@@ -1953,18 +1959,22 @@ fn test_keyboard_shortcut_mapping_and_headless_egui_shortcuts_dialog() {
     );
 
     let mut app = TrimApp::default();
-    app.shortcuts_dialog.open();
+    app.dialogs.shortcuts_dialog.open();
     let ctx = egui::Context::default();
     let _ = ctx.run(Default::default(), |ctx| {
-        app.shortcuts_dialog
-            .show(ctx, &mut app.shortcut_profile, &mut app.keymap_config);
+        app.dialogs.shortcuts_dialog.show(
+            ctx,
+            &mut app.tools.shortcut_profile,
+            &mut app.tools.keymap_config,
+        );
     });
 
     // Custom rebind via KeymapConfig works in TrimApp
-    app.keymap_config
+    app.tools
+        .keymap_config
         .rebind(ShortcutAction::RazorTool, KeyBinding::plain("X"), true);
-    app.splash_screen.dismiss();
-    app.welcome_dialog.close();
+    app.dialogs.splash_screen.dismiss();
+    app.dialogs.welcome_dialog.close();
     let mut raw_input = egui::RawInput::default();
     raw_input.events.push(egui::Event::Key {
         key: egui::Key::X,
@@ -1976,7 +1986,7 @@ fn test_keyboard_shortcut_mapping_and_headless_egui_shortcuts_dialog() {
     let _ = ctx.run(raw_input, |ctx| {
         app.handle_global_shortcuts(ctx);
     });
-    assert_eq!(app.current_edit_tool, crate::toolbar::EditTool::Razor);
+    assert_eq!(app.tools.current_edit_tool, crate::toolbar::EditTool::Razor);
 }
 
 #[test]
@@ -2048,7 +2058,7 @@ fn test_multicam_audio_sync_and_undo() {
 
     let mut app = TrimApp::default();
     let pps = 50u32;
-    app.waveform_gen = trim_media::WaveformGenerator::new(dir.path().to_path_buf(), pps);
+    app.media.waveform_gen = trim_media::WaveformGenerator::new(dir.path().to_path_buf(), pps);
 
     let write_wf = |media_path: &std::path::Path, impulse_sec: f64| {
         let total_pts = (6.0 * pps as f64) as usize;
@@ -2063,7 +2073,7 @@ fn test_multicam_audio_sync_and_undo() {
             bytes.extend_from_slice(&mn.to_le_bytes());
             bytes.extend_from_slice(&mx.to_le_bytes());
         }
-        let cache_path = app.waveform_gen.get_cache_path(media_path);
+        let cache_path = app.media.waveform_gen.get_cache_path(media_path);
         std::fs::write(cache_path, bytes).unwrap();
     };
     write_wf(&path_a, 2.5);
@@ -2114,14 +2124,14 @@ fn test_multicam_audio_sync_and_undo() {
 
 #[test]
 fn test_background_task_cancel_discards_result_and_clears_count() {
-    let mut app = TrimApp {
-        bg_task_active_count: 1,
-        ..Default::default()
-    };
-    app.bg_task_cancel_flag
+    let mut app = TrimApp::default();
+    app.bg_tasks.active_count = 1;
+    app.bg_tasks
+        .cancel_flag
         .store(true, std::sync::atomic::Ordering::Release);
     let _ = app
-        .bg_task_tx
+        .bg_tasks
+        .tx
         .send(crate::app::BackgroundTaskMsg::SceneDetectDone {
             track_id: "v1".to_string(),
             clip_id: "c1".to_string(),
@@ -2133,9 +2143,80 @@ fn test_background_task_cancel_discards_result_and_clears_count() {
         app.poll_background_work(_ctx);
     });
 
-    assert_eq!(app.bg_task_active_count, 0);
+    assert_eq!(app.bg_tasks.active_count, 0);
     assert!(!app
-        .bg_task_cancel_flag
+        .bg_tasks
+        .cancel_flag
         .load(std::sync::atomic::Ordering::Acquire));
     assert!(app.status_message.contains("iptal") || app.status_message.contains("cancelled"));
+}
+
+#[test]
+fn test_multi_keyframe_graph_editor_renders_headless() {
+    use trim_core::keyframe::{Interpolation, Keyframe};
+
+    let ctx = egui::Context::default();
+    let mut kfs = vec![
+        Keyframe::new(0.0, 1.0, Interpolation::Linear),
+        Keyframe::new(1.5, 0.25, Interpolation::EaseInOut),
+        Keyframe::new(3.0, 0.85, Interpolation::CubicBezier),
+    ];
+    let mut action = None;
+
+    let _ = ctx.run(egui::RawInput::default(), |ctx| {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            crate::inspector::render_multi_keyframe_graph(ui, &mut kfs, 1, 4.0, &mut action);
+        });
+    });
+
+    assert_eq!(kfs.len(), 3);
+    assert!(action.is_none());
+}
+
+#[test]
+fn test_snapshot_browser_renders_headless() {
+    use crate::dialogs::RecoveryDialog;
+    use std::path::PathBuf;
+    use trim_project::AutosaveSnapshotEntry;
+
+    let ctx = egui::Context::default();
+    let mut dlg = RecoveryDialog::default();
+    dlg.open_snapshot_browser(vec![AutosaveSnapshotEntry {
+        path: PathBuf::from("/tmp/demo.autosave.trim"),
+        project_name: "Demo Project".to_string(),
+        clip_count: 4,
+        duration_secs: 18.5,
+        modified_epoch_secs: 1_700_000_000,
+    }]);
+    assert!(dlg.browser_open);
+
+    let mut act = None;
+    let _ = ctx.run(egui::RawInput::default(), |ctx| {
+        act = dlg.show(ctx);
+    });
+    assert!(act.is_none());
+    assert!(dlg.browser_open);
+}
+
+#[test]
+fn test_workspace_layout_switching() {
+    use crate::app::WorkspaceLayout;
+
+    let mut app = TrimApp::default();
+    assert_eq!(app.workspace_layout, WorkspaceLayout::Edit);
+
+    app.apply_workspace_layout(WorkspaceLayout::Color);
+    assert_eq!(app.workspace_layout, WorkspaceLayout::Color);
+    assert!(app.monitor.scopes_panel.is_open);
+    assert!(!app.dialogs.audio_mixer_dialog.is_open);
+
+    app.apply_workspace_layout(WorkspaceLayout::Audio);
+    assert_eq!(app.workspace_layout, WorkspaceLayout::Audio);
+    assert!(!app.monitor.scopes_panel.is_open);
+    assert!(app.dialogs.audio_mixer_dialog.is_open);
+
+    app.apply_workspace_layout(WorkspaceLayout::Edit);
+    assert_eq!(app.workspace_layout, WorkspaceLayout::Edit);
+    assert!(!app.monitor.scopes_panel.is_open);
+    assert!(!app.dialogs.audio_mixer_dialog.is_open);
 }

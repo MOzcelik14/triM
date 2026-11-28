@@ -66,11 +66,15 @@ pub(super) fn render_transform_card(
         }
     };
 
+    let lang = super::ui_lang(ui);
     let reset_clicked = std::cell::Cell::new(false);
     inspector_card(
         ui,
         "◈",
-        "Video Dönüşümü & Keyframe",
+        match lang {
+            crate::i18n::Language::Turkish => "Video Dönüşümü & Keyframe",
+            crate::i18n::Language::English => "Video Transform & Keyframes",
+        },
         ACCENT_AMBER,
         |ui| {
             if is_modified
@@ -143,99 +147,120 @@ pub(super) fn render_transform_card(
                 render_kf_btn(ui, clip, "pos_y", clip_time, clip.pos_y, action);
             });
 
-            prop_row(ui, "Ölçek", |ui| {
-                ui.spacing_mut().slider_width = (ui.available_width() - 84.0).max(48.0);
-                let r1 = ui.add(
-                    Slider::new(&mut clip.scale, 0.1..=4.0)
-                        .show_value(false)
-                        .trailing_fill(true),
-                );
-                if r1.drag_started() {
-                    record_start(ui, &mut orig_tf, clip);
-                }
-                if r1.changed() {
-                    sync_kf_value(clip, "scale", clip_time, clip.scale);
-                    *action = Some(InspectorAction::ClipModified);
-                }
-                if r1.drag_stopped() || r1.lost_focus() {
-                    check_stop(ui, &mut orig_tf, clip, action);
-                }
+            prop_row(
+                ui,
+                match lang {
+                    crate::i18n::Language::Turkish => "Ölçek",
+                    crate::i18n::Language::English => "Scale",
+                },
+                |ui| {
+                    ui.spacing_mut().slider_width = (ui.available_width() - 84.0).max(48.0);
+                    let r1 = ui.add(
+                        Slider::new(&mut clip.scale, 0.1..=4.0)
+                            .show_value(false)
+                            .trailing_fill(true),
+                    );
+                    if r1.drag_started() {
+                        record_start(ui, &mut orig_tf, clip);
+                    }
+                    if r1.changed() {
+                        sync_kf_value(clip, "scale", clip_time, clip.scale);
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                    if r1.drag_stopped() || r1.lost_focus() {
+                        check_stop(ui, &mut orig_tf, clip, action);
+                    }
 
-                let r2 = ui.add(
-                    DragValue::new(&mut clip.scale)
-                        .speed(0.01)
-                        .range(0.05..=10.0)
-                        .fixed_decimals(2),
-                );
-                if r2.drag_started() {
-                    record_start(ui, &mut orig_tf, clip);
-                }
-                if r2.changed() {
-                    sync_kf_value(clip, "scale", clip_time, clip.scale);
-                    *action = Some(InspectorAction::ClipModified);
-                }
-                if r2.drag_stopped() || r2.lost_focus() {
-                    check_stop(ui, &mut orig_tf, clip, action);
-                }
-                render_kf_btn(ui, clip, "scale", clip_time, clip.scale, action);
-            });
+                    let r2 = ui.add(
+                        DragValue::new(&mut clip.scale)
+                            .speed(0.01)
+                            .range(0.05..=10.0)
+                            .fixed_decimals(2),
+                    );
+                    if r2.drag_started() {
+                        record_start(ui, &mut orig_tf, clip);
+                    }
+                    if r2.changed() {
+                        sync_kf_value(clip, "scale", clip_time, clip.scale);
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                    if r2.drag_stopped() || r2.lost_focus() {
+                        check_stop(ui, &mut orig_tf, clip, action);
+                    }
+                    render_kf_btn(ui, clip, "scale", clip_time, clip.scale, action);
+                },
+            );
 
-            prop_row(ui, "Döndürme", |ui| {
-                let r = ui.add(
-                    DragValue::new(&mut clip.rotation)
-                        .speed(0.5)
-                        .suffix("°")
-                        .fixed_decimals(1),
-                );
-                if r.drag_started() {
-                    record_start(ui, &mut orig_tf, clip);
-                }
-                if r.changed() {
-                    sync_kf_value(clip, "rotation", clip_time, clip.rotation);
-                    *action = Some(InspectorAction::ClipModified);
-                }
-                if r.drag_stopped() || r.lost_focus() {
-                    check_stop(ui, &mut orig_tf, clip, action);
-                }
-                render_kf_btn(ui, clip, "rotation", clip_time, clip.rotation, action);
-            });
+            prop_row(
+                ui,
+                match lang {
+                    crate::i18n::Language::Turkish => "Döndürme",
+                    crate::i18n::Language::English => "Rotation",
+                },
+                |ui| {
+                    let r = ui.add(
+                        DragValue::new(&mut clip.rotation)
+                            .speed(0.5)
+                            .suffix("°")
+                            .fixed_decimals(1),
+                    );
+                    if r.drag_started() {
+                        record_start(ui, &mut orig_tf, clip);
+                    }
+                    if r.changed() {
+                        sync_kf_value(clip, "rotation", clip_time, clip.rotation);
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                    if r.drag_stopped() || r.lost_focus() {
+                        check_stop(ui, &mut orig_tf, clip, action);
+                    }
+                    render_kf_btn(ui, clip, "rotation", clip_time, clip.rotation, action);
+                },
+            );
 
-            prop_row(ui, "Opaklık", |ui| {
-                ui.spacing_mut().slider_width = (ui.available_width() - 84.0).max(48.0);
-                let r1 = ui.add(
-                    Slider::new(&mut clip.opacity, 0.0..=1.0)
-                        .show_value(false)
-                        .trailing_fill(true),
-                );
-                if r1.drag_started() {
-                    record_start(ui, &mut orig_tf, clip);
-                }
-                if r1.changed() {
-                    sync_kf_value(clip, "opacity", clip_time, clip.opacity);
-                    *action = Some(InspectorAction::ClipModified);
-                }
-                if r1.drag_stopped() || r1.lost_focus() {
-                    check_stop(ui, &mut orig_tf, clip, action);
-                }
+            prop_row(
+                ui,
+                match lang {
+                    crate::i18n::Language::Turkish => "Opaklık",
+                    crate::i18n::Language::English => "Opacity",
+                },
+                |ui| {
+                    ui.spacing_mut().slider_width = (ui.available_width() - 84.0).max(48.0);
+                    let r1 = ui.add(
+                        Slider::new(&mut clip.opacity, 0.0..=1.0)
+                            .show_value(false)
+                            .trailing_fill(true),
+                    );
+                    if r1.drag_started() {
+                        record_start(ui, &mut orig_tf, clip);
+                    }
+                    if r1.changed() {
+                        sync_kf_value(clip, "opacity", clip_time, clip.opacity);
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                    if r1.drag_stopped() || r1.lost_focus() {
+                        check_stop(ui, &mut orig_tf, clip, action);
+                    }
 
-                let r2 = ui.add(
-                    DragValue::new(&mut clip.opacity)
-                        .speed(0.01)
-                        .range(0.0..=1.0)
-                        .fixed_decimals(2),
-                );
-                if r2.drag_started() {
-                    record_start(ui, &mut orig_tf, clip);
-                }
-                if r2.changed() {
-                    sync_kf_value(clip, "opacity", clip_time, clip.opacity);
-                    *action = Some(InspectorAction::ClipModified);
-                }
-                if r2.drag_stopped() || r2.lost_focus() {
-                    check_stop(ui, &mut orig_tf, clip, action);
-                }
-                render_kf_btn(ui, clip, "opacity", clip_time, clip.opacity, action);
-            });
+                    let r2 = ui.add(
+                        DragValue::new(&mut clip.opacity)
+                            .speed(0.01)
+                            .range(0.0..=1.0)
+                            .fixed_decimals(2),
+                    );
+                    if r2.drag_started() {
+                        record_start(ui, &mut orig_tf, clip);
+                    }
+                    if r2.changed() {
+                        sync_kf_value(clip, "opacity", clip_time, clip.opacity);
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                    if r2.drag_stopped() || r2.lost_focus() {
+                        check_stop(ui, &mut orig_tf, clip, action);
+                    }
+                    render_kf_btn(ui, clip, "opacity", clip_time, clip.opacity, action);
+                },
+            );
 
             prop_row(ui, "Ken Burns", |ui| {
                 egui::ComboBox::from_id_salt("ken_burns_preset")
@@ -600,6 +625,15 @@ pub(super) fn render_speed_card(
                     *action = Some(InspectorAction::ClipModified);
                 }
             });
+            if clip.stabilization_strength > 0.001 {
+                ui.label(
+                    RichText::new(
+                        "ℹ Önizlemede uygulanmaz; dışa aktarmada FFmpeg deshake uygulanır.",
+                    )
+                    .size(10.0)
+                    .color(Color32::from_rgb(0xd4, 0xa8, 0x4f)),
+                );
+            }
 
             prop_row(ui, "Hız Eğrisi (Ramp)", |ui| {
                 let ramp_label = if has_ramp {

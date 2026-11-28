@@ -24,6 +24,7 @@ pub struct ReferenceStill {
 
 pub struct ScopesPanelState {
     pub is_open: bool,
+    pub lang: crate::i18n::Language,
     pub config: ScopeConfig,
     pub data: ScopeData,
     pub last_eval_time: f64,
@@ -47,6 +48,7 @@ impl Default for ScopesPanelState {
     fn default() -> Self {
         Self {
             is_open: false,
+            lang: crate::i18n::Language::Turkish,
             config: ScopeConfig::default(),
             data: ScopeData::default(),
             last_eval_time: -1.0,
@@ -153,21 +155,32 @@ impl ScopesPanelState {
     pub fn show(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new("Renk Kapsamları (Scopes)")
-                    .strong()
-                    .size(13.0)
-                    .color(Color32::from_rgb(0xe8, 0xea, 0xf0)),
+                RichText::new(match self.lang {
+                    crate::i18n::Language::Turkish => "Renk Kapsamları (Scopes)",
+                    crate::i18n::Language::English => "Color Scopes",
+                })
+                .strong()
+                .size(13.0)
+                .color(Color32::from_rgb(0xe8, 0xea, 0xf0)),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .small_button("✕")
-                    .on_hover_text("Renk Kapsamları Panelini Kapat")
+                    .on_hover_text(match self.lang {
+                        crate::i18n::Language::Turkish => "Renk Kapsamları Panelini Kapat",
+                        crate::i18n::Language::English => "Close Color Scopes Panel",
+                    })
                     .clicked()
                 {
                     self.is_open = false;
                 }
                 if scope_chip(ui, "⊞ Quad 2x2", self.config.quad_layout)
-                    .on_hover_text("DaVinci Resolve tarzı 2x2 Dörtlü Eşzamanlı Scope Görünümü")
+                    .on_hover_text(match self.lang {
+                        crate::i18n::Language::Turkish => {
+                            "DaVinci Resolve tarzı 2x2 Dörtlü Eşzamanlı Scope Görünümü"
+                        }
+                        crate::i18n::Language::English => "2x2 Quad Simultaneous Scope View",
+                    })
                     .clicked()
                 {
                     self.config.quad_layout = !self.config.quad_layout;
@@ -251,9 +264,12 @@ impl ScopesPanelState {
         if self.data.sample_count == 0 {
             ui.centered_and_justified(|ui| {
                 ui.label(
-                    RichText::new("Aktif görüntü karesi bekleniyor...")
-                        .size(12.0)
-                        .color(Color32::from_rgb(0x78, 0x7c, 0x8a)),
+                    RichText::new(match self.lang {
+                        crate::i18n::Language::Turkish => "Aktif görüntü karesi bekleniyor...",
+                        crate::i18n::Language::English => "Waiting for active video frame...",
+                    })
+                    .size(12.0)
+                    .color(Color32::from_rgb(0x78, 0x7c, 0x8a)),
                 );
             });
             return;
@@ -271,9 +287,16 @@ impl ScopesPanelState {
             );
             if self.data.clipped_high_pct > 0.1 {
                 ui.label(
-                    RichText::new(format!("▲ Kırpılan: %{:.1}", self.data.clipped_high_pct))
-                        .size(11.0)
-                        .color(Color32::from_rgb(0xf8, 0x71, 0x71)),
+                    RichText::new(match self.lang {
+                        crate::i18n::Language::Turkish => {
+                            format!("▲ Kırpılan: %{:.1}", self.data.clipped_high_pct)
+                        }
+                        crate::i18n::Language::English => {
+                            format!("▲ Clipped: {:.1}%", self.data.clipped_high_pct)
+                        }
+                    })
+                    .size(11.0)
+                    .color(Color32::from_rgb(0xf8, 0x71, 0x71)),
                 );
             }
             if self.data.crushed_low_pct > 0.1 {
@@ -394,7 +417,13 @@ impl ScopesPanelState {
                 }
 
                 if self.config.false_color {
-                    draw_scope_section_header(ui, "False Color (Pozlama Haritası)");
+                    draw_scope_section_header(
+                        ui,
+                        match self.lang {
+                            crate::i18n::Language::Turkish => "False Color (Pozlama Haritası)",
+                            crate::i18n::Language::English => "False Color (Exposure Map)",
+                        },
+                    );
                     if let Some(tex) = &self.false_color_tex {
                         let aspect = tex.size()[0] as f32 / tex.size()[1].max(1) as f32;
                         let h = (avail_w / aspect).clamp(90.0, 200.0);
@@ -450,7 +479,10 @@ impl ScopesPanelState {
                         if ui
                             .button(RichText::new("📸 Kare Yakala").size(10.5))
                             .on_hover_text(
-                                "Mevcut monitör karesini ve renk ayarlarını referans galerisine kaydet",
+                                match self.lang {
+                                    crate::i18n::Language::Turkish => "Mevcut monitör karesini ve renk ayarlarını referans galerisine kaydet",
+                                    crate::i18n::Language::English => "Save current monitor frame and grade to Reference Gallery",
+                                },
                             )
                             .clicked()
                         {
@@ -461,7 +493,10 @@ impl ScopesPanelState {
                 if self.reference_stills.is_empty() {
                     ui.label(
                         RichText::new(
-                            "Henüz referans kare yok. Monitör bölünmüş ekran (Wipe) karşılaştırması veya Shot Match için '📸 Kare Yakala' butonuna tıklayın.",
+                            match self.lang {
+                                crate::i18n::Language::Turkish => "Henüz referans kare yok. Monitör bölünmüş ekran (Wipe) karşılaştırması veya Shot Match için '📸 Kare Yakala' butonuna tıklayın.",
+                                crate::i18n::Language::English => "No reference stills yet. Click 'Grab Still' for Split Wipe comparison or Shot Match.",
+                            },
                         )
                         .size(10.0)
                         .color(Color32::from_rgb(0x78, 0x80, 0x92)),
@@ -515,7 +550,10 @@ impl ScopesPanelState {
                                                 .small_button(if is_selected {
                                                     "✓ Aktif Referans"
                                                 } else {
-                                                    "Referans Seç"
+                                                    match self.lang {
+                                                        crate::i18n::Language::Turkish => "Referans Seç",
+                                                        crate::i18n::Language::English => "Select Reference",
+                                                    }
                                                 })
                                                 .clicked()
                                             {
@@ -525,7 +563,10 @@ impl ScopesPanelState {
                                                 && ui
                                                     .small_button("🎨 Rengi Uygula")
                                                     .on_hover_text(
-                                                        "Bu referans karenin tüm renk ayarlarını seçili klibe kopyala",
+                                                        match self.lang {
+                                                            crate::i18n::Language::Turkish => "Bu referans karenin tüm renk ayarlarını seçili klibe kopyala",
+                                                            crate::i18n::Language::English => "Copy all color grading settings from this still to selected clip",
+                                                        },
                                                     )
                                                     .clicked()
                                             {

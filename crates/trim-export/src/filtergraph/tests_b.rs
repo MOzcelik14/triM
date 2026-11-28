@@ -694,3 +694,22 @@ fn test_golden_filtergraph_snapshot() {
     assert!(fg.contains("[base1]format=yuv420p[outv];"));
     assert!(fg.ends_with("alimiter=limit=0.988553:attack=1:release=75:level=disabled[outa]"));
 }
+
+#[test]
+fn test_transition_kind_xfade_and_acrossfade_parity() {
+    use trim_core::clip::TransitionKind;
+
+    for (kind, expected_xfade) in [
+        (TransitionKind::CrossDissolve, "fade"),
+        (TransitionKind::WipeLeft, "wipeleft"),
+        (TransitionKind::WipeRight, "wiperight"),
+        (TransitionKind::SlideLeft, "slideleft"),
+        (TransitionKind::SlideRight, "slideright"),
+    ] {
+        assert_eq!(TransitionKind::parse(kind.as_str()), Some(kind));
+        let xf = TimelineExporter::build_xfade_transition_filter(kind, 0.75, 4.0);
+        assert!(xf.contains(&format!("transition={expected_xfade}")));
+    }
+    let axf = TimelineExporter::build_acrossfade_filter(0.75);
+    assert!(axf.contains("acrossfade=d=0.7500"));
+}

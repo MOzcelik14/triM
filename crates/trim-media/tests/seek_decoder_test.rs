@@ -1,7 +1,33 @@
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::{Duration, Instant};
-use trim_media::ffmpeg::is_ffmpeg_available;
+use trim_media::ffmpeg::{ffmpeg_cmd, is_ffmpeg_available};
 use trim_media::video::{AsyncFrameDecoder, PersistentSeekDecoder};
+
+fn generate_synthetic_mp4(out_path: &Path, duration_secs: u32) {
+    let status = ffmpeg_cmd()
+        .args([
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            &format!("testsrc2=size=320x180:rate=30:duration={duration_secs}"),
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-pix_fmt",
+            "yuv420p",
+        ])
+        .arg(out_path)
+        .status()
+        .expect("spawn ffmpeg for synthetic fixture");
+    assert!(
+        status.success(),
+        "ffmpeg synthetic fixture generation failed"
+    );
+}
 
 #[test]
 fn test_persistent_seek_decoder_lifecycle_and_scrubbing() {
@@ -9,11 +35,9 @@ fn test_persistent_seek_decoder_lifecycle_and_scrubbing() {
         return;
     }
 
-    let clip_path = PathBuf::from("/home/mozcelik/İndirilenler/MVI_8603.MOV");
-    if !clip_path.exists() {
-        // Fallback for environments without the test clip
-        return;
-    }
+    let dir = tempfile::tempdir().expect("tempdir");
+    let clip_path = dir.path().join("synthetic_seek.mp4");
+    generate_synthetic_mp4(&clip_path, 6);
     let p_str = clip_path.to_string_lossy().to_string();
 
     let mut decoder = PersistentSeekDecoder::new();
@@ -59,10 +83,9 @@ fn test_async_frame_decoder_with_persistent_worker() {
         return;
     }
 
-    let clip_path = PathBuf::from("/home/mozcelik/İndirilenler/MVI_8603.MOV");
-    if !clip_path.exists() {
-        return;
-    }
+    let dir = tempfile::tempdir().expect("tempdir");
+    let clip_path = dir.path().join("synthetic_async_seek.mp4");
+    generate_synthetic_mp4(&clip_path, 6);
     let p_str = clip_path.to_string_lossy().to_string();
 
     let mut async_decoder = AsyncFrameDecoder::new();

@@ -1359,7 +1359,52 @@ impl Clip {
         ("glitch", "Dijital Bozulma (Glitch)"),
         ("light_leak", "Işık Sızıntısı (Light Leak)"),
     ];
+}
 
+/// Typed transition kinds mapped uniformly across GPU shader preview and FFmpeg `xfade` export.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum TransitionKind {
+    CrossDissolve,
+    WipeLeft,
+    WipeRight,
+    SlideLeft,
+    SlideRight,
+}
+
+impl TransitionKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::CrossDissolve => "cross_dissolve",
+            Self::WipeLeft => "wipe_left",
+            Self::WipeRight => "wipe_right",
+            Self::SlideLeft => "slide_left",
+            Self::SlideRight => "slide_right",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "cross_dissolve" => Some(Self::CrossDissolve),
+            "wipe_left" => Some(Self::WipeLeft),
+            "wipe_right" => Some(Self::WipeRight),
+            "slide_left" => Some(Self::SlideLeft),
+            "slide_right" => Some(Self::SlideRight),
+            _ => None,
+        }
+    }
+
+    pub fn xfade_name(self) -> &'static str {
+        match self {
+            Self::CrossDissolve => "fade",
+            Self::WipeLeft => "wipeleft",
+            Self::WipeRight => "wiperight",
+            Self::SlideLeft => "slideleft",
+            Self::SlideRight => "slideright",
+        }
+    }
+}
+
+impl Clip {
     pub fn transition_label(trans: Option<&str>) -> &'static str {
         match trans {
             Some(key) => Self::SUPPORTED_TRANSITIONS

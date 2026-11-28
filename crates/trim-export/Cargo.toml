@@ -9,6 +9,7 @@ license.workspace = true
 trim-core = { path = "../trim-core" }
 trim-media = { path = "../trim-media" }
 serde = { workspace = true }
+serde_json = { workspace = true }
 log = { workspace = true }
 uuid = { workspace = true }
 tempfile = { workspace = true }

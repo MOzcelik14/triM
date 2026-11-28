@@ -76,7 +76,10 @@ pub(super) fn render_track_gaps(
 
                 if gap_rect.width() > 64.0 {
                     let dur = g_out - g_in;
-                    let badge_text = format!("⏩ Boşluk: {:.2}s", dur);
+                    let badge_text = match state.lang {
+                        crate::i18n::Language::Turkish => format!("⏩ Boşluk: {:.2}s", dur),
+                        crate::i18n::Language::English => format!("⏩ Gap: {:.2}s", dur),
+                    };
                     let badge_rect =
                         Rect::from_center_size(gap_rect.center(), Vec2::new(104.0, 18.0));
                     painter.rect_filled(

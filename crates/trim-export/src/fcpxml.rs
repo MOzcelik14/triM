@@ -824,10 +824,12 @@ fn parse_fcpx_modern(root: &XmlNode) -> Result<Project, String> {
     Ok(project)
 }
 
-/// Automatically detects format (EDL or FCPXML) and imports into a triM `Project`.
+/// Automatically detects format (EDL, OTIO, or FCPXML) and imports into a triM `Project`.
 pub fn import_interchange(content: &str, file_name: &str) -> Result<Project, String> {
     let lower = file_name.to_lowercase();
-    if lower.ends_with(".edl") || content.starts_with("TITLE:") || content.contains("FCM:") {
+    if lower.ends_with(".otio") || content.contains("\"OTIO_SCHEMA\"") {
+        trim_core::interchange::import_otio(content)
+    } else if lower.ends_with(".edl") || content.starts_with("TITLE:") || content.contains("FCM:") {
         crate::edl::parse_edl(content, None)
     } else {
         parse_fcpxml(content)

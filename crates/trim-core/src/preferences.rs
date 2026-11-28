@@ -3,6 +3,18 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Smart Proxy routing mode for timeline preview playback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ProxyMode {
+    /// Automatically use 720p proxy for >= 1440p sources when available, or when manual proxy toggle is on.
+    #[default]
+    Auto,
+    /// Always use 720p proxy when available.
+    Always,
+    /// Never use proxies (always decode full-resolution source).
+    Off,
+}
+
 /// Application settings and user preferences.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -23,6 +35,9 @@ pub struct UserPreferences {
     pub autosave_interval_secs: u64,
     /// Whether to use 720p Smart Proxy by default
     pub use_proxies_by_default: bool,
+    /// Smart Proxy routing policy (`Auto`, `Always`, `Off`)
+    #[serde(default)]
+    pub proxy_mode: ProxyMode,
     /// Whether to automatically generate proxies for imported 4K+ media
     pub auto_generate_proxies: bool,
     /// Default still image / title duration in seconds
@@ -68,6 +83,7 @@ impl Default for UserPreferences {
             snap_distance_px: 12.0,
             autosave_interval_secs: 60,
             use_proxies_by_default: false,
+            proxy_mode: ProxyMode::Auto,
             auto_generate_proxies: false,
             default_still_duration_secs: 5.0,
             ui_scale: 1.08,

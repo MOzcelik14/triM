@@ -116,12 +116,21 @@ pub(super) const ACCENT_BLUE: Color32 = Color32::from_rgb(0x38, 0x7a, 0xe0);
 pub(super) const ACCENT_TEAL: Color32 = Color32::from_rgb(0x2d, 0xb8, 0x9a);
 pub(super) const LABEL_COL_W: f32 = 104.0;
 
+pub(super) fn ui_lang(ui: &Ui) -> crate::i18n::Language {
+    ui.ctx()
+        .data(|d| d.get_temp::<crate::i18n::Language>(egui::Id::new("inspector_lang")))
+        .unwrap_or(crate::i18n::Language::Turkish)
+}
+
 pub fn render_inspector_panel(
     ui: &mut Ui,
     project: &mut Project,
     selected_clip_id: Option<&str>,
     playhead_time: f64,
+    lang: crate::i18n::Language,
 ) -> Option<InspectorAction> {
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(egui::Id::new("inspector_lang"), lang));
     let mut action = None;
 
     let track_meta = selected_clip_id.and_then(|clip_id| {
@@ -148,17 +157,40 @@ pub fn render_inspector_panel(
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(
-                    RichText::new("Özellikler / Denetçi")
-                        .size(13.5)
-                        .strong()
-                        .color(Color32::WHITE),
+                    RichText::new(match lang {
+                        crate::i18n::Language::Turkish => "Özellikler / Denetçi",
+                        crate::i18n::Language::English => "Properties / Inspector",
+                    })
+                    .size(13.5)
+                    .strong()
+                    .color(Color32::WHITE),
                 );
                 ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                     if let Some((_, ref t_name, is_audio)) = track_meta {
                         let (badge_txt, badge_col) = if is_audio {
-                            (format!("SES • {}", t_name), ACCENT_TEAL)
+                            (
+                                format!(
+                                    "{} • {}",
+                                    match lang {
+                                        crate::i18n::Language::Turkish => "SES",
+                                        crate::i18n::Language::English => "AUDIO",
+                                    },
+                                    t_name
+                                ),
+                                ACCENT_TEAL,
+                            )
                         } else {
-                            (format!("VİDEO • {}", t_name), ACCENT_BLUE)
+                            (
+                                format!(
+                                    "{} • {}",
+                                    match lang {
+                                        crate::i18n::Language::Turkish => "VİDEO",
+                                        crate::i18n::Language::English => "VIDEO",
+                                    },
+                                    t_name
+                                ),
+                                ACCENT_BLUE,
+                            )
                         };
                         render_badge(ui, &badge_txt, badge_col);
                     } else {
@@ -364,11 +396,15 @@ fn render_sequence_inspector(
         .find(|m| m.media_type == MediaType::Video && m.width > 0 && m.height > 0)
         .map(|m| (m.width, m.height, m.fps, m.name.clone()));
 
+    let lang = ui_lang(ui);
     let ar_label = project.timeline.aspect_ratio().short_label();
     inspector_card(
         ui,
         "▸",
-        "Sekans & Proje Ayarları",
+        match lang {
+            crate::i18n::Language::Turkish => "Sekans & Proje Ayarları",
+            crate::i18n::Language::English => "Sequence & Project Settings",
+        },
         ACCENT_AMBER,
         |ui| {
             ui.label(
@@ -379,76 +415,99 @@ fn render_sequence_inspector(
             );
         },
         |ui| {
-            prop_row(ui, "Proje Adı", |ui| {
-                if ui
-                    .add(
-                        TextEdit::singleline(&mut project.settings.name)
-                            .desired_width(ui.available_width()),
-                    )
-                    .changed()
-                {
-                    *action = Some(InspectorAction::ClipModified);
-                }
-            });
+            prop_row(
+                ui,
+                match lang {
+                    crate::i18n::Language::Turkish => "Proje Adı",
+                    crate::i18n::Language::English => "Project Name",
+                },
+                |ui| {
+                    if ui
+                        .add(
+                            TextEdit::singleline(&mut project.settings.name)
+                                .desired_width(ui.available_width()),
+                        )
+                        .changed()
+                    {
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                },
+            );
 
-            prop_row(ui, "Çözünürlük", |ui| {
-                let mut w = project.timeline.width;
-                let mut h = project.timeline.height;
-                let w_changed = ui
-                    .add(
-                        DragValue::new(&mut w)
-                            .speed(2.0)
-                            .range(128..=7680)
-                            .suffix(" px"),
-                    )
-                    .changed();
-                ui.label(RichText::new("×").size(11.0).color(LABEL_COLOR));
-                let h_changed = ui
-                    .add(
-                        DragValue::new(&mut h)
-                            .speed(2.0)
-                            .range(128..=7680)
-                            .suffix(" px"),
-                    )
-                    .changed();
-                if w_changed || h_changed {
-                    project.set_resolution(w, h);
-                    *action = Some(InspectorAction::ClipModified);
-                }
-            });
+            prop_row(
+                ui,
+                match lang {
+                    crate::i18n::Language::Turkish => "Çözünürlük",
+                    crate::i18n::Language::English => "Resolution",
+                },
+                |ui| {
+                    let mut w = project.timeline.width;
+                    let mut h = project.timeline.height;
+                    let w_changed = ui
+                        .add(
+                            DragValue::new(&mut w)
+                                .speed(2.0)
+                                .range(128..=7680)
+                                .suffix(" px"),
+                        )
+                        .changed();
+                    ui.label(RichText::new("×").size(11.0).color(LABEL_COLOR));
+                    let h_changed = ui
+                        .add(
+                            DragValue::new(&mut h)
+                                .speed(2.0)
+                                .range(128..=7680)
+                                .suffix(" px"),
+                        )
+                        .changed();
+                    if w_changed || h_changed {
+                        project.set_resolution(w, h);
+                        *action = Some(InspectorAction::ClipModified);
+                    }
+                },
+            );
 
-            prop_row(ui, "Hazır Boyut", |ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                let btn_w = ((ui.available_width() - 4.0 * 3.0) / 4.0).max(36.0);
-                for (lbl, pw, ph) in [
-                    ("4K", 3840_u32, 2160_u32),
-                    ("1080p", 1920, 1080),
-                    ("9:16", 1080, 1920),
-                    ("1:1", 1080, 1080),
-                ] {
-                    let is_active = project.timeline.width == pw && project.timeline.height == ph;
-                    let btn =
-                        Button::new(RichText::new(lbl).size(10.5).strong().color(if is_active {
-                            Color32::WHITE
-                        } else {
-                            Color32::from_rgb(0xb8, 0xc0, 0xd4)
-                        }))
+            prop_row(
+                ui,
+                match lang {
+                    crate::i18n::Language::Turkish => "Hazır Boyut",
+                    crate::i18n::Language::English => "Preset Size",
+                },
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    let btn_w = ((ui.available_width() - 4.0 * 3.0) / 4.0).max(36.0);
+                    for (lbl, pw, ph) in [
+                        ("4K", 3840_u32, 2160_u32),
+                        ("1080p", 1920, 1080),
+                        ("9:16", 1080, 1920),
+                        ("1:1", 1080, 1080),
+                    ] {
+                        let is_active =
+                            project.timeline.width == pw && project.timeline.height == ph;
+                        let btn = Button::new(RichText::new(lbl).size(10.5).strong().color(
+                            if is_active {
+                                Color32::WHITE
+                            } else {
+                                Color32::from_rgb(0xb8, 0xc0, 0xd4)
+                            },
+                        ))
                         .fill(if is_active {
                             ACCENT_AMBER
                         } else {
                             Color32::from_rgb(0x1f, 0x23, 0x30)
                         })
                         .rounding(Rounding::same(4.0));
-                    if ui
-                        .add_sized([btn_w, 20.0], btn)
-                        .on_hover_text(format!("{}×{} px", pw, ph))
-                        .clicked()
-                    {
-                        project.set_resolution(pw, ph);
-                        *action = Some(InspectorAction::ClipModified);
+                        if ui
+                            .add_sized([btn_w, 20.0], btn)
+                            .on_hover_text(format!("{}×{} px", pw, ph))
+                            .clicked()
+                        {
+                            project.set_resolution(pw, ph);
+                            *action = Some(InspectorAction::ClipModified);
+                        }
                     }
-                }
-            });
+                },
+            );
 
             if let Some((vw, vh, vfps, vname)) = first_video_media {
                 if project.timeline.width != vw || project.timeline.height != vh {
@@ -486,40 +545,47 @@ fn render_sequence_inspector(
                 }
             }
 
-            prop_row(ui, "Kare Hızı", |ui| {
-                let mut fps = project.timeline.fps;
-                if ui
-                    .add(
-                        DragValue::new(&mut fps)
-                            .speed(0.5)
-                            .range(1.0..=240.0)
-                            .suffix(" fps"),
-                    )
-                    .changed()
-                {
-                    project.set_fps(fps);
-                    *action = Some(InspectorAction::ClipModified);
-                }
-                for preset_fps in [24.0, 30.0, 60.0] {
-                    let is_curr = (project.timeline.fps - preset_fps).abs() < 0.05;
-                    let pill = Button::new(
-                        RichText::new(format!("{:.0}", preset_fps))
-                            .size(10.0)
-                            .strong()
-                            .color(if is_curr { Color32::WHITE } else { LABEL_COLOR }),
-                    )
-                    .fill(if is_curr {
-                        ACCENT_BLUE
-                    } else {
-                        Color32::from_rgb(0x1f, 0x23, 0x30)
-                    })
-                    .rounding(Rounding::same(4.0));
-                    if ui.add_sized([30.0, 20.0], pill).clicked() {
-                        project.set_fps(preset_fps);
+            prop_row(
+                ui,
+                match lang {
+                    crate::i18n::Language::Turkish => "Kare Hızı",
+                    crate::i18n::Language::English => "Frame Rate",
+                },
+                |ui| {
+                    let mut fps = project.timeline.fps;
+                    if ui
+                        .add(
+                            DragValue::new(&mut fps)
+                                .speed(0.5)
+                                .range(1.0..=240.0)
+                                .suffix(" fps"),
+                        )
+                        .changed()
+                    {
+                        project.set_fps(fps);
                         *action = Some(InspectorAction::ClipModified);
                     }
-                }
-            });
+                    for preset_fps in [24.0, 30.0, 60.0] {
+                        let is_curr = (project.timeline.fps - preset_fps).abs() < 0.05;
+                        let pill = Button::new(
+                            RichText::new(format!("{:.0}", preset_fps))
+                                .size(10.0)
+                                .strong()
+                                .color(if is_curr { Color32::WHITE } else { LABEL_COLOR }),
+                        )
+                        .fill(if is_curr {
+                            ACCENT_BLUE
+                        } else {
+                            Color32::from_rgb(0x1f, 0x23, 0x30)
+                        })
+                        .rounding(Rounding::same(4.0));
+                        if ui.add_sized([30.0, 20.0], pill).clicked() {
+                            project.set_fps(preset_fps);
+                            *action = Some(InspectorAction::ClipModified);
+                        }
+                    }
+                },
+            );
         },
     );
 
@@ -806,41 +872,54 @@ pub(super) fn render_kf_btn(
     }
 
     if has_kf {
-        if let Some(list) = clip.keyframes.get_mut(prop) {
-            if let Some(kf) = list.iter_mut().find(|k| (k.time - clip_time).abs() <= 0.05) {
-                let popup_id = ui.make_persistent_id(format!("kf_curve_{}_{}", clip.id, prop));
-                let curve_btn = ui
-                    .add(
-                        Button::new(
-                            RichText::new(kf.interpolation.short_icon())
-                                .size(10.0)
-                                .strong()
-                                .color(ACCENT_BLUE),
-                        )
-                        .fill(Color32::from_rgb(0x18, 0x20, 0x2e))
-                        .rounding(Rounding::same(4.0))
-                        .min_size(Vec2::new(20.0, 20.0)),
+        let clip_dur = clip.duration().max(0.1);
+        let kf_meta = clip.keyframes.get(prop).and_then(|list| {
+            list.iter()
+                .position(|k| (k.time - clip_time).abs() <= 0.05)
+                .map(|idx| (idx, list[idx].interpolation))
+        });
+        if let Some((kf_idx, kf_interp)) = kf_meta {
+            let popup_id = ui.make_persistent_id(format!("kf_curve_{}_{}", clip.id, prop));
+            let curve_btn = ui
+                .add(
+                    Button::new(
+                        RichText::new(kf_interp.short_icon())
+                            .size(10.0)
+                            .strong()
+                            .color(ACCENT_BLUE),
                     )
-                    .on_hover_text(format!("Eğri Tipi: {}", kf.interpolation.label()));
+                    .fill(Color32::from_rgb(0x18, 0x20, 0x2e))
+                    .rounding(Rounding::same(4.0))
+                    .min_size(Vec2::new(20.0, 20.0)),
+                )
+                .on_hover_text(format!("Eğri Tipi: {}", kf_interp.label()));
 
-                if curve_btn.clicked() {
-                    ui.memory_mut(|m| m.toggle_popup(popup_id));
-                }
+            if curve_btn.clicked() {
+                ui.memory_mut(|m| m.toggle_popup(popup_id));
+            }
 
-                egui::popup_below_widget(
-                    ui,
-                    popup_id,
-                    &curve_btn,
-                    egui::PopupCloseBehavior::CloseOnClickOutside,
-                    |ui| {
-                        ui.set_min_width(175.0);
-                        ui.label(
-                            RichText::new("Keyframe Eğrisi")
-                                .size(11.0)
-                                .strong()
-                                .color(Color32::WHITE),
-                        );
-                        ui.add_space(2.0);
+            egui::popup_below_widget(
+                ui,
+                popup_id,
+                &curve_btn,
+                egui::PopupCloseBehavior::CloseOnClickOutside,
+                |ui| {
+                    let Some(list) = clip.keyframes.get_mut(prop) else {
+                        return;
+                    };
+                    if kf_idx >= list.len() {
+                        return;
+                    }
+                    ui.set_min_width(185.0);
+                    ui.label(
+                        RichText::new("Keyframe Eğrisi")
+                            .size(11.0)
+                            .strong()
+                            .color(Color32::WHITE),
+                    );
+                    ui.add_space(2.0);
+                    {
+                        let kf = &mut list[kf_idx];
                         for interp in Interpolation::ALL {
                             if ui
                                 .selectable_value(
@@ -856,7 +935,7 @@ pub(super) fn render_kf_btn(
 
                         ui.add_space(4.0);
                         let (g_rect, g_resp) = ui.allocate_exact_size(
-                            Vec2::new(165.0, 74.0),
+                            Vec2::new(175.0, 70.0),
                             egui::Sense::click_and_drag(),
                         );
                         let painter = ui.painter_at(g_rect);
@@ -928,10 +1007,159 @@ pub(super) fn render_kf_btn(
                                 }
                             }
                         }
-                    },
-                );
+                    }
+
+                    ui.add_space(6.0);
+                    ui.separator();
+                    render_multi_keyframe_graph(ui, list, kf_idx, clip_dur, action);
+                },
+            );
+        }
+    }
+}
+
+/// Multi-keyframe curve graph editor plotting all keyframes across clip duration.
+pub(crate) fn render_multi_keyframe_graph(
+    ui: &mut Ui,
+    list: &mut [trim_core::keyframe::Keyframe],
+    active_idx: usize,
+    clip_dur: f64,
+    action: &mut Option<InspectorAction>,
+) {
+    let dur = clip_dur.max(0.1);
+    ui.label(
+        RichText::new(format!("📈 Eğri Grafiği ({} keyframe)", list.len()))
+            .size(10.5)
+            .strong()
+            .color(Color32::from_rgb(0xd0, 0xd7, 0xe8)),
+    );
+    ui.add_space(2.0);
+
+    let (rect, resp) =
+        ui.allocate_exact_size(Vec2::new(175.0, 68.0), egui::Sense::click_and_drag());
+    let painter = ui.painter_at(rect);
+    painter.rect_filled(rect, 4.0, Color32::from_rgb(0x10, 0x13, 0x1a));
+    painter.rect_stroke(
+        rect,
+        4.0,
+        Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x30, 0x42)),
+    );
+
+    if list.is_empty() {
+        return;
+    }
+
+    let mut min_v = list.iter().map(|k| k.value).fold(f64::INFINITY, f64::min);
+    let mut max_v = list
+        .iter()
+        .map(|k| k.value)
+        .fold(f64::NEG_INFINITY, f64::max);
+    if (max_v - min_v).abs() < 1e-4 {
+        min_v -= 1.0;
+        max_v += 1.0;
+    }
+    let span_v = (max_v - min_v).max(1e-4);
+    let inner = rect.shrink(7.0);
+
+    let to_pos = |t: f64, v: f64| -> Pos2 {
+        let tx = (t / dur).clamp(0.0, 1.0) as f32;
+        let vy = ((v - min_v) / span_v).clamp(0.0, 1.0) as f32;
+        Pos2::new(
+            inner.left() + tx * inner.width(),
+            inner.bottom() - vy * inner.height(),
+        )
+    };
+
+    // Subtle midline
+    let mid_y = inner.center().y;
+    painter.line_segment(
+        [
+            Pos2::new(inner.left(), mid_y),
+            Pos2::new(inner.right(), mid_y),
+        ],
+        Stroke::new(0.75_f32, Color32::from_rgb(0x20, 0x26, 0x34)),
+    );
+
+    // Draw interpolated curve segments between consecutive keyframes
+    for w in list.windows(2) {
+        let k0 = &w[0];
+        let k1 = &w[1];
+        let mut prev = to_pos(k0.time, k0.value);
+        let steps = 12;
+        for s in 1..=steps {
+            let u = s as f64 / steps as f64;
+            let t = k0.time + (k1.time - k0.time) * u;
+            let factor = if k0.interpolation == Interpolation::Hold {
+                if s == steps {
+                    1.0
+                } else {
+                    0.0
+                }
+            } else {
+                k0.interpolation.evaluate_curve(u, k0.bezier_handles)
+            };
+            let v = k0.value + (k1.value - k0.value) * factor;
+            let next = to_pos(t, v);
+            painter.line_segment([prev, next], Stroke::new(1.5_f32, ACCENT_TEAL));
+            prev = next;
+        }
+    }
+
+    // Draw keyframe diamonds
+    for (i, kf) in list.iter().enumerate() {
+        let p = to_pos(kf.time, kf.value);
+        let is_active = i == active_idx;
+        let r = if is_active { 4.2 } else { 3.2 };
+        let col = if is_active { ACCENT_AMBER } else { ACCENT_BLUE };
+        let diamond = vec![
+            Pos2::new(p.x, p.y - r),
+            Pos2::new(p.x + r, p.y),
+            Pos2::new(p.x, p.y + r),
+            Pos2::new(p.x - r, p.y),
+        ];
+        painter.add(egui::Shape::convex_polygon(
+            diamond,
+            col,
+            Stroke::new(1.0_f32, Color32::WHITE),
+        ));
+    }
+
+    // Drag nearest keyframe vertically to adjust its value
+    if resp.dragged() {
+        if let Some(pos) = resp.interact_pointer_pos() {
+            let drag_id = ui.make_persistent_id("multi_kf_drag_idx");
+            let idx = if resp.drag_started() {
+                let nearest = list
+                    .iter()
+                    .enumerate()
+                    .min_by(|(_, a), (_, b)| {
+                        let da = to_pos(a.time, a.value).distance(pos);
+                        let db = to_pos(b.time, b.value).distance(pos);
+                        da.total_cmp(&db)
+                    })
+                    .map(|(i, _)| i);
+                ui.memory_mut(|m| m.data.insert_temp(drag_id, nearest));
+                nearest
+            } else {
+                ui.memory(|m| m.data.get_temp::<Option<usize>>(drag_id))
+                    .flatten()
+            };
+            if let Some(i) = idx {
+                if let Some(kf) = list.get_mut(i) {
+                    let norm_y = ((inner.bottom() - pos.y) / inner.height()).clamp(0.0, 1.0) as f64;
+                    kf.value = min_v + norm_y * span_v;
+                    *action = Some(InspectorAction::ClipModified);
+                }
             }
         }
+    }
+
+    if let Some(kf) = list.get(active_idx) {
+        ui.label(
+            RichText::new(format!("t={:.2}s  •  val={:.2}", kf.time, kf.value))
+                .size(9.5)
+                .color(Color32::from_rgb(0x88, 0x90, 0xa4)),
+        );
     }
 }
 

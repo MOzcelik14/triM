@@ -713,6 +713,33 @@ impl PreferencesDialog {
         );
         ui.add_space(6.0);
 
+        ui.horizontal(|ui| {
+            ui.label(match lang {
+                Language::Turkish => "Proxy Yönlendirme Politikası:",
+                Language::English => "Proxy Routing Policy:",
+            });
+            for (mode, label_tr, label_en) in [
+                (
+                    trim_core::preferences::ProxyMode::Auto,
+                    "Otomatik (≥1440p)",
+                    "Auto (≥1440p)",
+                ),
+                (
+                    trim_core::preferences::ProxyMode::Always,
+                    "Her Zaman",
+                    "Always",
+                ),
+                (trim_core::preferences::ProxyMode::Off, "Kapalı", "Off"),
+            ] {
+                let text = match lang {
+                    Language::Turkish => label_tr,
+                    Language::English => label_en,
+                };
+                ui.selectable_value(&mut self.draft.proxy_mode, mode, text);
+            }
+        });
+        ui.add_space(6.0);
+
         ui.checkbox(
             &mut self.draft.auto_generate_proxies,
             match lang {

@@ -98,6 +98,8 @@ pub struct TimelineModel {
     pub in_point: Option<f64>,
     #[serde(default)]
     pub out_point: Option<f64>,
+    #[serde(default)]
+    pub bus_gains: crate::track::AudioBusGains,
 }
 
 fn default_width() -> u32 {
@@ -133,6 +135,7 @@ impl Default for TimelineModel {
             snap_threshold: 0.15,
             in_point: None,
             out_point: None,
+            bus_gains: crate::track::AudioBusGains::default(),
         }
     }
 }

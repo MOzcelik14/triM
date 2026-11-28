@@ -610,7 +610,11 @@ pub(super) fn render_tracks_and_clips(
             } else {
                 ""
             };
-            let offline_badge = if is_offline { " [!] ÇEVRİMDIŞI" } else { "" };
+            let offline_badge = if is_offline {
+                crate::i18n::pick(state.lang, " [!] ÇEVRİMDIŞI", " [!] OFFLINE")
+            } else {
+                ""
+            };
             let title_str = format!(
                 "{}{}{}{}{}{}{}  [{:.2}s]{}",
                 title_prefix,

@@ -56,6 +56,17 @@
     <binary>trim</binary>
   </provides>
   <releases>
+    <release version="2026.11.3" date="2026-11-28">
+      <description>
+        <p>triM. 2026.11.3 - 4 Fazlı Mühendislik, 4K İş Akışı ve Ekosistem Sürümü:</p>
+        <ul>
+          <li>Faz 1: Atomik proje yazma + .trim.bak yedekleme, deterministik sentetik FFmpeg test fixture'ları, fail-closed install.sh SHA256 doğrulaması ve TrimApp/color/audio modülerleştirmesi.</li>
+          <li>Faz 2: FrameRate/RationalTime ile NTSC Drop-Frame EDL/FCPXML hassasiyeti, GPU adjustment layer 3D LUT eşitliği, 31 eylemli KeymapConfig, çoklu-keyframe eğri grafiği ve Autosave Snapshot tarayıcısı.</li>
+          <li>Faz 3: QSV/AMF/VideoToolbox hwaccel, HotDecoderPool, Auto/Always/Off ProxyMode, çift tamponlu OpenGL PBO readback ve 10 sn pencereli ses önbelleği + cihaz kurtarma.</li>
+          <li>Faz 4: Saf Rust OpenTimelineIO (.otio) içe/dışa aktarımı, export meta veri koruma, TransitionKind xfade/acrossfade eşliği, AudioBus alt miks yönlendirmesi, RenderQueue kalıcılığı ve Kurgu/Renk/Ses çalışma alanı düzenleri.</li>
+        </ul>
+      </description>
+    </release>
     <release version="2026.11.2" date="2026-11-28">
       <description>
         <p>triM. 2026.11.2 - Kısayol Editörü Sağlamlaştırma ve Durum Çubuğu i18n Tamamlama:</p>

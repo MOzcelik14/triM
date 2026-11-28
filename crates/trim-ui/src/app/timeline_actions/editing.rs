@@ -13,7 +13,7 @@ impl TrimApp {
     /// Resolves and assigns target tracks (V1 and A1), falling back to first available tracks with explicit logging.
     pub fn resolve_default_target_tracks(&mut self) {
         let v_tracks = self.project.timeline.get_video_tracks();
-        self.target_video_track = v_tracks
+        self.tools.target_video_track = v_tracks
             .iter()
             .find(|t| t.name == "V1")
             .copied()
@@ -25,7 +25,7 @@ impl TrimApp {
             });
 
         let a_tracks = self.project.timeline.get_audio_tracks();
-        self.target_audio_track = a_tracks
+        self.tools.target_audio_track = a_tracks
             .iter()
             .find(|t| t.name == "A1")
             .copied()
@@ -79,7 +79,7 @@ impl TrimApp {
         let target_has_clip = self
             .project
             .timeline
-            .get_track_by_id(&self.target_video_track)
+            .get_track_by_id(&self.tools.target_video_track)
             .map(|t| t.find_clip_at(time).is_some())
             .unwrap_or(false);
 
@@ -87,7 +87,7 @@ impl TrimApp {
             // Find an upper track that does not have a clip at this time and is not locked
             let upper_track = current_video_tracks
                 .iter()
-                .filter(|t| t.id != self.target_video_track && !t.locked)
+                .filter(|t| t.id != self.tools.target_video_track && !t.locked)
                 .find(|t| t.find_clip_at(time).is_none());
 
             if let Some(t) = upper_track {
@@ -126,10 +126,10 @@ impl TrimApp {
         } else if self
             .project
             .timeline
-            .get_track_by_id(&self.target_video_track)
+            .get_track_by_id(&self.tools.target_video_track)
             .is_some()
         {
-            self.target_video_track.clone()
+            self.tools.target_video_track.clone()
         } else {
             current_video_tracks
                 .first()
@@ -156,8 +156,8 @@ impl TrimApp {
         let cmd = Box::new(AddClipCommand::new(target_track_id.clone(), new_clip));
         let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
         self.project.mark_dirty();
-        self.last_rendered_monitor_frame = None;
-        self.video_engine.last_rendered_frame = None;
+        self.monitor.last_rendered_monitor_frame = None;
+        self.media.video_engine.last_rendered_frame = None;
         Some((target_track_id, cl_id))
     }
 
@@ -165,7 +165,7 @@ impl TrimApp {
         // 1. Check if the user clicked on an existing text overlay at the current playhead
         let mut hit_text_clip = None;
         for track in self.project.timeline.get_video_tracks() {
-            if let Some(clip) = track.find_clip_at(self.current_time) {
+            if let Some(clip) = track.find_clip_at(self.playback.current_time) {
                 if let Some(txt) = &clip.text_overlay {
                     let dx = (pos_x - txt.pos_x).abs();
                     let dy = (pos_y - txt.pos_y).abs();
@@ -185,7 +185,7 @@ impl TrimApp {
             // User clicked on the monitor with Type Tool:
             // ALWAYS create a dedicated text clip on the timeline!
             if let Some((tr_id, cl_id)) =
-                self.create_text_clip_at_time(self.current_time, pos_x, pos_y, "Metin")
+                self.create_text_clip_at_time(self.playback.current_time, pos_x, pos_y, "Metin")
             {
                 self.canvas_state.selected_clip_pairs = vec![(tr_id, cl_id)];
                 self.status_message = match self.lang() {
@@ -212,7 +212,7 @@ impl TrimApp {
             if !track.visible {
                 continue;
             }
-            if let Some(clip) = track.find_clip_at(self.current_time) {
+            if let Some(clip) = track.find_clip_at(self.playback.current_time) {
                 if let Some(txt) = &clip.text_overlay {
                     if (txt.pos_x - pos_x).abs() < 1e-3 && (txt.pos_y - pos_y).abs() < 1e-3 {
                         found = Some((track.id.clone(), clip.id.clone()));
@@ -240,8 +240,8 @@ impl TrimApp {
                         txt.pos_x = pos_x;
                         txt.pos_y = pos_y;
                         self.project.mark_dirty();
-                        self.last_rendered_monitor_frame = None;
-                        self.video_engine.last_rendered_frame = None;
+                        self.monitor.last_rendered_monitor_frame = None;
+                        self.media.video_engine.last_rendered_frame = None;
                     }
                 }
             }
@@ -258,8 +258,8 @@ impl TrimApp {
                             cl.name = format!("Metin: {}", content);
                         }
                         self.project.mark_dirty();
-                        self.last_rendered_monitor_frame = None;
-                        self.video_engine.last_rendered_frame = None;
+                        self.monitor.last_rendered_monitor_frame = None;
+                        self.media.video_engine.last_rendered_frame = None;
                     }
                 }
             }
@@ -462,7 +462,7 @@ impl TrimApp {
             &mut self.undo_stack,
             preferred_track,
             preferred_clip,
-            self.current_time,
+            self.playback.current_time,
         );
         self.project.mark_dirty();
     }
@@ -471,7 +471,7 @@ impl TrimApp {
         if let Some(existing) = self
             .project
             .timeline
-            .get_marker_at(self.current_time, 0.15)
+            .get_marker_at(self.playback.current_time, 0.15)
             .cloned()
         {
             let cmd = Box::new(RemoveMarkerCommand::new(existing.id));
@@ -479,23 +479,23 @@ impl TrimApp {
             self.project.mark_dirty();
             self.status_message = match self.lang() {
                 crate::i18n::Language::Turkish => {
-                    format!("İşaretçi silindi ({:.2}s)", self.current_time)
+                    format!("İşaretçi silindi ({:.2}s)", self.playback.current_time)
                 }
                 crate::i18n::Language::English => {
-                    format!("Marker removed ({:.2}s)", self.current_time)
+                    format!("Marker removed ({:.2}s)", self.playback.current_time)
                 }
             };
         } else {
-            let marker = Marker::new(self.current_time);
+            let marker = Marker::new(self.playback.current_time);
             let cmd = Box::new(AddMarkerCommand::new(marker));
             let _ = self.undo_stack.push(cmd, &mut self.project.timeline);
             self.project.mark_dirty();
             self.status_message = match self.lang() {
                 crate::i18n::Language::Turkish => {
-                    format!("İşaretçi eklendi ({:.2}s)", self.current_time)
+                    format!("İşaretçi eklendi ({:.2}s)", self.playback.current_time)
                 }
                 crate::i18n::Language::English => {
-                    format!("Marker added ({:.2}s)", self.current_time)
+                    format!("Marker added ({:.2}s)", self.playback.current_time)
                 }
             };
         }

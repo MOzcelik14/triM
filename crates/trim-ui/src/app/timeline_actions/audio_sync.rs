@@ -30,11 +30,12 @@ impl TrimApp {
             return;
         };
 
-        let pps = self.waveform_gen.points_per_second;
+        let pps = self.media.waveform_gen.points_per_second;
         let ref_wf = self
+            .media
             .waveform_gen
             .get_waveform(&ref_media.file_path)
-            .or_else(|| self.waveform_gen.generate_sync(&ref_media.file_path));
+            .or_else(|| self.media.waveform_gen.generate_sync(&ref_media.file_path));
         let Some(ref_full_wf) = ref_wf else {
             self.set_status(
                 "Referans klibin ses dalga formu çıkarılamadı",
@@ -74,9 +75,10 @@ impl TrimApp {
                 continue;
             };
             let Some(tgt_full_wf) = self
+                .media
                 .waveform_gen
                 .get_waveform(&tgt_media.file_path)
-                .or_else(|| self.waveform_gen.generate_sync(&tgt_media.file_path))
+                .or_else(|| self.media.waveform_gen.generate_sync(&tgt_media.file_path))
             else {
                 continue;
             };
@@ -128,8 +130,8 @@ impl TrimApp {
             .push(cmd, &mut self.project.timeline)
             .is_ok()
         {
-            self.video_engine.clear_cache();
-            self.audio_mixer.clear_cache();
+            self.media.video_engine.clear_cache();
+            self.playback.audio_mixer.clear_cache();
             self.project.mark_dirty();
             self.status_message = match self.lang() {
                 crate::i18n::Language::Turkish => format!(
@@ -187,10 +189,11 @@ impl TrimApp {
         let sx = mask.scale_x as f32;
         let sy = mask.scale_y as f32;
 
-        self.bg_task_active_count += 1;
-        self.bg_task_cancel_flag
+        self.bg_tasks.active_count += 1;
+        self.bg_tasks
+            .cancel_flag
             .store(false, std::sync::atomic::Ordering::Release);
-        let tx = self.bg_task_tx.clone();
+        let tx = self.bg_tasks.tx.clone();
         let tid = track_id.to_string();
         let cid = clip_id.to_string();
         self.set_status(
@@ -346,7 +349,7 @@ impl TrimApp {
             .push(cmd, &mut self.project.timeline)
             .is_ok()
         {
-            self.audio_mixer.clear_cache();
+            self.playback.audio_mixer.clear_cache();
             self.project.mark_dirty();
             self.status_message = match self.lang() {
                 crate::i18n::Language::Turkish => format!(
@@ -444,10 +447,10 @@ impl TrimApp {
             .push(macro_cmd, &mut self.project.timeline)
             .is_ok()
         {
-            self.video_engine.clear_cache();
-            self.audio_mixer.clear_cache();
+            self.media.video_engine.clear_cache();
+            self.playback.audio_mixer.clear_cache();
             self.project.mark_dirty();
-            self.last_rendered_dirty = true;
+            self.media.last_rendered_dirty = true;
             self.status_message = match self.lang() {
                 crate::i18n::Language::Turkish => {
                     format!("⏱ {} klip SMPTE Timecode ile senkronize edildi", count + 1)

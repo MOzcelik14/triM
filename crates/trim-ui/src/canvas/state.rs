@@ -62,6 +62,7 @@ pub struct TimelineCanvasState {
     pub drag_orig_keyframes: Vec<trim_core::keyframe::Keyframe>,
     /// Cached `(file_path, exists, checked_at)` per `media_id` to avoid per-frame `stat()` syscalls.
     pub media_exists_cache: std::collections::HashMap<String, (String, bool, std::time::Instant)>,
+    pub lang: crate::i18n::Language,
 }
 
 impl Default for TimelineCanvasState {
@@ -97,6 +98,7 @@ impl Default for TimelineCanvasState {
             drag_kf_index: None,
             drag_orig_keyframes: Vec::new(),
             media_exists_cache: std::collections::HashMap::new(),
+            lang: crate::i18n::Language::default(),
         }
     }
 }

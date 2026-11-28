@@ -5,16 +5,20 @@ use egui::{
 };
 use std::path::PathBuf;
 use trim_core::project::Project;
+use trim_project::AutosaveSnapshotEntry;
 
 #[derive(Debug, Clone, Default)]
 pub struct RecoveryDialog {
     pub is_open: bool,
     pub recovery_path: Option<PathBuf>,
     pub preview_summary: Option<String>,
+    pub browser_open: bool,
+    pub snapshots: Vec<AutosaveSnapshotEntry>,
 }
 
 pub enum RecoveryAction {
     Restore(PathBuf),
+    RestoreSnapshot(PathBuf),
     Discard(PathBuf),
 }
 
@@ -57,7 +61,17 @@ impl RecoveryDialog {
         self.is_open = true;
     }
 
+    pub fn open_snapshot_browser(&mut self, snapshots: Vec<AutosaveSnapshotEntry>) {
+        self.snapshots = snapshots;
+        self.browser_open = true;
+    }
+
     pub fn show(&mut self, ctx: &egui::Context) -> Option<RecoveryAction> {
+        if self.browser_open {
+            if let Some(act) = self.show_snapshot_browser(ctx) {
+                return Some(act);
+            }
+        }
         if !self.is_open {
             return None;
         }
@@ -174,6 +188,106 @@ impl RecoveryDialog {
                 });
             });
 
+        action
+    }
+
+    fn show_snapshot_browser(&mut self, ctx: &egui::Context) -> Option<RecoveryAction> {
+        let mut action = None;
+        let mut open = self.browser_open;
+
+        Window::new("Sürüm Geçmişi / Otomatik Kayıt Snapshot'ları")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(true)
+            .default_size(Vec2::new(520.0, 340.0))
+            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.label(
+                    RichText::new("Otomatik kayıt klasöründeki proje anlık görüntüleri:")
+                        .size(11.5)
+                        .color(Color32::from_rgb(0x9c, 0xa3, 0xb8)),
+                );
+                ui.add_space(8.0);
+
+                if self.snapshots.is_empty() {
+                    ui.label(
+                        RichText::new(
+                            "Henüz kaydedilmiş bir otomatik kayıt snapshot'ı bulunamadı.",
+                        )
+                        .size(12.0)
+                        .color(Color32::from_rgb(0x88, 0x90, 0xa4)),
+                    );
+                } else {
+                    egui::ScrollArea::vertical()
+                        .max_height(240.0)
+                        .show(ui, |ui| {
+                            for snap in &self.snapshots {
+                                Frame::none()
+                                    .fill(Color32::from_rgb(0x17, 0x19, 0x22))
+                                    .stroke(Stroke::new(
+                                        1.0_f32,
+                                        Color32::from_rgb(0x27, 0x2a, 0x38),
+                                    ))
+                                    .rounding(egui::Rounding::same(6.0))
+                                    .inner_margin(Margin::symmetric(10.0, 7.0))
+                                    .show(ui, |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.vertical(|ui| {
+                                                ui.label(
+                                                    RichText::new(&snap.project_name)
+                                                        .size(12.0)
+                                                        .strong()
+                                                        .color(Color32::WHITE),
+                                                );
+                                                ui.label(
+                                                    RichText::new(format!(
+                                                        "{} klip  •  {:.1}s  •  epoch {}s",
+                                                        snap.clip_count,
+                                                        snap.duration_secs,
+                                                        snap.modified_epoch_secs
+                                                    ))
+                                                    .size(10.5)
+                                                    .color(Color32::from_rgb(0x9c, 0xa3, 0xb8)),
+                                                );
+                                            });
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    if ui
+                                                        .add(
+                                                            Button::new(
+                                                                RichText::new("Geri Yükle")
+                                                                    .size(11.0)
+                                                                    .strong()
+                                                                    .color(Color32::WHITE),
+                                                            )
+                                                            .fill(Color32::from_rgb(
+                                                                0xe0, 0x7a, 0x38,
+                                                            ))
+                                                            .rounding(egui::Rounding::same(5.0)),
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        action =
+                                                            Some(RecoveryAction::RestoreSnapshot(
+                                                                snap.path.clone(),
+                                                            ));
+                                                    }
+                                                },
+                                            );
+                                        });
+                                    });
+                                ui.add_space(4.0);
+                            }
+                        });
+                }
+            });
+
+        if action.is_some() {
+            self.browser_open = false;
+        } else {
+            self.browser_open = open;
+        }
         action
     }
 }

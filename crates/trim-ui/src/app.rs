@@ -75,36 +75,66 @@ pub struct BinDialogState {
     pub name_input: String,
 }
 
-pub struct TrimApp {
-    pub project: Project,
-    pub undo_stack: UndoStack,
+pub struct PasteAttributesState {
+    pub dialog_open: bool,
+    pub color: bool,
+    pub transform: bool,
+    pub audio: bool,
+    pub speed: bool,
+}
+
+impl Default for PasteAttributesState {
+    fn default() -> Self {
+        Self {
+            dialog_open: false,
+            color: true,
+            transform: true,
+            audio: true,
+            speed: false,
+        }
+    }
+}
+
+pub struct BackgroundTaskHub {
+    pub tx: std::sync::mpsc::Sender<BackgroundTaskMsg>,
+    pub rx: std::sync::mpsc::Receiver<BackgroundTaskMsg>,
+    pub active_count: usize,
+    pub cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub proxy_tx: std::sync::mpsc::Sender<(String, Result<String, String>)>,
+    pub proxy_rx: Option<Receiver<(String, Result<String, String>)>>,
+    pub proxy_generating_ids: Vec<String>,
+    pub proxy_cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub helper_processes: trim_media::ffmpeg::TrackedChildPool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum WorkspaceLayout {
+    #[default]
+    Edit,
+    Color,
+    Audio,
+}
+
+pub struct PlaybackState {
     pub current_time: f64,
     pub is_playing: bool,
     pub playback_speed: f64,
     pub clock_start: Option<Instant>,
     pub clock_start_time: f64,
-
-    pub canvas_state: TimelineCanvasState,
     pub vu_state: VuMeterState,
-    pub waveform_gen: WaveformGenerator,
-    pub thumbnail_gen: ThumbnailGenerator,
-    pub video_engine: VideoEngine,
     pub audio_mixer: AudioMixer,
     pub audio_player: AudioStreamPlayer,
     pub audio_worker: trim_media::audio::AudioPlaybackWorker,
+}
+
+pub struct MediaPipeline {
+    pub waveform_gen: WaveformGenerator,
+    pub thumbnail_gen: ThumbnailGenerator,
+    pub video_engine: VideoEngine,
+    pub use_proxies: bool,
     pub last_rendered_time: Option<f64>,
     pub last_rendered_dirty: bool,
-
-    // Source Monitor state
-    pub source_state: SourceMonitorState,
-
-    // NLE Track Target Patching & Tools
-    pub target_video_track: String,
-    pub target_audio_track: String,
-    pub current_edit_tool: EditTool,
-    pub snap_enabled: bool,
-
-    // Media Bin state
+    pub active_voiceover: Option<ActiveVoiceover>,
     pub media_bin_search: String,
     pub media_bin_is_grid: bool,
     pub media_bin_thumb_size: f32,
@@ -112,7 +142,45 @@ pub struct TrimApp {
     pub media_bin_filter: MediaFilterType,
     pub media_bin_textures: HashMap<String, TextureHandle>,
     pub bin_dialog: Option<BinDialogState>,
+    pub selected_media_id: Option<String>,
+}
 
+pub struct TimelineToolState {
+    pub target_video_track: String,
+    pub target_audio_track: String,
+    pub current_edit_tool: EditTool,
+    pub snap_enabled: bool,
+    pub clipboard_clips: Vec<(
+        trim_core::track::TrackType,
+        usize,
+        f64,
+        trim_core::clip::Clip,
+    )>,
+    pub shortcut_profile: ShortcutProfile,
+    pub keymap_config: KeymapConfig,
+}
+
+pub struct MonitorUiState {
+    pub source_state: SourceMonitorState,
+    pub monitor_texture: Option<TextureHandle>,
+    pub monitor_gpu_texture_id: Option<egui::TextureId>,
+    pub gpu_compositor: Option<crate::gpu_compositor::GpuCompositor>,
+    pub last_rendered_monitor_frame: Option<std::sync::Arc<image::RgbaImage>>,
+    pub show_source_monitor: bool,
+    pub show_safe_zones: bool,
+    pub is_monitor_fullscreen: bool,
+    pub monitor_text_drag_orig_pos: Option<(String, String, (f32, f32))>,
+    pub monitor_text_edit_orig_content: Option<(String, String, String, String)>,
+    pub scopes_panel: ScopesPanelState,
+    pub split_wipe_enabled: bool,
+    pub split_wipe_pos: f32,
+    pub multicam_mode: bool,
+    pub multicam_active_angle: usize,
+    pub last_scope_rgba: Option<(Vec<u8>, u32, u32)>,
+    pub wb_eyedropper_target: Option<(String, String)>,
+}
+
+pub struct DialogHub {
     pub export_dialog: ExportDialog,
     pub speed_dialog: SpeedDialog,
     pub silence_dialog: SilenceDialog,
@@ -125,65 +193,44 @@ pub struct TrimApp {
     pub splash_screen: SplashScreen,
     pub shortcuts_dialog: ShortcutsDialog,
     pub preferences_dialog: PreferencesDialog,
-    pub preferences: UserPreferences,
     pub relink_dialog: RelinkDialog,
     pub render_queue_dialog: RenderQueueDialog,
-    pub autosave_mgr: AutosaveManager,
+    pub close_confirm_dialog: CloseConfirmDialog,
+    pub show_about_dialog: bool,
+    pub ffmpeg_missing_alert: bool,
+    pub file_dialog_bridge: FileDialogBridge,
+}
 
+pub struct ExportHub {
     pub export_runner: ExportRunner,
     pub export_rx: Option<Receiver<ExportMessage>>,
     pub render_queue: RenderQueue,
+}
 
-    pub monitor_texture: Option<TextureHandle>,
-    pub monitor_gpu_texture_id: Option<egui::TextureId>,
-    pub gpu_compositor: Option<crate::gpu_compositor::GpuCompositor>,
-    pub last_rendered_monitor_frame: Option<std::sync::Arc<image::RgbaImage>>,
-    pub selected_media_id: Option<String>,
-    pub status_message: String,
+pub struct PersistenceState {
+    pub autosave_mgr: AutosaveManager,
     pub last_autosave: Instant,
-    pub show_about_dialog: bool,
-    pub show_source_monitor: bool,
-    pub show_safe_zones: bool,
-    pub active_left_tab: LeftPanelTab,
-    pub active_voiceover: Option<ActiveVoiceover>,
-    pub use_proxies: bool,
-    pub shortcut_profile: ShortcutProfile,
-    pub keymap_config: KeymapConfig,
-    pub proxy_tx: std::sync::mpsc::Sender<(String, Result<String, String>)>,
-    pub proxy_rx: Option<Receiver<(String, Result<String, String>)>>,
-    pub proxy_generating_ids: Vec<String>,
-    pub proxy_cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    pub close_confirm_dialog: CloseConfirmDialog,
     pub confirmed_exit: bool,
     pub last_saved_undo_len: usize,
-    pub file_dialog_bridge: FileDialogBridge,
-    pub helper_processes: trim_media::ffmpeg::TrackedChildPool,
-    pub clipboard_clips: Vec<(
-        trim_core::track::TrackType,
-        usize,
-        f64,
-        trim_core::clip::Clip,
-    )>,
-    pub ffmpeg_missing_alert: bool,
-    pub is_monitor_fullscreen: bool,
-    pub monitor_text_drag_orig_pos: Option<(String, String, (f32, f32))>,
-    pub monitor_text_edit_orig_content: Option<(String, String, String, String)>,
-    pub scopes_panel: ScopesPanelState,
-    pub split_wipe_enabled: bool,
-    pub split_wipe_pos: f32,
-    pub multicam_mode: bool,
-    pub multicam_active_angle: usize,
-    pub paste_attrs_dialog_open: bool,
-    pub paste_attr_color: bool,
-    pub paste_attr_transform: bool,
-    pub paste_attr_audio: bool,
-    pub paste_attr_speed: bool,
-    pub last_scope_rgba: Option<(Vec<u8>, u32, u32)>,
-    pub wb_eyedropper_target: Option<(String, String)>,
-    pub bg_task_tx: std::sync::mpsc::Sender<BackgroundTaskMsg>,
-    pub bg_task_rx: std::sync::mpsc::Receiver<BackgroundTaskMsg>,
-    pub bg_task_active_count: usize,
-    pub bg_task_cancel_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+pub struct TrimApp {
+    pub project: Project,
+    pub undo_stack: UndoStack,
+    pub canvas_state: TimelineCanvasState,
+    pub preferences: UserPreferences,
+    pub playback: PlaybackState,
+    pub media: MediaPipeline,
+    pub tools: TimelineToolState,
+    pub monitor: MonitorUiState,
+    pub dialogs: DialogHub,
+    pub export: ExportHub,
+    pub persistence: PersistenceState,
+    pub status_message: String,
+    pub workspace_layout: WorkspaceLayout,
+    pub active_left_tab: LeftPanelTab,
+    pub paste_attrs: PasteAttributesState,
+    pub bg_tasks: BackgroundTaskHub,
 }
 
 pub enum BackgroundTaskMsg {
@@ -251,100 +298,110 @@ impl Default for TrimApp {
         Self {
             project,
             undo_stack: UndoStack::new(),
-            current_time: 0.0,
-            is_playing: false,
-            playback_speed: 1.0,
-            clock_start: None,
-            clock_start_time: 0.0,
             canvas_state: TimelineCanvasState::default(),
-            vu_state: VuMeterState::default(),
-            waveform_gen: WaveformGenerator::default(),
-            thumbnail_gen: ThumbnailGenerator::default(),
-            video_engine: VideoEngine::default(),
-            audio_mixer: {
-                // initialized below via Default
-                AudioMixer::default()
-            },
-            audio_player: AudioStreamPlayer::default(),
-            audio_worker: trim_media::audio::AudioPlaybackWorker::new(AudioMixer::default()),
-            last_rendered_time: None,
-            last_rendered_dirty: false,
-            source_state: SourceMonitorState::default(),
-            target_video_track,
-            target_audio_track,
-            current_edit_tool: EditTool::Select,
-            snap_enabled: true,
-            media_bin_search: String::new(),
-            media_bin_is_grid: true,
-            media_bin_thumb_size: 105.0,
-            media_bin_current_bin: None,
-            media_bin_filter: MediaFilterType::All,
-            media_bin_textures: HashMap::new(),
-            bin_dialog: None,
-            export_dialog: ExportDialog::default(),
-            speed_dialog: SpeedDialog::default(),
-            silence_dialog: SilenceDialog::default(),
-            transcribe_dialog: TranscribeDialog::default(),
-            screen_record_dialog: ScreenRecordDialog::default(),
-            title_dialog: TitleDialog::default(),
-            recovery_dialog: RecoveryDialog::default(),
-            audio_mixer_dialog: AudioMixerDialog::default(),
-            welcome_dialog: WelcomeDialog::default(),
-            splash_screen: SplashScreen::default(),
-            shortcuts_dialog: ShortcutsDialog::default(),
-            preferences_dialog: PreferencesDialog::default(),
             preferences: UserPreferences::default(),
-            relink_dialog: RelinkDialog::default(),
-            render_queue_dialog: RenderQueueDialog::default(),
-            autosave_mgr: AutosaveManager::default(),
-            export_runner: ExportRunner::default(),
-            export_rx: None,
-            render_queue: RenderQueue::default(),
-            monitor_texture: None,
-            monitor_gpu_texture_id: None,
-            gpu_compositor: None,
-            last_rendered_monitor_frame: None,
-            selected_media_id: None,
+            playback: PlaybackState {
+                current_time: 0.0,
+                is_playing: false,
+                playback_speed: 1.0,
+                clock_start: None,
+                clock_start_time: 0.0,
+                vu_state: VuMeterState::default(),
+                audio_mixer: AudioMixer::default(),
+                audio_player: AudioStreamPlayer::default(),
+                audio_worker: trim_media::audio::AudioPlaybackWorker::new(AudioMixer::default()),
+            },
+            media: MediaPipeline {
+                waveform_gen: WaveformGenerator::default(),
+                thumbnail_gen: ThumbnailGenerator::default(),
+                video_engine: VideoEngine::default(),
+                use_proxies: false,
+                last_rendered_time: None,
+                last_rendered_dirty: false,
+                active_voiceover: None,
+                media_bin_search: String::new(),
+                media_bin_is_grid: true,
+                media_bin_thumb_size: 105.0,
+                media_bin_current_bin: None,
+                media_bin_filter: MediaFilterType::All,
+                media_bin_textures: HashMap::new(),
+                bin_dialog: None,
+                selected_media_id: None,
+            },
+            tools: TimelineToolState {
+                target_video_track,
+                target_audio_track,
+                current_edit_tool: EditTool::Select,
+                snap_enabled: true,
+                clipboard_clips: Vec::new(),
+                shortcut_profile: ShortcutProfile::TrimDefault,
+                keymap_config: KeymapConfig::for_profile(ShortcutProfile::TrimDefault),
+            },
+            monitor: MonitorUiState {
+                source_state: SourceMonitorState::default(),
+                monitor_texture: None,
+                monitor_gpu_texture_id: None,
+                gpu_compositor: None,
+                last_rendered_monitor_frame: None,
+                show_source_monitor: false,
+                show_safe_zones: false,
+                is_monitor_fullscreen: false,
+                monitor_text_drag_orig_pos: None,
+                monitor_text_edit_orig_content: None,
+                scopes_panel: ScopesPanelState::default(),
+                split_wipe_enabled: false,
+                split_wipe_pos: 0.5,
+                multicam_mode: false,
+                multicam_active_angle: 0,
+                last_scope_rgba: None,
+                wb_eyedropper_target: None,
+            },
+            dialogs: DialogHub {
+                export_dialog: ExportDialog::default(),
+                speed_dialog: SpeedDialog::default(),
+                silence_dialog: SilenceDialog::default(),
+                transcribe_dialog: TranscribeDialog::default(),
+                screen_record_dialog: ScreenRecordDialog::default(),
+                title_dialog: TitleDialog::default(),
+                recovery_dialog: RecoveryDialog::default(),
+                audio_mixer_dialog: AudioMixerDialog::default(),
+                welcome_dialog: WelcomeDialog::default(),
+                splash_screen: SplashScreen::default(),
+                shortcuts_dialog: ShortcutsDialog::default(),
+                preferences_dialog: PreferencesDialog::default(),
+                relink_dialog: RelinkDialog::default(),
+                render_queue_dialog: RenderQueueDialog::default(),
+                close_confirm_dialog: CloseConfirmDialog::default(),
+                show_about_dialog: false,
+                ffmpeg_missing_alert: false,
+                file_dialog_bridge: FileDialogBridge::default(),
+            },
+            export: ExportHub {
+                export_runner: ExportRunner::default(),
+                export_rx: None,
+                render_queue: RenderQueue::default(),
+            },
+            persistence: PersistenceState {
+                autosave_mgr: AutosaveManager::default(),
+                last_autosave: Instant::now(),
+                confirmed_exit: false,
+                last_saved_undo_len: 0,
+            },
             status_message: "Hazır".to_string(),
-            last_autosave: Instant::now(),
-            show_about_dialog: false,
-            show_source_monitor: false,
-            show_safe_zones: false,
+            workspace_layout: WorkspaceLayout::Edit,
             active_left_tab: LeftPanelTab::Project,
-            active_voiceover: None,
-            use_proxies: false,
-            shortcut_profile: ShortcutProfile::TrimDefault,
-            keymap_config: KeymapConfig::for_profile(ShortcutProfile::TrimDefault),
-            proxy_tx,
-            proxy_rx: Some(proxy_rx),
-            proxy_generating_ids: Vec::new(),
-            proxy_cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            close_confirm_dialog: CloseConfirmDialog::default(),
-            confirmed_exit: false,
-            last_saved_undo_len: 0,
-            file_dialog_bridge: FileDialogBridge::default(),
-            helper_processes: trim_media::ffmpeg::TrackedChildPool::default(),
-            clipboard_clips: Vec::new(),
-            ffmpeg_missing_alert: false,
-            is_monitor_fullscreen: false,
-            monitor_text_drag_orig_pos: None,
-            monitor_text_edit_orig_content: None,
-            scopes_panel: ScopesPanelState::default(),
-            split_wipe_enabled: false,
-            split_wipe_pos: 0.5,
-            multicam_mode: false,
-            multicam_active_angle: 0,
-            paste_attrs_dialog_open: false,
-            paste_attr_color: true,
-            paste_attr_transform: true,
-            paste_attr_audio: true,
-            paste_attr_speed: false,
-            last_scope_rgba: None,
-            wb_eyedropper_target: None,
-            bg_task_tx,
-            bg_task_rx,
-            bg_task_active_count: 0,
-            bg_task_cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            paste_attrs: PasteAttributesState::default(),
+            bg_tasks: BackgroundTaskHub {
+                tx: bg_task_tx,
+                rx: bg_task_rx,
+                active_count: 0,
+                cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                proxy_tx,
+                proxy_rx: Some(proxy_rx),
+                proxy_generating_ids: Vec::new(),
+                proxy_cancel_flag: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                helper_processes: trim_media::ffmpeg::TrackedChildPool::default(),
+            },
         }
     }
 }
@@ -362,29 +419,39 @@ impl TrimApp {
         });
 
         let mut app = Self {
-            gpu_compositor: cc
-                .gl
-                .as_ref()
-                .and_then(|gl| crate::gpu_compositor::GpuCompositor::new(gl.clone())),
-            snap_enabled: prefs.snap_enabled_by_default,
-            use_proxies: prefs.use_proxies_by_default,
             preferences: prefs.clone(),
             ..Self::default()
         };
+        app.monitor.gpu_compositor = cc
+            .gl
+            .as_ref()
+            .and_then(|gl| crate::gpu_compositor::GpuCompositor::new(gl.clone()));
+        app.tools.snap_enabled = prefs.snap_enabled_by_default;
+        app.media.use_proxies = prefs.use_proxies_by_default;
 
         let budget_mb = prefs.max_memory_budget_mb.max(128);
-        app.audio_mixer.set_max_cache_bytes(budget_mb * 1024 * 1024);
-        app.video_engine
+        app.playback
+            .audio_mixer
+            .set_max_cache_bytes(budget_mb * 1024 * 1024);
+        let q_path = trim_export::queue::RenderQueue::default_state_path();
+        if let Err(e) = app.export.render_queue.load_from_path(&q_path) {
+            log::warn!("Could not load persisted render queue: {}", e);
+        }
+        app.media.video_engine.use_proxies = prefs.use_proxies_by_default;
+        app.media.video_engine.proxy_mode = prefs.proxy_mode;
+        app.media
+            .video_engine
             .set_frame_cache_capacity((budget_mb * 300 / 512).max(50));
-        app.shortcut_profile = match prefs.shortcut_profile.as_str() {
+        app.tools.shortcut_profile = match prefs.shortcut_profile.as_str() {
             "Adobe Premiere Pro" | "Premiere" => ShortcutProfile::PremierePro,
             "DaVinci Resolve" | "Resolve" => ShortcutProfile::DaVinciResolve,
             "Final Cut Pro" | "FCP" => ShortcutProfile::FinalCutPro,
             _ => ShortcutProfile::TrimDefault,
         };
-        app.keymap_config = KeymapConfig::load_from_path(&KeymapConfig::config_path())
-            .unwrap_or_else(|| KeymapConfig::for_profile(app.shortcut_profile));
-        app.audio_mixer
+        app.tools.keymap_config = KeymapConfig::load_from_path(&KeymapConfig::config_path())
+            .unwrap_or_else(|| KeymapConfig::for_profile(app.tools.shortcut_profile));
+        app.playback
+            .audio_mixer
             .limiter
             .set_ceiling_dbfs(if prefs.master_limiter_enabled {
                 prefs.limiter_ceiling_db
@@ -393,22 +460,22 @@ impl TrimApp {
             });
 
         if !prefs.show_splash_screen {
-            app.splash_screen.dismiss();
+            app.dialogs.splash_screen.dismiss();
         }
         if !prefs.show_welcome_on_startup {
-            app.welcome_dialog.close();
+            app.dialogs.welcome_dialog.close();
         }
 
         // Check crash recovery
-        if let Some(rec_path) = app.autosave_mgr.check_recovery(&app.project) {
-            app.recovery_dialog.prompt(rec_path);
+        if let Some(rec_path) = app.persistence.autosave_mgr.check_recovery(&app.project) {
+            app.dialogs.recovery_dialog.prompt(rec_path);
         }
 
         // Check FFmpeg & FFprobe media engine availability
         let ffmpeg_ok = trim_media::is_ffmpeg_available() && trim_media::is_ffprobe_available();
         if !ffmpeg_ok {
             log::warn!("FFmpeg or FFprobe binaries not detected at startup!");
-            app.ffmpeg_missing_alert = true;
+            app.dialogs.ffmpeg_missing_alert = true;
         }
 
         app
@@ -427,16 +494,17 @@ impl TrimApp {
 impl eframe::App for TrimApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // Intercept window close request if there are unsaved changes
-        if ctx.input(|i| i.viewport().close_requested()) && !self.confirmed_exit {
-            if self.has_unsaved_changes() || self.close_confirm_dialog.is_open {
+        if ctx.input(|i| i.viewport().close_requested()) && !self.persistence.confirmed_exit {
+            if self.has_unsaved_changes() || self.dialogs.close_confirm_dialog.is_open {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                if !self.close_confirm_dialog.is_open {
+                if !self.dialogs.close_confirm_dialog.is_open {
                     let name = self.project.settings.name.clone();
-                    self.close_confirm_dialog
+                    self.dialogs
+                        .close_confirm_dialog
                         .prompt(PendingCloseAction::ExitApp, name);
                 }
             } else {
-                self.confirmed_exit = true;
+                self.persistence.confirmed_exit = true;
             }
         }
 
@@ -445,18 +513,18 @@ impl eframe::App for TrimApp {
         self.update_source_monitor_frame(ctx);
         self.update_media_bin_thumbnails(ctx);
 
-        if self.is_playing || self.source_state.is_playing {
+        if self.playback.is_playing || self.monitor.source_state.is_playing {
             ctx.request_repaint();
-        } else if self.video_engine.is_decoding_seek {
+        } else if self.media.video_engine.is_decoding_seek {
             ctx.request_repaint_after(std::time::Duration::from_millis(16));
         }
 
         self.poll_background_work(ctx);
         self.handle_global_shortcuts(ctx);
 
-        if self.is_monitor_fullscreen {
+        if self.monitor.is_monitor_fullscreen {
             self.render_fullscreen_monitor(ctx);
-            self.splash_screen.show(ctx);
+            self.dialogs.splash_screen.show(ctx);
             suppress_linux_ime_for_text_input(ctx);
             return;
         }
@@ -486,18 +554,20 @@ impl eframe::App for TrimApp {
                     .color(Color32::from_rgb(0x85, 0x85, 0x95)),
                 );
 
-                if !self.proxy_generating_ids.is_empty() || self.bg_task_active_count > 0 {
+                if !self.bg_tasks.proxy_generating_ids.is_empty() || self.bg_tasks.active_count > 0
+                {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if !self.proxy_generating_ids.is_empty() {
+                        if !self.bg_tasks.proxy_generating_ids.is_empty() {
                             if ui.small_button(lang.t("btn_cancel")).clicked() {
-                                self.proxy_cancel_flag
+                                self.bg_tasks
+                                    .proxy_cancel_flag
                                     .store(true, std::sync::atomic::Ordering::Release);
                                 self.status_message = lang.t("status_cancelling").to_string();
                             }
                             let proxy_lbl = format!(
                                 "{} ({})",
                                 lang.t("status_proxy_running"),
-                                self.proxy_generating_ids.len()
+                                self.bg_tasks.proxy_generating_ids.len()
                             );
                             ui.label(
                                 RichText::new(proxy_lbl)
@@ -506,16 +576,17 @@ impl eframe::App for TrimApp {
                             );
                             ui.spinner();
                         }
-                        if self.bg_task_active_count > 0 {
+                        if self.bg_tasks.active_count > 0 {
                             if ui.small_button(lang.t("btn_cancel")).clicked() {
-                                self.bg_task_cancel_flag
+                                self.bg_tasks
+                                    .cancel_flag
                                     .store(true, std::sync::atomic::Ordering::Release);
                                 self.status_message = lang.t("status_cancelling").to_string();
                             }
                             let bg_lbl = format!(
                                 "{} ({})",
                                 lang.t("status_bg_running"),
-                                self.bg_task_active_count
+                                self.bg_tasks.active_count
                             );
                             ui.label(
                                 RichText::new(bg_lbl)
@@ -537,7 +608,7 @@ impl eframe::App for TrimApp {
         // UPPER-CENTER: Monitors (Fills the remaining upper workspace)
         // -------------------------------------------------------------
         egui::CentralPanel::default().show(ctx, |ui| {
-            if self.show_source_monitor {
+            if self.monitor.show_source_monitor {
                 ui.columns(2, |cols| {
                     self.render_source_monitor(&mut cols[0]);
                     self.render_program_monitor(&mut cols[1]);
@@ -552,14 +623,45 @@ impl eframe::App for TrimApp {
         // -------------------------------------------------------------
         // Startup Splash Screen (DaVinci Resolve / Kdenlive Style)
         // -------------------------------------------------------------
-        self.splash_screen.show(ctx);
+        self.dialogs.splash_screen.show(ctx);
 
         suppress_linux_ime_for_text_input(ctx);
     }
 
     fn on_exit(&mut self, gl: Option<&eframe::glow::Context>) {
-        if let (Some(comp), Some(gl_ctx)) = (self.gpu_compositor.as_mut(), gl) {
+        if let (Some(comp), Some(gl_ctx)) = (self.monitor.gpu_compositor.as_mut(), gl) {
             comp.destroy(gl_ctx);
+        }
+    }
+}
+
+impl TrimApp {
+    /// Switches between modular studio workspace layouts (`Edit`, `Color`, `Audio`).
+    pub fn apply_workspace_layout(&mut self, layout: WorkspaceLayout) {
+        self.workspace_layout = layout;
+        match layout {
+            WorkspaceLayout::Edit => {
+                self.monitor.scopes_panel.is_open = false;
+                self.dialogs.audio_mixer_dialog.is_open = false;
+                self.set_status("Kurgu çalışma alanı etkin", "Edit workspace active");
+            }
+            WorkspaceLayout::Color => {
+                self.monitor.scopes_panel.is_open = true;
+                self.monitor.scopes_panel.mark_dirty();
+                self.dialogs.audio_mixer_dialog.is_open = false;
+                self.set_status(
+                    "Renk çalışma alanı etkin (Scopes açık)",
+                    "Color workspace active (Scopes open)",
+                );
+            }
+            WorkspaceLayout::Audio => {
+                self.monitor.scopes_panel.is_open = false;
+                self.dialogs.audio_mixer_dialog.open();
+                self.set_status(
+                    "Ses çalışma alanı etkin (Mikser açık)",
+                    "Audio workspace active (Mixer open)",
+                );
+            }
         }
     }
 }

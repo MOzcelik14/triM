@@ -15,7 +15,8 @@ impl TrimApp {
             "triM. Projeleri (*.trim, *.cutline)",
             &["trim", "cutline", "json"],
         );
-        self.file_dialog_bridge
+        self.dialogs
+            .file_dialog_bridge
             .open(FileDialogRequest::OpenProject, config);
     }
 
@@ -24,32 +25,34 @@ impl TrimApp {
             Ok(proj) => {
                 self.project = proj;
                 self.undo_stack.clear();
-                self.last_saved_undo_len = 0;
+                self.persistence.last_saved_undo_len = 0;
                 self.canvas_state.selected_clip_pairs.clear();
-                self.current_time = 0.0;
-                self.media_bin_textures.clear();
-                self.video_engine.clear_cache();
-                self.audio_mixer.clear_cache();
-                self.audio_player.stop();
-                self.is_playing = false;
-                self.monitor_texture = None;
-                self.monitor_gpu_texture_id = None;
-                self.source_state.media_id = None;
-                self.source_state.texture = None;
-                self.source_state.is_playing = false;
-                self.source_state.clock_start = None;
+                self.playback.current_time = 0.0;
+                self.media.media_bin_textures.clear();
+                self.media.video_engine.clear_cache();
+                self.playback.audio_mixer.clear_cache();
+                self.playback.audio_player.stop();
+                self.playback.is_playing = false;
+                self.monitor.monitor_texture = None;
+                self.monitor.monitor_gpu_texture_id = None;
+                self.monitor.source_state.media_id = None;
+                self.monitor.source_state.texture = None;
+                self.monitor.source_state.is_playing = false;
+                self.monitor.source_state.clock_start = None;
                 self.resolve_default_target_tracks();
-                self.autosave_mgr.cleanup(&self.project);
+                self.persistence.autosave_mgr.cleanup(&self.project);
                 let mut probe_targets = Vec::new();
                 for item in self.project.media_pool.values() {
                     if item.media_type == MediaType::Video && !item.has_audio() {
                         probe_targets.push((item.id.clone(), item.file_path.clone()));
                     } else if item.has_audio() {
-                        self.audio_mixer.preload_audio_async(&item.file_path);
+                        self.playback
+                            .audio_mixer
+                            .preload_audio_async(&item.file_path);
                     }
                 }
                 if !probe_targets.is_empty() {
-                    let tx = self.bg_task_tx.clone();
+                    let tx = self.bg_tasks.tx.clone();
                     std::thread::spawn(move || {
                         for (media_id, file_path) in probe_targets {
                             if let Ok(probed) = FFprobeAnalyzer::analyze(&file_path) {
@@ -68,7 +71,7 @@ impl TrimApp {
                         }
                     });
                 }
-                self.welcome_dialog.close();
+                self.dialogs.welcome_dialog.close();
                 let offline = self.project.get_offline_media_ids();
                 if !offline.is_empty() {
                     self.status_message = match self.lang() {
@@ -83,7 +86,7 @@ impl TrimApp {
                             offline.len()
                         ),
                     };
-                    self.relink_dialog.open(&self.project);
+                    self.dialogs.relink_dialog.open(&self.project);
                 } else {
                     self.status_message = match self.lang() {
                         crate::i18n::Language::Turkish => format!("Proje yüklendi: {:?}", path),
@@ -118,10 +121,11 @@ impl TrimApp {
             let target = ensure_project_extension(fp);
             match save_project(&mut self.project, target.clone()) {
                 Ok(()) => {
-                    self.last_saved_undo_len = self.undo_stack.len();
+                    self.persistence.last_saved_undo_len = self.undo_stack.len();
                     self.project.is_dirty = false;
-                    self.autosave_mgr.cleanup(&self.project);
-                    self.welcome_dialog
+                    self.persistence.autosave_mgr.cleanup(&self.project);
+                    self.dialogs
+                        .welcome_dialog
                         .add_recent(&self.project.settings.name, &target.to_string_lossy());
                     self.status_message = match self.lang() {
                         crate::i18n::Language::Turkish => format!("Proje kaydedildi: {:?}", target),
@@ -141,7 +145,8 @@ impl TrimApp {
             let default_name = format!("{}.trim", self.project.settings.name);
             let config = FileDialogConfig::save_file("Projeyi Kaydet", Some(default_name))
                 .add_filter("triM. Projesi (*.trim)", &["trim"]);
-            self.file_dialog_bridge
+            self.dialogs
+                .file_dialog_bridge
                 .open(FileDialogRequest::SaveProject { after_save: None }, config);
             false
         }
@@ -156,7 +161,7 @@ impl TrimApp {
             let default_name = format!("{}.trim", self.project.settings.name);
             let config = FileDialogConfig::save_file("Projeyi Kaydet", Some(default_name))
                 .add_filter("triM. Projesi (*.trim)", &["trim"]);
-            self.file_dialog_bridge.open(
+            self.dialogs.file_dialog_bridge.open(
                 FileDialogRequest::SaveProject {
                     after_save: Some(pending),
                 },
@@ -172,7 +177,7 @@ impl TrimApp {
     ) {
         match pending {
             PendingCloseAction::ExitApp => {
-                self.confirmed_exit = true;
+                self.persistence.confirmed_exit = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             PendingCloseAction::NewProject => self.reset_to_new_project(),
@@ -185,7 +190,8 @@ impl TrimApp {
         let default_name = format!("{}.trim", self.project.settings.name);
         let config = FileDialogConfig::save_file("Projeyi Farklı Kaydet", Some(default_name))
             .add_filter("triM. Projesi (*.trim)", &["trim"]);
-        self.file_dialog_bridge
+        self.dialogs
+            .file_dialog_bridge
             .open(FileDialogRequest::SaveProjectAs, config)
     }
 
@@ -193,7 +199,7 @@ impl TrimApp {
         let default_folder_name = format!("{}_Paket", self.project.settings.name);
         let config =
             FileDialogConfig::pick_folder("Projeyi ve Medyaları Paketleyeceğiniz Klasörü Seçin");
-        self.file_dialog_bridge.open(
+        self.dialogs.file_dialog_bridge.open(
             FileDialogRequest::BundleProject {
                 default_folder_name,
             },
@@ -204,7 +210,8 @@ impl TrimApp {
     pub fn import_subtitles_dialog(&mut self) {
         let config = FileDialogConfig::pick_file("Altyazı Dosyası Seç (.srt, .vtt)")
             .add_filter("Altyazı Dosyaları (*.srt, *.vtt)", &["srt", "vtt"]);
-        self.file_dialog_bridge
+        self.dialogs
+            .file_dialog_bridge
             .open(FileDialogRequest::ImportSubtitles, config);
     }
 
@@ -314,7 +321,7 @@ impl TrimApp {
         let config =
             FileDialogConfig::save_file("Altyazıları SRT Olarak Kaydet", Some(default_name))
                 .add_filter("SubRip Altyazı (*.srt)", &["srt"]);
-        self.file_dialog_bridge.open(
+        self.dialogs.file_dialog_bridge.open(
             FileDialogRequest::ExportSubtitles {
                 srt_text,
                 entry_count: entries.len(),
@@ -332,7 +339,8 @@ impl TrimApp {
             Some(default_name),
         )
         .add_filter("CMX 3600 EDL (*.edl)", &["edl"]);
-        self.file_dialog_bridge
+        self.dialogs
+            .file_dialog_bridge
             .open(FileDialogRequest::ExportEdl { edl_text }, config);
     }
 
@@ -345,7 +353,8 @@ impl TrimApp {
             Some(default_name),
         )
         .add_filter("Final Cut Pro XML (*.xml)", &["xml"]);
-        self.file_dialog_bridge
+        self.dialogs
+            .file_dialog_bridge
             .open(FileDialogRequest::ExportFcpxml { xml_text }, config);
     }
 
@@ -354,7 +363,8 @@ impl TrimApp {
             .add_filter("NLE Değişim Dosyaları (*.xml, *.edl)", &["xml", "edl"])
             .add_filter("Final Cut Pro XML (*.xml)", &["xml"])
             .add_filter("CMX 3600 EDL (*.edl)", &["edl"]);
-        self.file_dialog_bridge
+        self.dialogs
+            .file_dialog_bridge
             .open(FileDialogRequest::ImportInterchange, config);
     }
 
@@ -369,22 +379,22 @@ impl TrimApp {
                     Ok(imported_project) => {
                         self.project = imported_project;
                         self.undo_stack.clear();
-                        self.last_saved_undo_len = 0;
+                        self.persistence.last_saved_undo_len = 0;
                         self.canvas_state.selected_clip_pairs.clear();
-                        self.current_time = 0.0;
-                        self.media_bin_textures.clear();
-                        self.video_engine.clear_cache();
-                        self.audio_mixer.clear_cache();
-                        self.audio_player.stop();
-                        self.is_playing = false;
-                        self.monitor_texture = None;
-                        self.monitor_gpu_texture_id = None;
-                        self.source_state.media_id = None;
-                        self.source_state.texture = None;
-                        self.source_state.is_playing = false;
-                        self.source_state.clock_start = None;
+                        self.playback.current_time = 0.0;
+                        self.media.media_bin_textures.clear();
+                        self.media.video_engine.clear_cache();
+                        self.playback.audio_mixer.clear_cache();
+                        self.playback.audio_player.stop();
+                        self.playback.is_playing = false;
+                        self.monitor.monitor_texture = None;
+                        self.monitor.monitor_gpu_texture_id = None;
+                        self.monitor.source_state.media_id = None;
+                        self.monitor.source_state.texture = None;
+                        self.monitor.source_state.is_playing = false;
+                        self.monitor.source_state.clock_start = None;
                         self.resolve_default_target_tracks();
-                        self.autosave_mgr.cleanup(&self.project);
+                        self.persistence.autosave_mgr.cleanup(&self.project);
                         for item in self.project.media_pool.values_mut() {
                             if item.media_type == MediaType::Video && !item.has_audio() {
                                 if let Ok(probed) = FFprobeAnalyzer::analyze(&item.file_path) {
@@ -396,10 +406,12 @@ impl TrimApp {
                                 }
                             }
                             if item.has_audio() {
-                                self.audio_mixer.preload_audio_async(&item.file_path);
+                                self.playback
+                                    .audio_mixer
+                                    .preload_audio_async(&item.file_path);
                             }
                         }
-                        self.welcome_dialog.close();
+                        self.dialogs.welcome_dialog.close();
                         let clip_count: usize = self
                             .project
                             .timeline
@@ -443,8 +455,8 @@ impl TrimApp {
 
     /// Non-blocking poll of any active background OS file dialog.
     pub fn poll_file_dialogs(&mut self, ctx: &egui::Context) {
-        let Some(resp) = self.file_dialog_bridge.poll() else {
-            if self.file_dialog_bridge.is_pending() {
+        let Some(resp) = self.dialogs.file_dialog_bridge.poll() else {
+            if self.dialogs.file_dialog_bridge.is_pending() {
                 ctx.request_repaint_after(std::time::Duration::from_millis(50));
             }
             return;
@@ -464,10 +476,11 @@ impl TrimApp {
                 let target = ensure_project_extension(&path);
                 match save_project(&mut self.project, &target) {
                     Ok(()) => {
-                        self.last_saved_undo_len = self.undo_stack.len();
+                        self.persistence.last_saved_undo_len = self.undo_stack.len();
                         self.project.is_dirty = false;
-                        self.autosave_mgr.cleanup(&self.project);
-                        self.welcome_dialog
+                        self.persistence.autosave_mgr.cleanup(&self.project);
+                        self.dialogs
+                            .welcome_dialog
                             .add_recent(&self.project.settings.name, &target.to_string_lossy());
                         self.status_message = match self.lang() {
                             crate::i18n::Language::Turkish => {
@@ -493,10 +506,11 @@ impl TrimApp {
                 let target = ensure_project_extension(&path);
                 match save_project(&mut self.project, &target) {
                     Ok(()) => {
-                        self.last_saved_undo_len = self.undo_stack.len();
+                        self.persistence.last_saved_undo_len = self.undo_stack.len();
                         self.project.is_dirty = false;
-                        self.autosave_mgr.cleanup(&self.project);
-                        self.welcome_dialog
+                        self.persistence.autosave_mgr.cleanup(&self.project);
+                        self.dialogs
+                            .welcome_dialog
                             .add_recent(&self.project.settings.name, &target.to_string_lossy());
                         self.status_message = match self.lang() {
                             crate::i18n::Language::Turkish => {
@@ -520,9 +534,10 @@ impl TrimApp {
             } => {
                 let target_dir = path.join(&default_folder_name);
                 let proj_clone = self.project.clone();
-                let tx = self.bg_task_tx.clone();
-                self.bg_task_active_count += 1;
-                self.bg_task_cancel_flag
+                let tx = self.bg_tasks.tx.clone();
+                self.bg_tasks.active_count += 1;
+                self.bg_tasks
+                    .cancel_flag
                     .store(false, std::sync::atomic::Ordering::Release);
                 self.set_status(
                     "Proje arka planda paketleniyor...",
@@ -607,14 +622,14 @@ impl TrimApp {
                 self.import_media_file(path);
             }
             FileDialogRequest::SelectExportOutput => {
-                self.export_dialog.output_path = path.to_string_lossy().to_string();
+                self.dialogs.export_dialog.output_path = path.to_string_lossy().to_string();
             }
             FileDialogRequest::SelectCustomLut { clip_id } => {
                 for track in &mut self.project.timeline.tracks {
                     if let Some(clip) = track.get_clip_by_id_mut(&clip_id) {
                         clip.custom_lut_path = Some(path.to_string_lossy().to_string());
                         self.project.mark_dirty();
-                        self.last_rendered_dirty = true;
+                        self.media.last_rendered_dirty = true;
                         break;
                     }
                 }
@@ -632,7 +647,7 @@ impl TrimApp {
                         if let Some(txt) = &mut clip.text_overlay {
                             txt.font_family = font_path_str;
                             self.project.mark_dirty();
-                            self.last_rendered_dirty = true;
+                            self.media.last_rendered_dirty = true;
                             self.status_message = match self.lang() {
                                 crate::i18n::Language::Turkish => {
                                     format!("🔤 Özel font dosyası yüklendi: {}", font_name)
@@ -684,9 +699,9 @@ impl TrimApp {
             FileDialogRequest::RelinkFolder => {
                 let count = self.project.relink_media_from_folder(&path);
                 if count > 0 {
-                    self.video_engine.clear_cache();
-                    self.audio_mixer.clear_cache();
-                    self.last_rendered_dirty = true;
+                    self.media.video_engine.clear_cache();
+                    self.playback.audio_mixer.clear_cache();
+                    self.media.last_rendered_dirty = true;
                     self.status_message = match self.lang() {
                         crate::i18n::Language::Turkish => {
                             format!("{} medya dosyası başarıyla yeniden bağlandı.", count)
@@ -695,7 +710,7 @@ impl TrimApp {
                             format!("Relinked {} media file(s) successfully.", count)
                         }
                     };
-                    self.relink_dialog.refresh(&self.project);
+                    self.dialogs.relink_dialog.refresh(&self.project);
                 } else {
                     self.set_status(
                         "Seçilen klasörde eşleşen çevrimdışı medya bulunamadı.",
@@ -712,9 +727,9 @@ impl TrimApp {
                 };
                 if let Some(media_name) = name {
                     self.project.mark_dirty();
-                    self.video_engine.clear_cache();
-                    self.audio_mixer.clear_cache();
-                    self.last_rendered_dirty = true;
+                    self.media.video_engine.clear_cache();
+                    self.playback.audio_mixer.clear_cache();
+                    self.media.last_rendered_dirty = true;
                     self.status_message = match self.lang() {
                         crate::i18n::Language::Turkish => {
                             format!("Medya yeniden bağlandı: {}", media_name)
@@ -723,7 +738,7 @@ impl TrimApp {
                             format!("Media relinked: {}", media_name)
                         }
                     };
-                    self.relink_dialog.refresh(&self.project);
+                    self.dialogs.relink_dialog.refresh(&self.project);
                 }
             }
             FileDialogRequest::ExportCurrentFrame {
@@ -767,7 +782,8 @@ impl TrimApp {
 
     pub fn relink_folder_dialog(&mut self) {
         let config = FileDialogConfig::pick_folder("Medyaları Yeniden Bağlamak İçin Klasör Seçin");
-        self.file_dialog_bridge
+        self.dialogs
+            .file_dialog_bridge
             .open(FileDialogRequest::RelinkFolder, config);
     }
 
@@ -779,26 +795,27 @@ impl TrimApp {
             "Medya Dosyası Seçin".to_string()
         };
         let config = FileDialogConfig::pick_file(title);
-        self.file_dialog_bridge
+        self.dialogs
+            .file_dialog_bridge
             .open(FileDialogRequest::RelinkSingleMedia { media_id }, config);
     }
 
     pub fn reset_to_new_project(&mut self) {
         self.project = Project::default();
         self.undo_stack.clear();
-        self.last_saved_undo_len = 0;
+        self.persistence.last_saved_undo_len = 0;
         self.canvas_state.selected_clip_pairs.clear();
-        self.current_time = 0.0;
-        self.media_bin_textures.clear();
-        self.video_engine.clear_cache();
-        self.audio_mixer.clear_cache();
-        self.audio_player.stop();
-        self.is_playing = false;
-        self.monitor_texture = None;
-        self.monitor_gpu_texture_id = None;
-        self.source_state.media_id = None;
-        self.source_state.texture = None;
-        self.source_state.is_playing = false;
+        self.playback.current_time = 0.0;
+        self.media.media_bin_textures.clear();
+        self.media.video_engine.clear_cache();
+        self.playback.audio_mixer.clear_cache();
+        self.playback.audio_player.stop();
+        self.playback.is_playing = false;
+        self.monitor.monitor_texture = None;
+        self.monitor.monitor_gpu_texture_id = None;
+        self.monitor.source_state.media_id = None;
+        self.monitor.source_state.texture = None;
+        self.monitor.source_state.is_playing = false;
         self.resolve_default_target_tracks();
         self.set_status("Yeni boş proje oluşturuldu", "New empty project created");
     }
@@ -808,7 +825,7 @@ impl TrimApp {
         if self.project.is_dirty {
             return true;
         }
-        if self.undo_stack.len() != self.last_saved_undo_len {
+        if self.undo_stack.len() != self.persistence.last_saved_undo_len {
             return true;
         }
         if self.project.file_path.is_none() {
@@ -828,20 +845,32 @@ impl TrimApp {
     }
 
     pub fn export_current_frame(&mut self) {
-        let frame_arc = self.video_engine.last_rendered_frame.clone().or_else(|| {
-            self.video_engine
-                .render_timeline_frame(&self.project, self.current_time, false)
-        });
+        let frame_arc = self
+            .media
+            .video_engine
+            .last_rendered_frame
+            .clone()
+            .or_else(|| {
+                self.media.video_engine.render_timeline_frame(
+                    &self.project,
+                    self.playback.current_time,
+                    false,
+                )
+            });
         if let Some(frame) = frame_arc {
             let ts = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
-            let filename = format!("kare_{}_{:06}.png", ts, (self.current_time * 1000.0) as u64);
+            let filename = format!(
+                "kare_{}_{:06}.png",
+                ts,
+                (self.playback.current_time * 1000.0) as u64
+            );
             let config =
                 FileDialogConfig::save_file("Kareyi PNG Olarak Kaydet", Some(filename.clone()))
                     .add_filter("PNG Görüntüsü (*.png)", &["png"]);
-            self.file_dialog_bridge.open(
+            self.dialogs.file_dialog_bridge.open(
                 FileDialogRequest::ExportCurrentFrame {
                     frame,
                     default_name: filename,

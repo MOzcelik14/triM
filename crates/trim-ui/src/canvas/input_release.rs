@@ -349,16 +349,31 @@ pub(super) fn handle_release_and_context_menu(
         }
 
         if let Some((tr_id, gap_start, gap_end)) = state.selected_gap.clone() {
+            let lang = state.lang;
             let gap_dur = (gap_end - gap_start).max(0.0);
             ui.label(
-                RichText::new(format!("⏩ Zaman Çizgisi Boşluğu ({:.2}s)", gap_dur))
-                    .color(COLOR_AMBER)
-                    .strong(),
+                RichText::new(match lang {
+                    crate::i18n::Language::Turkish => {
+                        format!("⏩ Zaman Çizgisi Boşluğu ({:.2}s)", gap_dur)
+                    }
+                    crate::i18n::Language::English => {
+                        format!("⏩ Timeline Gap ({:.2}s)", gap_dur)
+                    }
+                })
+                .color(COLOR_AMBER)
+                .strong(),
             );
             ui.label(
-                RichText::new(format!("Aralık: {:.2}s - {:.2}s", gap_start, gap_end))
-                    .small()
-                    .color(Color32::from_rgb(0xa0, 0xa0, 0xb0)),
+                RichText::new(match lang {
+                    crate::i18n::Language::Turkish => {
+                        format!("Aralık: {:.2}s - {:.2}s", gap_start, gap_end)
+                    }
+                    crate::i18n::Language::English => {
+                        format!("Range: {:.2}s - {:.2}s", gap_start, gap_end)
+                    }
+                })
+                .small()
+                .color(Color32::from_rgb(0xa0, 0xa0, 0xb0)),
             );
             ui.separator();
 
@@ -370,7 +385,11 @@ pub(super) fn handle_release_and_context_menu(
 
             ui.add_enabled_ui(!is_locked, |ui| {
                 if ui
-                    .button("⏩ Boşluğu Kapat (Ripple Delete Gap)  [Del / Shift+Del]")
+                    .button(crate::i18n::pick(
+                        lang,
+                        "⏩ Boşluğu Kapat (Ripple Delete Gap)  [Del / Shift+Del]",
+                        "⏩ Ripple Delete Gap  [Del / Shift+Del]",
+                    ))
                     .clicked()
                 {
                     *action = Some(CanvasAction::CloseGap {
@@ -383,7 +402,11 @@ pub(super) fn handle_release_and_context_menu(
             });
 
             if ui
-                .button("⏩ Yalnızca Bu Kanalın Boşluğunu Kapat")
+                .button(crate::i18n::pick(
+                    lang,
+                    "⏩ Yalnızca Bu Kanalın Boşluğunu Kapat",
+                    "⏩ Close Gap on This Track Only",
+                ))
                 .clicked()
             {
                 *action = Some(CanvasAction::CloseGap {
@@ -395,7 +418,14 @@ pub(super) fn handle_release_and_context_menu(
             }
 
             ui.separator();
-            if ui.button("Boşluk Seçimini Kaldır (Esc)").clicked() {
+            if ui
+                .button(crate::i18n::pick(
+                    lang,
+                    "Boşluk Seçimini Kaldır (Esc)",
+                    "Deselect Gap (Esc)",
+                ))
+                .clicked()
+            {
                 state.selected_gap = None;
                 ui.close_menu();
             }
@@ -404,6 +434,7 @@ pub(super) fn handle_release_and_context_menu(
 
         // 2. If clip(s) are selected
         if let Some((tr_id, cl_id)) = state.selected_clip_pairs.first().cloned() {
+            let lang = state.lang;
             let is_locked = project
                 .timeline
                 .get_track_by_id(&tr_id)
@@ -412,29 +443,49 @@ pub(super) fn handle_release_and_context_menu(
 
             if is_locked {
                 ui.label(
-                    RichText::new("[K] Kanal Kilitli (Düzenlenemez)")
-                        .color(Color32::from_rgb(0xe0, 0x7a, 0x38))
-                        .italics(),
+                    RichText::new(crate::i18n::pick(
+                        lang,
+                        "[K] Kanal Kilitli (Düzenlenemez)",
+                        "[K] Track Locked (Read-Only)",
+                    ))
+                    .color(Color32::from_rgb(0xe0, 0x7a, 0x38))
+                    .italics(),
                 );
                 ui.separator();
             }
 
             ui.add_enabled_ui(!is_locked, |ui| {
-                if ui.button("Hız ve Süre (Speed & Duration)...").clicked() {
+                if ui
+                    .button(crate::i18n::pick(
+                        lang,
+                        "Hız ve Süre (Speed & Duration)...",
+                        "Speed & Duration...",
+                    ))
+                    .clicked()
+                {
                     *action = Some(CanvasAction::PromptSpeed(tr_id.clone(), cl_id.clone()));
                     ui.close_menu();
                 }
 
                 if let Some(tr) = project.timeline.get_track_by_id(&tr_id) {
                     if tr.track_type == TrackType::Video
-                        && ui.button("Sesi Ayır (Detach Audio)").clicked()
+                        && ui
+                            .button(crate::i18n::pick(
+                                lang,
+                                "Sesi Ayır (Detach Audio)",
+                                "Detach Audio",
+                            ))
+                            .clicked()
                     {
                         *action = Some(CanvasAction::DetachAudio(tr_id.clone(), cl_id.clone()));
                         ui.close_menu();
                     }
                 }
 
-                if ui.button("Klibi Böl (S)").clicked() {
+                if ui
+                    .button(crate::i18n::pick(lang, "Klibi Böl (S)", "Split Clip (S)"))
+                    .clicked()
+                {
                     *action = Some(CanvasAction::SplitAtPlayhead);
                     ui.close_menu();
                 }
@@ -442,26 +493,29 @@ pub(super) fn handle_release_and_context_menu(
                 ui.separator();
 
                 // Color labels submenu
-                ui.menu_button("■ Renk Etiketi (Color Label)", |ui| {
-                    ui.set_min_width(200.0);
-                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                    ui.spacing_mut().button_padding = Vec2::new(8.0, 4.0);
+                ui.menu_button(
+                    crate::i18n::pick(lang, "■ Renk Etiketi (Color Label)", "■ Color Label"),
+                    |ui| {
+                        ui.set_min_width(200.0);
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                        ui.spacing_mut().button_padding = Vec2::new(8.0, 4.0);
 
-                    for color in ColorLabel::ALL {
-                        let mut btn_text = RichText::new(color.label());
-                        if let Some([r, g, b]) = color.color_rgb() {
-                            btn_text = btn_text.color(Color32::from_rgb(r, g, b));
+                        for color in ColorLabel::ALL {
+                            let mut btn_text = RichText::new(color.label());
+                            if let Some([r, g, b]) = color.color_rgb() {
+                                btn_text = btn_text.color(Color32::from_rgb(r, g, b));
+                            }
+                            if ui.button(btn_text).clicked() {
+                                *action = Some(CanvasAction::SetClipColor {
+                                    track_id: tr_id.clone(),
+                                    clip_id: cl_id.clone(),
+                                    color: *color,
+                                });
+                                ui.close_menu();
+                            }
                         }
-                        if ui.button(btn_text).clicked() {
-                            *action = Some(CanvasAction::SetClipColor {
-                                track_id: tr_id.clone(),
-                                clip_id: cl_id.clone(),
-                                color: *color,
-                            });
-                            ui.close_menu();
-                        }
-                    }
-                });
+                    },
+                );
 
                 // Link / Unlink toggle button
                 let is_linked = project
@@ -472,14 +526,24 @@ pub(super) fn handle_release_and_context_menu(
                     .is_some();
                 if is_linked {
                     if ui
-                        .button("↔ Klip Bağını Kaldır (Unlink)  [Ctrl+L]")
+                        .button(crate::i18n::pick(
+                            lang,
+                            "↔ Klip Bağını Kaldır (Unlink)  [Ctrl+L]",
+                            "↔ Unlink Clips  [Ctrl+L]",
+                        ))
                         .clicked()
                     {
                         *action = Some(CanvasAction::ToggleLinkSelected);
                         ui.close_menu();
                     }
                 } else if state.selected_clip_pairs.len() > 1
-                    && ui.button("↔ Klipleri Bağla (Link)  [Ctrl+L]").clicked()
+                    && ui
+                        .button(crate::i18n::pick(
+                            lang,
+                            "↔ Klipleri Bağla (Link)  [Ctrl+L]",
+                            "↔ Link Clips  [Ctrl+L]",
+                        ))
+                        .clicked()
                 {
                     *action = Some(CanvasAction::ToggleLinkSelected);
                     ui.close_menu();
@@ -487,7 +551,11 @@ pub(super) fn handle_release_and_context_menu(
 
                 if state.selected_clip_pairs.len() >= 2
                     && ui
-                        .button("∿ Ses Dalga Formuna Göre Hizala (Audio Sync)")
+                        .button(crate::i18n::pick(
+                            lang,
+                            "∿ Ses Dalga Formuna Göre Hizala (Audio Sync)",
+                            "∿ Sync Clips by Audio Waveform",
+                        ))
                         .clicked()
                 {
                     *action = Some(CanvasAction::AlignSelectedByAudio);
@@ -496,7 +564,11 @@ pub(super) fn handle_release_and_context_menu(
 
                 if state.selected_clip_pairs.len() >= 2
                     && ui
-                        .button("⏱ Timecode ile Hizala (Multicam Timecode Sync)")
+                        .button(crate::i18n::pick(
+                            lang,
+                            "⏱ Timecode ile Hizala (Multicam Timecode Sync)",
+                            "⏱ Sync Clips by Timecode",
+                        ))
                         .clicked()
                 {
                     *action = Some(CanvasAction::AlignSelectedByTimecode);
@@ -504,7 +576,11 @@ pub(super) fn handle_release_and_context_menu(
                 }
 
                 if ui
-                    .button("⊞ Bileşik Klip Oluştur (Compound Clip / Nest)")
+                    .button(crate::i18n::pick(
+                        lang,
+                        "⊞ Bileşik Klip Oluştur (Compound Clip / Nest)",
+                        "⊞ Create Compound Clip / Nest",
+                    ))
                     .clicked()
                 {
                     *action = Some(CanvasAction::CreateCompoundClip);
@@ -513,25 +589,47 @@ pub(super) fn handle_release_and_context_menu(
 
                 if state.selected_clip_pairs.len() >= 2
                     && ui
-                        .button("↔ Bitişik Kesikleri Birleştir (Join Through-Edits)")
+                        .button(crate::i18n::pick(
+                            lang,
+                            "↔ Bitişik Kesikleri Birleştir (Join Through-Edits)",
+                            "↔ Join Through-Edits",
+                        ))
                         .clicked()
                 {
                     *action = Some(CanvasAction::JoinThroughEdits);
                     ui.close_menu();
                 }
 
-                if ui.button("+ Kopyala (Ctrl+C)").clicked() {
+                if ui
+                    .button(crate::i18n::pick(
+                        lang,
+                        "+ Kopyala (Ctrl+C)",
+                        "+ Copy (Ctrl+C)",
+                    ))
+                    .clicked()
+                {
                     *action = Some(CanvasAction::CopySelected);
                     ui.close_menu();
                 }
 
-                if ui.button("+ Yapıştır (Ctrl+V)").clicked() {
+                if ui
+                    .button(crate::i18n::pick(
+                        lang,
+                        "+ Yapıştır (Ctrl+V)",
+                        "+ Paste (Ctrl+V)",
+                    ))
+                    .clicked()
+                {
                     *action = Some(CanvasAction::PasteClipboard);
                     ui.close_menu();
                 }
 
                 if ui
-                    .button("≡ Özellikleri Seçerek Yapıştır... (Ctrl+Alt+V)")
+                    .button(crate::i18n::pick(
+                        lang,
+                        "≡ Özellikleri Seçerek Yapıştır... (Ctrl+Alt+V)",
+                        "≡ Paste Attributes... (Ctrl+Alt+V)",
+                    ))
                     .clicked()
                 {
                     *action = Some(CanvasAction::OpenPasteAttributesDialog);
@@ -540,12 +638,22 @@ pub(super) fn handle_release_and_context_menu(
 
                 ui.separator();
 
-                if ui.button("Sil (Del)").clicked() {
+                if ui
+                    .button(crate::i18n::pick(lang, "Sil (Del)", "Delete (Del)"))
+                    .clicked()
+                {
                     *action = Some(CanvasAction::DeleteSelected);
                     ui.close_menu();
                 }
 
-                if ui.button("⏪ Boşluksuz Sil (Shift+Del)").clicked() {
+                if ui
+                    .button(crate::i18n::pick(
+                        lang,
+                        "⏪ Boşluksuz Sil (Shift+Del)",
+                        "⏪ Ripple Delete (Shift+Del)",
+                    ))
+                    .clicked()
+                {
                     *action = Some(CanvasAction::RippleDeleteSelected);
                     ui.close_menu();
                 }
